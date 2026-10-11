@@ -210,9 +210,9 @@ record — that is a follow-on, not a claim this re-home makes. Statuses therefo
 | 13 | [Cursor live-desk-smoke protocol + first run](brief-13-cursor-live-desk-smoke.md) | 6 | M | implemented | — | — |
 | 14 | [Code de-house — land the stream's tool and packaging deliverables in the public tree](brief-14-code-dehouse.md) | 6 | L | implemented | — | — |
 | 15 | [Public CI wiring + harnesslint clean-up for the de-housed tools](brief-15-ci-wiring-harnesslint.md) | 7 | M | implemented | — | — |
-| 16 | [Codex long-context cap — compaction limit on every Codex desk launch, shipped in packaging, linted](brief-16-codex-long-context-cap.md) | 7 | M | todo | — | — |
+| 16 | [Codex long-context cap — compaction limit on every Codex desk launch, shipped in packaging, linted](brief-16-codex-long-context-cap.md) | 7 | M | implemented | — | — |
 | 17 | [Skill frontmatter conformance lint — Codex / agentskills hard limits fail CI](brief-17-skill-frontmatter-conformance-lint.md) | 0 | S | implemented | — | — |
-| 18 | [Skill description routing check — TF-IDF collision NOTICE plus a rank-1 routing fixture with a ratchet](brief-18-skill-description-routing-check.md) | 1 | S | todo | — | — |
+| 18 | [Skill description routing check — TF-IDF collision NOTICE plus a rank-1 routing fixture with a ratchet](brief-18-skill-description-routing-check.md) | 1 | S | implemented | — | — |
 <!-- statusgen:briefs:end -->
 
 **Note on 07:** artifacts delivered (adoption docs, freshness registration, smoke
