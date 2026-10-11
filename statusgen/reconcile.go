@@ -192,7 +192,9 @@ func runReconcile(args []string, stdout, stderr *os.File) int {
 			fmt.Fprintf(stderr, "reconcile --backfill (read-only): could-not-check — %s; --apply would exit %d and write nothing\n", refusal, reconcileCouldNotCheck)
 		} else if boardRoot, found := findBoardRoot(*root); found {
 			var werr error
-			if rows, held, werr = reconcileWrites(boardRoot, cells, *apply); werr != nil {
+			// The lint hold's progress goes to stderr: --json's stdout is unchanged.
+			opts := holdOptions{crossCheck: holdCrossCheck, progress: stderr}
+			if rows, held, werr = reconcileWritesWith(boardRoot, cells, *apply, opts); werr != nil {
 				label := "reconcile --backfill (read-only)"
 				if *apply {
 					label = "reconcile --apply"
