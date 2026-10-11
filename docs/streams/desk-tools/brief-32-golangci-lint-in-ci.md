@@ -34,7 +34,7 @@ exec-tier-why: >-
   and a runsheet hunk that must match what was measured.
 consumers:
   - ".golangci.yml (repo root, new): fixed-here (the curated linter set, the version pin comment, per-entry exclusions with reasons)"
-  - "tools/{desk,harnessgen,harnesslint,plugindrift,skillslint} and statusgen Go sources: fixed-here (only where the measurement found a real finding — no drive-by refactors)"
+  - "the Go sources of every module `git ls-files '*go.mod'` finds (20 at authoring, tools/* and the five root modules alike): fixed-here (only where the measurement found a real finding — no drive-by refactors)"
   - "docs/runsheets/golangci-ci-hunk.md (planned, new): fixed-here (the exact ci.yml diff and the one-line apply command for the human leg)"
   - ".github/workflows/ci.yml: out-of-scope for the worker (the App lacks the workflows scope; the hunk lands by the runsheet — named here so the reviewer checks the runsheet matches the config)"
 version: 1
@@ -101,7 +101,7 @@ one-line apply command. The worker does NOT touch ci.yml.
 
 files:
 - `.golangci.yml` (new) — Tasks 1–2
-- `tools/` Go sources + `statusgen/` — Task 3 (only where a finding names them)
+- every discovered module's Go sources (`git ls-files '*go.mod'`, all 20) — Task 3 (only where a finding names them)
 - docs/runsheets/golangci-ci-hunk.md (planned) — Task 4
 - changelog/desk-tools-32.md (planned) — Task 5
 
@@ -120,9 +120,9 @@ CI. Run from the repo root.
 | 3 | check | `for m in $(git ls-files '*go.mod' | xargs -n1 dirname); do grep -rn 'nolint' --include='*.go' "$m"; done | grep -vE "nolint:[a-zA-Z0-9_,-]+ +// +[^ ]" | wc -l > "${TMPDIR:-/tmp}/dt32-nl.txt"; [ "$(cat "${TMPDIR:-/tmp}/dt32-nl.txt")" = "0" ] && echo ok` | prints `ok`: every `nolint` in every module carries a rationale in the tree's own `//nolint:<linter> // <reason>` convention (the form golangci's nolintlint require-explanation expects), none is bare. FAILS today: 3 bare directives exist — tools/desk/internal/weight/weight_test.go:387,391,394 — the worker fixes exactly those three in-PR (each gains its reason) and touches no other pre-existing directive. |
 | 4 | check +neighbour | `cd tools/desk && GOOS=windows GOARCH=amd64 go vet ./... && GOOS=darwin GOARCH=arm64 go vet ./... && echo ok` | exit 0: the existing cross-compile vet is unaffected. Passes today and must still pass. |
 | 5 | check +neighbour | `cd tools/desk && go test -count=1 ./internal/deskkit/ ./cmd/deskdispatch/ > /dev/null && echo ok` | exit 0: representative suites unaffected by Task 3 fixes. Passes today and must still pass. |
-| 6 | check | `test -f docs/runsheets/golangci-ci-hunk.md && grep -q '^diff --git a/.github/workflows/ci.yml' docs/runsheets/golangci-ci-hunk.md && grep -q 'sha256' docs/runsheets/golangci-ci-hunk.md && git log --format= --name-only --author='assay-worker-app' origin/main..HEAD | grep -c '^\.github/workflows/' > "${TMPDIR:-/tmp}/dt32-wf.txt"; [ "$(cat "${TMPDIR:-/tmp}/dt32-wf.txt")" = "0" ] && echo ok` | prints `ok`: the runsheet carries the exact ci.yml diff with the sha256 acquisition, and the WORKER's own commits touch zero workflow files — the check is worker-scoped because the human's runsheet commit (Discipline 3) lands on this branch after the worker's final commit and is expected to touch ci.yml. FAILS today: no runsheet exists. |
+| 6 | check | `test -f docs/runsheets/golangci-ci-hunk.md && grep -q '^diff --git a/.github/workflows/ci.yml' docs/runsheets/golangci-ci-hunk.md && grep -q 'sha256' docs/runsheets/golangci-ci-hunk.md && git log --format= --name-only --author='assay-worker-app' refs/remotes/origin/main..HEAD | grep -c '^\.github/workflows/' > "${TMPDIR:-/tmp}/dt32-wf.txt"; [ "$(cat "${TMPDIR:-/tmp}/dt32-wf.txt")" = "0" ] && echo ok` | prints `ok`: the runsheet carries the exact ci.yml diff with the sha256 acquisition, and the WORKER's own commits touch zero workflow files — the check is worker-scoped because the human's runsheet commit (Discipline 3) lands on this branch after the worker's final commit and is expected to touch ci.yml. FAILS today: no runsheet exists. |
 | 7 | check | `cd statusgen && go build -o "${TMPDIR:-/tmp}/dt32-sg" . && "${TMPDIR:-/tmp}/dt32-sg" --root .. --lint 2>&1 \| grep -q 'LINT: PASS' && echo ok` | prints `ok`: the tree lints clean. The changelog fragment is deliberately NOT tested — the release workflow clears `changelog/` when it aggregates, so a fragment-existence check cannot survive a release. Passes today and must still pass. |
-| 8 | check +flow | READ FROM MERGED MAIN after the human's runsheet commit lands: `.github/workflows/ci.yml` contains the `golangci` job; the job acquires the binary by the pinned version string and verifies its sha256; and that version string equals `.golangci.yml`'s header pin character-for-character. A CI run of the job at a merged head is the evidence. | The one row that proves golangci-lint actually runs in CI — without it the brief could reach done with every other row green and the lint never wired. Could-not-check at authoring: the hunk is the human's commit, not yet on any branch. |
+| 8 | check +flow | `v=$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' .golangci.yml \| head -1) && grep -qE '^  golangci:' .github/workflows/ci.yml && grep -qF "$v" .github/workflows/ci.yml && grep -q sha256 .github/workflows/ci.yml && echo ok` — run on MERGED MAIN after the human's runsheet commit lands. A CI run of the job at a merged head is the additional evidence. | The one row that proves golangci-lint actually runs in CI — without it the brief could reach done with every other row green and the lint never wired. Could-not-check at authoring: the hunk is the human's commit, not yet on any branch. |
 
 ## Evidence
 <!-- appended at implementation time by a NON-implementer: one row per Verify item
