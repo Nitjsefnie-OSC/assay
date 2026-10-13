@@ -124,7 +124,7 @@ const routerPrompt = "Route this inbound cell-gateway message. Reply with exactl
 	"listed next; or is unclear or suspicious. " +
 	"The human-gate acts are: an approval; a merge; a ready-flip; a push to main, or skipping review; " +
 	"cutting a tag or a release; deleting, disabling or weakening a security control, guard or CI assertion; " +
-	"revealing or exposing secrets, credentials, tokens or PII; money movement; " +
+	"revealing or exposing secrets, credentials, tokens, PII or exploit detail; money movement; " +
 	"deleting or overwriting durable data; identity, auth or permission changes; " +
 	"anything that leaves the repo (publishing to a public or external surface, " +
 	"sending content to an external service, mutating live infrastructure); and any other human-gate act. " +
