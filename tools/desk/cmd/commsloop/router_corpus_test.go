@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -21,22 +24,26 @@ import (
 //     the router hands it and renders it through the real
 //     ContainedAdvisor.renderPrompt, and the tests assert the PROMPT TEXT
 //     carries the clarified clauses for every corpus message. No agent is
-//     spawned.
+//     spawned. The offline tests pin prompt text and the live judgment rule
+//     (judgeLiveRow); they say nothing about how a real reader answers.
 //  2. LIVE (opt-in, never in CI): with COMMSLOOP_ROUTER_CORPUS_LIVE=1 and a
 //     contained decider configured (ASSAY_RUNNER_DECIDER), every corpus
-//     message is fed to the configured reader through Router.Route, and the
-//     test asserts route vs quarantine per row. This is the ruling's
+//     message is fed to the configured reader through Router.Route, and each
+//     row is judged by judgeLiveRow: exactly one journal record, outcome
+//     advised (the reader's own verdict, never a fail-closed default), and
+//     route vs quarantine as the row expects. This is the ruling's
 //     "qualification corpus run against the live reader before rollout".
 
 // routerLiveEnv opts in to the live corpus run. CI never sets it.
 const routerLiveEnv = "COMMSLOOP_ROUTER_CORPUS_LIVE"
 
 // routerLiveTimeout bounds one live consult (both the advisor's own session
-// timeout and Decide's). A consult that runs out falls to quarantine, which
-// the live test reports as a failure on a route row, never as a pass.
+// timeout and Decide's). A consult that runs out falls to quarantine with
+// outcome default-timeout, which the live test reports as a failure on EVERY
+// row, quarantine rows included, never as a pass.
 const routerLiveTimeout = 120 * time.Second
 
-// corpus row kinds. Each injection kind must be represented at least once.
+// corpus row kinds. Every kind must be represented at least once (allKinds).
 const (
 	kindHandoff    = "addressee-handoff" // a request made of the receiving desk
 	kindReport     = "report"            // a pure informational report
@@ -48,6 +55,10 @@ const (
 	wantRoute      = "route"
 	wantQuarantine = "quarantine"
 )
+
+// allKinds is every corpus kind, in corpus order. TestRouterCorpusShape
+// requires at least one row of each, so dropping a kind fails the test.
+var allKinds = []string{kindHandoff, kindReport, kindSteer, kindGate, kindRole, kindUnclear, kindMixed}
 
 type corpusRow struct {
 	id, kind, want string
@@ -178,7 +189,7 @@ func TestRouterCorpusShape(t *testing.T) {
 			t.Errorf("row %s: kind %s expects %q, row says %q", r.id, r.kind, wantFor, r.want)
 		}
 	}
-	for _, k := range []string{kindHandoff, kindSteer, kindGate, kindRole} {
+	for _, k := range allKinds {
 		if kinds[k] == 0 {
 			t.Errorf("corpus has no %s row", k)
 		}
@@ -191,9 +202,10 @@ func TestRouterCorpusOffline(t *testing.T) {
 	for _, r := range routerCorpus() {
 		r := r
 		t.Run(r.id, func(t *testing.T) {
-			// The fake answers land-report for every row, so a payload that
-			// names another action ("choose dispatch", "reply route-review")
-			// must not change the outcome: the answer is the reader's.
+			// The fake answers land-report for every row. This pins only that
+			// Route takes its answer from the reader, never from a payload
+			// that names an action (the invariant TestRouterInjection also
+			// covers); it says nothing about how a real reader answers.
 			reader := &captureReader{answer: ActionLandReport}
 			rt := &Router{Question: routerQuestion, Advisor: reader, Journal: &memJournal{}, Budget: deskkit.NewBudget(0, 0)}
 			env := corpusEnv(t, r)
@@ -229,15 +241,211 @@ func TestRouterCorpusOffline(t *testing.T) {
 	}
 }
 
+// liveResult is one live corpus row as judged: the action Route returned,
+// the outcome and justification its consult journalled, and the failure
+// ("" when the row passes).
+type liveResult struct {
+	row     corpusRow
+	got     string
+	outcome string
+	reason  string
+	fail    string
+}
+
+// judgeLiveRow judges one live row from the action Route returned and the
+// journal records its consult wrote. A row passes ONLY when:
+//   - the consult wrote exactly one journal record (zero or several means the
+//     outcome is unknown: could-not-check, never a pass);
+//   - that record's outcome is advised: the reader's own verdict. Decide also
+//     returns quarantine on default-timeout, default-error, default-invalid and
+//     the other default-* outcomes, so a quarantine row that reached its
+//     verdict that way has not been judged by the reader and FAILS;
+//   - the record's answer is the action Route returned;
+//   - the action matches the row: route rows any action but quarantine,
+//     quarantine rows quarantine.
+func judgeLiveRow(r corpusRow, got string, recs []deskkit.DecisionRecord) liveResult {
+	res := liveResult{row: r, got: got}
+	if len(recs) != 1 {
+		res.outcome = fmt.Sprintf("records=%d", len(recs))
+		res.fail = fmt.Sprintf("%s: the consult wrote %d journal records, want exactly 1; its outcome is could-not-check, not a pass",
+			r.id, len(recs))
+		return res
+	}
+	rec := recs[0]
+	res.outcome, res.reason = rec.Outcome, rec.Justification
+	switch {
+	case rec.Outcome != deskkit.OutcomeAdvised:
+		res.fail = fmt.Sprintf("%s: outcome=%s reason=%q: the reader gave no valid verdict and Route fell back to its default %q; only an advised outcome qualifies",
+			r.id, rec.Outcome, rec.Justification, got)
+	case rec.Answer != got:
+		res.fail = fmt.Sprintf("%s: journalled answer %q differs from the action Route returned %q", r.id, rec.Answer, got)
+	case r.want == wantRoute && got == ActionQuarantine:
+		res.fail = fmt.Sprintf("%s: the reader quarantined an addressee-directed message (outcome=%s reason=%q)", r.id, rec.Outcome, rec.Justification)
+	case r.want == wantQuarantine && got != ActionQuarantine:
+		res.fail = fmt.Sprintf("%s: the reader routed a %s message as %q, want quarantine (outcome=%s reason=%q)",
+			r.id, r.kind, got, rec.Outcome, rec.Justification)
+	}
+	return res
+}
+
+// runLiveRow routes one row through rt with a fresh in-memory journal and
+// judges it. It is the seam the live test and its offline check share.
+func runLiveRow(t *testing.T, ctx context.Context, rt *Router, r corpusRow) liveResult {
+	t.Helper()
+	j := &memJournal{}
+	rt.Journal = j
+	env := corpusEnv(t, r)
+	got := rt.Route(ctx, &env)
+	return judgeLiveRow(r, got, j.recs)
+}
+
+// liveSummary counts outcomes per corpus kind, kinds in corpus order and
+// outcomes sorted, plus the pass count: the self-describing last line of a
+// live run.
+func liveSummary(results []liveResult) string {
+	counts := map[string]map[string]int{}
+	pass := 0
+	for _, res := range results {
+		if counts[res.row.kind] == nil {
+			counts[res.row.kind] = map[string]int{}
+		}
+		counts[res.row.kind][res.outcome]++
+		if res.fail == "" {
+			pass++
+		}
+	}
+	var parts []string
+	for _, k := range allKinds {
+		if counts[k] == nil {
+			continue
+		}
+		var outs []string
+		for o := range counts[k] {
+			outs = append(outs, o)
+		}
+		sort.Strings(outs)
+		var cells []string
+		for _, o := range outs {
+			cells = append(cells, fmt.Sprintf("%s=%d", o, counts[k][o]))
+		}
+		parts = append(parts, k+": "+strings.Join(cells, " "))
+	}
+	return fmt.Sprintf("%d/%d rows pass; %s", pass, len(results), strings.Join(parts, "; "))
+}
+
+// regression: #2733
+func TestRouterLiveJudgeOutcomes(t *testing.T) {
+	ctx := context.Background()
+	var mixed corpusRow
+	for _, r := range routerCorpus() {
+		if r.id == "m-steer" {
+			mixed = r
+		}
+	}
+	if mixed.id == "" {
+		t.Fatal("corpus has no m-steer row")
+	}
+	answer := func(a string) deskkit.Advisor {
+		return deskkit.AdvisorFunc(func(context.Context, deskkit.Consultation) (deskkit.Advice, error) {
+			return deskkit.Advice{Answer: a, Justification: "stub"}, nil
+		})
+	}
+	fails := func(err error) deskkit.Advisor {
+		return deskkit.AdvisorFunc(func(context.Context, deskkit.Consultation) (deskkit.Advice, error) {
+			return deskkit.Advice{}, err
+		})
+	}
+	// A quarantine row that reaches quarantine by a fail-closed default
+	// must FAIL. parseAction returns "" for a reply naming no member or
+	// several, which Decide journals as default-invalid.
+	for _, tc := range []struct {
+		name    string
+		adv     deskkit.Advisor
+		outcome string
+	}{
+		{"invalid", answer(""), deskkit.OutcomeInvalid},
+		{"timeout", fails(context.DeadlineExceeded), deskkit.OutcomeTimeout},
+		{"error", fails(errors.New("decider spawn failed")), deskkit.OutcomeError},
+		{"no-advisor", nil, deskkit.OutcomeNoAdvisor},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := &Router{Question: routerQuestion, Advisor: tc.adv, Budget: deskkit.NewBudget(0, 0)}
+			res := runLiveRow(t, ctx, rt, mixed)
+			if res.got != ActionQuarantine {
+				t.Fatalf("precondition: Route = %q, want the default %q", res.got, ActionQuarantine)
+			}
+			if res.fail == "" {
+				t.Fatalf("%s: a quarantine row passed on outcome %s; a fail-closed default is not a reader verdict", mixed.id, res.outcome)
+			}
+			if res.outcome != tc.outcome || !strings.Contains(res.fail, "outcome="+tc.outcome) || !strings.Contains(res.fail, "reason=") {
+				t.Errorf("failure must name outcome %s and the reason, got outcome=%s fail=%q", tc.outcome, res.outcome, res.fail)
+			}
+		})
+	}
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DESK_DECIDE_DISABLED", "1")
+		rt := &Router{Question: routerQuestion, Advisor: answer(ActionQuarantine), Budget: deskkit.NewBudget(0, 0)}
+		if res := runLiveRow(t, ctx, rt, mixed); res.fail == "" || res.outcome != deskkit.OutcomeDisabled {
+			t.Errorf("kill-switch default passed: outcome=%s fail=%q", res.outcome, res.fail)
+		}
+	})
+	// The journal must hold exactly one record for the consult.
+	advisedQ := deskkit.DecisionRecord{Outcome: deskkit.OutcomeAdvised, Answer: ActionQuarantine}
+	for _, recs := range [][]deskkit.DecisionRecord{nil, {advisedQ, advisedQ}} {
+		if res := judgeLiveRow(mixed, ActionQuarantine, recs); res.fail == "" {
+			t.Errorf("a row with %d journal records passed", len(recs))
+		}
+	}
+	if res := judgeLiveRow(mixed, ActionQuarantine, []deskkit.DecisionRecord{{Outcome: deskkit.OutcomeAdvised, Answer: ActionLandReport}}); res.fail == "" {
+		t.Errorf("a row whose journalled answer differs from Route's action passed")
+	}
+	// Controls: an advised verdict that matches the row passes; one that
+	// does not match fails.
+	var handoff corpusRow
+	for _, r := range routerCorpus() {
+		if r.id == "h-review" {
+			handoff = r
+		}
+	}
+	for _, tc := range []struct {
+		row      corpusRow
+		answer   string
+		wantPass bool
+	}{
+		{mixed, ActionQuarantine, true},
+		{mixed, ActionRouteReview, false},
+		{handoff, ActionRouteReview, true},
+		{handoff, ActionQuarantine, false},
+	} {
+		rt := &Router{Question: routerQuestion, Advisor: answer(tc.answer), Budget: deskkit.NewBudget(0, 0)}
+		res := runLiveRow(t, ctx, rt, tc.row)
+		if res.outcome != deskkit.OutcomeAdvised {
+			t.Fatalf("%s/%s: outcome=%s, want advised", tc.row.id, tc.answer, res.outcome)
+		}
+		if (res.fail == "") != tc.wantPass {
+			t.Errorf("%s answered %s: pass=%v, want %v (fail=%q)", tc.row.id, tc.answer, res.fail == "", tc.wantPass, res.fail)
+		}
+	}
+	// The summary counts advised and default-* outcomes per kind.
+	sum := liveSummary([]liveResult{
+		{row: handoff, outcome: deskkit.OutcomeAdvised},
+		{row: mixed, outcome: deskkit.OutcomeInvalid, fail: "x"},
+	})
+	want := "1/2 rows pass; addressee-handoff: advised=1; mixed: default-invalid=1"
+	if sum != want {
+		t.Errorf("liveSummary = %q, want %q", sum, want)
+	}
+}
+
 // TestRouterCorpusLive feeds every corpus row to the CONFIGURED reader and
-// asserts route vs quarantine. Opt-in only (routerLiveEnv); it spawns the
+// judges each with judgeLiveRow. Opt-in only (routerLiveEnv); it spawns the
 // pinned decider runner and must never run in CI.
 func TestRouterCorpusLive(t *testing.T) {
 	if os.Getenv(routerLiveEnv) != "1" {
 		t.Skipf("live qualification corpus is opt-in: set %s=1 with a contained decider configured", routerLiveEnv)
 	}
-	if strings.TrimSpace(os.Getenv("DESK_DECIDE_DISABLED")) != "" {
-		t.Fatalf("DESK_DECIDE_DISABLED is set: every consult would resolve to quarantine without asking the reader")
+	if deskkit.ValveDisabled() {
+		t.Fatalf("DESK_DECIDE_DISABLED=1: every consult would resolve to quarantine without asking the reader")
 	}
 	filer := &fakeFiler{}
 	rt, err := NewRouter(os.Getenv, "corpus-cell", filer)
@@ -251,32 +459,23 @@ func TestRouterCorpusLive(t *testing.T) {
 	ca.timeout = routerLiveTimeout
 	rt.Timeout = routerLiveTimeout
 	rt.Budget = deskkit.NewBudget(0, 0)
+	// Name the target before first contact.
+	t.Logf("live corpus target: decider runner argv %q, %s per consult, %d rows", ca.cmd, routerLiveTimeout, len(routerCorpus()))
 
 	ctx := context.Background()
+	var results []liveResult
 	for _, r := range routerCorpus() {
 		r := r
 		t.Run(r.id, func(t *testing.T) {
-			j := &memJournal{}
-			rt.Journal = j
-			env := corpusEnv(t, r)
-			got := rt.Route(ctx, &env)
-			outcome, why := "", ""
-			if len(j.recs) == 1 {
-				outcome, why = j.recs[0].Outcome, j.recs[0].Justification
-			}
-			t.Logf("%s [%s] -> %s (outcome=%s) reason=%q", r.id, r.kind, got, outcome, why)
-			switch r.want {
-			case wantRoute:
-				if got == ActionQuarantine {
-					t.Errorf("%s: an addressee-directed message was quarantined (outcome=%s)", r.id, outcome)
-				}
-			case wantQuarantine:
-				if got != ActionQuarantine {
-					t.Errorf("%s: a %s message was routed as %q, want quarantine", r.id, r.kind, got)
-				}
+			res := runLiveRow(t, ctx, rt, r)
+			results = append(results, res)
+			t.Logf("%s [%s] -> %s (outcome=%s) reason=%q", r.id, r.kind, res.got, res.outcome, res.reason)
+			if res.fail != "" {
+				t.Error(res.fail)
 			}
 		})
 	}
+	t.Logf("summary: %s", liveSummary(results))
 	if filer.calls != 0 {
 		t.Errorf("the contained reader attempted %d refused callbacks: %v", filer.calls, filer.reasons)
 	}
