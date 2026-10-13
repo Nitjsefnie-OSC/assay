@@ -1,0 +1,3 @@
+### Changed
+- The comms router's prompt now treats a request a message makes of its addressee desk ("please review", "pick this up", "ack it") as ordinary content to route, so peer hand-offs are no longer quarantined as if addressed to the router. Text that steers the router's own choice of action, any request for an approval, merge, ready-flip or other human-gate act, and anything unclear or unclassifiable still choose quarantine; the deterministic layers are unchanged.
+- A 17-message qualification corpus pins the clarified prompt clauses offline and can be run against the configured reader with `COMMSLOOP_ROUTER_CORPUS_LIVE=1` (opt-in, never in CI).
