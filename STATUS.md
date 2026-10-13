@@ -24,12 +24,12 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/54 | 2026-10-13 |  |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/17 | 2026-10-13 |  |
 | [forge-neutral](docs/streams/forge-neutral/README.md) | P1 | active | 5/34 | 2026-10-13 |  |
-| [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/27 | 2026-10-13 |  |
+| [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/29 | 2026-10-13 |  |
 | [harness-portability](docs/streams/harness-portability/README.md) | P2 | active | 5/17 | 2026-10-13 |  |
 | [iso-9001](docs/streams/iso-9001/README.md) | P2 | active | 4/11 | 2026-10-13 |  |
 | [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-13 |  |
 | [quality](docs/streams/quality/README.md) | P2 | active | 16/19 | 2026-10-13 |  |
-| [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/18 | 2026-10-13 |  |
+| [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/21 | 2026-10-13 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-13 |  |
 
 ### Stuck auto-flips (12)
@@ -83,6 +83,7 @@ _Held by per-stream caps: 2 brief(s) across 1 stream(s) — top: desk-tools. By 
 | composability | 02 — Install ledger, paired inverses, and the `disable` verb | 1 | 2000 |
 | derived-board | 07 — per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills | 4 | 2000 |
 | measured-status | 01 — Derive the deskkit exit-code table — record the convention ExitOK/Disabled/RateLimited/Refused/Unverifiable follow, and pin it with a test | 0 | 2000 |
+| statusgen | 19 — Context handoff contracts and synthetic fixtures [exec:strong] | 1 | 2000 |
 | desk-tools | 34 — Pinned golangci-lint across every Go module [exec:strong] | 1 | 1500 |
 | desk-supervision | 27 — Verify-outcome records carry join keys — delivering PRs, verifier tier and timing, per-row results — and every failure a blocker kind [exec:strong] | 0 | 1000 |
 
@@ -90,7 +91,7 @@ _Held by per-stream caps: 2 brief(s) across 1 stream(s) — top: desk-tools. By 
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: d7f18f1 2026-10-13T12:33:13Z_
+_last regen: 6c90e18 2026-10-13T12:34:58Z_
 
 **Progress:** 10/13 brief items done.
 
@@ -111,7 +112,7 @@ _none_
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: d7f18f1 2026-10-13T12:33:13Z_
+_last regen: 6c90e18 2026-10-13T12:34:58Z_
 
 **Progress:** 16/72 brief items done.
 
@@ -184,7 +185,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
-| graph-execution | 02 [exec:strong] | implemented | 11500 | 19 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
+| graph-execution | 02 [exec:strong] | implemented | 12500 | 21 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | graph-execution | 03 [exec:strong] | implemented | 8500 | 13 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
 | forge-neutral | 20 [exec:strong] | implemented | 7000 | 10 | — | worker | fix, cite medici-finance/assay#1606 | — | — |
 | windows-port | 00 | implemented | 5000 | 8 | — | worker | fix, cite #2297 | — | — |
@@ -582,7 +583,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 05 mirror-freshness gate: fail the release/CI when a mirrored stamped value drifts from its source — todo (wave 0)
 - 06 reconcile ref-resolution across the brief-v2 id flag-day — todo (wave 0)
 
-### graph-execution (25 open)
+### graph-execution (27 open)
 
 - 02 Workflow-pattern schema, node contract, and the implementation and research patterns — implemented (wave 0)
 - 03 Evidence coverage rule and the observe evidence kind — implemented (wave 1)
@@ -609,6 +610,8 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 25 Exact-candidate publication and independent review evidence bridge — todo (wave 8)
 - 26 Shared loop-admin launch supervision for desks and workflows — todo (wave 1)
 - 27 Standing desk clients for the shared loop-admin — todo (wave 3)
+- 28 Verifier domain contracts with qualified identities and candidate-bound acceptance — todo (wave 2)
+- 29 Old and new regression floor for the verifier domain contracts — todo (wave 3)
 
 ### harness-portability (12 open)
 
@@ -658,7 +661,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 04 Decision-dependency note — the credential/identity rulings that gate the credential-contract work — todo (wave 0)
 - 05 Reference cross-operator / independent-approver check — the residual after require_last_push_approval, as a required status check — todo (wave 2)
 
-### statusgen (7 open)
+### statusgen (10 open)
 
 - 05 Drives phase 3 — anti-starvation floors + the hard critical tier (≤15/20 slots via a 2-pass fill, ≤6/8 workers, effectiveCap; a lexicographic never-buried tier fed by a stamped security label + a dependency-edge reciprocity lint so blockedCount is not gameable) — implemented (wave 1)
 - 06 Findings register becomes a corroborated state machine — bounded shelving (parked) + transition guard on resolved/affects/parked — implemented (wave 1)
@@ -667,6 +670,9 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 16 Hold an issue out of dispatch when a non-human removed its excluded label: both scanners hold the placeholder, the issue board holds the un-briefed row — todo (wave 1)
 - 17 `--scan-issues`: a `risk:high` label derives `gate: human` on the issue's placeholder (`risk:med` does not) — implemented (wave 1)
 - 18 `--scan-issues`: print a notice when an open issue derives `gate: human` and its placeholder reads `gate: model` (detect only, no write) — todo (wave 2)
+- 19 Context handoff contracts and synthetic fixtures — todo (wave 1)
+- 20 Offline future-state resolver with receipt and amendment validation — todo (wave 2)
+- 21 Author skills consume the shared context handoff — todo (wave 3)
 
 ### windows-port (9 open)
 
@@ -845,4 +851,4 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 
 ## Totals
 
-**26** streams (**20** active, **0** paused, **6** parked) · **106/388** briefs done · completed initiatives: see `docs/archive/`
+**26** streams (**20** active, **0** paused, **6** parked) · **106/393** briefs done · completed initiatives: see `docs/archive/`
