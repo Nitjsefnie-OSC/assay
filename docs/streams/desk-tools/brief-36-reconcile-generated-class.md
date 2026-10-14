@@ -121,6 +121,27 @@ passes today and must still pass. Run from the repo root.
 | # | Command | Result | Output | Date | Runner |
 |---|---------|--------|--------|------|--------|
 
+### Non-implementer verifier run — VERIFY: BLOCKED — 2026-10-14 claude-opus-5-5 verifier
+
+Verification-Attestation: medici-finance/assay#2866 run=604e6ca5fb070fdabcb73390f0703148816073e6f39e53c7cd6e882d5826947f source=1cebbdaeb356cb94cf8960e5a82a1ae0caa733f8 brief=docs/streams/desk-tools/brief-36-reconcile-generated-class.md model=claude-opus-5-5 tier=strong
+
+Merged main: 1cebbdaeb356cb94cf8960e5a82a1ae0caa733f8 (delivery: #2706, squash 2c1653f35, mechanism B — direct-CI single-writer).
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `grep -rq '2688' docs/streams/issue-flow/rulings.md && echo ok` | PASS | exit 0, prints `ok`. The register exists; its R-8 section records the ruling on #2688 and the mechanism-B choice, and its closing Sign-off line is EMPTY (lane enacted for no area). | 2026-10-14 | assay-verifier-app[bot] @ 1cebbda (on-behalf-of human:ian) (git-config) |
+| 2 | `deskautolane --help > /dev/null 2>&1 && grep -rqF 'chore(board): reconcile' <the lane-config path cited in the PR body> && echo ok` | N/A (mechanism B) | Not applicable under mechanism B, as the row itself directs: the delivery chose B, so the class does not enter the lane and no lane-config entry exists to match. Observed: `deskautolane --help` exit 0; lane membership is read from the operator roster keys (ASSAY_AUTOAPPROVE_AREAS, path-category admission, per the deskautolane main.go header), which cannot express a title + author match, which is consistent with B. The literal command carries an unsubstituted placeholder (statusgen lint NOTICE unsubstituted-metavar). | 2026-10-14 | assay-verifier-app[bot] @ 1cebbda (on-behalf-of human:ian) (git-config) |
+| 3 | READ FROM THE FORGE after the first scheduled reconcile tick following this brief's merge (reconcile PR absent under B) | could-not-check | Could-not-check: forge read is outside this offline verifier envelope. Local evidence that the caught-by cannot hold yet at this commit: `git apply --check docs/runsheets/reconcile-lane-hunk.diff` exit 0 at 1cebbda (the direct-CI conversion is NOT on main; the runsheet records the driver's apply as the one remaining act), so the scheduled reconcile still opens `chore(board): reconcile` PRs until that apply lands. | 2026-10-14 | assay-verifier-app[bot] @ 1cebbda (on-behalf-of human:ian) (git-config) |
+| 4 | `cd statusgen && go build -o "${TMPDIR:-/tmp}/dt36-sg" . && "${TMPDIR:-/tmp}/dt36-sg" --root .. --lint 2>&1 \| grep -q 'LINT: PASS' && echo ok` | PASS | exit 0, prints `ok` (single run, no timeout). | 2026-10-14 | assay-verifier-app[bot] @ 1cebbda (on-behalf-of human:ian) (git-config) |
+
+Scope checks (Review questions 3 to 5, run locally at 1cebbda): the delivery commit touches no path under .github/, statusgen/ or tools/ (`git show --name-only --format= 2c1653f35 \| grep -E '^\.github/\|^statusgen/\|^tools/'` exit 1, no match); the carried diff is 112747 bytes with sha256 f4e3e0df93e1d7d47088021c61cf2e232cd4b9ca91564e919cb8687f9a866cd8, matching the runsheet pin; its three targets are unchanged from base ca0dad5c4 to 1cebbda (`git diff --stat` empty); changelog fragment present.
+
+RISK-VALUE: DERIVED — reconcile-lane-hunk.diff sha256 = f4e3e0df93e1d7d47088021c61cf2e232cd4b9ca91564e919cb8687f9a866cd8 @ docs/runsheets/reconcile-lane-hunk.md:30 — recomputed with shasum -a 256 over the in-repo file (112747 bytes, matching line 29); it binds the human apply to the exact bytes assembled on #2688.
+RISK-VALUE: NAMED, NOT DERIVED — publish-step token grant = `permission-contents: write` (with `permission-pull-requests: write` removed) @ docs/runsheets/reconcile-lane-hunk.diff:351-352 (staged twin 779-780) — least privilege for a single push to main is consistent with the spec text, but whether the board-writer App's ruleset bypass covers this job's direct push (the runsheet asserts no ruleset change is needed) is a forge/ruleset fact this offline run could not read; the diff is not applied on main, so nothing is live.
+RISK-VALUE: NAMED, NOT DERIVED — reconcile push refspec = `"${COMMIT}:refs/heads/main"` (no leading +, fast-forward only) @ docs/runsheets/reconcile-lane-hunk.diff:428 — no-force is right by inspection; the landing behaviour is pinned only by the hermetic suite inside the unapplied diff, which this run did not execute.
+
+**VERIFY: BLOCKED** — 2 of 4 rows pass (1, 4); row 2 not applicable under mechanism B; row 3 could-not-check and cannot pass until the driver applies the runsheet diff (carried on #2688). No implementation defect observed; no status advance.
+
 ## Review
 Gate: model (from frontmatter). The reviewer answers, in the verdict: (1) is the lane
 membership exactly the ruled class (title + author), with no widening? (2) does the R-8
