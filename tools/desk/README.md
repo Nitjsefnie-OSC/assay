@@ -5644,9 +5644,25 @@ Packet: <absolute path>
 
 ```bash
 deskdispatch project--pr-42 --kit review --pr 42 --repo example-org/project --prompt-file /work/pr-42.md
-# → /work/pr-42.md          the assignment, carrying "Packet: /work/pr-42.packet.md"
-# → /work/pr-42.packet.md   the packet, mode 0600
+# stdout: /work/pr-42.emitted.md   the path of the assignment, carrying "Packet: /work/pr-42.packet.md"
+# → /work/pr-42.packet.md          the packet, mode 0600
+# /work/pr-42.md itself is the caller's file and is never written
 ```
+
+**`--prompt-file` names the caller's file and is never modified (#2749).** The assembled
+assignment (tens of KB) goes to a NEW sibling, `<F without extension>.emitted.md` (mode `0600`,
+replaced by a re-dispatch), and that path is printed alone on stdout. A caller that hashes or
+re-reads its own task file after the dispatch gets what it wrote. The flag must name a file: an
+existing directory is refused before the claim.
+
+The emitted file is replaced atomically through an owner-only temporary file: a link at the
+destination is replaced, never followed, and an existing wider mode is replaced with `0600`.
+Callers must check the exit status and read the path printed by this successful invocation,
+rather than read `F` or infer success from an existing emitted file. A refused re-dispatch can
+leave the previous emitted file in place. Files differing only in extension share the same
+emitted and packet paths; use distinct stems for concurrent dispatches. Keep `F` outside
+the agent worktree, especially a verifier home: the emitted sibling is an additional file
+even when the verifier packet provider declines to write its packet there.
 
 **What a review packet holds, in order:** the head commit and the build time (at the top);
 the change's number, title, author, base, head and draft / mergeable state; its description;
@@ -5680,7 +5696,7 @@ always knows what it was not shown and reads that item at the source.
 A removed file, or a path that is not safe to put in a forge request, is listed and not
 read; a file that is not text is listed and not shown.
 
-**Where the packet goes.** Beside the assignment: with `--prompt-file F`, `<F without extension>.packet.md`;
+**Where the packet goes.** Beside the emitted assignment: with `--prompt-file F`, `<F without extension>.packet.md`;
 when the prompt is printed, `<user cache dir>/assay/packets/<item-key>.packet.md` (packets
 there older than a week are removed as new ones are written). Never in the agent's worktree
 — an untracked file would dirty a read-only review tree — and never in the configuration
