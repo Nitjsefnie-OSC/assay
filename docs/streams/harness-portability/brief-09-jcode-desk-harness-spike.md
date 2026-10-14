@@ -224,7 +224,42 @@ Verification-Attestation: medici-finance/assay#2603 run=211d6d97eb237f70e0f004d4
 RISK-VALUE: DERIVED — `max-age-days = 45` @ freshness.yaml:48 — every other artifact in the same registry carries the same 45-day leash, including the sibling harness-capability docs (cursor at line 39, SpecMem at line 53). The registry comment added with this entry states the rule: third-party facts with no locally tracked upstream rot on a clock. Reversible; this diff has no irreversible literal (risk: all "no", gate: model).
 
 **VERIFY: FAIL** — row 3 checked-failed: the doc contains no measured RAM/boot figure and no quoted command output; the our-workload measurement is BLOCKED in the doc itself (tracked on medici-finance/assay#1834). Rows 1, 2, 4, 5 pass. Hold at implemented.
+### Non-implementer verifier run — 2026-10-14 claude-opus-5-5 verifier at caca38a58715 (merged main caca38a58715435a06ec6ad7916828983a6dc3bd, admitted by deskdispatch --check-verifier exit 0, tier strong)
 
+Runner is not the implementer. Own detached temp worktree off origin/main at the merged head. Offline envelope observed (`KUBECONFIG=/dev/null`). No PR, no push, no status flip. Rows 1, 2 and 5 were run by hand at the SHA above; rows 3 and 4 are prose rows, dereferenced by reading the capability-matrix doc in full (331 lines). The execution witness was run with `--dry-run` only, so it wrote nothing.
+
+The inputs are byte-identical to the 2026-10-11 run: the brief, the capability-matrix doc and the freshness registry hash to the same sha256 values recorded in that run's outcome record (doc 86785cef4fa8, freshness 227d07cccc36, brief 66612950a927). The last commit touching the doc or the registry is still d73d7c996 (#1814).
+
+Verification-Attestation: medici-finance/assay#2899 run=8c529fa0d3521de5b3fc1bbe2f555b0659d424a1316050782b4c3b3a9386586b source=caca38a58715435a06ec6ad7916828983a6dc3bd brief=docs/streams/harness-portability/brief-09-jcode-desk-harness-spike.md model=claude-opus-5-5 tier=strong
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `test -f docs/research/jcode-desk-harness-capabilities.md` | pass exit=0 | File present, 331 lines | 2026-10-14 | assay-verifier-app[bot] @ caca38a58715 (on-behalf-of human:ian) (git-config) |
+| 2 | `grep -qiE -e absent -e workaround docs/research/jcode-desk-harness-capabilities.md` | pass exit=0 | 12 matching lines; section 3 tally: absent 1 (P6 isolation), workaround 2 (P2, P3), present 3 (P1, P4, P5) | 2026-10-14 | assay-verifier-app[bot] @ caca38a58715 (on-behalf-of human:ian) (git-config) |
+| 3 | (dereferencing) the measured RAM/boot figures in the doc are each backed by a named command whose output is quoted — a reader can re-run it | fail (checked by reading the doc in full) | No measured figure and no quoted command output anywhere in the doc. Section 6 gives the our-workload protocol as commands still to be run and says the numbers await a live jcode install. Every RAM/boot number present (27.8 MB, 167.1 MB, 386.6 MB, 14.0 ms, 3436.9 ms) is a labelled vendor self-benchmark, and the derived "~2.3x" in sections 6 and 7 is computed from those vendor numbers, which is what the Expect cell excludes | 2026-10-14 | assay-verifier-app[bot] @ caca38a58715 (on-behalf-of human:ian) (git-config) |
+| 4 | (dereferencing) the doc records the exec-tier probe (3) and the prose-vs-discrete split (4) as explicit verdicts, not TODOs | pass, with a caveat (checked by reading the doc in full) | Section 5 names the discrete / LLM-judgment split for intake-desk across 13 loop steps and states the split in prose. Section 4 answers exec-tier as "NO / per-session-only", evidenced from the public docs (no per-child model field on the swarm-spawn call), with a probe design and a verdict rule. No TODO marker in either section. Caveat: the exec-tier answer is documentary; the doc itself says the live verdict awaits a live jcode install | 2026-10-14 | assay-verifier-app[bot] @ caca38a58715 (on-behalf-of human:ian) (git-config) |
+| 5 | `grep -q 'jcode-desk-harness-capabilities' freshness.yaml` | pass exit=0 | Entry at lines 46-49 of the freshness registry: last-reviewed "2026-08-24", max-age-days 45, upstreams empty | 2026-10-14 | assay-verifier-app[bot] @ caca38a58715 (on-behalf-of human:ian) (git-config) |
+
+Rows passed: 4 of 5 (rows 1, 2, 4, 5 checked-clean; row 3 checked-failed).
+
+**Execution witness** (`statusgen verifyrun --dry-run`, tool v1.0.41, at caca38a58715): 3 of 5, exit 1. Rows 1, 2, 5 pass exit=0; rows 3 and 4 fail exit=2 (sha256:4117c376c8f5, sha256:5d664ea9d853). Those two exits are a parse artefact: each Command cell is prose and the witness runs it as shell. The hand result in the table above is the observation for rows 3 and 4. The dry-run printed the same Verification-Attestation binding as above.
+
+**Findings.**
+
+1. Row 3 is the same real gap recorded on 2026-10-02 and 2026-10-11, not a stale-shaped one. Brief tasks 1, 2 and 6 (install jcode, run one desk skill under it, measure per-session RSS and cold boot on our workload) were never performed, and the doc says so. The prior hold is still open: medici-finance/assay#1834 (OPEN, labelled help wanted, last updated 2026-10-11) carries hp/09 row 3 with its three end states (a human-run live result, a "spike informs, does not gate" ruling, or a re-baseline). No ruling has been recorded on it since the 2026-10-11 run. No new issue needed.
+2. Rows 3 and 4 have prose Command cells, so the witness can never report them green whatever the doc says. Already noted on medici-finance/assay#1834; any re-baseline should give them executable anchors.
+3. Supplementary check, not a Verify row: the freshness tool, run with `--only` for this doc at the SHA above, printed `STALE ... max-age 45d exceeded (reviewed 2026-08-24, deadline 2026-10-08, ...)` and exited 1. The doc remains past its freshness leash; the re-review noted on medici-finance/assay#1834 is still owed.
+4. medici-finance/assay#393 is still OPEN; its hp/09 ask (land the dropped deliverable) was met by #1814. What remains for hp/09 is finding 1.
+
+**Risk-bearing value enumeration**: scope is the landed diff of commit d73d7c996 for this item (the capability-matrix doc and its freshness entry) plus the brief's Deliverables, which name two planned files and no constant.
+
+- `max-age-days = 45` @ freshness.yaml:48. If wrong, the doc is re-reviewed too late or too early; an edit undoes it. Reversible operational knob, ranks last.
+- `last-reviewed = "2026-08-24"` @ freshness.yaml:47. If wrong, the staleness clock starts on the wrong day; an edit undoes it. Reversible, ranks last.
+- The density figures in section 6 of the doc are vendor numbers, quoted with source and caveat. This item does not assert them, and nothing binds to them.
+
+RISK-VALUE: DERIVED — `max-age-days = 45` @ freshness.yaml:48 — matches the 45-day leash on the sibling harness-capability entries in the same registry, and the registry comment states the rule: third-party facts with no locally tracked upstream rot on a clock. Reversible; this diff has no irreversible literal (risk: all "no", gate: model).
+
+**VERIFY: FAIL** — row 3 checked-failed: the doc contains no measured RAM/boot figure and no quoted command output; the our-workload measurement still awaits a live jcode install (prior hold still open on medici-finance/assay#1834). Rows 1, 2, 4, 5 pass. Hold at implemented.
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the harness-portability README table.
