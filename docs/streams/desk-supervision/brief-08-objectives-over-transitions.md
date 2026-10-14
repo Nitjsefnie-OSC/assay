@@ -307,6 +307,28 @@ Findings:
 Status stays implemented. Re-running this item before rows 2, 5 and 9 are re-specified will reproduce this result.
 
 **VERIFY: FAIL** — 6/9 pass; rows 2 and 5 fail as written and row 9 is could-not-check on merged main (and at the implementing commit). All three are check-definition defects tracked at #1363. No deliverable property is failing.
+### Non-implementer verifier run — **VERIFY: FAIL** (6/9; rows 2 and 5 fail as written, row 9 could-not-check — check-definition, tracked #1363) — 2026-10-14 claude-opus-5-5 verifier at 0cb90058470f
+
+Verification-Attestation: medici-finance/assay#2886 run=93529436c9c84fb7c11662ffbeb1d6daaaa1be04e2fb31327e1267e1e1660d29 source=0cb90058470f9608f76b96e2055e7327d9c5c178 brief=docs/streams/desk-supervision/brief-08-objectives-over-transitions.md model=claude-opus-5-5 tier=strong
+
+Fresh non-implementer pass against merged main 0cb90058470f9608f76b96e2055e7327d9c5c178 in the attested detached home; pre-work admission rc=0 before and after the rows; home clean after (the skillbench report row 5 writes was moved out of the home). All rows ran offline with KUBECONFIG=/dev/null. Same result as the 2026-09-20 through 2026-10-11 runs; no deliverable property fails — rows 2, 5 and 9 are check-definition defects tracked at #1363.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && GOWORK=off go run ./cmd/deskdispatch --kits` | pass exit=0 | kit list: review, verifier, worker, worker-objective | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 2 | `cd tools/desk && GOWORK=off go run ./cmd/deskdispatch --dry-run --kit worker-objective --root . assay/desk-supervision/08 \| grep -c 'KUBECONFIG=/dev/null'` | fail exit=1 | count 0: deskdispatch refuses "first argument must be the <item-key>, not a flag (--dry-run)" (exit 5; guard at dispatch.go:207). Supplementary, not the row as written: with the item key first the dry-run exits 0 and the count is 1 | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 3 | `cd tools/desk/cmd/deskdispatch/references && awk '/<!-- common-clauses:begin -->/,/<!-- common-clauses:end -->/' worker-prompt-objective.md \| diff - common-clauses.md` | pass exit=0 | empty diff; common clauses byte-identical inside the 648-line objective kit | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 4 | `ls tools/skillbench/fixtures/worker-kit/ \| wc -l` | pass exit=0 | 5 | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 5 | `cd tools/skillbench && GOWORK=off go run . --arms ../../docs/streams/desk-supervision/08-arms \| grep -c 'check_pass_rate'` | fail exit=1 | count 0: skillbench prints nothing on stdout (stderr only: "wrote reports/skillbench/2026-10-14-08-arms.md"); the report states the safety floor in prose ("task-check pass rate: held — with-overlay 100% >= without-overlay 100%") and never the token check_pass_rate | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 6 | `for a in with-overlay without-overlay; do ls docs/streams/desk-supervision/08-arms/$a \| wc -l; done` | pass exit=0 | 15 and 15 | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 7 | `grep -E -e '^decision: adopt-candidate — ' -e '^decision: reject — ' docs/streams/desk-supervision/08-report.md` | pass exit=0 | exactly one line: "decision: adopt-candidate — check_pass_rate 100%/15 vs 100%/15 (equal), wedges 0/15 vs 0/15 (equal), wall_seconds 31.7 vs 23.7 (+33.8%, cost-side regression), diff_lines 8.3 vs 8.1 (+2.5%, cost-side regression)" | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 8 | `grep -c 'wedges' docs/streams/desk-supervision/08-report.md` | pass exit=0 | 7 | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+| 9 | `statusgen --root . --consumers --brief desk-supervision/08` | could-not-check exit=2 | statusgen v1.0.41: "--consumers: COULD-NOT-CHECK: assay:assay:desk-supervision:08 is not in the diff against 0cb90058470f…" — no entry corroborated, none disproved (DISPROVED count 0); the exit-0 expectation is not met | 2026-10-14 | assay-verifier-app[bot] @ 0cb90058470f (on-behalf-of human:ian) (git-config) |
+
+RISK-VALUE: NAMED, NOT DERIVED — task-count = 5 @ docs/streams/desk-supervision/08-report.md:9 (five task dirs under tools/skillbench/fixtures/worker-kit) — missing: a derivation that these five tasks cover the states the procedural kit anticipates; the brief leaves representativeness to review only. Reversible; gate: model, irreversible: no; no flip this pass (FAIL), carried by #1363 / #2816.
+RISK-VALUE: DERIVED — runs-per-task-per-arm = 3 @ docs/streams/desk-supervision/08-report.md:9 — the brief requires at least 3 runs per task per arm, fixed before the runs; 3 is the smallest value meeting that floor.
+
+Since the 2026-10-11 run (251e9473 → 0cb90058): Verify table unchanged; worker-prompt-objective.md changed once (#2620, rung wording outside the common-clauses block), so 08-report's adopt-candidate decision describes an older kit revision.
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
