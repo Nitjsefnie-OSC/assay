@@ -963,6 +963,73 @@ VERIFY: BLOCKED — 20 of 21 rows pass by hand on merged main 08d194b1, includin
 
 **VERIFY: BLOCKED**
 
+### Non-implementer verifier run — VERIFY: BLOCKED — 2026-10-14 claude-opus-5-5 verifier
+
+Verification-Attestation: medici-finance/assay#2859 run=9eef5d294fe5402c57bcd9d8a3175f45a6ecced097dceada5e796471873d3b39 source=1cebbdaeb356cb94cf8960e5a82a1ae0caa733f8 brief=docs/streams/desk-tools/brief-26-deskwt-prune-one-walk-and-a-lock.md model=claude-opus-5-5 tier=strong
+
+Runner is a NON-implementer: assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian), dispatched by verify-desk against merged main 1cebbdaeb356cb94cf8960e5a82a1ae0caa733f8. Deliverable squash b02ea2b35 (PR #1064) is an ancestor of that commit. Admission `deskdispatch --check-verifier` exited 0 before any row ran and again after this Evidence was written (BriefSHA256 at admission 388fe53c943e11fe407bf4fcbe4a736827b35cc0d43cf900aa48ef013b91279a, PlanSHA256 f52ea7b419cec0024487ab67487def67c2d973590ab5a5db99713ea8bb2c1dc6, tier strong).
+
+Why this re-run: 114 commits landed on main after the 2026-10-11 pass (08d194b1). The ones that touch this brief's inputs: #2660 (prune now drains clean detached worktrees at the mainline tip once they are older than the fresh-worktree window, and stale registrations), #2676, changes to the muhar workspace, and 14 changed lines in gitcore.go. prune-mutations.json now carries 34 mutations plus the positive control (21 at the last pass). Every row below was re-run at 1cebbdae.
+
+How the rows were run: by hand, one after another, from the detached home pinned to 1cebbdae on darwin/arm64 with go1.27.2 and git 2.56.0. HOME was an empty throwaway with no roster. TMPDIR was a scratch directory outside any git repo, with GIT_CEILING_DIRECTORIES set to its parent. GOPROXY was off, GOTOOLCHAIN was local, GOFLAGS was unset, and KUBECONFIG was /dev/null. Every command is the Verify row's own text, run exactly, with no flags added. Row 11 mutates the source tree in place and restores it; `git status --porcelain` in the home was empty before and after it.
+
+The host was heavily shared during the first pass (load averages 31 to 61 on 16 cores, from other verifiers' test runs). Two rows failed on that first attempt and passed on a re-run at load average about 4; both attempts are recorded below. The benchmark in row 16 shows the size of the slowdown: 163.4 ms/candidate under the load, 12.99 ms/candidate on the re-run.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | pass exit=0 | no output (10s) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 2 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneRemovalSetUnchanged$' -count=1 -timeout 300s` | pass exit=0 | ok cmd/deskwt 7.166s (removed set equals the recorded literal) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 3 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneHoldsAll' -count=1` | pass exit=0 | ok cmd/deskwt 6.467s (2 tests: Test PruneHoldsAll NoAncestorSet, Test PruneHoldsAll WhenTheMainlineWalkFails) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 4 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestMergeGateBeforeStatus$' -count=1` | pass exit=0 | ok cmd/deskwt 4.558s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 5 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneSkips' -count=1 && go test ./cmd/deskwt/ -run '^TestPruneRefusesSharedCheckout$' -count=1` | pass exit=0 | ok cmd/deskwt 37.967s (7 Test PruneSkips tests), then ok cmd/deskwt 3.965s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 6 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneDryRunIsReadOnly$' -count=1` | pass exit=0 | ok cmd/deskwt 13.094s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 7 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneBatch' -count=1` | pass exit=0 | ok cmd/deskwt 29.732s (Test PruneBatchesRemoval, Test PruneBatch DemotesStrandedPath) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 8 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestRemove' -count=1` | pass exit=0 | ok cmd/deskwt 74.059s (11 Test Remove tests) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 9 | `cd tools/desk && go test ./internal/gitcore/ -run '^TestOpenWithShares' -count=1 && go test ./internal/gitcore/ -run '^TestOpenStillBuilds' -count=1` | pass exit=0 | ok internal/gitcore 0.480s, then ok internal/gitcore 0.529s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 10 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneSingleton' -count=1 -timeout 120s` | pass exit=0 | ok cmd/deskwt 55.606s (5 Test PruneSingleton tests) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 11 | `cd tools/desk && go run ./cmd/muhar -spec cmd/deskwt/prune-mutations.json` | pass exit=0 | 4662s; "Harness healthy: baseline GREEN, positive control CAUGHT." and "Totals: 34 caught, 0 NOT CAUGHT, 0 could-not-mutate."; home tree clean before and after | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 12 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestPruneInterval' -count=1 -timeout 120s` | pass exit=0 | ok cmd/deskwt 20.074s (3 Test PruneInterval tests, incl. the per-tick lock release) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 13 | `cd tools/desk && DESKWT_PERF_N=50 go test ./cmd/deskwt/ -run '^TestPruneSweepScalesAtN$' -count=1 -timeout 600s` | pass exit=0 | ok cmd/deskwt 7.368s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 14 | `cd tools/desk && DESKWT_PERF_N=200 go test ./cmd/deskwt/ -run '^TestPruneSweepScalesAtN$' -count=1 -timeout 900s && DESKWT_PERF_N=600 go test ./cmd/deskwt/ -run '^TestPruneSweepScalesAtN$' -count=1 -timeout 900s` | pass exit=0 on re-run (first attempt exit=1 under host load) | First attempt, load average about 40: N=200 ok 16.973s; N=600 "--- FAIL: TestPruneSweepScalesAtN (54.67s) pruneperf_test.go:265: sweep over 600 worktrees took 42.692s, over the 30s budget (held 601, removed 0)". Re-run, load average about 4: ok 1.904s, then ok 3.840s. The same N=600 command with -v added, run after it, printed "N=600 commits=5000 sweep=2.853s walks=1 removed=0 held=601" | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 15 | `cd tools/desk && DESKWT_PERF_N=200 go test ./cmd/deskwt/ -run '^TestConcurrentPrunes' -count=1 -timeout 900s` | pass exit=0 | ok cmd/deskwt 33.782s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 16 | `cd tools/desk && go test -bench '^BenchmarkPruneSweepPer' -benchtime 10x -run '^$' ./cmd/deskwt/ > /tmp/dt26-bench.out 2>&1; grep -q 'BenchmarkPruneSweepPerCandidate' /tmp/dt26-bench.out` | pass exit=0 | under load: "10 8171641692 ns/op 163.4 ms/candidate"; re-run at load average about 4: "10 649476179 ns/op 12.99 ms/candidate" | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 16b | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestLegacyPerCandidate' -count=1 -timeout 600s` | pass exit=0 | ok cmd/deskwt 82.762s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 17 | `cd tools/desk && go test -timeout 600s ./cmd/deskwt/... ./internal/gitcore/... -count=1` | pass exit=0 on re-run (first attempt exit=1 under host load) | First attempt, load average 31 to 61: "panic: test timed out after 10m0s" in cmd/deskwt (no --- FAIL line before the panic), ok internal/gitcore 71.808s. Re-run, load average about 4: ok cmd/deskwt 190.168s, ok internal/gitcore 24.774s | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 18 | `cd tools/desk && gofmt -l cmd/deskwt internal/gitcore > /tmp/dt26-fmt.out; test ! -s /tmp/dt26-fmt.out` | pass exit=0 | gofmt list is 0 bytes | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 19 | `cd statusgen && go run . --root .. --lint; echo $?` | pass, printed 0 | "LINT: PASS", printed 0; NOTICE lines only, none for this brief | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+| 20 | `cd statusgen && go run . --root .. --consumers --brief assay:assay:desk-tools:26; echo $?` | could-not-check (printed 1, not 0) | "--consumers: COULD-NOT-CHECK: assay:assay:desk-tools:26 is not in the diff against 1cebbdaeb356cb94cf8960e5a82a1ae0caa733f8, so this run carries no evidence about its claims — no entry was corroborated and none was disproved." then "exit status 2" (go run turns the child's exit 2 into its own exit 1) | 2026-10-14 | assay-verifier-app[bot] @ 1cebbdaeb356 (on-behalf-of human:ian) (git-config) |
+
+20 of 21 rows meet their Expect. Row 20 is could-not-check, the same result as every pass since 2026-10-04. Row 11 passed with all 34 mutations CAUGHT, including the 13 added since the last pass.
+
+Row 20 still cannot be decided, for the same structural reason as before. The consumers gate has no diff that contains both the brief file and the files it names as consumers. Blocker: check-definition, #1281, still OPEN (checked 2026-10-14).
+
+Risk-bearing value. The enumeration covers the non-test files of squash b02ea2b35 (prune.go, prunesingleton.go, deskwt.go, lockreclaim.go, gitcore.go) plus the test gates the Deliverables name, all re-read at 1cebbdae:
+
+- merge-gate baseline ref = "refs/remotes/origin/main" @ tools/desk/cmd/deskwt/prune.go:690 (the one walk)
+- defaultSingletonTTL = 10 * time.Minute @ tools/desk/cmd/deskwt/prunesingleton.go:57
+- pruneStampSchema = "deskwt-prune-singleton-v1" @ prunesingleton.go:51
+- stamp dir mode 0o700 @ prunesingleton.go:177; stamp file mode 0o600 @ prunesingleton.go:182
+- lock-ttl flag default "0" @ prune.go:222; singleton-ttl flag default defaultSingletonTTL @ prune.go:234
+- perf budget at N>=600 = 30 * time.Second @ tools/desk/cmd/deskwt/pruneperf_test.go:58; concurrency budget = 2*single + 5*time.Second @ pruneperf_test.go:332 (test gates only)
+
+Ranked by irreversibility, the baseline ref is the only entry whose error deletes work: if it is wrong, an unmerged worktree reads as merged and is removed. Every other entry is a reversible knob for efficiency, hygiene or a test budget.
+
+RISK-VALUE: DERIVED — merge-gate baseline = "refs/remotes/origin/main" @ tools/desk/cmd/deskwt/prune.go:690 — HEAD is an ancestor of origin/main exactly when HEAD is in the set of commits reachable from origin/main, and that set is built by one Log walk from this ref, tip included. The membership test is at prune.go:733. The ref is spelled in full, so a stray local branch named origin/main cannot become the baseline (#885). A walk that fails leaves the set nil, and then every candidate is held as unverifiable (prune.go:719 to 723, sweep warning at prune.go:795); a partial set can only shrink membership, which holds worktrees instead of removing them. This run corroborates it: rows 2 and 3 pass, and row 11's inversion and empty-set mutations are both CAUGHT.
+
+RISK-VALUE: DERIVED (reversible, ranks last) — defaultSingletonTTL = 10 * time.Minute @ tools/desk/cmd/deskwt/prunesingleton.go:57 — it is a debounce only. A wrong value delays or repeats a sweep by at most one TTL and never removes anything.
+
+Findings:
+
+- Carried over: row 15's Expect says the concurrent wall is gated under 1.5x a single sweep, but the test gates on 2*single + 5s (pruneperf_test.go:332).
+- New since the last pass: #2660 changed the fresh-at-tip guard this brief's gate order describes. A clean worktree detached at the mainline tip is now removed once it is older than freshWorktreeSafetyWindow (= beaconFreshWindow = 60 * time.Minute, prune.go:28 and lockreclaim.go:80); fresh, dirty or ignored-payload ones are still held. That behaviour belongs to #2660, not this brief. Row 2's fixture worktree is fresh, so its removed-set literal is unchanged and the row passes.
+- The first attempts of rows 14 and 17 failed only because the host was saturated (see above). Neither is an implementation defect: both pass at normal load, and the N=600 sweep took 2.853s against its 30s budget.
+
+The brief is gate: model, with all four risk answers no. Its status is left at implemented.
+
+VERIFY: BLOCKED — 20 of 21 rows pass on merged main 1cebbdae, including the SPOF row 2, the fail-closed row 3 and 34/34 mutations CAUGHT. Row 20 is could-not-check by construction (check-definition, blocker #1281, open). No row fails.
+
+**VERIFY: BLOCKED**
+
 ## Review
 
 Gate: model (all four risk answers no). Model-gated because the destructive hazard is
