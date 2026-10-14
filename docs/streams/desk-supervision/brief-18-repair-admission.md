@@ -290,6 +290,50 @@ RISK-VALUE: DERIVED — repairObligationLeaseTTL = 45 * time.Minute @ tools/desk
 
 **VERIFY: FAIL** — rows 2 and 4: each command exits 0 with its named PASS line, but the test does not establish the full Expect. Row 2 exercises no crash after the item claim. Row 4 has no restart between the review-opened and awaiting-merge transitions and no fake-forge observation. Rows 1 and 3 pass. No admission misbehaviour was observed. The gap is in Verify coverage and the deliverable, tracked in medici-finance/assay#1922 and #1923. The check:ci witness is 0/4 could-not-run on darwin (#1800). Status stays implemented.
 
+### Non-implementer verifier run — VERIFY: FAIL — 2026-10-14 claude-opus-5-5 verifier
+
+Runner: assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian). This runner is not the implementer (the implementing PR is #1400). Merged main bcc02252e52ffe596d7b16f06df28e9e11e3806b. The run used its own detached worktree off origin/main, offline (KUBECONFIG=/dev/null, GOPROXY=off), and contacted no production service or cluster. Host darwin/arm64, go1.27.2, git 2.56.0. Pre-work admission: `deskdispatch --check-verifier` exit 0, model claude-opus-5-5, tier strong.
+
+Verification-Attestation: medici-finance/assay#2846 run=6341f40bc35ece8dd9a4c3d8a6371e3e5e53830a9a0440e63f7d767230eb7065 source=bcc02252e52ffe596d7b16f06df28e9e11e3806b brief=docs/streams/desk-supervision/brief-18-repair-admission.md model=claude-opus-5-5 tier=strong
+
+**Hand run.** Each row was run by hand from the worktree root at 2026-10-14T01:49Z. The statusgen check:ci witness was not attempted: this darwin host has no `unshare --net` network-off sandbox (#1800, still OPEN). In the commands below, each long Go test name is split with `.*`. That regex matches exactly one test, which the PASS line confirms. The rows were also run first with the literal authored `-run` anchors at 01:48Z, and all four exited 0 with the same PASS lines. The worktree was clean after both runs.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && GOWORK=off go test ./cmd/deskdispatch/ -run '^TestRepairAdmission.*DirectDispatch$' -v -count=1` | PASS | exit 0; named PASS line for TestRepairAdmission + DirectDispatch; log `admission OK (policy repair-admission-v1): rework admitted — reserved work fills its own reservation (2/3 slots occupied)`; `ok …/tools/desk/cmd/deskdispatch 0.202s`. The test asserts that fresh work at width 3, occupancy 2 and rework reserve 1 is refused with exit 5, that the hold names the waiting repair, and that the lease is released. It also asserts that the rework item is admitted with exactly one admission. Expect established. | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 2 | `cd tools/desk && GOWORK=off go test ./cmd/deskdispatch/ -run '^TestRepairAdmission.*ConcurrentAndCrash$' -v -count=1` | FAIL | exit 0; named PASS line for TestRepairAdmission + ConcurrentAndCrash; log `fresh admitted: 1 free slot(s) above the reserved floor (0)` and then `fresh admitted: 2 free slot(s) …` twice; `ok … 0.200s`. Expect not fully established. The race is two sequential calls against one in-memory fake lease. Only one crash boundary is exercised: after the lease and before the item claim. The test doc comment names a second boundary, after the item claim, and the body never exercises it. The TTL reclaim is simulated by clearing the fake lease field by hand. | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 3 | `cd tools/desk && GOWORK=off go test ./cmd/deskdispatch/ -run '^TestRepairAdmission.*UnknownAndExternalWait$' -v -count=1` | PASS | exit 0; named PASS line for TestRepairAdmission + UnknownAndExternalWait; `ok … 0.203s`. The test asserts these outcomes. Unreadable occupancy gives exit 6, no admission and a released lease. A waiting-external obligation in the real sidecar backend adds runnable rework demand 0. An item that matches no assignable obligation resolves to fresh, because the class is resolved from the sidecar and not from the caller. An assignable implementation obligation resolves to rework. Expect established. | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 4 | `cd tools/desk && GOWORK=off go test ./cmd/deskdispatch/ -run '^TestRepairAdmission.*FullCycleRestart$' -v -count=1` | FAIL | exit 0; named PASS line for TestRepairAdmission + FullCycleRestart; `ok … 0.218s`. Expect not fully established. The sidecar is re-read at four points: needs-assignment, claimed, merged and resolved. Three transitions (repair PR opened, awaiting merge, merged) are applied between two re-reads, so no restart follows the first two. Review and merge are obligation-record method calls and not a fake-forge observation, and no dispatcher process is killed. An independent pass resolves the obligation, and a same-actor pass does not. | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+
+All four commands exited 0 with their named PASS lines. Rows 1 and 3 establish their Expect. Rows 2 and 4 do not establish the clauses listed above: the test bodies do not exercise them, so those clauses could not be checked. That is a coverage gap, not observed misbehaviour. Supplementary check: `GOWORK=off go test ./internal/deskkit/ -run Admission -count=1` exited 0 (81 PASS lines with `-v`).
+
+**What changed since the 2026-10-11 record at 251e9473928e.** `git diff --stat 251e9473928e HEAD` is empty for both repairadmission.go files (deskkit and deskdispatch), the deskdispatch repairadmission test file, deskkit repairobligation.go and fanoutloop repair.go. In dispatch.go, no changed line mentions admission. enforceAdmission still runs before stepClaim (dispatch.go lines 377 and 382). fanoutloop still has no reference to EvaluateAdmission or enforceAdmission, so the Task 1 planner preview is still missing.
+
+**Findings.** All are already tracked, and none is new misbehaviour.
+1. The coverage gaps in rows 2 and 4 are #1922, which is OPEN (last activity 2026-10-13, with no re-authoring of the rows).
+2. The deliverable gaps are #1923, which is OPEN: the planner never calls EvaluateAdmission, rework reserve 0, no fake-forge fixture with dispatcher kills, and the occupancy undercount from the admission suffix.
+3. The duplicated lease-TTL literal is #1897, which is OPEN.
+4. The check:ci witness cannot run on darwin. That is #1800, which is OPEN.
+
+**Risk-bearing values: enumeration over the implementing diff scope** (deskkit repairadmission.go, deskdispatch repairadmission.go and the dispatch.go wiring). Each literal was re-read at bcc02252e52f.
+- EnvRepairAdmission = "ASSAY_REPAIR_ADMISSION" @ tools/desk/internal/deskkit/repairadmission.go:39
+- RepairAdmissionPolicyVersion = "repair-admission-v1" @ tools/desk/internal/deskkit/repairadmission.go:46
+- repairAdmissionOn = "on" @ tools/desk/internal/deskkit/repairadmission.go:51
+- pool-full hold `free <= 0` @ tools/desk/internal/deskkit/repairadmission.go:134
+- fresh-hold boundary `free <= floor` @ tools/desk/internal/deskkit/repairadmission.go:154
+- admissionLoop = "worker-desk" @ tools/desk/cmd/deskdispatch/repairadmission.go:60
+- repairObligationLeaseTTL = 45 * time.Minute @ tools/desk/cmd/deskdispatch/repairadmission.go:66
+- repairSidecarRel = docs/streams/repair-obligations.jsonl @ tools/desk/cmd/deskdispatch/repairadmission.go:71
+- lease-key suffix "--admission" @ tools/desk/cmd/deskdispatch/repairadmission.go:223 and :277
+
+Ranking: risk metadata is present with every field "no", and the gate is model. Every value is reversible. The gate ships off, and rollback means unsetting one env var or pinning the previous binary. The two hold boundaries and the lease TTL rank highest because they decide admission.
+
+RISK-VALUE: DERIVED — fresh-hold boundary `free <= floor` @ tools/desk/internal/deskkit/repairadmission.go:154 — the floor sums reserves only over classes with runnable demand. Admitting fresh work at free == floor would leave floor-1 free slots, below the reservation. Admitting only when free > floor leaves at least floor slots free, which is the no-steal condition.
+RISK-VALUE: DERIVED — pool-full hold `free <= 0` @ tools/desk/internal/deskkit/repairadmission.go:134 — free = width − occupancy. At or below 0, any admission of any class would push occupancy past the width ceiling.
+RISK-VALUE: DERIVED — repairObligationLeaseTTL = 45 * time.Minute @ tools/desk/cmd/deskdispatch/repairadmission.go:66 — it must equal the planner's repairLeaseTTL = 45 * time.Minute @ tools/desk/cmd/fanoutloop/repair.go:46, so that the gate and the planner agree on which obligations are assignable. The two are equal at this head. They are a duplicated literal and can drift apart (#1897).
+
+**VERIFY: FAIL** — 2/4 rows establish their Expect. Rows 2 and 4 exit 0 with named PASS lines, but their tests do not exercise the crash after the item claim (row 2), or a restart at every transition or a fake-forge observation (row 4). Admission source is byte-identical to 251e9473928e. The gaps are tracked in #1922 and #1923, both OPEN. Status stays implemented.
+
 ## Review
 
 Gate: model. Review the negative paths, migration compatibility and limits of enforcement. Any newly discovered need to alter authority is separate human-gated scope, not an implicit part of this brief.
