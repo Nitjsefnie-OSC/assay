@@ -548,6 +548,62 @@ VERIFY: BLOCKED — no row failed. Twelve check:ci rows have no execution witnes
 
 **The board row is not changed by this run and stays `implemented`.**
 
+### Non-implementer verifier run — VERIFY: BLOCKED — 2026-10-14 claude-opus-5-5 verifier
+
+Fifth verify pass, on merged main bcc02252e52ffe596d7b16f06df28e9e11e3806b, in a temporary detached worktree cut at that commit. The verifier did not implement this item. Toolchain: GNU bash 5.3.20, shellcheck 0.11.0, go1.27.2 darwin/arm64, git 2.56.0, statusgen v1.0.41.
+
+What moved since the last run (2026-10-11 @ 251e9473928e): scrubbed-cell.test.sh and house-cell.test.sh are byte-identical; the bash oracle changed in one comment block only (codex-arm CLAUDE_CONFIG_DIR wording). The Go launcher under tools/desk/cmd/cellctl changed through #2391 (Cobra and Viper migration), #2560, #2671, #2697, #2714, #2433 and #2783; docs/cellctl.md gained about 50 lines.
+
+How each row ran: each row separately, from the worktree root, with a fresh empty HOME per row, KUBECONFIG=/dev/null, GH_TOKEN, DESK_ROOTS and CELL_PATH unset, and a PATH holding only the system directories and the Homebrew bin (no installed desk tools, which keeps the suite off the installed deskwt, #2464). Row 11 built offline (GOPROXY=off, GOTOOLCHAIN=local, populated module cache, a scratch GOCACHE). Row 14 ran with statusgen on PATH. No row contacted a network endpoint or a model.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `shellcheck tools/cellctl/testdata/cellctl-shell-oracle.sh` | pass exit=0 | no output, no findings | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 2 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case check-pass` | pass exit=0 | 8 ok, 0 FAIL; last line reads scrubbed-cell.test.sh: OK | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 3 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case env-scrub` | pass exit=0 | 13 ok, 0 FAIL; the three env canaries are absent; last row reads that the composed PATH is exactly the 7 named elements, in order, with no canary dir. Clause (ii) values are asserted for only some keys (#2677) | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 4 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case plan-grammar` | pass exit=0 | 6 ok, 0 FAIL; last row reads that the plan env KEY set equals SCRUBBED_ENV_KEYS minus the inactive harness var | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 5 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case smoke-ready` | pass exit=0 | 8 ok, 0 FAIL; codex stub called with exec --ephemeral --sandbox read-only and claude stub with -p, each under the cell home | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 6 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case smoke-not-ready` | pass exit=0 | 4 ok, 0 FAIL | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 7 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case lock` | pass exit=0 | 6 ok, 0 FAIL; last row reads that after down, desk proceeds | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 8 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case check-pem` | pass exit=0 | 5 ok, 0 FAIL; last row reads that a regular 0600 PEM is ok | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 9 | `bash tools/cellctl/tests/house-cell.test.sh` | pass exit=0 | 54 ok, 0 FAIL; last line reads house-cell.test.sh: OK | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 10 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case check-roster` | pass exit=0 | 3 ok, 0 FAIL; last row reads that the exact slug is ok | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 11 | `d=$(mktemp -d); mkdir -p "$d/x"; printf 'CELL_KIND=scrubbed\nCELL_REPO=%s\nCELL_REPO_SLUG=example-org/example-repo\nCELL_HARNESS=codex\n' "$PWD" > "$d/x/cell.env"; b="$(mktemp -d)/cellctl"; (cd tools/desk && go build -o "$b" ./cmd/cellctl); CELLS_ROOT="$d" "$b" check x; test $? -eq 1` | pass exit=0 | Go build succeeds; check prints kind=scrubbed with no exit-3 refusal, lists MISS rows (roster, config home real directory, config home mode 0700, exact roster scope, harness login under the cell home) and ends with fix the MISS rows first | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 12 | `for k in HOME ZDOTDIR PATH TMPDIR KUBECONFIG ASSAY_CONFIG_HOME GH_CONFIG_DIR GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM GIT_TERMINAL_PROMPT CODEX_HOME CLAUDE_CONFIG_DIR DESK_LOOP DESK_SESSION DESK_ROOTS; do grep -qF "\| $k \|" docs/cellctl.md \|\| { echo "missing env row: $k"; exit 1; }; done` | pass exit=0 | run with the table's escaped pipes unescaped; no missing env row line printed | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 13 | `grep -c '^## Scrubbed cells' docs/cellctl.md` | pass exit=0 | prints 1 | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 14 | `statusgen --consumers --root . --base $(git merge-base origin/main HEAD)` | pass exit=0 | prints that the diff against bcc02252e52f has no brief files and there is nothing to corroborate. On merged main the merge-base equals HEAD, so this exit 0 corroborates nothing | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+| 15 | `bash tools/cellctl/tests/scrubbed-cell.test.sh --case check-home-mode` | pass exit=0 | 3 ok, 0 FAIL; last row reads that a 0700 config home is ok | 2026-10-14 | assay-verifier-app[bot] @ bcc02252e52f (on-behalf-of human:ian) (git-config) |
+
+Supporting runs (not Verify rows):
+- Network-off approximation. All twelve check:ci rows (1 to 10, 14, 15) were run again under the macOS sandbox-exec profile that denies outbound and inbound IP traffic. A curl canary under the same profile exits 7. Every one of the twelve exits 0. This is not the statusgen verifyrun witness that the check:ci class requires: verifyrun's sandbox is unshare --net, which darwin lacks (#1800), and this host has no running container engine for the in-container route.
+- Mutations, each in a scratch copy of the oracle outside the worktree, run through the suite's CELLCTL variable. The unmutated copy passes check-pem, check-home-mode and env-scrub. PEM mode 600 changed to 644 at oracle :1715 gives check-pem exit 1, 2 FAIL. Config home mode 700 changed to 755 at :1691 gives check-home-mode exit 1, 2 FAIL. A fifth element appended to the PATH tail at :2074 gives env-scrub exit 1, 1 FAIL. The launch's env -i replaced by env at :2152 gives env-scrub exit 1, 3 FAIL.
+- The Go launcher against the whole scrubbed suite (CELLCTL set to a fresh Go build, CELLCTL_DESKWT=0) still exits 1 with 76 ok and 2 FAIL, both in check-pass (#2465). Rows 2 to 10 and 15 exercise only the bash oracle.
+- Parent CELL_PATH. A scratch scrubbed cell with no CELL_PATH in its cell.env, then DRY_RUN=1 desk under env -i. With no CELL_PATH, both the oracle and a fresh Go build print the 7-element PATH. With CELL_PATH=/parent-canary-dir exported by the parent, both print shim, desk-tools bindir, harness dir and then /parent-canary-dir. This is still open as #2678.
+
+Findings. None of them changes the verdict below.
+1. Row 3 asserts less than its Expect (#2677, open).
+2. The Go launcher fails the check-pass case (#2465, open).
+3. The suite calls the installed deskwt when one is on PATH (#2464, open); this run kept it off PATH.
+4. A parent-exported CELL_PATH replaces the scrubbed PATH tail in both implementations (#2678, open).
+5. Context still lists changelog/desk-containers-09-scrubbed-cell.md as planned, and that fragment does not exist on main. The frontmatter sources still cite tools/cellctl/cellctl, which is gone from main (#1968, open).
+6. The composed allowlist carries CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION, a key that Context's interface list does not name. It is a fixed cell value, not a parent pass-through, and it is the same in both implementations (oracle :2019, Go env.go:22).
+
+Risk-bearing value. The brief's four risk answers are all no. Enumeration covered the literals named in Context and Task and the scrubbed code paths at this source: oracle check, compose and lock functions, and the Go check.go, new.go, env.go, envkeys.go, lock.go, cell.go and smoke.go. Since 251e9473928e no value in scope changed.
+- RISK-VALUE: DERIVED — pem-mode = 0o600 @ tools/desk/cmd/cellctl/check.go:457 (oracle :1715) — owner-only read and write is the narrowest mode that still lets the owning user's tools read an App private key; check fails closed on a wider mode or a symlink (row 8 and the 644 mutation).
+- RISK-VALUE: DERIVED — config-home-mode = 0o700 @ tools/desk/cmd/cellctl/check.go:417 (oracle :1691) — owner-only list and traverse on the directory holding the keys is the minimum the owner needs to use it, and keeps key names and mtimes from other users (row 15 and the 755 mutation).
+- RISK-VALUE: DERIVED — scrubbedPathTail = "/usr/bin:/bin:/usr/sbin:/sbin" @ tools/desk/cmd/cellctl/envkeys.go:89 (oracle :2074) — the four standard system directories, with no parent PATH inherited (row 3 and the tail mutation). Its override from the launching process is #2678.
+- Unchanged and not derived further, because they are reversible or fixed by the brief's text: the 19-key env allowlist (env.go:19-23, oracle :2019), lock refusal exit 4 (lock.go:28), unknown-kind exit 3 (cell.go:533) and the smoke prompt (smoke.go:47).
+
+Not checked: the Definition of Done neighbour suites (harness.test.sh, container-cell.test.sh, cockpit.test.sh), which are not Verify rows; row 14 against a non-empty diff.
+
+Verification-Attestation: medici-finance/assay#2844 run=538f97cbccbf866b0f86b8146d214ee3fc749a6d45269e9c1a576bf9b0898190 source=bcc02252e52ffe596d7b16f06df28e9e11e3806b brief=docs/streams/desk-containers/brief-09-scrubbed-host-cell.md model=claude-opus-5-5 tier=strong
+
+rows_passed=15 rows_total=15 by hand, 0 failed. Rows 11, 12 and 13 are check rows. The twelve check:ci rows have no network-off verifyrun witness on this darwin host (#1800).
+
+**VERIFY: BLOCKED** — no row failed. All 15 rows exit 0 by hand at bcc02252e52f. The twelve check:ci rows still need the network-off execution witness, which this host cannot produce (#1800). Open findings: #2677, #2465, #2678, #1968 and the missing changelog fragment.
+
+**The board row is not changed by this run and stays `implemented`.**
+
 
 ## Review
 Gate: model (all four risk answers no — a new cell kind plus three verbs on a host launcher;
