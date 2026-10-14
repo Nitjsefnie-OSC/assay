@@ -399,12 +399,18 @@ func runGoldenCase(t *testing.T, bin string, c goldenCase) []cliRun {
 // A line the old binary refused and the new one runs has output of its own, so such an entry
 // names fragments instead: stdoutHas replaces the stdout-must-match rule, and stderrHas replaces
 // the exact-stderr rule (the roster echo is in it, and is world-specific).
+//
+// stdoutReplace returns old/new PAIRS (any even count), applied in order to the old stdout;
+// stderrAppend is text the new binary prints after the whole old stderr.
 type deliberateDiff struct {
-	code      int
-	stderr    string
-	why       string
-	stdoutHas []string
-	stderrHas []string
+	code          int
+	stderrReplace []string
+	stderrAppend  string
+	stdoutReplace func() []string
+	stderr        string
+	why           string
+	stdoutHas     []string
+	stderrHas     []string
 }
 
 const (
@@ -415,6 +421,22 @@ const (
 	echoFragment  = "assay-config:"
 )
 
+const whyNoDeskdPane = "#2881: a house cell with no deskd opens no placeholder 'cell' window; the one-line note goes to up's stderr"
+
+func noDeskdNote(cell string) string {
+	return "[cell] " + cell + " is a house cell with no deskd (DESKD=1 in cell.env to stand one)\n"
+}
+
+// noDeskdPane is the dry-run line the pre-migration binary printed for the placeholder window.
+func noDeskdPane(cell string) string {
+	return "[dry-run] cell: echo '" + strings.TrimSuffix(noDeskdNote(cell), "\n") + "'\n"
+}
+
+func noDeskdDiff(cell string) deliberateDiff {
+	return deliberateDiff{code: 0, stdoutReplace: func() []string { return []string{noDeskdPane(cell), ""} },
+		stderrAppend: noDeskdNote(cell), why: whyNoDeskdPane}
+}
+
 func unknownCmd(name string) string {
 	return shapeErr("unknown command \"" + name + "\" for \"cellctl\"")
 }
@@ -422,6 +444,40 @@ func unknownCmd(name string) string {
 func shapeErr(msg string) string { return "cellctl: " + msg + "\nRun 'cellctl --help' for usage.\n" }
 
 var deliberateDiffs = map[string]deliberateDiff{
+	// #2696 deliberately replaces the implicit Codex cadence and adds native
+	// admission. Retain the original transcript and compare all other bytes.
+	"desk-house/8": {code: 0, stdoutReplace: func() []string {
+		return []string{"[cadence] interval=5m0s budget=20m0s owner=cellctl (planned; not armed)\n", ""}
+	}, stderrReplace: []string{"", ""}, why: "#2696: Codex desks default to interactive native Goals"},
+	"desk-policy/4": {code: 0, stdoutReplace: func() []string {
+		return []string{"[cadence] interval=5m0s budget=20m0s owner=cellctl (planned; not armed)\n", ""}
+	}, stderrReplace: []string{"", ""}, why: "#2696: Codex desks default to interactive native Goals"},
+	"desk-set-round-trip/3": {code: 0, stdoutReplace: func() []string {
+		return []string{"[cadence] interval=5m0s budget=20m0s owner=cellctl (planned; not armed)\n", ""}
+	}, stderrReplace: []string{"", ""}, why: "#2696: dry-run persistence retains the interactive default"},
+	"up/4": {code: 0, stdoutReplace: func() []string {
+		return []string{" --cadence '5m0s' --tick-budget '20m0s'", "", noDeskdPane("example"), ""}
+	}, stderrAppend: noDeskdNote("example"), why: "#2696: up commands retain the interactive default; " + whyNoDeskdPane},
+
+	// #2881: a house cell with no deskd opens only its role windows; the note moves to stderr.
+	"up/0":              noDeskdDiff("example"),
+	"up/1":              noDeskdDiff("example"),
+	"up/2":              noDeskdDiff("example"),
+	"up/3":              noDeskdDiff("example"),
+	"kind-whole-line/1": noDeskdDiff("example"),
+	"kind-whole-line/9": noDeskdDiff("scrub"),
+	"desk-scrubbed/2": {code: 0, stdoutReplace: func() []string {
+		return []string{bashQuote(`Invoke the "assay:worker-desk" skill now.`), bashQuote(codexStandingPrompt("worker-desk", `Invoke the "assay:worker-desk" skill now.`))}
+	}, stderrReplace: []string{"", ""}, why: "#2696: scrubbed Codex argv carries the qualified native bootstrap"},
+
+	// Maintenance adds wipe to cache diagnostics; all other transcript bytes stay identical.
+	"cache-enabled/0": {code: 3, why: "cache wipe is now supported", stderrReplace: []string{"status|clean|recover", "status|clean|wipe|recover"}},
+	"cache-enabled/1": {code: 3, why: "cache wipe is now supported", stderrReplace: []string{"status|clean|recover", "status|clean|wipe|recover"}},
+	"cache-enabled/2": {code: 3, why: "cache wipe is now supported", stderrReplace: []string{"status|clean|recover", "status|clean|wipe|recover"}},
+	// #2879 records the compiler-cache trim age in the policy and the trimmed
+	// entries and bytes in every report; all other transcript bytes stay identical.
+	"cache-enabled/3": {code: 6, stdoutReplace: cacheTrimFields, stderrReplace: []string{"", ""}, why: "#2879: reports carry the build trim age and trimmed bytes"},
+	"cache-enabled/4": {code: 0, stdoutReplace: cacheTrimFields, stderrReplace: []string{"", ""}, why: "#2879: reports carry the build trim age and trimmed bytes"},
 	"version-flag/0":  {code: 0, stderr: "", why: whyNoEcho},
 	"version-verb/0":  {code: 0, stderr: "", why: whyNoEcho},
 	"unknown-verb/0":  {code: 3, stderr: "cellctl: unknown command \"frobnicate\" for \"cellctl\"\nRun 'cellctl --help' for usage.\n", why: whyParseText},
@@ -474,12 +530,28 @@ var deliberateDiffs = map[string]deliberateDiff{
 	"cells-root-spellings/4": {code: 2, stderr: unknownCmd("-cells-root"), why: whyParseText + "; " + whyHookBlocks},
 }
 
+// cacheTrimFields is the #2879 report change, as old/new replacement pairs.
+func cacheTrimFields() []string {
+	return []string{
+		`"minimum_free_bytes":10737418240}`, `"minimum_free_bytes":10737418240,"build_max_age_seconds":86400}`,
+		`"reclaimed_logical_bytes":0,`, `"reclaimed_logical_bytes":0,"trimmed_build_entries":0,"trimmed_build_bytes":0,`,
+	}
+}
+
 // diffHolds reports whether a listed difference still has exactly the recorded new shape.
 func diffHolds(d deliberateDiff, got, old cliRun) bool {
 	if got.Code != d.code {
 		return false
 	}
-	if d.stdoutHas == nil {
+	if d.stdoutReplace != nil {
+		pairs, want := d.stdoutReplace(), old.Stdout
+		for i := 0; i+1 < len(pairs); i += 2 {
+			want = strings.ReplaceAll(want, pairs[i], pairs[i+1])
+		}
+		if got.Stdout != want {
+			return false
+		}
+	} else if d.stdoutHas == nil {
 		if got.Stdout != old.Stdout {
 			return false
 		}
@@ -489,6 +561,13 @@ func diffHolds(d deliberateDiff, got, old cliRun) bool {
 				return false
 			}
 		}
+	}
+	if d.stderrReplace != nil || d.stderrAppend != "" {
+		want := old.Stderr
+		if d.stderrReplace != nil {
+			want = strings.ReplaceAll(want, d.stderrReplace[0], d.stderrReplace[1])
+		}
+		return got.Stderr == want+d.stderrAppend
 	}
 	if d.stderrHas == nil {
 		return got.Stderr == d.stderr
@@ -501,6 +580,7 @@ func diffHolds(d deliberateDiff, got, old cliRun) bool {
 	return true
 }
 
+// regression: #2696
 func TestCLINonHelpParity(t *testing.T) {
 	cases := goldenCases()
 	if rec := os.Getenv("CELLCTL_GOLDEN_RECORD"); rec != "" {

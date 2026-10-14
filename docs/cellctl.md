@@ -100,6 +100,37 @@ and `CLAUDE_CONFIG_DIR`; every desk verb it invokes resolves the cell's roster a
 The split is exact: identity for the tools that write, the operator's own environment for the harness
 that hosts them.
 
+For Codex command subprocesses, `cellctl` composes the cell `HOME`, `USERPROFILE`
+and `ASSAY_CONFIG_HOME` directly. It first records the independently resolved
+operator config path in `CELLCTL_OPERATOR_CONFIG_HOME`; nested launches preserve
+that context. This is automatic launch metadata, not a replacement for the
+active roster override. Existing config aliases are resolved before composition;
+missing inputs remain missing and fail preflight. Operator Claude configuration,
+including an explicit positional override, is preserved for policy rechecks.
+When the composing environment is already cell-scoped, nothing is recorded:
+the context stays unset and the house check refuses, rather than accepting
+whatever the cell link points at. A config candidate is cell-scoped when the
+path, taken as written and resolved one element at a time as the OS resolves
+it, passes through a cell's config link (whatever the stored spelling of each
+link: absolute, relative, a trailing separator or dot element; and a parent
+element after a link applies to the resolved path, whether it sits in the path
+itself or in a link's stored target) or lies inside a cell home,
+including one that does not exist yet. "A cell" is this cell or any sibling
+under the same cells root. A path that cannot be resolved to the end (too many
+links, an unreadable element) counts as cell-scoped. The house check applies the
+same test to its expected target, so a config override that is an alias of the
+cell link is refused even when the link points at the right place: the link
+compared with itself establishes nothing.
+
+Only `cellctl` consumes this context: the operator-config resolver serves the
+common operator-directory check, the house config-link check, and configuration
+paths used by `new`/`new --kind house`; Codex composition carries it onward.
+Desk tools still read the cell's `ASSAY_CONFIG_HOME`. The house check requires the
+link, the active config and the independent operator target to agree; comparing
+the same named symlink to itself cannot establish that identity. Relative config
+links and distinct aliases of the same resource remain valid. Scrubbed and
+container launch paths keep their separate config contracts.
+
 The shims are regenerated on every `cellctl desk`, so installing a new desk-tools release picks up
 automatically.
 
@@ -589,7 +620,12 @@ cellctl up <cell> [--no-the-desk] [--no-attach] [--cockpit auto|tmux|herdr|orca]
 
 One window per role in `ROLES`, plus a `deskd` window (watching `/healthz` if it is already up,
 otherwise standing it — see *How far the attended affirmation carries* above), in whichever
-**cockpit** resolves for this run — see *Cockpits* below. On the default tmux cockpit that is a
+**cockpit** resolves for this run — see *Cockpits* below. A cell with no deskd (a house cell
+without `DESKD=1`) has no `deskd` window and no placeholder in its place: `up` opens only the role
+windows (plus the comms window when comms is configured), the comms window or else the first role
+window creates the tmux session, and the one-line "no deskd" note is printed once on `up`'s stderr.
+When there is nothing at all to open (no deskd, no comms, and no role after `--no-the-desk`), `up`
+says so on stderr, creates no session, and exits 0. On the default tmux cockpit that is a
 session named `<cell>-cell`, and `up` attaches unless you pass `--no-attach`; re-attach later with
 `tmux attach -t <cell>-cell`. Windows start two seconds apart in every cockpit, so they do not all
 arrive at the fetch lock together.
@@ -601,8 +637,14 @@ cockpit's `cellctl desk <cell> <role>` invocation itself that carries `--model`,
 actually boots resolves the same override the plan named. `--provider <name>` threads onto every
 role window the same way, for the same reason — see *Providers* below.
 
-`DRY_RUN=1 cellctl up <cell>` prints the resolved cockpit and the per-role commands and launches
-nothing. `--harness <h>` overrides `CELL_HARNESS` for **every** role window this run opens (the-desk
+`cellctl up <cell> --dry-run` (or `DRY_RUN=1 cellctl up <cell>`) prints the resolved cockpit and
+the per-role commands and launches nothing. On a house cell, `up` first runs a **reconcile
+preflight**. Stale role and comms checkpoints left by hand-closed or crashed windows, and
+orphaned processes carrying the cell's marker, are inventoried by pid and start time. On a
+terminal you are asked once before they are cleared. Otherwise the refusal prints the whole
+inventory and the exact recovery commands. A dry run prints the inventory and plan and changes
+nothing. `cellctl desk <cell> <role>` runs the same preflight for its one role. See
+[Reconcile preflight](cellctl-cadence.md#reconcile-preflight). `--harness <h>` overrides `CELL_HARNESS` for **every** role window this run opens (the-desk
 included — there is no per-role `--harness-<role>` form) by threading `--harness <h>` onto each
 role's own `cellctl desk <cell> <role>` invocation; `[dry-run] harness=<h> — applied to every role
 window below` announces it once. See *Harnesses* below.
@@ -725,8 +767,8 @@ seconds, 5 by default) once per window, dry runs included.
 
 | Cockpit | What `up` opens |
 |---|---|
-| **tmux** | a session `<cell>-cell`: the `deskd`/`cell` window plus one window per role. Unchanged |
-| **herdr** | one **labelled tab per window**, `<cell>-<role>`, each fed the same `cellctl desk <cell> <role>` command every other cockpit runs (via `herdr pane run`, into a pane the tab's own `tab create` cut). The first (`deskd`/`cell`) window is a tab too. If herdr has no window (a "workspace" in herdr's own grammar) open yet, `up` starts one first — the same trigger point and create-if-absent shape as tmux's `<cell>-cell` session — before any tab lands; an already-open window is unchanged |
+| **tmux** | a session `<cell>-cell`: the `deskd` window (only when the cell has one, i.e. `DESKD=1` on a house cell), the comms window when comms is configured, then one window per role. Whichever window comes first creates the session; a cell with no deskd gets no placeholder window |
+| **herdr** | one **labelled tab per window**, `<cell>-<role>`, each fed the same `cellctl desk <cell> <role>` command every other cockpit runs (via `herdr pane run`, into a pane the tab's own `tab create` cut). The `deskd` window is a tab too when the cell has one (`DESKD=1` on a house cell); a cell with no deskd gets no placeholder tab. If herdr has no window (a "workspace" in herdr's own grammar) open yet, `up` starts one first — the same trigger point and create-if-absent shape as tmux's `<cell>-cell` session — before any tab lands; an already-open window is unchanged |
 | **orca** | one **terminal per role** under the cell directory (registered with Orca via `orca repo add` first — Orca 404s an unregistered path), running the same `cellctl desk` command; or, with `--automate`, one scheduled automation per role instead |
 
 ### The `--automate` recipe (orca only)
@@ -1044,8 +1086,12 @@ codex --sandbox danger-full-access -C <worktree> -m <model> "Invoke the \"assay:
 ```
 
 The same exported env the claude arm gets — `DESK_LOOP`, `DESK_SESSION`, `DESK_ROOTS` (when
-`cell.env` carries `CELL_ROOTS`), and `shim/` first on `PATH`. `CLAUDE_CONFIG_DIR` is irrelevant on
-this arm and is not passed; the model comes from the **codex namespace** — `CODEX_MODEL_<role>` /
+`cell.env` carries `CELL_ROOTS`), and `shim/` first on `PATH`. `cellctl` sets no
+`CLAUDE_CONFIG_DIR` on the Codex process itself (one the launching shell exports is inherited
+unchanged); the command environment `cellctl` composes for its subprocesses carries the
+resolved Claude config directory (a positional override when one is given, otherwise the operator's,
+resolved before `HOME` changes), so a policy recheck that routes through Claude reads that
+configuration. The model comes from the **codex namespace** — `CODEX_MODEL_<role>` /
 `CODEX_MODEL_default`, falling back to the tier map — never the claude arm's `DESK_MODEL_<role>` /
 `DESK_MODEL_DEFAULT` (`#986`: the two were conflated before this, which is why a Claude-only pin
 used to reach `codex -m` unchanged and fail there). See *Per-harness namespaces and the tier-map
@@ -1397,7 +1443,7 @@ processes are not configuration.
 | `DRY_RUN`, `CELL_ATTENDED`, `DESK_MODEL_OVERRIDE` | switches for one run: a dry run, the statement that a person is at this command, and a model that outranks every pin — give them in the environment of the command they are for |
 | `ASSAY_CONFIG_HOME`, `XDG_CONFIG_HOME`, `GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` | locate the operator's own config homes — where the desk tools, the GitHub CLI and the harnesses find their credentials |
 | `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `PATH`, `TERM`, `LANG` | the host's own variables, taken from the launching shell (`DESK_TOOLS_BIN` and `CELL_PATH` are the levers for the parts of `PATH` cellctl composes) |
-| `CELL_KIND_OVERRIDE_INTERNAL`, `ASSAY_SCRATCH_ID`, `DESK_SESSION`, `CELLCTL_PARITY_MUTATE` | not configuration: set by cellctl for a process it starts and read back there, or a test hook |
+| `CELL_KIND_OVERRIDE_INTERNAL`, `ASSAY_SCRATCH_ID`, `DESK_SESSION`, `CELLCTL_PARITY_MUTATE`, `CELLCTL_OPERATOR_CONFIG_HOME` | not configuration: set by cellctl for a process it starts and read back there, or a test hook |
 
 Typical uses of the file are `CELL_GO_CACHE` and its `_BYTES` / `_MIN_FREE` budget,
 `CELL_COCKPIT`, `CELL_HARNESS`, and the model keys (`DESK_MODEL_DEFAULT`, the `TIER_MODEL_*`
@@ -1801,11 +1847,12 @@ cells, whose launch is delegated to the operator's own launcher.
 
 ## Host desk cadence
 
-Codex house desks default to repeated bounded passes owned by Go cellctl, with a
-five-minute interval and 20-minute pass budget. `--cadence off` selects interactive
-mode; explicit intervals and budgets override the defaults. Other harnesses retain
-their existing defaults; Orca/Cursor can opt in with `--cadence`. See [Host desk cadence](cellctl-cadence.md) for setup, status,
-stop/recovery and process-lifetime limits.
+Codex desks default to interactive sessions whose bootstrap establishes and reads back
+a native standing Goal before invoking the role. Existing Goals and user pause/clear
+authority are preserved. Explicit `--cadence <duration>` selects repeated bounded
+headless passes; `--cadence off` explicitly selects interactive mode. Claude and Cursor
+retain their existing behavior. See [Host desk cadence](cellctl-cadence.md) for Goal
+admission, container-image limits, cadence setup, status and stop/recovery.
 
 ### Configured comms startup
 
