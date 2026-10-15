@@ -6,7 +6,7 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
-// regression: #PRNUM — deskkit restates the marker names (cellstop imports
+// regression: #2971 — deskkit restates the marker names (cellstop imports
 // deskkit, so it cannot import these); the cell-scoped stop flags read them, so a rename
 // here that deskkit missed would silently leave every cell flag unread.
 func TestCellMarkerNamesMatchDeskkit(t *testing.T) {

@@ -59,7 +59,7 @@ func runStopSnippet(t *testing.T, snippet, home, cell, loop string) string {
 	return string(out)
 }
 
-// regression: #PRNUM
+// regression: #2971
 func TestSkillStopSnippetGuardBypassed(t *testing.T) {
 	for _, skill := range stopSnippetSkills {
 		t.Run(skill, func(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
-// regression: #PRNUM — a cell-scoped stop flag shows on the board banner, and one that
+// regression: #2971 — a cell-scoped stop flag shows on the board banner, and one that
 // halts nothing (here: a cell with no registration under the cells root) is tagged INERT
 // rather than listed as if it were armed.
 func TestBannerShowsCellStopFlags(t *testing.T) {

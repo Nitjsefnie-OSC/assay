@@ -16,7 +16,7 @@ func cellSession(t *testing.T, cell, loop string) {
 	t.Setenv(loopEnv, loop)
 }
 
-// regression: #PRNUM
+// regression: #2971
 func TestGuardCellStop(t *testing.T) {
 	t.Run("STOP.cell.<cell> stops every loop of the marked cell", func(t *testing.T) {
 		for _, loop := range []string{"worker-desk", "pr-review-desk", "verify-desk", "intake-desk", "the-desk"} {
@@ -116,7 +116,7 @@ func TestGuardCellStop(t *testing.T) {
 	})
 }
 
-// regression: #PRNUM
+// regression: #2971
 func TestGuardCellStopNeverClears(t *testing.T) {
 	t.Run("STOP still stops a session whose marker names another cell", func(t *testing.T) {
 		dir := setup(t)
@@ -160,7 +160,7 @@ func TestGuardCellStopNeverClears(t *testing.T) {
 	})
 }
 
-// regression: #PRNUM
+// regression: #2971
 func TestCellNameRejectsTraversal(t *testing.T) {
 	for _, bad := range []string{"../x", "a/b", "A", "a.b", "a_b", ".."} {
 		t.Run(bad, func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestCellNameRejectsTraversal(t *testing.T) {
 	}
 }
 
-// regression: #PRNUM
+// regression: #2971
 func TestActiveStopFlagsCellInert(t *testing.T) {
 	dir := setup(t)
 	root := t.TempDir()
