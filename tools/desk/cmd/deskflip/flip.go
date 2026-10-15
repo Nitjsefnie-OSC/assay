@@ -180,6 +180,11 @@ func flip(o flipOpts) error {
 			"condition %s: %v", condReviewerApproved, rerr), nil)
 	}
 	reviewerLogin, _ := deskkit.RoleAppLogin(reviewerRole)
+	// The roster's SHAPE decides which correctness lane runs, once per flip, so the
+	// pre-mutation re-check below runs the same lane: a reviewer App distinct from the worker
+	// App (full suite) is the unchanged App-APPROVED gate; one App bound to both (the Read +
+	// Act tier, #3062) also accepts a trusted human's APPROVED at head (see readact.go).
+	sharedApp := sharedReviewerApp(reviewerLogin)
 	fr, ferr := forgeRepoOf(repo)
 	if ferr != nil {
 		return ferr
@@ -300,10 +305,11 @@ func flip(o flipOpts) error {
 		if err != nil {
 			return err
 		}
-		if err := checkReviewerApproved(reviewerLogin, reviews, head, liveBodyRead{Body: pr.Body, EditedAt: bodyEditedAt}, o.pr, runsAtHead); err != nil {
+		approver, err := checkCorrectnessGate(sharedApp, reviewerLogin, pr.AuthorLogin, reviews, head, liveBodyRead{Body: pr.Body, EditedAt: bodyEditedAt}, o.pr, runsAtHead)
+		if err != nil {
 			return err
 		}
-		o.say("%s OK: %s APPROVED at %s", condReviewerApproved, reviewerLogin, short(head))
+		o.say("%s OK: %s APPROVED at %s", condReviewerApproved, deskkit.StripControl(approver), short(head))
 	} else {
 		if err := checkMergeHoldApproved(hold, fg, fr, reviewerLogin, o.pr, head); err != nil {
 			return err
@@ -463,7 +469,7 @@ func flip(o flipOpts) error {
 		// body2 is the body as re-read here, not the first read's: the body-edit exemption
 		// binds the reviewer's documented re-read to the LIVE body, and a body edited between
 		// the two reads is exactly the change that re-read must see.
-		if err := checkReviewerApproved(reviewerLogin, reviews2, head, liveBodyRead{Body: body2, EditedAt: bodyEditedAt}, o.pr, runsAtHead); err != nil {
+		if _, err := checkCorrectnessGate(sharedApp, reviewerLogin, pr.AuthorLogin, reviews2, head, liveBodyRead{Body: body2, EditedAt: bodyEditedAt}, o.pr, runsAtHead); err != nil {
 			return err
 		}
 	} else {
@@ -794,18 +800,7 @@ func checkReviewerApproved(reviewerLogin string, reviews []reviewInfo, head stri
 	}
 
 	// Rule 1: build the CORRECTNESS lane only.
-	lane := make([]deskkit.AppReview, 0, len(reviews))
-	for _, r := range reviews {
-		if hasSecurityMarker(r.Body) {
-			continue
-		}
-		lane = append(lane, deskkit.AppReview{
-			AuthorLogin: r.User.Login,
-			State:       r.State,
-			CommitID:    r.CommitID,
-			SubmittedAt: r.SubmittedAt,
-		})
-	}
+	lane := correctnessLane(reviews)
 	switch deskkit.ReduceAppVerdict(reviewerLogin, lane, head) {
 	case deskkit.AppVerdictApproved:
 		return nil

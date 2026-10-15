@@ -192,6 +192,24 @@
       "file": "cmd/deskflip/flip.go",
       "old": "\tif err := checkDeskDecided(o, pr2, reviews2, reviewerLogin, head); err != nil {",
       "new": "\tif err := checkDeskDecided(o, pr2, reviews2, reviewerLogin, head); false && err != nil {"
+    },
+    {
+      "name": "Read + Act tier (#3062): drop the accountable-human check (any non-App APPROVED at head satisfies the gate — reddens TestReviewerApprovedByTier's untrusted, shared-login and other-App cases)",
+      "file": "cmd/deskflip/readact.go",
+      "old": "\t\tif !deskkit.TrustedHumanAuthor(login) || deskkit.SameActor(login, author) {",
+      "new": "\t\tif false && !deskkit.TrustedHumanAuthor(login) || deskkit.SameActor(login, author) {"
+    },
+    {
+      "name": "Read + Act tier (#3062): read every roster as the shared-App shape (a human APPROVED substitutes for the reviewer App on the full suite — reddens TestReviewerApprovedByTier's full-suite human-only case)",
+      "file": "cmd/deskflip/readact.go",
+      "old": "\treturn deskkit.SameActor(worker, reviewerLogin)\n}",
+      "new": "\treturn true || deskkit.SameActor(worker, reviewerLogin)\n}"
+    },
+    {
+      "name": "Read + Act tier (#3062): accept a stale human APPROVED (reddens TestReviewerApprovedByTier's older-head case)",
+      "file": "cmd/deskflip/readact.go",
+      "old": "\tif approvedBy != \"\" {\n\t\treturn approvedBy, nil",
+      "new": "\tif approvedBy != \"\" || staleLogin != \"\" {\n\t\treturn approvedBy, nil"
     }
   ]
 }

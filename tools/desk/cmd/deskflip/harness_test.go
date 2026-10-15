@@ -70,6 +70,10 @@ type stub struct {
 	pr     prFixture
 	rollup []rollupEntry
 
+	// prAuthor is the change's author login; empty serves the default worker App rendering
+	// ("worker[bot]"). The Read + Act tier tests (readact_test.go) set it to the shared App.
+	prAuthor string
+
 	reviews []reviewInfo
 	// reviewsAfterFirstRead, when non-nil, is what EVERY read of the reviews endpoint after
 	// the first returns. It models the race the pre-mutation re-read exists to close: a
@@ -321,7 +325,7 @@ func (s *stub) servedPR() map[string]any {
 	out := map[string]any{
 		"number": s.pr.Number, "state": strings.ToLower(s.pr.State), "draft": s.pr.IsDraft,
 		"node_id": s.pr.NodeID, "changed_files": s.pr.ChangedFiles, "body": body,
-		"user":   map[string]any{"login": "worker[bot]", "id": 99},
+		"user":   map[string]any{"login": s.servedAuthor(), "id": 99},
 		"head":   map[string]any{"sha": head, "ref": "feat/x"},
 		"base":   map[string]any{"ref": "main"},
 		"labels": labels,
@@ -335,6 +339,15 @@ func (s *stub) servedPR() map[string]any {
 		out["mergeable"] = nil // GitHub's "not computed yet"
 	}
 	return out
+}
+
+// servedAuthor is the change author the stub serves: prAuthor when a case set one, else the
+// default worker App rendering every pre-existing case was written against.
+func (s *stub) servedAuthor() string {
+	if s.prAuthor != "" {
+		return s.prAuthor
+	}
+	return "worker[bot]"
 }
 
 func servedReviews(in []reviewInfo) []map[string]any {
