@@ -70,7 +70,26 @@ func (c *Cell) codexCommandEnvironment(env []string) (map[string]string, error) 
 			}
 		}
 	}
+	// The telemetry opt-in is ONE explicit key with its own normalization (exact "1" on, any
+	// other configured value "0", unset stays absent), resolved cell over defaults over the
+	// launching environment — never a blind copy of whatever the parent carried.
+	if v := c.codexTelemetryValue(env); v != "" {
+		values[envAssayTelemetry] = v
+	}
 	return values, nil
+}
+
+// codexTelemetryValue is the configured opt-in, else the one the launch environment carries.
+func (c *Cell) codexTelemetryValue(env []string) string {
+	if v := c.telemetryValue(); v != "" {
+		return v
+	}
+	for _, kv := range env {
+		if k, value, ok := strings.Cut(kv, "="); ok && strings.EqualFold(k, envAssayTelemetry) {
+			return normalizeTelemetry(value)
+		}
+	}
+	return ""
 }
 
 func (c *Cell) codexEnvironmentArgs(env []string) ([]string, error) {

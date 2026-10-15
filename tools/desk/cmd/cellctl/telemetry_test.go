@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -167,7 +166,6 @@ func TestTelemetryScrubbedAddsOnlyKey(t *testing.T) {
 			t.Fatalf("parent credential reached the scrubbed env: %s", kv)
 		}
 	}
-	_ = filepath.Separator
 }
 
 // mergeEnv overlays b onto a copy of a (b's keys win, keeping b's layer).

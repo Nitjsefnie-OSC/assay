@@ -186,6 +186,8 @@ func buildEnvKeys() []envKey {
 
 		envKey{key: "ASSAY_REPAIR_ADMISSION", class: envMachine, group: envGroupPolicy, def: "off",
 			desc: "Dispatch-boundary repair-admission gate for the desks a cell launches: on or off."},
+		envKey{key: envAssayTelemetry, class: envMachine, group: envGroupPolicy,
+			desc: "Desk-tool telemetry opt-in for the desks a cell launches: only the exact value 1 turns it on; 0 (or any other value) is an explicit off; unset stays off. House, Codex and scrubbed launches carry it; container and operator-owned launchers do not."},
 
 		// ── per-cell: refused in defaults.env ────────────────────────────────────────────────
 		envKey{key: "CELL", class: envCell, desc: "The cell's name (default: its directory name).",

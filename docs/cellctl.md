@@ -368,6 +368,7 @@ live launch all trace back to; the shell oracle's `SCRUBBED_ENV_KEYS` declares t
 | DESK_ROOTS | `CELL_ROOTS`, when `cell.env` carries one |
 | TERM | passed through from the parent — a TUI harness needs it |
 | LANG | passed through from the parent |
+| ASSAY_TELEMETRY | `1` or `0`, only when a layer configures it (`cell.env`, then `defaults.env`, then the launching shell) — exactly `1` opts the desk's tools in, any other configured value is an explicit off, unset stays absent. Never the parent environment wholesale |
 
 `CODEX_HOME` and `CLAUDE_CONFIG_DIR` are mutually exclusive — only the active harness's variable
 is ever exported. No `SSH_AUTH_SOCK`, no `GH_TOKEN`, no `ANTHROPIC_*`, no `AWS_*`, and no
@@ -1407,7 +1408,8 @@ still overrides all four for that run, as before.
   command's environment*, still needs `--force` or a hand edit of that `cell.env`.
 - **It applies to every cell kind.** A scrubbed or container launch still composes its child
   environment from its own fixed list of variables, so a key in this file reaches such a child
-  only where the same key in the shell already did; and host model policy
+  only where the same key in the shell already did — the one exception is `ASSAY_TELEMETRY`,
+  which the house, Codex and scrubbed launches carry from any layer (see *Telemetry opt-in*); and host model policy
   (`CELL_PROVIDER_DEFAULTS`, `CELL_MODEL_POLICY`, `CELL_ROLE_CONTEXT`) stays refused on those
   kinds whichever layer names it.
 - **The file is as trusted as the cells root is.** It configures every cell under the root, so
@@ -1914,3 +1916,26 @@ gateway/drain supervisor in its own cockpit surface; absent or disabled config
 keeps desk-only startup. `cellctl down` stops the supervisor before closing its
 owned surface and preserves mailbox data. See [host desk communications](cellctl-comms.md)
 for configuration, quoting, recovery and cockpit requirements.
+
+## Telemetry opt-in
+
+`ASSAY_TELEMETRY` is the one switch the desk tools' local perf history reads
+([telemetry](telemetry.md)); it enables only on the exact value `1`. A launched desk's environment
+is composed from an allowlist, so `cellctl` carries this single key explicitly — never the
+launching shell's whole environment — and resolves it the way every other lever resolves:
+`cell.env` over `defaults.env` over the launching shell.
+
+| Configured value | The launched desk's tools see |
+|---|---|
+| `1` | `ASSAY_TELEMETRY=1` |
+| `0`, empty, or any other value (`true`, `yes`, ` 1`) | `ASSAY_TELEMETRY=0` — an explicit off, which also overrides a launching shell that exported `1` |
+| not configured anywhere | the key is absent — the desk is byte-identical to one launched before this key existed |
+
+Launch profiles: **house** (Claude and cursor harnesses) sets it on the harness environment;
+**Codex** also sets it as a `shell_environment_policy.set` override, so the command subprocesses
+carry it (the value is not a credential; nothing else is copied from the parent); **scrubbed**
+composes it into the allowlisted `env -i` environment (the `ASSAY_TELEMETRY` row above). **Not
+carried:** container cells and operator-owned launchers (`CELL_CONTAINER_LAUNCHER` and the
+`celllaunch` runner contract) compose their own environment, so a desk
+launched through one has telemetry off regardless of this key — set it in that launcher's own
+environment if you want it there.

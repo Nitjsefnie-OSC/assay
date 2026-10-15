@@ -145,6 +145,10 @@ func (c *Cell) deskLaunch(role, harness, model, modelDisp, session, wt, cfg, pro
 	if rav := c.repairAdmissionValue(); rav != "" {
 		env = envSet(env, deskkit.EnvRepairAdmission, rav)
 	}
+	// The telemetry opt-in (one key, exact "1" only; see telemetry.go). Composed ahead of the
+	// harness branches so claude, Codex and cursor children all carry the cell's own value over
+	// whatever the launching shell exported.
+	env = c.telemetryLaunchEnv(env)
 	// The cell's one resolved cockpit (see cmdDesk) — ALWAYS set on a host window, so an
 	// ASSAY_COCKPIT the launching shell happened to carry never outlives the cell's own value.
 	if cockpit.Cockpit != "" {

@@ -105,6 +105,10 @@ first-wave desk verbs (`deskpr`, `deskpost`, `deskboard`, `desktoken`, `deskwt`,
 Day files are kept for 7 UTC days and pruned on write. With the variable unset — or set to
 anything other than exactly `1` — nothing is created: no directory, no file, no install id.
 
+Desks launched by `cellctl` carry this switch from `cell.env` or `defaults.env` — see
+[Telemetry opt-in](cellctl.md#telemetry-opt-in) for the exact value, precedence and the launch
+profiles that do not carry it.
+
 It sends nothing. No file that implements it opens a network connection, and there is no
 endpoint or sender for it anywhere. That is why it has **one** switch rather than two: the
 two-switch rule above exists so that no inherited environment can cause a *send*, and this

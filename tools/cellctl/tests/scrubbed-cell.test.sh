@@ -280,7 +280,10 @@ case_plan_grammar(){
   # so this keeps the dereference honest for BOTH — the Go port has to emit the same set the
   # declared allowlist names, which is exactly the claim worth proving.
   local want; want="$(grep -oE 'SCRUBBED_ENV_KEYS="[^"]*"' "$HERE/../testdata/cellctl-shell-oracle.sh" | sed -E 's/^SCRUBBED_ENV_KEYS="//; s/"$//' | tr ' ' '\n' | grep -vx 'CODEX_HOME' | sort)"
-  local got; got="$(sort <<<"$env_keys")"
+  # ASSAY_TELEMETRY is a conditional key the Go launcher composes only when a layer configures it
+  # (assay#3048); the retired oracle never carried it, so an operator whose shell exports it must
+  # not see this comparison drift. Its own propagation tests live in the Go package.
+  local got; got="$(sort <<<"$env_keys" | grep -vx 'ASSAY_TELEMETRY')"
   assert "plan-grammar: [plan] env KEY set equals SCRUBBED_ENV_KEYS minus the inactive harness var" '[[ "$got" == "$want" ]]'
 }
 

@@ -20,6 +20,8 @@ var scrubbedEnvKeys = []string{
 	"HOME", "ZDOTDIR", "SHELL", "PATH", "TMPDIR", "KUBECONFIG", "ASSAY_CONFIG_HOME",
 	"GH_CONFIG_DIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT",
 	"CODEX_HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION", "DESK_LOOP", "DESK_SESSION", "DESK_ROOTS", "TERM", "LANG",
+	// The telemetry opt-in (telemetry.go): one key, exact "1" only, absent unless configured.
+	envAssayTelemetry,
 }
 
 // scrubbedHarnessPath resolves the harness binary ONCE, on the PARENT shell's PATH — the one
@@ -101,6 +103,8 @@ func (c *Cell) scrubbedEnvValue(key, role, harness, session, composedPath string
 		return c.Env.Get("TERM")
 	case "LANG":
 		return c.Env.Get("LANG")
+	case envAssayTelemetry:
+		return c.telemetryValue()
 	}
 	return ""
 }
