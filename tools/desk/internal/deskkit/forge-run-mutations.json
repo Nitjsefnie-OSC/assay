@@ -190,14 +190,14 @@
     {
       "name": "review SEC-1 — client() uses the injected client as given, or the library default (the pre-fix construction)",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "\topts = append(opts, gitlab.WithHTTPClient(gitlabNoRedirectClient(g.Client)))\n\tcl, err := gitlab.NewClient(",
-      "new": "\tif g.Client != nil {\n\t\topts = append(opts, gitlab.WithHTTPClient(g.Client))\n\t}\n\tcl, err := gitlab.NewClient("
+      "old": "\topts = append(opts, gitlab.WithHTTPClient(countingClient(gitlabNoRedirectClient(g.Client))))\n\tcl, err := gitlab.NewClient(",
+      "new": "\topts = append(opts, gitlab.WithHTTPClient(countingClient(g.Client)))\n\tcl, err := gitlab.NewClient("
     },
     {
       "name": "review SEC-1 — the trigger client follows redirects (a 307 re-sends the trigger token in the body)",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "\topts = append(opts, gitlab.WithHTTPClient(gitlabNoRedirectClient(g.Client)))\n\tcl, err := gitlab.NewAuthSourceClient(",
-      "new": "\tif g.Client != nil {\n\t\topts = append(opts, gitlab.WithHTTPClient(g.Client))\n\t}\n\tcl, err := gitlab.NewAuthSourceClient("
+      "old": "\topts = append(opts, gitlab.WithHTTPClient(countingClient(gitlabNoRedirectClient(g.Client))))\n\tcl, err := gitlab.NewAuthSourceClient(",
+      "new": "\topts = append(opts, gitlab.WithHTTPClient(countingClient(g.Client)))\n\tcl, err := gitlab.NewAuthSourceClient("
     },
     {
       "name": "review SEC-1 sibling — the liveness fetcher uses an injected client as given (follows redirects with PRIVATE-TOKEN)",
