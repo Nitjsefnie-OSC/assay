@@ -18,7 +18,14 @@ usage line `init` prints for an unknown verb.
 deskapps init --tier team|family [--org <login>] [--owner org|me] [--prefix <name>] [--port 41873] [--no-browser] [--dry-run]
 ```
 
-- `--tier team` — two Apps, `<prefix>-read` and `<prefix>-act`.
+- `--tier team` — two Apps, `<prefix>-read` and `<prefix>-act`. Every desk role binds to the act
+  App, so the reviewer is the worker: it cannot approve a PR it authored, and its verdicts
+  there are comments. `deskflip` recognises that shape (reviewer and worker roles bound to one
+  App) and accepts an APPROVED at the current head from an accountable human in the roster
+  (`ASSAY_HUMAN_LOGIN_MAP` or the bless login), never the PR's author; until one lands its
+  `reviewer-approved` refusal names the Read + Act tier and says it is awaiting a human approval
+  at head. pr-review-desk treats that as the terminal HUMAN-APPROVAL state and does not
+  re-dispatch the reviewer.
 - `--tier family` — six Apps, one per desk role: `reviewer`, `worker`, `verifier`, `desk`,
   `issue-loop`, `intake-loop`, named `<prefix>-<role>-app`.
 - `--org <login>` — the org an org-owned run creates Apps under; required unless

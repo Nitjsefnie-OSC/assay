@@ -1,0 +1,3 @@
+### Fixed
+- `deskflip` no longer stalls every PR on the Read + Act install tier (#3062). On that tier one App is both reviewer and worker, so it cannot approve the PRs it authors. When the roster binds the reviewer and worker roles to one App, the `reviewer-approved` condition now also accepts an APPROVED at the current head from an accountable human in the roster. The PR's own author never counts. Until that approval lands, the refusal names the tier and says it is awaiting a human approval at head. The full-suite gate is unchanged: only the reviewer App's APPROVED counts there.
+- `pr-review-desk` gains a terminal HUMAN-APPROVAL state for that tier. It replaces CHECK there, so the desk stops re-dispatching the reviewer for a decisive verdict the App can never post.

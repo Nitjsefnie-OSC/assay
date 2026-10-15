@@ -44,9 +44,9 @@ column is a "What this choice means" panel:
 | Sittings | 0 | 1 | 2 (throttle met once) |
 | Runs while you are away | no | yes | yes |
 | Review verdicts posted by | you, as comments | `<prefix>-act[bot]`, as comments | reviewer App, formal review |
-| Approves a PR | you | you | the reviewer App |
+| Approves a PR | you | you — `deskflip` flips on your APPROVED at head | the reviewer App |
 | Merges | you | you | you |
-| Author and approver on GitHub | same login | same bot | distinct actors |
+| Author and approver on GitHub | same login | `<prefix>-act[bot]` · you | distinct actors |
 | Keys on this machine | none | 2 | 6 — hold them apart |
 | Audit trail shows | your login | `<prefix>-read[bot]` · `<prefix>-act[bot]` | one login per role |
 
