@@ -295,7 +295,9 @@ export DESK_TOOLS_DISABLED=1       # env-var arm, same effect, one session
 ```
 
 `STOP` halts every loop at its next iteration boundary; `STOP.<loop-name>` halts one
-loop. Precedence is `DISABLED` > `STOP` > `STOP.<name>`, and stop flags are **not**
+loop; `STOP.cell.<cell>` and `STOP.cell.<cell>.<loop-name>` halt one cell's desks.
+Precedence is `DISABLED` > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` =
+`STOP.cell.<cell>.<name>` (any one present is a stop), and stop flags are **not**
 self-clearing. The full semantics, including the optional `HEARTBEAT` dead-man lease,
 are in [Runtime state](#runtime-state-not-created-by-this-repo).
 
@@ -526,7 +528,8 @@ At runtime the tools read/write, under `~/.config/assay/`:
 - `STOP.<loop-name>` — per-loop stop flag (brief 08). Halts only the loop whose
   `DESK_LOOP` env var matches `<loop-name>`; other loops and plain tool invocations
   (no DESK_LOOP set) are unaffected. Removed with `rm`. Precedence chain:
-  `DISABLED` (C-6) > `STOP` > `STOP.<name>`. A DISABLED that is cleared re-enables
+  `DISABLED` (C-6) > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` =
+  `STOP.cell.<cell>.<name>` (the cell flags are described below). A DISABLED that is cleared re-enables
   everything; stop flags are NOT self-clearing (C-10: a switch that un-flips itself
   is not a switch).
 
@@ -592,10 +595,15 @@ At runtime the tools read/write, under `~/.config/assay/`:
     every outward verb independently. `intake-desk` and `the-desk` have no
     iteration-boundary check and rely on the Guard alone.
 
-  `deskboard` lists cell flags beside the others and marks one **inert** when its
-  cell name breaks the rule, its loop part matches no known loop, or the cell has no
-  registration (`<cells-root>/<cell>/cell.env`; the cells root is `$CELLS_ROOT`, else
-  `$XDG_DATA_HOME/assay/cells`, else `~/.local/share/assay/cells`). Any desk on the
+  `deskboard` lists cell flags beside the others and marks one **inert** ("halts
+  nothing") only when it can prove that: the cell name breaks the `[a-z0-9-]` rule
+  (the same rule `cellctl` holds every cell name to) or the loop part matches no
+  known loop. A flag whose cell has no registration
+  (`<cells-root>/<cell>/cell.env`) under the cells root *as the board's own shell
+  resolves it* (`$CELLS_ROOT`, else `$XDG_DATA_HOME/assay/cells`, else
+  `~/.local/share/assay/cells`) is listed live, with a note that names the root it
+  looked in: the Guard keys on the session's marker alone, so a cell registered under
+  another root is still stopped by it. Any desk on the
   machine can write a cell flag for another cell — no escalation over `STOP`, which
   any desk can already write.
 - `HEARTBEAT` — dead-man lease (brief 08, optional). If the file EXISTS and its
@@ -3282,8 +3290,9 @@ Four things a hand-rolled check has to get right, each of which a naive version 
 ### Kill switch and stop flags
 
 Arm and disarm are file operations under `~/.config/assay/`; the flag semantics,
-the `HEARTBEAT` dead-man lease, and the precedence chain
-`DISABLED` > `STOP` > `STOP.<name>` are specified once in
+the `HEARTBEAT` dead-man lease, and the full precedence chain
+(`DISABLED` > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` = `STOP.cell.<cell>.<name>`)
+are specified once in
 [Runtime state](#runtime-state-not-created-by-this-repo) above.
 
 ```bash
