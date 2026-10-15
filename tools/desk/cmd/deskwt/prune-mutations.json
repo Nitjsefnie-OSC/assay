@@ -100,8 +100,8 @@
     {
       "name": "the identity refusals stop binding the reap arm (the shared checkout / the current worktree become reap candidates)",
       "file": "cmd/deskwt/prune.go",
-      "old": "\t\tif opts.reapDeadSessions && !protected {",
-      "new": "\t\tif opts.reapDeadSessions {"
+      "old": "\t\tif opts.reapDeadSessions && !protected && admHold == \"\" {",
+      "new": "\t\tif opts.reapDeadSessions && admHold == \"\" {"
     },
     {
       "name": "the sweep never runs the cache pressure pass (the cadence this PR exists for is gone)",
