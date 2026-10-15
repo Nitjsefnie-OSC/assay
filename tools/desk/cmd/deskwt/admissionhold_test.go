@@ -126,7 +126,7 @@ func TestPruneHoldsFutureAdmission(t *testing.T) {
 // A record that exists but cannot be read holds its worktree, could-not-check.
 //
 // regression: #2830
-func TestPruneHoldsUnreadableAdmission(t *testing.T) {
+func TestPruneHoldsUnreadableRecord(t *testing.T) {
 	work := newRepo(t)
 	withEnv(t, work)
 	home := verifierHome(t, work, "vloop")
@@ -167,7 +167,7 @@ func TestPruneAdmissionUnattributed(t *testing.T) {
 
 // The registry read fails CLOSED: a record no worktree can be tied to is an error, so the
 // sweep holds every candidate; an absent registry is simply empty.
-func TestAdmissionRegistryFailsClosed(t *testing.T) {
+func TestAdmissionRegistryClosed(t *testing.T) {
 	common := t.TempDir()
 	g := &pathGuard{commonDir: common}
 	if adm, err := g.verifierAdmissions(); err != nil || len(adm) != 0 {
