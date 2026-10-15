@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/deskwt/ -count=1 -timeout 600s -run 'TestPrune|TestReap|TestDeadSession|TestMergeGateBeforeStatus|TestConcurrentPrunesCostOne|TestRemove|TestStaleLock|TestReclaim|TestUnattributedLock|TestDirtyHeld|TestUnmergedHeld'",
+  "test": "go test ./cmd/deskwt/ -count=1 -timeout 600s -run 'TestPrune|TestReap|TestDeadSession|TestMergeGateBeforeStatus|TestConcurrentPrunesCostOne|TestRemove|TestStaleLock|TestReclaim|TestUnattributedLock|TestDirtyHeld|TestUnmergedHeld|TestAdmission'",
   "control": {
     "name": "CONTROL — invert the ancestor-set membership test (an unmerged worktree reads as merged and is deleted)",
     "file": "cmd/deskwt/prune.go",
@@ -210,6 +210,48 @@
       "file": "cmd/deskwt/prune.go",
       "old": "\tif staleErr != nil {\n\t\treturn res, staleErr\n\t}",
       "new": "\tif false && staleErr != nil {\n\t\treturn res, staleErr\n\t}"
+    },
+    {
+      "name": "#2830: the ordinary arm stops holding an admitted verifier home (merged+clean, so the merge gate removes it)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\tif admHold != \"\" {\n\t\t\tres.skips = append(res.skips, skipEntry{rt, admHold})",
+      "new": "\t\tif false {\n\t\t\tres.skips = append(res.skips, skipEntry{rt, admHold})"
+    },
+    {
+      "name": "#2830: the dead-session arm judges an admitted home instead of keeping it",
+      "file": "cmd/deskwt/prune.go",
+      "old": "if opts.reapDeadSessions && !protected && admHold == \"\" {",
+      "new": "if opts.reapDeadSessions && !protected {"
+    },
+    {
+      "name": "#2830: an unreadable admission registry is ignored instead of holding every candidate",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\t\tif admErr != nil {\n\t\t\t\tadmHold = \"could-not-check: verifier admissions: \"",
+      "new": "\t\t\tif false {\n\t\t\t\tadmHold = \"could-not-check: verifier admissions: \""
+    },
+    {
+      "name": "#2830: the hold window collapses to nothing (every admission reads as expired)",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\tif age >= verifierAdmissionHold {\n\t\treturn \"\"",
+      "new": "\tif age >= 0 {\n\t\treturn \"\""
+    },
+    {
+      "name": "#2830: the hold window boundary moves (an admission exactly at the window still holds)",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\tif age >= verifierAdmissionHold {\n\t\treturn \"\"",
+      "new": "\tif age > verifierAdmissionHold {\n\t\treturn \"\""
+    },
+    {
+      "name": "#2830: an unreadable admission record reads as absent (drains) instead of could-not-check",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\tif ev.err != nil {\n\t\treturn \"could-not-check",
+      "new": "\tif false {\n\t\treturn \"could-not-check"
+    },
+    {
+      "name": "#2830: a record that names no worktree is skipped instead of failing the registry read closed",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\t\tif rerr != nil || dotGit == \"\" {\n\t\t\treturn nil,",
+      "new": "\t\tif false {\n\t\t\treturn nil,"
     }
   ]
 }

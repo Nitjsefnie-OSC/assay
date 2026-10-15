@@ -880,6 +880,12 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 	// The sweep's clock, read once: the fresh-worktree safety window's age test.
 	sweepNow := time.Now()
 
+	// Verifier admissions, read once per sweep (#2830). An admitted verifier home is
+	// clean and, once main moves on, merged — so the ordinary gates would remove it while
+	// its Evidence still has to land from it. A registry that cannot be read holds every
+	// candidate this sweep.
+	admissions, admErr := guard.verifierAdmissions()
+
 	// pendingRemoved collects the trees deleted in this loop. Their admin entries are
 	// dropped ONCE after the loop (see the batched deregistration below), not per removal.
 	var pendingRemoved []string
@@ -931,6 +937,24 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 		// asked moved, and the reported reason for each is unchanged.
 		protected := rt == guard.sharedCheckout || rt == cwd || !guard.allowed(rt)
 
+		// The admission hold binds BOTH arms: the dead-session arm removes unlocked, clean,
+		// pushed trees and locked trees of dead sessions, and an admitted home is either.
+		admHold := ""
+		if !protected {
+			if admErr != nil {
+				admHold = "could-not-check: verifier admissions: " + errText(admErr)
+			} else {
+				admHold = admissionHoldReason(admissions, rt, sweepNow)
+			}
+		}
+		if opts.reapDeadSessions && admHold != "" {
+			v := reapVerdict{path: rt, reason: admHold}
+			if isLocked {
+				v.session = sessionFromLockReason(reason)
+			}
+			res.plan = append(res.plan, v)
+		}
+
 		if opts.reapDeadSessions && protected {
 			// Named in the plan rather than omitted from it: a plan an operator signs off
 			// must account for every registered worktree, and "this path was never a
@@ -938,7 +962,7 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 			res.plan = append(res.plan, reapVerdict{path: rt, reason: "protected: " + protectedReason(guard, cwd, rt)})
 		}
 
-		if opts.reapDeadSessions && !protected {
+		if opts.reapDeadSessions && !protected && admHold == "" {
 			mt, haveMtime := reapMtimes[rt]
 			v := judgeReap(sc, rt, reason, isLocked, mt, haveMtime, opts.lockTTL, reapRoster, reapNow)
 			if v.reap {
@@ -982,6 +1006,10 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 		}
 		if protected {
 			res.skips = append(res.skips, skipEntry{rt, protectedReason(guard, cwd, rt)})
+			continue
+		}
+		if admHold != "" {
+			res.skips = append(res.skips, skipEntry{rt, admHold})
 			continue
 		}
 
