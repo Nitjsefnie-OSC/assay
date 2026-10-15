@@ -35,8 +35,8 @@ services:
       # Loopback only. No TLS in the local profile; remote cells use a cluster with TLS.
       - "127.0.0.1:${ASSAY_PG_HOST_PORT:-5432}:5432"
     volumes:
-      # The PostgreSQL 18 image declares VOLUME /var/lib/postgresql and sets
-      # PGDATA=/var/lib/postgresql/18/docker. Mounting the pre-18 path (/var/lib/postgresql/data)
+      # The PostgreSQL 18 image declares VOLUME /var/lib/postgresql and sets PGDATA to
+      # /var/lib/postgresql/18/docker. Mounting the pre-18 path (/var/lib/postgresql/data)
       # would leave the data in an anonymous volume. Never on a network filesystem.
       - assay-postgres-data:/var/lib/postgresql
       - ./initdb:/docker-entrypoint-initdb.d:ro
