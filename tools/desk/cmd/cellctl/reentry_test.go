@@ -54,7 +54,7 @@ func defaultsPolicyCell(t *testing.T, f *policyFixture) (cellDir, policy string)
 	return cellDir, policy
 }
 
-// regression: PR #2971 (desk-containers/16, cell names narrowed to [a-z0-9-]; renamed from the
+// regression: PR #2971 (cell names narrowed to [a-z0-9-]; renamed from the
 // nested-cell form of this test)
 //
 // TestBinaryCellHookReadsTheLaunchDefaults drives the whole path for a cell named demo whose

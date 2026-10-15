@@ -62,7 +62,7 @@ func cellNameRoot(t *testing.T) (tmp, root string) {
 }
 
 // notLocalNames are names that are not a cell name under the cells root at `root`, whose parent
-// is tmp: a path that leaves the root, the root itself, and (desk-containers/16) every name
+// is tmp: a path that leaves the root, the root itself, and (PR #2971) every name
 // outside [a-z0-9-] — a nested one, an upper-case one, one with `_` or `.`.
 //
 // regression: PR #2971
