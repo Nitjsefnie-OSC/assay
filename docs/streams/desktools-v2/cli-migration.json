@@ -243,7 +243,7 @@
       "complexity": "complex",
       "basis": "74140 LOC, ~85 verbs, ~171 flags at 3ad1ad83c871",
       "owner": "desktools-v2/18",
-      "state": "pending"
+      "state": "migrated"
     },
     {
       "executable": "bugs-gc",
