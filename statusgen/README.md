@@ -63,6 +63,55 @@ go run . --root /path/to/target-repo --check
 go run . --root /path/to/target-repo --consumers --base origin/main
 ```
 
+### Command line, help and settings precedence
+
+statusgen's command line is one Cobra command tree: the root (the board regenerate and
+its `--lint`/`--check`/`--consumers`/… mode flags) and one subcommand per verb (`verifyrun`,
+`mergecheck`, `newbrief`, `outcomes split`, …). Cobra and pflag parse every line, so each
+verb answers `-h`, `--help`, `help <verb>` with generated help (exit 0), and `--version` /
+`version` print the bare release tag (exit 0). Help and version are answered before any
+roster, configuration, credential or network read. Shell completion is not offered.
+
+The forms existing callers use stay accepted: `--flag=value`, `--flag value`, the Go-flag
+single-dash spellings (`-root X`, `-dora`, `-trend`, `-o out`, `-generated ts`), `--`
+termination, repeated flags (list flags such as `--root`, `--budget`, `--sibling-root`
+accumulate; a repeated scalar flag keeps its last value) and dash-leading values passed as a
+flag's separate value. An unknown flag, a bad flag value, an unknown subcommand or a
+refused positional exits 2 before anything runs, with one error line and a pointer to
+`--help`.
+
+**Precedence matrix.** statusgen has no configuration file and binds no environment
+variable through its command-line layer: every setting resolves from exactly two sources,
+through a fresh, command-local Viper instance per invocation that sees only the declared
+flags of the command that runs.
+
+| Source | Bound | Rule |
+|---|---|---|
+| flag | every declared flag | wins whenever it appears on the line, including an explicit empty value (`--brief=`) |
+| environment | none through the adapter | an environment variable that happens to share a flag's name (`ROOT`, `STATUSGEN_ROOT`, …) is never read |
+| config file | none | no config file is searched for or read |
+| default | every declared flag | used only when the flag does not appear on the line |
+
+Explicit-empty versus unset: `--brief=` (or `--brief ""`) sets the empty string, which
+beats the flag's default; leaving the flag off yields the default. A list flag given once
+with a value replaces nothing — it starts the list.
+
+A handful of settings also have an environment form. Those reads belong to the domain code
+that owns the setting, not to the command-line layer, and each keeps its own combination
+rule (a generic flag-over-env precedence would change it):
+
+| Setting | Environment | Combination rule (owner) |
+|---|---|---|
+| `--sibling-merge` | `ASSAY_SIBLING_MERGE` | opt-in when the flag is set **or** the variable is exactly `1` (`siblingMergeEnabled`) |
+| `--sibling-root` | `DESK_ROOTS` | both are read and merged; on the same `<owner>/<repo>` the flag's path wins (`effectiveSiblingRootOverrides`) |
+| `--telemetry` | `ASSAY_TELEMETRY` | armed only when the flag is set **and** the variable is exactly `1` (`telemetryArmed`) |
+| `--pubkey` | `ASSAY_VERIFIER_PUBKEY` | the variable is the fallback when the flag is empty, explicit-empty included (`--transcribe-verdict` key load) |
+| `--scan-delta-pubkey` | `ASSAY_ISSUE_LOOP_PUBKEY` | the variable is the fallback when the flag is empty (`--transcribe-scan-delta` key load) |
+| `verifyrun --env-file` | `ASSAY_VERIFY_ENV_FILE` | the variable is the fallback when the flag is empty (`verifyrun`'s in-container leg) |
+
+The roster (`~/.config/assay/roster.env` and its CI transport) is domain input read by the
+board checks that need it, never by the command-line layer, and never for help or version.
+
 ### `verifyrun` — the execution witness
 
 `statusgen verifyrun` is a positional sub-command (like `init`), with its own flag
