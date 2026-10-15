@@ -175,10 +175,10 @@ absolute paths):
   <key>Label</key><string>com.example.assay-postgres-backup</string>
   <key>ProgramArguments</key><array>
     <string>/path/to/checkout/containers/postgres/backup.sh</string>
-    <string>--out</string><string>/Users/example/.local/share/assay/postgres-backups</string>
+    <string>--out</string><string>/path/to/homedir/.local/share/assay/postgres-backups</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>ASSAY_PG_SECRETS_DIR</key><string>/Users/example/.config/assay/postgres</string>
+    <key>ASSAY_PG_SECRETS_DIR</key><string>/path/to/homedir/.config/assay/postgres</string>
   </dict>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>15</integer></dict>
 </dict></plist>
