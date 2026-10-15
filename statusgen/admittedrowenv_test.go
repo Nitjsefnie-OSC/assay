@@ -119,12 +119,13 @@ func TestAdmittedRowEnvShape(t *testing.T) {
 
 // rowEnvAllowed names every function that may read the caller's environment
 // with os.Environ: the row environment's single source (shellPlan.rowEnv), the
-// run that chooses it (runVerifyrun), the sandbox helper re-exec (whose env is
+// run that chooses it (newVerifyrunCmd, whose handler is the verifyrun run; the
+// runVerifyrun wrapper only feeds it argv), the sandbox helper re-exec (whose env is
 // the row's own, inherited), the container hand-off (which runs no row on
 // the host) and the provenance git reads' environment (historyGitEnv: it only
 // wraps historyGit's literal `git` reads, which start no Verify row, and adds
 // GIT_GRAFT_FILE to what a fixed-tool launch would inherit anyway).
-var rowEnvAllowed = []string{"rowEnv", "runVerifyrun", "runNetnsHelper", "runInContainer", "historyGitEnv"}
+var rowEnvAllowed = []string{"rowEnv", "newVerifyrunCmd", "runNetnsHelper", "runInContainer", "historyGitEnv"}
 
 // rowLaunchShells are the programs a Verify row's command text runs under.
 var rowLaunchShells = []string{"sh", "bash", "pwsh", "powershell", "cmd"}

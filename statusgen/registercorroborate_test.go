@@ -766,7 +766,7 @@ var mergeBaseAllow = map[string]string{
 	"consumerEntriesAtBase":  "operator-supplied --base revision",
 	"pinConsumerBase":        "operator-supplied --base revision (its only caller passes the --base value; TestFixedBaseNotHandedToHelpers fails on a fixed ref passed in)",
 	"productionResolveBase":  "operator-supplied base revision",
-	"runMergecheck":          "both sides already resolved to commits by resolveCommit",
+	"newMergecheckCmd":       "the mergecheck handler: both sides already resolved to commits by resolveCommit",
 	"ancestorNoOtherChanges": "--is-ancestor on two commits verified with cat-file first",
 	"commitIsAncestor":       "--is-ancestor on a hex-validated witness base resolved to an object id by rev-parse first, against the merge-base object id (verify-integrity/03 fail-first provenance)",
 	"flipMergeBases":         "both sides are the %P parent object ids of a commit rev-list yielded; it refuses any operand isObjectID rejects and passes --end-of-options before them",

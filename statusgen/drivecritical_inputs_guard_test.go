@@ -20,7 +20,8 @@ import (
 // and `mainRedCritical` returning a constant false. The fix routes each input
 // through exactly one writer: the stamp authority set through
 // wireCriticalStampAuthorities (roster configuration), the main-health input through
-// main()'s --main-health parse. This guard fails if any other non-test site writes
+// the root command's --main-health parse (newStatusgenRoot, whose handler is the default
+// board run main() used to hold). This guard fails if any other non-test site writes
 // either input, or if a package-level initializer compiles in a non-empty authority
 // set.
 
@@ -29,7 +30,7 @@ import (
 var criticalInputWriters = map[string]map[string]bool{
 	"criticalStampAuthorities":    {"wireCriticalStampAuthorities": true},
 	"criticalStampAuthoritiesSet": {"wireCriticalStampAuthorities": true},
-	"activeMainHealth":            {"main": true},
+	"activeMainHealth":            {"newStatusgenRoot": true},
 }
 
 func criticalInputViolations(fset *token.FileSet, name string, src []byte) ([]string, error) {
