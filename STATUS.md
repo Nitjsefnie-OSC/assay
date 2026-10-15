@@ -72,7 +72,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **DRIVE NOT APPLIED.** drive manifest(s) rejected: build-less-brittle, desktools-v2. The board generated normally with **zero** drive boost — a malformed, expired, or over-concurrent drive manifest is fail-neutral by design and can never freeze the board (see `--lint` WARN lines).
 
-_Next-up: 14 of 50 eligible — 36 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 13 of 49 eligible — 36 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
 _Held by per-stream caps: 36 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (34), desk-tools (2). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
@@ -88,7 +88,6 @@ _Held by per-stream caps: 36 brief(s) across 2 stream(s) — top: desktools-v2. 
 | derived-board | 07 — per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills | 4 | 2000 |
 | desktools-v2 | 30 — Port the GitLab fleet provisioner to a Go command [exec:strong] | 3 | 2000 |
 | measured-status | 01 — Derive the deskkit exit-code table — record the convention ExitOK/Disabled/RateLimited/Refused/Unverifiable follow, and pin it with a test | 0 | 2000 |
-| desk-containers | 26 — Local PostgreSQL in Docker for a multi-cell host — pinned image, one database and restricted role per cell, runtime credentials, backup and restore drill, and the `cell.env` keys a cell reads its DSN from | 3 | 1500 |
 | desk-tools | 34 — Pinned golangci-lint across every Go module [exec:strong] | 1 | 1500 |
 | desk-tools | 27 — `deskboard`'s last serial repo loops onto the pool, `throughput` from one root resolution, `deskflip`'s cheapest gate first, and refusals that name the offline check [exec:strong] | 2 | 1000 |
 | forge-gitlab | 18 — Rotate the board-push credential in one process — the new value never reaches a shell, a transcript, a log or argv [exec:strong] | 5 | 1000 |
