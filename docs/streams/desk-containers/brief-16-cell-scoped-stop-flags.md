@@ -109,6 +109,7 @@ Default if no answer: none — blocks until answered.
 | 5 | gate:model +flow | In a temp HOME: set the marker `cell=a`, touch `STOP.cell.a`, then run an outward verb such as `deskfile check` with `DESK_LOOP=worker-desk` | the Guard refuses with the stop exit code, naming `STOP.cell.a`. Remove the flag and the same command proceeds. With the skill-body check bypassed, the Guard alone still refuses. |
 | 6 | check | `statusgen --root . --lint` | exit 0 |
 | 6a | check | `statusgen --root . --consumers --brief desk-containers/16` | exit 0 — the `consumers:` routing holds against the branch diff |
+| 6b | check +mutation | `go -C tools/desk run ./cmd/muhar -spec cmd/deskboard/cellstopbanner-mutations.json` | exit 0 — baseline GREEN, positive control CAUGHT, `Totals: 3 caught, 0 NOT CAUGHT, 0 could-not-mutate`. The three mutants are planted in `tools/desk/cmd/deskboard/main.go`'s stop banner and each reddens `TestBannerShowsCellStopFlags` (`go -C tools/desk test ./cmd/deskboard/ -run '^TestBannerShowsCellStopFlags$' -count=1 -v` is `--- PASS` unmutated): the INERT tag dropped (a flag that halts nothing reads as armed), the INERT tag inverted (a live `STOP.cell.<cell>[.<loop>]` flag reads as inert), and the banner's read of active flags switched off (a cell-scoped drain is invisible on every board read) |
 
 ## Evidence
 <!-- appended at implementation time by a NON-implementer: one row per Verify item
