@@ -116,17 +116,19 @@ func cellsRootDir() string {
 	return filepath.Join(xdg, "assay", "cells")
 }
 
-// cellRegistered reports whether cell has a registration (a cell.env) under the cells root.
-func cellRegistered(cell string) bool {
-	root := cellsRootDir()
+// cellRegistered reports whether cell has a registration (a cell.env) under the cells root as
+// this process resolves it, and names that root ("" when none could be resolved).
+func cellRegistered(cell string) (registered bool, root string) {
+	root = cellsRootDir()
 	if root == "" {
-		return false
+		return false, ""
 	}
 	st, err := os.Stat(filepath.Join(root, cell, "cell.env"))
-	return err == nil && !st.IsDir()
+	return err == nil && !st.IsDir(), root
 }
 
-// cellFlagInertReason explains why a STOP.cell.* file halts nothing, or "" when it is live.
+// cellFlagInertReason explains why a STOP.cell.* file halts nothing, or — for a cell this
+// shell cannot find a registration for — why the board cannot show it live; "" when it is live.
 // rest is the file name with the "STOP.cell." prefix removed: "<cell>" or "<cell>.<loop>".
 // A cell name cannot contain '.', so the first '.' (if any) separates cell from loop.
 func cellFlagInertReason(rest string) string {
@@ -137,8 +139,18 @@ func cellFlagInertReason(rest string) string {
 	if hasLoop && !IsKnownLoopName(loop) {
 		return loop + " matches no known loop, so this flag halts nothing"
 	}
-	if !cellRegistered(cell) {
-		return "cell " + cell + " has no registration under the cells root, so this flag halts nothing"
+	// The registration is read from THIS process's cells root ($CELLS_ROOT, else the XDG
+	// default), which is not necessarily the root the cell's sessions were launched from. So this
+	// case names the root it looked in and says what the finding does NOT prove: the Guard keys
+	// on the session's marker alone and still honours the flag.
+	if ok, root := cellRegistered(cell); !ok {
+		if root == "" {
+			return "no cells root could be resolved from this shell (no CELLS_ROOT, no home) to look for cell " + cell +
+				" — if sessions of that cell exist this flag is LIVE; check before removing it"
+		}
+		return "no registration for cell " + cell + " under " + root + " as seen from this shell " +
+			"(CELLS_ROOT / XDG_DATA_HOME) — a cell registered under another root is still stopped by this flag, " +
+			"so check the cell's own root before removing it"
 	}
 	return ""
 }

@@ -74,6 +74,37 @@ func TestGuardCellStop(t *testing.T) {
 		}
 	})
 
+	// F2: the trailing DESK_LOOP check must hold on its own. cellSession sets
+	// ASSAY_CELL_ROLE == DESK_LOOP, so the role-based check stops the session first and would
+	// hide a removed DESK_LOOP path; here the role is unset, or names a different loop.
+	t.Run("STOP.cell.<cell>.<loop> holds via DESK_LOOP alone", func(t *testing.T) {
+		for _, tc := range []struct{ what, role string }{
+			{"ASSAY_CELL_ROLE unset", ""},
+			{"ASSAY_CELL_ROLE names another loop", "verify-desk"},
+		} {
+			for _, flag := range []string{"STOP.cell.a.worker-desk", "STOP.cell.a.batch-fanout"} {
+				dir := setup(t)
+				mkFlag(t, dir, flag, "")
+				t.Setenv(CellMarkerEnv, "a")
+				t.Setenv(CellRoleMarkerEnv, tc.role)
+				t.Setenv(loopEnv, "worker-desk")
+				err := Guard()
+				if !IsDisabled(err) || !strings.Contains(err.Error(), flag) {
+					t.Fatalf("%s, flag %s: Guard() = %v, want Disabled naming %s", tc.what, flag, err, flag)
+				}
+			}
+		}
+		// Control: the same session with no flag, and with another loop's flag, is not stopped.
+		dir := setup(t)
+		mkFlag(t, dir, "STOP.cell.a.verify-desk", "")
+		t.Setenv(CellMarkerEnv, "a")
+		t.Setenv(CellRoleMarkerEnv, "")
+		t.Setenv(loopEnv, "worker-desk")
+		if err := Guard(); err != nil {
+			t.Fatalf("Guard() = %v, want nil — the flag names verify-desk, this session is worker-desk", err)
+		}
+	})
+
 	t.Run("a different cell's flag does not stop", func(t *testing.T) {
 		dir := setup(t)
 		mkFlag(t, dir, "STOP.cell.b", "draining cell b")
@@ -233,7 +264,13 @@ func TestActiveStopFlagsCellInert(t *testing.T) {
 			t.Fatalf("%s: inert flag reason should say INERT, got %q", name, f.Reason)
 		}
 	}
-	if !strings.Contains(got["STOP.cell.ghost"].Reason, "no registration under the cells root") {
-		t.Fatalf("unknown cell reason = %q", got["STOP.cell.ghost"].Reason)
+	// F3: the unregistered case names the root it looked in and does not claim the flag
+	// "halts nothing" — the Guard honours it for a session of a cell registered elsewhere.
+	ghost := got["STOP.cell.ghost"].Reason
+	if !strings.Contains(ghost, "no registration for cell ghost under "+root) || strings.Contains(ghost, "halts nothing") {
+		t.Fatalf("unknown cell reason = %q", ghost)
+	}
+	if !strings.Contains(got["STOP.cell.a.no-such-loop"].Reason, "halts nothing") {
+		t.Fatalf("unknown-loop reason = %q", got["STOP.cell.a.no-such-loop"].Reason)
 	}
 }
