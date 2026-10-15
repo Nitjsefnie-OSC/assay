@@ -150,7 +150,11 @@ func (g *GitLabForge) client() (*gitlab.Client, error) {
 		gitlab.WithoutRetries(),
 		gitlab.WithCustomLimiter(gitlabNoLimiter{}),
 	}
-	opts = append(opts, gitlab.WithHTTPClient(gitlabNoRedirectClient(g.Client)))
+	// The client is always constructed here (when the caller supplied none) so the counting
+	// transport sees every round-trip: perf forgeCalls means the same on both backends.
+	// countingClient copies, never mutates, the client it is handed; the no-redirect copy goes in
+	// first so the counting copy keeps the refusal (SEC-1: a GitLab credential never follows a redirect).
+	opts = append(opts, gitlab.WithHTTPClient(countingClient(gitlabNoRedirectClient(g.Client))))
 	cl, err := gitlab.NewClient(g.Token, opts...)
 	if err != nil {
 		return nil, Unverifiable("cannot build GitLab API client", err)
@@ -4171,7 +4175,11 @@ func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {
 		gitlab.WithoutRetries(),
 		gitlab.WithCustomLimiter(gitlabNoLimiter{}),
 	}
-	opts = append(opts, gitlab.WithHTTPClient(gitlabNoRedirectClient(g.Client)))
+	// The client is always constructed here (when the caller supplied none) so the counting
+	// transport sees every round-trip: perf forgeCalls means the same on both backends.
+	// countingClient copies, never mutates, the client it is handed; the no-redirect copy goes in
+	// first so the counting copy keeps the refusal (SEC-1: a GitLab credential never follows a redirect).
+	opts = append(opts, gitlab.WithHTTPClient(countingClient(gitlabNoRedirectClient(g.Client))))
 	cl, err := gitlab.NewAuthSourceClient(gitlab.Unauthenticated{}, opts...)
 	if err != nil {
 		return nil, Unverifiable("cannot build GitLab trigger client", err)
