@@ -15,7 +15,7 @@ package main
 //
 //	0 = ran to completion, every source read and understood (report may still alarm)
 //	1 = a source exists but is malformed — an instrument defect, not "nothing to report"
-//	2 = usage error (claimed by the flag package / statusgen's own arg errors)
+//	2 = usage error (claimed by the command-line parser / statusgen's own arg errors)
 //	3 = could-not-check — at least one metric's source surface could not be read
 //	    or could not be understood for this window (distinct from a legitimate
 //	    zero and from malformed input)
@@ -67,8 +67,8 @@ import (
 
 const (
 	gtExitCheckedFailed = 1
-	// 2 is claimed by the flag package's usage-error exit and statusgen's own
-	// arg-parsing errors (main.go) — never reused here.
+	// 2 is claimed by the command-line parser's usage-error exit (cli.go) and
+	// statusgen's own arg-parsing errors (main.go) — never reused here.
 	gtExitCouldNotCheck = 3
 
 	// gtSmallN — denominators below this are flagged so a downstream reader

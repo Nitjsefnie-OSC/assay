@@ -1307,6 +1307,9 @@ func newStatusgenRoot(rio cliIO) *cobra.Command {
 	// (effectiveSiblingRootOverrides). The two together are the operator's
 	// allowlist: a sibling named by neither is never read (could-not-check),
 	// whatever the tree's registry says.
+	// The accumulator is a package variable (run() reads it), so each tree starts it empty:
+	// a second tree built in one process must not inherit the first line's values.
+	siblingRootFlagValues = nil
 	flag.Var(&siblingRootFlagValues, "sibling-root", `sibling checkout "<owner>/<repo>=<path>" the sibling-merge-unreconciled detector may read (repeatable; also read from DESK_ROOTS); only repos named here or in DESK_ROOTS are ever read`)
 	// --sibling-merge (siblingmerge.go): the opt-in for the sibling read on
 	// --lint, the STATUS.md regen, --next-up and --roadmap. Off by default,

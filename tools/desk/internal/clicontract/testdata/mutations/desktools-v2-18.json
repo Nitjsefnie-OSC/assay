@@ -1,0 +1,71 @@
+{
+  "test": "cd ../../statusgen && KUBECONFIG=/dev/null go test -count=1 -timeout 400s -run '^(TestCLIHelpOffline|TestCLIConfigFlow|TestCLILegacyForms)$' .",
+  "control": {
+    "name": "CONTROL — a parse failure exits with the wrong code (usage exit 2 becomes 3)",
+    "file": "../../statusgen/cli.go",
+    "old": "const cliExitUsage = 2",
+    "new": "const cliExitUsage = 3"
+  },
+  "mutations": [
+    {
+      "name": "help runs after a config read: the roster echo is called while the tree is built, so every help and version form reads the roster first",
+      "file": "../../statusgen/main.go",
+      "old": "cmd := newCommand(\"statusgen [flags]\", \"Regenerate and check the stream board\", statusgenLong)",
+      "new": "cmd := newCommand(\"statusgen [flags]\", \"Regenerate and check the stream board\", statusgenLong)\n\tscanEchoEffectiveConfig(os.Stderr)"
+    },
+    {
+      "name": "--version answered after the roster echo",
+      "file": "../../statusgen/main.go",
+      "old": "\t\tif *versionMode {",
+      "new": "\t\tscanEchoEffectiveConfig(os.Stderr)\n\t\tif *versionMode {"
+    },
+    {
+      "name": "a setting reads an undeclared environment name (the command-local Viper gains AutomaticEnv)",
+      "file": "../../statusgen/cli.go",
+      "old": "\tv := viper.NewWithOptions(viper.KeyDelimiter(\"::\"))\n",
+      "new": "\tv := viper.NewWithOptions(viper.KeyDelimiter(\"::\"))\n\tv.AutomaticEnv()\n"
+    },
+    {
+      "name": "a setting reads an undeclared prefixed environment name (STATUSGEN_<KEY>)",
+      "file": "../../statusgen/cli.go",
+      "old": "\tv := viper.NewWithOptions(viper.KeyDelimiter(\"::\"))\n",
+      "new": "\tv := viper.NewWithOptions(viper.KeyDelimiter(\"::\"))\n\tv.SetEnvPrefix(\"STATUSGEN\")\n\tv.AutomaticEnv()\n"
+    },
+    {
+      "name": "an undeclared config key binding (the command-local Viper searches for and reads a statusgen config file)",
+      "file": "../../statusgen/cli.go",
+      "old": "\tv := viper.NewWithOptions(viper.KeyDelimiter(\"::\"))\n",
+      "new": "\tv := viper.NewWithOptions(viper.KeyDelimiter(\"::\"))\n\tv.SetConfigName(\"statusgen\")\n\tv.AddConfigPath(\".\")\n\t_ = v.ReadInConfig()\n"
+    },
+    {
+      "name": "an explicit empty flag value is lost (resolution treats --flag= as unset and restores the default)",
+      "file": "../../statusgen/cli.go",
+      "old": "\t\tif f.Changed {\n\t\t\tv.Set(f.Name, f.Value.String())\n\t\t}",
+      "new": "\t\tif f.Changed && f.Value.String() != \"\" {\n\t\t\tv.Set(f.Name, f.Value.String())\n\t\t}"
+    },
+    {
+      "name": "one legacy flag form dropped (single-dash long spellings such as -root X are no longer normalised)",
+      "file": "../../statusgen/cli.go",
+      "old": "\t\t\t\trewritten = \"-\" + a\n",
+      "new": "\t\t\t\trewritten = a\n"
+    },
+    {
+      "name": "the root keeps normalising past its first positional (--export-evidence's -o/-generated scan loses its words)",
+      "file": "../../statusgen/cli.go",
+      "old": "\t\t\tif cur == root {\n\t\t\t\treturn append(out, args[i:]...)\n\t\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "the hidden completion entrypoints answer again (the refusal command is not registered)",
+      "file": "../../statusgen/cli.go",
+      "old": "\trefuseCompletionRequests(root)\n",
+      "new": ""
+    },
+    {
+      "name": "an unknown subcommand falls through to the default regenerate (the legacy diagnosis is skipped)",
+      "file": "../../statusgen/main.go",
+      "old": "cmd.Flags().NFlag() == 0 && cmd.ArgsLenAtDash() < 0 {",
+      "new": "false && cmd.Flags().NFlag() == 0 && cmd.ArgsLenAtDash() < 0 {"
+    }
+  ]
+}
