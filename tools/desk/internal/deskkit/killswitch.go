@@ -124,11 +124,14 @@ func killSwitchState() (armed bool, reason string, err error) {
 	return true, reason, nil
 }
 
-// stopFlagState checks the loop stop-flags: STOP (all loops), then STOP.<loop> (per-loop
-// when DESK_LOOP is set). Returns armed=true and the flag filename as the reason.
+// stopFlagState checks the loop stop-flags: STOP (all loops), then STOP.cell.<cell> (every
+// loop of the session's cell, when the ASSAY_CELL marker is set), then STOP.<loop> and
+// STOP.cell.<cell>.<loop> (per-loop when DESK_LOOP is set; the cell form also for the loop
+// ASSAY_CELL_ROLE names). Returns armed=true and the flag filename as the reason.
 // A flag file that exists but cannot be read is an error (fail closed).
 //
-// Precedence is preserved exactly as documented (DISABLED > STOP > STOP.<name>): STOP is
+// Precedence is preserved exactly as documented (DISABLED > STOP > STOP.cell.<cell> >
+// STOP.<name> = STOP.cell.<cell>.<name>); any one present is a stop. STOP is
 // resolved BEFORE the loop name is even looked at, so an all-loops halt still wins over
 // an unrecognised loop name — a mis-spelled DESK_LOOP can never mask a STOP.
 //
@@ -149,6 +152,32 @@ func stopFlagState() (armed bool, reason string, err error) {
 	}
 	if stopAll {
 		return true, rsn, nil
+	}
+
+	// Check STOP.cell.<cell> (every loop of this session's cell) — only for a session that
+	// carries the cellctl marker (cellstopflag.go). Resolved after STOP and before the loop
+	// name, so a cell-wide stop also wins over an unrecognised DESK_LOOP. An invalid marker
+	// is Unverifiable and builds no path.
+	cell, cerr := sessionCell()
+	if cerr != nil {
+		return false, "", cerr
+	}
+	if cell != "" {
+		cellAll, crsn, ferr := flagFileState(dir, CellStopFlagName(cell, ""))
+		if ferr != nil {
+			return false, "", ferr
+		}
+		if cellAll {
+			return true, crsn, nil
+		}
+		// STOP.cell.<cell>.<role>: the role the marker names, when it is a known loop.
+		roleArmed, rrsn, rerr := cellLoopFlagState(dir, cell, cellRoleFlagNames())
+		if rerr != nil {
+			return false, "", rerr
+		}
+		if roleArmed {
+			return true, rrsn, nil
+		}
 	}
 
 	// Check STOP.<loop> when DESK_LOOP is set.
@@ -177,7 +206,8 @@ func stopFlagState() (armed bool, reason string, err error) {
 			return true, flagReason, nil
 		}
 	}
-	return false, "", nil
+	// STOP.cell.<cell>.<loop> — same precedence as STOP.<loop>; only for a marked session.
+	return cellLoopFlagState(dir, cell, flagNames)
 }
 
 // RunStopFlagName maps a run/claim key to the state-dir file name that stops THAT run and
@@ -365,7 +395,8 @@ type ActiveStopFlag struct {
 	Reason string `json:"reason"`
 	Stale  bool   `json:"stale,omitempty"` // true only for stale HEARTBEAT
 	// Inert marks a STOP.<name> flag whose <name> matches no known loop (see
-	// loopnames.go). Such a flag halts NOTHING — it is a human believing they hold a
+	// loopnames.go), and a STOP.cell.<cell>[.<name>] flag whose cell is malformed or has no
+	// registration under the cells root, or whose <name> matches no known loop. Such a flag halts NOTHING — it is a human believing they hold a
 	// stop that no loop will ever read. That belief is the human-side half of the same
 	// silent failure the Guard fix closes, so the board must say so rather than list
 	// the file alongside flags that really are armed.
@@ -373,7 +404,7 @@ type ActiveStopFlag struct {
 }
 
 // ActiveStopFlags returns the list of currently active stop flags (STOP, STOP.<name>,
-// stale HEARTBEAT). DISABLED is NOT included — it is the broader kill switch and has
+// STOP.cell.<cell>[.<name>], stale HEARTBEAT). DISABLED is NOT included — it is the broader kill switch and has
 // its own banner. This is a best-effort diagnostic for deskboard; a read error on the
 // flag dir returns nil (the board run itself would have hit that error via Guard()).
 func ActiveStopFlags() []ActiveStopFlag {
@@ -400,6 +431,19 @@ func ActiveStopFlags() []ActiveStopFlag {
 			// STOP.<loop> flag (ListRunStops enumerates those). Excluding the prefix here
 			// keeps a per-run stop from being mis-reported as an inert per-loop flag.
 			if strings.HasPrefix(n, runStopPrefix) {
+				continue
+			}
+			// STOP.cell.<cell>[.<loop>] is cell-scoped (cellstopflag.go): inert when the cell
+			// name is malformed, the loop part names no known loop, or the cell has no
+			// registration under the cells root.
+			if strings.HasPrefix(n, cellStopPrefix) {
+				if r, ok := readFlagReason(dir, n); ok {
+					why := cellFlagInertReason(strings.TrimPrefix(n, cellStopPrefix))
+					if why != "" {
+						r = r + " — INERT: " + why
+					}
+					flags = append(flags, ActiveStopFlag{Name: n, Reason: r, Inert: why != ""})
+				}
 				continue
 			}
 			if strings.HasPrefix(n, "STOP.") && n != "STOP" {
@@ -449,7 +493,9 @@ func firstLine(s string) string {
 // Guard is the MANDATORY first call of every desk tool. It checks all
 // stop conditions in precedence order BEFORE any other action — including reads:
 //  1. DISABLED (kill switch)
-//  2. STOP (all-loops halt), then STOP.<loop> (per-loop halt when DESK_LOOP set)
+//  2. STOP (all-loops halt), then STOP.cell.<cell> (whole-cell halt when the ASSAY_CELL
+//     marker is set; an invalid marker is exit 6), then STOP.<loop> / STOP.cell.<cell>.<loop>
+//     (per-loop halt when DESK_LOOP set)
 //  3. STOP.run.<key> (per-run halt when the worktree records assay.runKey)
 //  4. HEARTBEAT staleness (dead-man lease >24h)
 //

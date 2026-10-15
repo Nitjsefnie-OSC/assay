@@ -557,6 +557,39 @@ At runtime the tools read/write, under `~/.config/assay/`:
 
   `deskboard` marks a `STOP.<name>` whose name matches no known loop as **inert**:
   it halts nothing, and a human must not read it as a stop that is being honoured.
+- `STOP.cell.<cell>` / `STOP.cell.<cell>.<loop-name>` — cell-scoped stop flags. Host
+  cells share this one state directory, so `STOP` and `STOP.<loop-name>` reach every
+  cell's desks; these reach one cell. `STOP.cell.<cell>` halts every loop of that
+  cell, `STOP.cell.<cell>.<loop-name>` one loop of it (`<loop-name>` resolves through
+  `loopnames.go` exactly as for `STOP.<loop-name>`, so an alias-named flag holds).
+  Removed with `rm`; not self-clearing. Full precedence chain: `DISABLED` > `STOP` >
+  `STOP.cell.<cell>` > `STOP.<name>` = `STOP.cell.<cell>.<name>` — any one present
+  is a stop.
+
+  - **Membership is the cell marker only.** A session belongs to a cell through
+    `ASSAY_CELL` (its role through `ASSAY_CELL_ROLE`), the process-environment marker
+    `cellctl` stamps on every desk it launches — never a `roster.env` key, and never
+    the comms-only `DESK_CELL`. The per-loop cell flag is checked for the loop named by
+    `DESK_LOOP` and for the role `ASSAY_CELL_ROLE` names, when that is a known loop. A
+    session with no marker is unaffected by every cell flag.
+  - **Cell flags only add stops.** They are resolved after `DISABLED` and `STOP`, and
+    they never clear or override `STOP.<name>`. `STOP.cell.<cell>` is resolved before
+    the loop name, so it also holds over an unrecognised `DESK_LOOP`.
+  - **The cell name is validated before any path is built.** A marker outside
+    `[a-z0-9-]` (for example `../x` or `a/b`) is refused **exit 6 (unverifiable)**:
+    the Guard cannot name the file that would speak for that session, so it never
+    reports "not stopped".
+  - **Two layers.** The iteration-boundary check of `pr-review-desk`, `verify-desk`
+    and `worker-desk` reads both cell flags in the skill body, and the Guard refuses
+    every outward verb independently. `intake-desk` and `the-desk` have no
+    iteration-boundary check and rely on the Guard alone.
+
+  `deskboard` lists cell flags beside the others and marks one **inert** when its
+  cell name breaks the rule, its loop part matches no known loop, or the cell has no
+  registration (`<cells-root>/<cell>/cell.env`; the cells root is `$CELLS_ROOT`, else
+  `$XDG_DATA_HOME/assay/cells`, else `~/.local/share/assay/cells`). Any desk on the
+  machine can write a cell flag for another cell — no escalation over `STOP`, which
+  any desk can already write.
 - `HEARTBEAT` — dead-man lease (brief 08, optional). If the file EXISTS and its
   mtime is older than 24h, it is treated as STOP-ALL. Absent file = feature off
   (no behaviour change until Ada opts in by touching it once). **Renewal is a HUMAN

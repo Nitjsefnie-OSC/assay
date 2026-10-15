@@ -961,11 +961,16 @@ func printBanners(w io.Writer, h Header) {
 	}
 	// Stop flags banner: any active STOP flag or stale HEARTBEAT is surfaced
 	// on every board read so a silently-stopped loop is not discovered by absence.
+	// Cell-scoped flags (STOP.cell.<cell>[.<loop>]) ride the same banner; an INERT one
+	// (unknown loop, malformed or unregistered cell) is tagged so, since it halts nothing.
 	if len(h.StopFlags) > 0 {
 		for _, f := range h.StopFlags {
 			tag := "STOP"
-			if f.Stale {
+			switch {
+			case f.Stale:
 				tag = "STALE"
+			case f.Inert:
+				tag = "INERT STOP"
 			}
 			fmt.Fprintf(w, "WARNING: %s flag active — %s: %s\n", tag, f.Name, f.Reason)
 		}

@@ -21,7 +21,7 @@
     ".cursor/skills/intake-desk/SKILL.md": "a2dd0b1f9109d56c09ce684deaddd35a7d93ecd21d040b76c84283623006827c",
     ".cursor/skills/pdfingest/SETUP.md": "ff2c52f24528164712ae951caa729f90318b16dbe5d604f2b8e24aa955773f23",
     ".cursor/skills/pdfingest/SKILL.md": "18d69fb22a5d6ccbb9cb8a174f9d8f5ef5a9154d9cb305a89f630f12991feea9",
-    ".cursor/skills/pr-review-desk/SKILL.md": "e057a0fd8013d6ceea65f709bdf4679e5f3030df29d43f827946b4f0ab31ef58",
+    ".cursor/skills/pr-review-desk/SKILL.md": "66e66ed6eb7bb9352536ca39001f28927c7e5823e1b3de9ffbeb2a51c3284cc3",
     ".cursor/skills/pr-review-desk/references/leak-audience-check.md": "9d3163bb0fa0da74865ef128409866fa6e5ecbf9d2e64858a7addac9db8ed568",
     ".cursor/skills/pr-review-desk/references/merge-time-recheck.md": "558248aa76c930c578c2fb256ee9c14a1ae5dd066202053499b4e422ad33791e",
     ".cursor/skills/pr-review-desk/references/out-of-scope-filing.md": "c5fba4d18d9c67b66b94b664583e9998f668c6325979ce7624075949b7385544",
@@ -34,8 +34,8 @@
     ".cursor/skills/system-demo/references/storyboard.md": "9d55dd566e084c1a48eaecb09b6370e2745cd3d7268fdb08494187a80eeff531",
     ".cursor/skills/the-desk/SKILL.md": "7f0130a8d883d49e882c0b6bc93a4e152c8aaa236e250da83b08b1c44ac5fb66",
     ".cursor/skills/upgrade-assay/SKILL.md": "3ef70740f0f85999c169ce07f99488d39492d186c49b2cae998af813d1d0f045",
-    ".cursor/skills/verify-desk/SKILL.md": "0335c541151fda6dd2d52ccbc100c8ff2b009eb826fac9af861430f74e5e4127",
-    ".cursor/skills/worker-desk/SKILL.md": "c2dc89002d31b99e7cc6eb7b65ab3a4fb82cd882157956325633f6e7ea15b42e",
+    ".cursor/skills/verify-desk/SKILL.md": "5533eb38911a6cf780fb432a201a65e9c3b570f8bdc8fa3c8a282fc9b7b2f242",
+    ".cursor/skills/worker-desk/SKILL.md": "f6cff79f2922a0ded8a4e4b1835b200487e5d3d4932a41f4515aa529445b5911",
     ".cursor/skills/worker-desk/references/dispatch-runbook.md": "75fea93d48f9ef79f295c24eb9e44aaedd44e0b71fe70cb102633f074e9d8743"
   },
   "bindingsSha256": "421a1c337733bebb1c971b3092fe56be914eaf5b801c28a2bb58769cab08327c"
