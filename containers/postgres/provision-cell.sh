@@ -148,13 +148,13 @@ attrs="NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS"
 	printf '%s\n' 'SET log_min_error_statement = panic;'
 	printf '%s\n' 'SET log_statement = none;'
 	printf '%s\n' 'SET pg_stat_statements.track_utility = off;'
-	printf "SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') AS create_role \\gset\n" "$db"
+	printf "SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') AS create_role %s\n" "$db" '\gset'
 	printf '%s\n' '\if :create_role'
 	printf "CREATE ROLE \"%s\" LOGIN %s CONNECTION LIMIT %s PASSWORD '%s';\n" "$db" "$attrs" "$limit" "$password_sql"
 	printf '%s\n' '\else'
 	printf "ALTER ROLE \"%s\" %s CONNECTION LIMIT %s PASSWORD '%s';\n" "$db" "$attrs" "$limit" "$password_sql"
 	printf '%s\n' '\endif'
-	printf "SELECT NOT EXISTS (SELECT FROM pg_database WHERE datname = '%s') AS create_db \\gset\n" "$db"
+	printf "SELECT NOT EXISTS (SELECT FROM pg_database WHERE datname = '%s') AS create_db %s\n" "$db" '\gset'
 	printf '%s\n' '\if :create_db'
 	printf 'CREATE DATABASE "%s" OWNER "%s";\n' "$db" "$db"
 	printf '%s\n' '\endif'
