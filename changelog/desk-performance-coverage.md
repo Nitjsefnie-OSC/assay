@@ -1,2 +1,0 @@
-- Extend opt-in local performance instrumentation to 60 more desk commands (67 total), including filing, replies, review/verify/intake loops and supervisors.
-- Add automatic command-inventory coverage and real-binary on/off log-growth tests; preserve the local-only schema and partial forge/child counter semantics.

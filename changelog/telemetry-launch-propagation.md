@@ -1,2 +1,0 @@
-- Carry the configured local telemetry opt-in through house, Codex command, scrubbed, cadence and container launches; explicit off overrides inherited opt-in.
-- Show the effective setting in cellctl show; no upload or broader environment forwarding is enabled.
