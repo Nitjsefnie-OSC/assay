@@ -470,13 +470,20 @@ as the planner and acts on its rows.
 - **BLOCKED** → the latest review flags a blocker; the worker owns the fix, and the next push
   re-fires the monitor. **CHECK** → a bot review exists at head but is neither APPROVED nor
   CHANGES_REQUESTED (e.g. only a `--comment`): read it and re-dispatch for a decisive verdict.
+  **HUMAN-APPROVAL** → replaces CHECK when the roster binds the reviewer and worker roles to ONE
+  App (the Read + Act install tier; `deskflip` names the tier in its reviewer-approved refusal).
+  That App cannot approve a PR it authored, so its comment verdict at head is the review lane's
+  last word: never re-dispatch for a decisive one. Read the comment; if it states no blocking
+  finding, the PR waits on a trusted human's APPROVED at the current head, and the desk re-runs
+  `deskflip` when a new review lands. A finding it states is BLOCKED, as always.
   **WAIT-CI** → bot APPROVED, CI pending: hold. **READY** → already flipped, awaiting the human:
   nothing to do; the label clears when a sweep shows it merged.
 - **FLIP → run `deskflip <N>`.** The flip gate is mechanical now: deskflip re-reads every condition
   itself, in order, and on refusal NAMES the one that failed — caller-role (`$DESK_LOOP` must
   present this role: the flip belongs to the desk that watched the review), pr-open-draft,
   reviewer-approved *at the current head* (a verdict at an earlier head is STALE, a distinct answer
-  from "no verdict"), checks-green (pending or unreadable is could-not-verify, never green),
+  from "no verdict"; on the one-App Read + Act shape a trusted human's APPROVED at head also
+  satisfies it, never the author's own), checks-green (pending or unreadable is could-not-verify, never green),
   mergeable, security-verdict (on a risk-classed PR an App review at the CURRENT head carrying the
   literal `Security-Review: pass`; an explicit fail at head blocks either way — the two lanes are
   read separately and in whichever order they arrived), head-stable (head
@@ -648,7 +655,7 @@ Exactly **one** of two sequential, mutually exclusive labels rides on every PR t
 a queue reader sees which PRs wait on a REVIEWER and which on the HUMAN. **`authorization-needed`**
 — not yet cleared by the review lane (no approving verdict at the current head, or open findings):
 applied when the desk picks the PR up, re-applied on a RE-REVIEW dispatch, kept through BLOCKED /
-CHECK / WAIT-CI. **`approval-needed`** — the review lane approved everything and the PR now needs a
+CHECK / HUMAN-APPROVAL / WAIT-CI. **`approval-needed`** — the review lane approved everything and the PR now needs a
 HUMAN: **`deskflip` writes this swap itself**, and because the write asserts to every queue reader
 that the review lane is done, it re-gates fully first even on an already-ready PR. It clears when a
 sweep sees the READY row gone because the PR merged. A missing label makes the write fail — a
