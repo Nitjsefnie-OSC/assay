@@ -28,7 +28,6 @@ var verifyOutcomesChokePointAllowList = map[string]string{
 	"verifyclosure.go":  "prose describing what deskevidence's verified-outcome sidecar gate is for — no file I/O",
 	"load.go":           "the reservedRegisterNames skip-list entry (a string key) — no file I/O",
 	"coverage_api.go":   "statusgen/evaluation: the bookkeeping-path pattern the pure coverage evaluator exempts from stamping — a string constant, no file I/O (the evaluator opens nothing)",
-	"main.go":           "prose describing the `outcomes` subcommand dispatch and the verifyclosure gate — no file I/O",
 }
 
 // verifyOutcomesChokePointScan walks walkRoot (non-recursive into "testdata") for non-test .go

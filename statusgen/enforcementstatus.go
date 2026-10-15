@@ -5,6 +5,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // enforcement-status (mistake-proofing/04) — derive the authoring guidance's
@@ -238,6 +240,18 @@ func renderEnforcementBlock(rules []LintRule) (string, error) {
 // generator-and-diff half lives in skillslint (it owns the guidance copy and the
 // CI byte-diff), which shells out to this emitter for the block's bytes.
 func runEnforcementStatus(args []string, stdout, stderr io.Writer) int {
+	return runVerb(newEnforcementStatusCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newEnforcementStatusCmd builds `statusgen enforcement-status`.
+func newEnforcementStatusCmd(rio cliIO) *cobra.Command {
+	cmd := newCommand("enforcement-status", "Print the generated enforcement-status block", "")
+	cmd.Args = cobra.ArbitraryArgs
+	cmd.RunE = verbHandler(func(args []string) int { return enforcementStatus(args, rio.Out, rio.Err) })
+	return cmd
+}
+
+func enforcementStatus(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		fmt.Fprintf(stderr, "statusgen enforcement-status: unexpected argument %q — the emitter takes none (it renders the compiled-in registry)\n", args[0])
 		return 2

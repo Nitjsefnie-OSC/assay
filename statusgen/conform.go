@@ -2,7 +2,7 @@ package main
 
 // conform — validate brief frontmatter against the machine-readable brief-schema
 // contracts (`schemas/brief-v1.json`, `schemas/brief-v2.json`), a positional
-// subcommand intercepted before flag parsing (like verifyrun/shardcheck/init).
+// subcommand with its own flags (like verifyrun/shardcheck/init).
 //
 // # Why a schema surface at all
 //
@@ -60,7 +60,6 @@ package main
 
 import (
 	"embed"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -71,6 +70,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -161,102 +161,107 @@ func parseEmbeddedBriefSchemas() (map[string]*schemaNode, error) {
 // another) and returns 0; otherwise every brief file under each --root is
 // validated against the contract its own `schema:` marker declares.
 func runConform(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("conform", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	return runVerb(newConformCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newConformCmd builds the `statusgen conform` command.
+func newConformCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("conform", "Validate brief frontmatter against the embedded brief schema", "")
+	flags := cmd.Flags()
 	var roots rootFlags
 	flags.Var(&roots, "root", "repository root to scan (repeatable; default \".\")")
 	emitSchema := flags.Bool("emit-schema", false, "print one embedded brief schema to stdout and exit")
 	emitWhich := flags.String("schema", briefSchemaCurrent,
 		"with --emit-schema: which embedded contract to print ("+strings.Join(embeddedBriefSchemaMarkers(), ", ")+")")
-	if err := flags.Parse(args); err != nil {
-		return conformExitUsageError
-	}
+	cmd.RunE = verbHandler(func(args []string) int {
+		if *emitSchema {
+			name, known := embeddedBriefSchemaNames[*emitWhich]
+			if !known {
+				fmt.Fprintf(stderr, "conform: --schema %q is not a contract this binary embeds (have: %s)\n",
+					*emitWhich, strings.Join(embeddedBriefSchemaMarkers(), ", "))
+				return conformExitUsageError
+			}
+			if _, err := stdout.Write(embeddedSchemaBytes(name)); err != nil {
+				fmt.Fprintf(stderr, "conform: writing schema: %v\n", err)
+				return conformExitCouldNot
+			}
+			return conformExitClean
+		}
 
-	if *emitSchema {
-		name, known := embeddedBriefSchemaNames[*emitWhich]
-		if !known {
-			fmt.Fprintf(stderr, "conform: --schema %q is not a contract this binary embeds (have: %s)\n",
-				*emitWhich, strings.Join(embeddedBriefSchemaMarkers(), ", "))
+		resolvedRoots, err := resolveRoots(roots)
+		if err != nil {
+			fmt.Fprintln(stderr, "conform:", err)
 			return conformExitUsageError
 		}
-		if _, err := stdout.Write(embeddedSchemaBytes(name)); err != nil {
-			fmt.Fprintf(stderr, "conform: writing schema: %v\n", err)
+
+		schemas, err := parseEmbeddedBriefSchemas()
+		if err != nil {
+			fmt.Fprintf(stderr, "conform: embedded schema is not valid JSON: %v\n", err)
 			return conformExitCouldNot
 		}
-		return conformExitClean
-	}
 
-	resolvedRoots, err := resolveRoots(roots)
-	if err != nil {
-		fmt.Fprintln(stderr, "conform:", err)
-		return conformExitUsageError
-	}
-
-	schemas, err := parseEmbeddedBriefSchemas()
-	if err != nil {
-		fmt.Fprintf(stderr, "conform: embedded schema is not valid JSON: %v\n", err)
-		return conformExitCouldNot
-	}
-
-	var clean, failed, couldNot, versionMismatch, exempt, scanned int
-	for _, root := range resolvedRoots {
-		streamsDir := filepath.Join(root, "docs", "streams")
-		info, statErr := os.Stat(streamsDir)
-		if statErr != nil || !info.IsDir() {
-			// A root with no streams tree is could-not-look, not a clean pass — the
-			// three-state instrument rule forbids reading "nothing scanned" as
-			// "nothing wrong".
-			couldNot++
-			fmt.Fprintf(stdout, "could-not-check: %s: no docs/streams directory to scan (%v)\n", root, statErr)
-			continue
-		}
-		walkErr := filepath.WalkDir(streamsDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
+		var clean, failed, couldNot, versionMismatch, exempt, scanned int
+		for _, root := range resolvedRoots {
+			streamsDir := filepath.Join(root, "docs", "streams")
+			info, statErr := os.Stat(streamsDir)
+			if statErr != nil || !info.IsDir() {
+				// A root with no streams tree is could-not-look, not a clean pass — the
+				// three-state instrument rule forbids reading "nothing scanned" as
+				// "nothing wrong".
 				couldNot++
-				fmt.Fprintf(stdout, "could-not-check: %s: %v\n", path, err)
+				fmt.Fprintf(stdout, "could-not-check: %s: no docs/streams directory to scan (%v)\n", root, statErr)
+				continue
+			}
+			walkErr := filepath.WalkDir(streamsDir, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					couldNot++
+					fmt.Fprintf(stdout, "could-not-check: %s: %v\n", path, err)
+					return nil
+				}
+				if d.IsDir() || !briefNameRe.MatchString(d.Name()) {
+					return nil
+				}
+				scanned++
+				state, msg := conformFile(path, schemas)
+				switch state {
+				case conformStateClean:
+					clean++
+				case conformStateFailed:
+					failed++
+					fmt.Fprintf(stdout, "checked-failed: %s\n", msg)
+				case conformStateVersion:
+					versionMismatch++
+					couldNot++
+					fmt.Fprintf(stdout, "could-not-check: %s\n", msg)
+				case conformStateCouldNot:
+					couldNot++
+					fmt.Fprintf(stdout, "could-not-check: %s\n", msg)
+				case conformStateExempt:
+					exempt++
+				}
 				return nil
-			}
-			if d.IsDir() || !briefNameRe.MatchString(d.Name()) {
-				return nil
-			}
-			scanned++
-			state, msg := conformFile(path, schemas)
-			switch state {
-			case conformStateClean:
-				clean++
-			case conformStateFailed:
-				failed++
-				fmt.Fprintf(stdout, "checked-failed: %s\n", msg)
-			case conformStateVersion:
-				versionMismatch++
+			})
+			if walkErr != nil {
 				couldNot++
-				fmt.Fprintf(stdout, "could-not-check: %s\n", msg)
-			case conformStateCouldNot:
-				couldNot++
-				fmt.Fprintf(stdout, "could-not-check: %s\n", msg)
-			case conformStateExempt:
-				exempt++
+				fmt.Fprintf(stdout, "could-not-check: %s: walk error: %v\n", streamsDir, walkErr)
 			}
-			return nil
-		})
-		if walkErr != nil {
-			couldNot++
-			fmt.Fprintf(stdout, "could-not-check: %s: walk error: %v\n", streamsDir, walkErr)
 		}
-	}
 
-	fmt.Fprintf(stdout,
-		"conform: %d checked-clean, %d checked-failed, %d could-not-check (of which %d schema-version mismatch), %d exempt (%d brief files scanned)\n",
-		clean, failed, couldNot, versionMismatch, exempt, scanned)
+		fmt.Fprintf(stdout,
+			"conform: %d checked-clean, %d checked-failed, %d could-not-check (of which %d schema-version mismatch), %d exempt (%d brief files scanned)\n",
+			clean, failed, couldNot, versionMismatch, exempt, scanned)
 
-	switch {
-	case failed > 0:
-		return conformExitFailed
-	case couldNot > 0:
-		return conformExitCouldNot
-	default:
-		return conformExitClean
-	}
+		switch {
+		case failed > 0:
+			return conformExitFailed
+		case couldNot > 0:
+			return conformExitCouldNot
+		default:
+			return conformExitClean
+		}
+	})
+	return cmd
 }
 
 type conformState int

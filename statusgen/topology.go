@@ -31,7 +31,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -39,6 +38,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // Exit codes shared by the two verbs in this file.
@@ -136,44 +137,50 @@ func describeRegistryRepo(e graphRepoEntry) string {
 // 5 the ref's alias is refused by the registry; 6 could-not-check (no/unreadable registry, or this
 // tree's own alias cannot be determined).
 func runVerifyGateClose(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("verify-gate-close", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	return runVerb(newVerifyGateCloseCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newVerifyGateCloseCmd builds the `statusgen verify-gate-close` command.
+func newVerifyGateCloseCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("verify-gate-close", "Close a verified gate:human item by reference", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "tree root carrying docs/streams/")
 	ref := fs.String("ref", "", "the item to close: <stream>/<NN>, <alias>:<stream>/<NN>, <cell>:<alias>:<stream>/<NN> or <cell>:<alias>:<stream>:<NN>")
 	dryRun := fs.Bool("dry-run", false, "resolve and compute the flip, write nothing")
-	if err := fs.Parse(args); err != nil {
-		return topoExitUsage
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "statusgen verify-gate-close: unexpected argument %q (the item is passed as --ref)\n", fs.Arg(0))
-		return topoExitUsage
-	}
-	if strings.TrimSpace(*ref) == "" {
-		fmt.Fprintln(stderr, "statusgen verify-gate-close: --ref is required")
-		return topoExitUsage
-	}
-	readme, updated, local, err := closeVerifyPlan(*root, *ref, time.Now())
-	if err != nil {
-		fmt.Fprintln(stderr, "statusgen verify-gate-close:", err)
-		var rerr *refResolveError
-		if errors.As(err, &rerr) {
-			return rerr.Code
+	cmd.RunE = verbHandler(func(args []string) int {
+		if fs.NArg() > 0 {
+			fmt.Fprintf(stderr, "statusgen verify-gate-close: unexpected argument %q (the item is passed as --ref)\n", fs.Arg(0))
+			return topoExitUsage
 		}
-		return topoExitProblem
-	}
-	if local != strings.TrimSpace(*ref) {
-		fmt.Fprintf(stdout, "resolved %s -> %s through %s\n", strings.TrimSpace(*ref), local, topoRegistryRel)
-	}
-	if *dryRun {
-		fmt.Fprintf(stdout, "would mark %s done (Reviewed: %s) — dry run, nothing written\n", local, verifyReviewer)
+		if strings.TrimSpace(*ref) == "" {
+			fmt.Fprintln(stderr, "statusgen verify-gate-close: --ref is required")
+			return topoExitUsage
+		}
+		readme, updated, local, err := closeVerifyPlan(*root, *ref, time.Now())
+		if err != nil {
+			fmt.Fprintln(stderr, "statusgen verify-gate-close:", err)
+			var rerr *refResolveError
+			if errors.As(err, &rerr) {
+				return rerr.Code
+			}
+			return topoExitProblem
+		}
+		if local != strings.TrimSpace(*ref) {
+			fmt.Fprintf(stdout, "resolved %s -> %s through %s\n", strings.TrimSpace(*ref), local, topoRegistryRel)
+		}
+		if *dryRun {
+			fmt.Fprintf(stdout, "would mark %s done (Reviewed: %s) — dry run, nothing written\n", local, verifyReviewer)
+			return topoExitOK
+		}
+		if err := os.WriteFile(readme, updated, 0o644); err != nil {
+			fmt.Fprintln(stderr, "statusgen verify-gate-close:", err)
+			return topoExitProblem
+		}
+		fmt.Fprintf(stdout, "marked %s done (Reviewed: %s)\n", local, verifyReviewer)
 		return topoExitOK
-	}
-	if err := os.WriteFile(readme, updated, 0o644); err != nil {
-		fmt.Fprintln(stderr, "statusgen verify-gate-close:", err)
-		return topoExitProblem
-	}
-	fmt.Fprintf(stdout, "marked %s done (Reviewed: %s)\n", local, verifyReviewer)
-	return topoExitOK
+	})
+	return cmd
 }
 
 // ---- lint side -------------------------------------------------------------------------------
@@ -274,51 +281,58 @@ type checkList []string
 
 func (c *checkList) String() string     { return strings.Join(*c, ",") }
 func (c *checkList) Set(v string) error { *c = append(*c, v); return nil }
+func (c *checkList) Type() string       { return "string" }
 
 // runLintNamed is `statusgen lint --root DIR --check NAME [--check NAME …]`: run the named
 // checks only. The whole-corpus gate stays `statusgen --lint`; this verb exists so one contract
 // check can be asserted on its own. Exit: 1 when any check found a problem (never masked by
 // another check's could-not-check), else 6 when any check could not look, else 0.
 func runLintNamed(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	return runVerb(newLintNamedCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newLintNamedCmd builds the `statusgen lint` command.
+func newLintNamedCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("lint", "Run named lint checks only", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "tree root carrying docs/streams/")
 	var checks checkList
 	fs.Var(&checks, "check", "a named check to run (repeatable): "+lintCheckNames())
-	if err := fs.Parse(args); err != nil {
-		return topoExitUsage
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "statusgen lint: unexpected argument %q\n", fs.Arg(0))
-		return topoExitUsage
-	}
-	if len(checks) == 0 {
-		fmt.Fprintf(stderr, "statusgen lint: --check is required (known: %s); the whole-corpus lint is `statusgen --lint`\n", lintCheckNames())
-		return topoExitUsage
-	}
-	for _, c := range checks {
-		if _, ok := lintChecks[c]; !ok {
-			fmt.Fprintf(stderr, "statusgen lint: unknown check %q (known: %s) — nothing was checked\n", c, lintCheckNames())
+	cmd.RunE = verbHandler(func(args []string) int {
+		if fs.NArg() > 0 {
+			fmt.Fprintf(stderr, "statusgen lint: unexpected argument %q\n", fs.Arg(0))
 			return topoExitUsage
 		}
-	}
-	problem, couldNotCheck := false, false
-	for _, c := range checks {
-		switch lintChecks[c](*root, stdout, stderr) {
-		case topoExitOK:
-		case topoExitCouldNotCheck:
-			couldNotCheck = true
-		default:
-			problem = true
+		if len(checks) == 0 {
+			fmt.Fprintf(stderr, "statusgen lint: --check is required (known: %s); the whole-corpus lint is `statusgen --lint`\n", lintCheckNames())
+			return topoExitUsage
 		}
-	}
-	switch {
-	case problem:
-		return topoExitProblem
-	case couldNotCheck:
-		return topoExitCouldNotCheck
-	}
-	return topoExitOK
+		for _, c := range checks {
+			if _, ok := lintChecks[c]; !ok {
+				fmt.Fprintf(stderr, "statusgen lint: unknown check %q (known: %s) — nothing was checked\n", c, lintCheckNames())
+				return topoExitUsage
+			}
+		}
+		problem, couldNotCheck := false, false
+		for _, c := range checks {
+			switch lintChecks[c](*root, stdout, stderr) {
+			case topoExitOK:
+			case topoExitCouldNotCheck:
+				couldNotCheck = true
+			default:
+				problem = true
+			}
+		}
+		switch {
+		case problem:
+			return topoExitProblem
+		case couldNotCheck:
+			return topoExitCouldNotCheck
+		}
+		return topoExitOK
+	})
+	return cmd
 }
 
 // runCitationAliasCheck prints the citation-alias-resolution result: PROBLEM and UNCHECKED lines

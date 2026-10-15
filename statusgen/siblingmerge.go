@@ -236,11 +236,12 @@ type siblingTarget struct {
 }
 
 // siblingRootFlags is a repeatable `--sibling-root <owner>/<repo>=<path>` CLI
-// flag (item 2), the same shape flag.Var already uses for --root/--budget in
+// flag (item 2), the same repeatable shape --root/--budget use in
 // main.go.
 type siblingRootFlags []string
 
 func (f *siblingRootFlags) String() string { return strings.Join(*f, ", ") }
+func (f *siblingRootFlags) Type() string   { return "string" }
 func (f *siblingRootFlags) Set(v string) error {
 	*f = append(*f, v)
 	return nil

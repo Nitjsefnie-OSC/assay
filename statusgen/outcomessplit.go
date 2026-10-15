@@ -17,12 +17,12 @@ package main
 
 import (
 	"bytes"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 )
 
 const outcomesUsage = `statusgen outcomes split — migrate the shared verify-outcomes log to one file per record.
@@ -46,88 +46,96 @@ Flags:
 // runOutcomes is the `statusgen outcomes` entry point. args excludes the "outcomes" token
 // main() already stripped.
 func runOutcomes(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "split" {
-		fmt.Fprint(stderr, outcomesUsage)
-		return 2
-	}
+	return runVerb(newOutcomesCmd, args, cliIO{Out: stdout, Err: stderr})
+}
 
-	fs := flag.NewFlagSet("outcomes split", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.Usage = func() {}
+// newOutcomesCmd builds `statusgen outcomes`, whose one subcommand is `split`. The bare verb,
+// or any other word after it, prints the usage to stderr and exits 2, as it always has.
+func newOutcomesCmd(rio cliIO) *cobra.Command {
+	cmd := newCommand("outcomes", "Verify-outcomes log migrations (split)", outcomesUsage)
+	cmd.Args = cobra.ArbitraryArgs
+	cmd.RunE = verbHandler(func(args []string) int {
+		fmt.Fprint(rio.Err, outcomesUsage)
+		return 2
+	})
+	cmd.AddCommand(newOutcomesSplitCmd(rio))
+	return cmd
+}
+
+// newOutcomesSplitCmd builds the `statusgen outcomes split` command.
+func newOutcomesSplitCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("split", "Write one record file per legacy verify-outcomes line", outcomesUsage)
+	fs := cmd.Flags()
 	rootDir := fs.String("root", ".", "repo root to read/write (default: cwd)")
 	check := fs.Bool("check", false, "audit only: exit 1 naming any legacy line with no record file, write nothing")
-	if err := fs.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(stdout, outcomesUsage)
+	cmd.RunE = verbHandler(func(args []string) int {
+		root := *rootDir
+
+		shards, gerr := verifyOutcomesShardPaths(root)
+		if gerr != nil {
+			fmt.Fprintf(stderr, "statusgen outcomes split: %v\n", gerr)
+			return 1
+		}
+
+		var missing []string
+		written := 0
+		for _, p := range shards {
+			raw, rerr := os.ReadFile(p)
+			if rerr != nil {
+				fmt.Fprintf(stderr, "statusgen outcomes split: cannot read %s: %v\n", p, rerr)
+				return 1
+			}
+			for i, line := range bytes.Split(raw, []byte("\n")) {
+				line = bytes.TrimSpace(line)
+				if len(line) == 0 {
+					continue
+				}
+				rec, perr := parseOutcomeRecord(line)
+				if perr != nil {
+					fmt.Fprintf(stderr, "statusgen outcomes split: %s line %d: %v\n", p, i+1, perr)
+					return 1
+				}
+				name, nerr := outcomeRecordName(line)
+				if nerr != nil {
+					fmt.Fprintf(stderr, "statusgen outcomes split: %s line %d (brief %s): %v\n", p, i+1, rec.Brief, nerr)
+					return 1
+				}
+				target := filepath.Join(root, filepath.FromSlash(name))
+				if _, serr := os.Stat(target); serr == nil {
+					continue // already split — idempotent
+				} else if !os.IsNotExist(serr) {
+					fmt.Fprintf(stderr, "statusgen outcomes split: cannot stat %s: %v\n", target, serr)
+					return 1
+				}
+				if *check {
+					missing = append(missing, fmt.Sprintf("%s line %d (brief %s) -> %s", p, i+1, rec.Brief, name))
+					continue
+				}
+				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+					fmt.Fprintf(stderr, "statusgen outcomes split: %v\n", err)
+					return 1
+				}
+				if err := os.WriteFile(target, outcomeCanonicalBytes(rec.Raw), 0o644); err != nil {
+					fmt.Fprintf(stderr, "statusgen outcomes split: %v\n", err)
+					return 1
+				}
+				written++
+			}
+		}
+
+		if *check {
+			if len(missing) > 0 {
+				for _, m := range missing {
+					fmt.Fprintln(stdout, "MISSING RECORD:", m)
+				}
+				return 1
+			}
+			fmt.Fprintln(stdout, "outcomes split --check: every legacy line has its record file")
 			return 0
 		}
-		fmt.Fprint(stderr, outcomesUsage)
-		return 2
-	}
-	root := *rootDir
-
-	shards, gerr := verifyOutcomesShardPaths(root)
-	if gerr != nil {
-		fmt.Fprintf(stderr, "statusgen outcomes split: %v\n", gerr)
-		return 1
-	}
-
-	var missing []string
-	written := 0
-	for _, p := range shards {
-		raw, rerr := os.ReadFile(p)
-		if rerr != nil {
-			fmt.Fprintf(stderr, "statusgen outcomes split: cannot read %s: %v\n", p, rerr)
-			return 1
-		}
-		for i, line := range bytes.Split(raw, []byte("\n")) {
-			line = bytes.TrimSpace(line)
-			if len(line) == 0 {
-				continue
-			}
-			rec, perr := parseOutcomeRecord(line)
-			if perr != nil {
-				fmt.Fprintf(stderr, "statusgen outcomes split: %s line %d: %v\n", p, i+1, perr)
-				return 1
-			}
-			name, nerr := outcomeRecordName(line)
-			if nerr != nil {
-				fmt.Fprintf(stderr, "statusgen outcomes split: %s line %d (brief %s): %v\n", p, i+1, rec.Brief, nerr)
-				return 1
-			}
-			target := filepath.Join(root, filepath.FromSlash(name))
-			if _, serr := os.Stat(target); serr == nil {
-				continue // already split — idempotent
-			} else if !os.IsNotExist(serr) {
-				fmt.Fprintf(stderr, "statusgen outcomes split: cannot stat %s: %v\n", target, serr)
-				return 1
-			}
-			if *check {
-				missing = append(missing, fmt.Sprintf("%s line %d (brief %s) -> %s", p, i+1, rec.Brief, name))
-				continue
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				fmt.Fprintf(stderr, "statusgen outcomes split: %v\n", err)
-				return 1
-			}
-			if err := os.WriteFile(target, outcomeCanonicalBytes(rec.Raw), 0o644); err != nil {
-				fmt.Fprintf(stderr, "statusgen outcomes split: %v\n", err)
-				return 1
-			}
-			written++
-		}
-	}
-
-	if *check {
-		if len(missing) > 0 {
-			for _, m := range missing {
-				fmt.Fprintln(stdout, "MISSING RECORD:", m)
-			}
-			return 1
-		}
-		fmt.Fprintln(stdout, "outcomes split --check: every legacy line has its record file")
+		fmt.Fprintf(stdout, "outcomes split: wrote %d new record file(s)\n", written)
 		return 0
-	}
-	fmt.Fprintf(stdout, "outcomes split: wrote %d new record file(s)\n", written)
-	return 0
+	})
+	return cmd
 }

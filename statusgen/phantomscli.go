@@ -1,9 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
+
+	"github.com/spf13/cobra"
 )
 
 // phantomscli.go — the `statusgen phantoms` CLI. Self-contained,
@@ -26,48 +27,53 @@ import (
 // until a later ruling promotes them (see that file's package comment); this
 // verb does not pre-empt that ruling by giving them a side-door exit code.
 func runPhantoms(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("phantoms", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	return runVerb(newPhantomsCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newPhantomsCmd builds the `statusgen phantoms` command.
+func newPhantomsCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("phantoms", "Exit-code verb for one phantom class (sibling-merge-unreconciled)", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "repository root")
 	class := fs.String("class", "", "phantom class to check — only \"sibling-merge-unreconciled\" is a dedicated exit-code verb today")
 	var siblingRoots siblingRootFlags
 	fs.Var(&siblingRoots, "sibling-root", `sibling checkout "<owner>/<repo>=<path>" this verb may read (repeatable; also read from DESK_ROOTS); a sibling named by neither is could-not-check`)
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
+	cmd.RunE = verbHandler(func(args []string) int {
+		if *class != phantomSiblingMergeUnreconciled {
+			fmt.Fprintf(stderr, "statusgen phantoms: --class %q is not a recognized dedicated-verb class; only %q is wired today\n",
+				*class, phantomSiblingMergeUnreconciled)
+			return 2
+		}
 
-	if *class != phantomSiblingMergeUnreconciled {
-		fmt.Fprintf(stderr, "statusgen phantoms: --class %q is not a recognized dedicated-verb class; only %q is wired today\n",
-			*class, phantomSiblingMergeUnreconciled)
-		return 2
-	}
+		streams, _, err := loadHydratedStreams(*root)
+		if err != nil {
+			fmt.Fprintln(stderr, "could-not-check:", err)
+			return 2
+		}
 
-	streams, _, err := loadHydratedStreams(*root)
-	if err != nil {
-		fmt.Fprintln(stderr, "could-not-check:", err)
-		return 2
-	}
+		// Invoking this verb IS the opt-in, so it does not consult
+		// siblingMergeEnabled. It still reads only siblings the operator's map
+		// (DESK_ROOTS or --sibling-root) names.
+		overrides := effectiveSiblingRootOverrides(siblingRoots)
+		notices, checkedFailed, couldNotCheck := siblingMergeCheck(streams, *root, overrides)
+		for _, n := range notices {
+			fmt.Fprintln(stdout, n)
+		}
 
-	// Invoking this verb IS the opt-in, so it does not consult
-	// siblingMergeEnabled. It still reads only siblings the operator's map
-	// (DESK_ROOTS or --sibling-root) names.
-	overrides := effectiveSiblingRootOverrides(siblingRoots)
-	notices, checkedFailed, couldNotCheck := siblingMergeCheck(streams, *root, overrides)
-	for _, n := range notices {
-		fmt.Fprintln(stdout, n)
-	}
-
-	// Exit contract (item 5(ii)): 0 clean, 1 at least one checked-failed row
-	// (checked-failed always outranks a could-not-check finding elsewhere —
-	// a live, actionable finding must never be masked by an unrelated
-	// could-not-check on a different sibling), 2 any could-not-check and no
-	// checked-failed.
-	switch {
-	case checkedFailed > 0:
-		return 1
-	case couldNotCheck > 0:
-		return 2
-	default:
-		return 0
-	}
+		// Exit contract (item 5(ii)): 0 clean, 1 at least one checked-failed row
+		// (checked-failed always outranks a could-not-check finding elsewhere —
+		// a live, actionable finding must never be masked by an unrelated
+		// could-not-check on a different sibling), 2 any could-not-check and no
+		// checked-failed.
+		switch {
+		case checkedFailed > 0:
+			return 1
+		case couldNotCheck > 0:
+			return 2
+		default:
+			return 0
+		}
+	})
+	return cmd
 }

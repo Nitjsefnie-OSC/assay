@@ -54,7 +54,6 @@ package main
 // every unproven state resolves to serial.
 
 import (
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -65,6 +64,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // ParallelStream is one declared shard of an intra-brief split: a name and the
@@ -547,45 +548,51 @@ func loadGoSymbols(res *shardResult, cache map[string]goFileSymbols, failed map[
 // whether its declared split may be dispatched in parallel, and say why in
 // terms a dispatcher can act on without re-deriving anything.
 func runShardcheck(args []string, stdout, stderr *os.File) int {
-	flags := flag.NewFlagSet("shardcheck", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	return runVerb(newShardcheckCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newShardcheckCmd builds the `statusgen shardcheck` command.
+func newShardcheckCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := fileOr(rio.Out, os.Stdout), fileOr(rio.Err, os.Stderr)
+	cmd := newCommand("shardcheck", "Decide whether a declared parallel split may be dispatched", "")
+	flags := cmd.Flags()
 	briefPath := flags.String("brief", "", "brief file whose parallel-streams: split to check")
 	root := flags.String("root", ".", "repository root the shard globs are resolved against")
 	var shards shardFlags
 	flags.Var(&shards, "shard", "check an ad-hoc shard instead of a brief's: name=glob[,glob] (repeatable)")
-	if err := flags.Parse(args); err != nil {
-		return shardExitCouldNot
-	}
-	// --shard is the dispatcher's form: a split can be checked BEFORE anyone
-	// commits it to a brief, which is the only way a dispatcher can evaluate a
-	// candidate split without first authoring the declaration it may have to
-	// withdraw. Mutually exclusive with --brief because two sources for one
-	// plan is two plans.
-	if len(shards) > 0 {
-		if *briefPath != "" {
-			fmt.Fprintln(stderr, "statusgen shardcheck: --brief and --shard are alternatives; pass one")
+	cmd.RunE = verbHandler(func(args []string) int {
+		// --shard is the dispatcher's form: a split can be checked BEFORE anyone
+		// commits it to a brief, which is the only way a dispatcher can evaluate a
+		// candidate split without first authoring the declaration it may have to
+		// withdraw. Mutually exclusive with --brief because two sources for one
+		// plan is two plans.
+		if len(shards) > 0 {
+			if *briefPath != "" {
+				fmt.Fprintln(stderr, "statusgen shardcheck: --brief and --shard are alternatives; pass one")
+				return shardExitCouldNot
+			}
+			return reportShardPlan(stdout, "the ad-hoc plan", *root, shards)
+		}
+		if *briefPath == "" {
+			fmt.Fprintln(stderr, "statusgen shardcheck: --brief <path> or --shard name=glob is required")
 			return shardExitCouldNot
 		}
-		return reportShardPlan(stdout, "the ad-hoc plan", *root, shards)
-	}
-	if *briefPath == "" {
-		fmt.Fprintln(stderr, "statusgen shardcheck: --brief <path> or --shard name=glob is required")
-		return shardExitCouldNot
-	}
-	bf, ok, err := parseBriefFile(*briefPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: %v\n", err)
-		return shardExitCouldNot
-	}
-	if !ok || bf == nil {
-		fmt.Fprintf(stderr, "could-not-check: %s is not a schema: brief-v1 file — a split can only be declared in brief-v1 frontmatter\n", *briefPath)
-		return shardExitCouldNot
-	}
-	if len(bf.ParallelStreams) == 0 {
-		fmt.Fprintf(stdout, "SPLIT: none-declared — %s dispatches to ONE worker (unchanged behaviour)\n", bf.Brief)
-		return shardExitClean
-	}
-	return reportShardPlan(stdout, bf.Brief, *root, bf.ParallelStreams) // briefid:raw display label for the shard plan
+		bf, ok, err := parseBriefFile(*briefPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: %v\n", err)
+			return shardExitCouldNot
+		}
+		if !ok || bf == nil {
+			fmt.Fprintf(stderr, "could-not-check: %s is not a schema: brief-v1 file — a split can only be declared in brief-v1 frontmatter\n", *briefPath)
+			return shardExitCouldNot
+		}
+		if len(bf.ParallelStreams) == 0 {
+			fmt.Fprintf(stdout, "SPLIT: none-declared — %s dispatches to ONE worker (unchanged behaviour)\n", bf.Brief)
+			return shardExitClean
+		}
+		return reportShardPlan(stdout, bf.Brief, *root, bf.ParallelStreams) // briefid:raw display label for the shard plan
+	})
+	return cmd
 }
 
 // reportShardPlan runs the precondition and prints a verdict a dispatcher can
@@ -631,6 +638,8 @@ func (f *shardFlags) String() string {
 	}
 	return strings.Join(names, ",")
 }
+
+func (f *shardFlags) Type() string { return "string" }
 
 func (f *shardFlags) Set(v string) error {
 	name, globs, ok := strings.Cut(v, "=")

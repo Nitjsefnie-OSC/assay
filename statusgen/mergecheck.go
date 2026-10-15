@@ -103,7 +103,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -112,6 +111,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // remoteMainRef is the FULLY-QUALIFIED remote-tracking ref for main, spelled out
@@ -342,214 +343,219 @@ func execOverTree(root, tree, cmdline string) (int, string, error) {
 
 // runMergecheck is the subcommand entry point. It returns the process exit code.
 func runMergecheck(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("mergecheck", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	return runVerb(newMergecheckCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newMergecheckCmd builds the `statusgen mergecheck` command.
+func newMergecheckCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("mergecheck", "Re-check the branch against the trial-merged tree", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "repository root to check")
 	base := fs.String("base", defaultMergecheckBase, "base ref the branch will merge into — spell it in full (see defaultMergecheckBase)")
 	head := fs.String("head", "HEAD", "the branch head to re-check")
 	execCmd := fs.String("exec", "", "command to run over the trial-merged tree (e.g. \"cd statusgen && go build ./...\"); without it, compile-level collisions are invisible")
 	doFetch := fs.Bool("fetch", false, "run `git fetch origin` first — otherwise the base is only as current as the last fetch")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
+	cmd.RunE = verbHandler(func(args []string) int {
+		p := func(format string, a ...any) { fmt.Fprintf(stdout, format+"\n", a...) }
 
-	p := func(format string, a ...any) { fmt.Fprintf(stdout, format+"\n", a...) }
-
-	absRoot, err := filepath.Abs(*root)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: --root %q could not be resolved: %v\n", *root, err)
-		return 2
-	}
-
-	if *doFetch {
-		if _, err := gitOut(absRoot, "fetch", "--quiet", "origin"); err != nil {
-			fmt.Fprintf(stderr, "could-not-check: --fetch failed: %v\n"+
-				"The base ref would be stale and the whole re-check would be about an old main. Nothing was checked.\n", err)
+		absRoot, err := filepath.Abs(*root)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: --root %q could not be resolved: %v\n", *root, err)
 			return 2
 		}
-	}
 
-	headSHA, err := resolveCommit(absRoot, *head)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: the head ref %q would not resolve: %v\nNothing was checked.\n", *head, err)
-		return 2
-	}
-	baseSHA, err := resolveCommit(absRoot, *base)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: the base ref %q would not resolve: %v\n"+
-			"This is the fail-open case the check exists to refuse: an unreachable base must never render as \"current\". Nothing was checked.\n", *base, err)
-		return 2
-	}
-
-	p("statusgen mergecheck — merge-time re-check")
-	p("  head: %s (%s)", headSHA, *head)
-	p("  base: %s (%s)", baseSHA, *base)
-
-	mergeBase, err := gitOut(absRoot, "merge-base", baseSHA, headSHA)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: no merge-base between %s and %s: %v\n", *base, *head, err)
-		return 2
-	}
-	p("  merge-base: %s", mergeBase)
-
-	behindStr, err := gitOut(absRoot, "rev-list", "--count", headSHA+".."+baseSHA)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: the currency distance could not be counted: %v\n", err)
-		return 2
-	}
-	behind, _ := strconv.Atoi(behindStr)
-	p("  currency: head is %d commit(s) behind the base — ADVISORY, this never fails the check.", behind)
-	p("            (measured 2026-08-13: 52 of 52 open PRs in this repo are behind main; a gate here reds the whole queue)")
-	p("")
-
-	failed := []string{}  // merge-introduced findings → exit 1
-	notices := []string{} // pre-existing / advisory → reported, never fails
-	unknown := []string{} // could-not-check → exit 2, dominates
-
-	// ── Probe 1: the trial merge itself.
-	tm, err := trialMerge(absRoot, baseSHA, headSHA)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: the trial merge could not be computed: %v\n"+
-			"No conclusion is drawn about this merge — this is the absence of a check, not a pass.\n", err)
-		return 2
-	}
-	if len(tm.Conflicts) > 0 {
-		failed = append(failed, fmt.Sprintf("TEXTUAL CONFLICT in %d path(s): %s", len(tm.Conflicts), strings.Join(tm.Conflicts, ", ")))
-	} else {
-		p("checked-clean: the trial merge is textually clean (merged tree %s).", tm.Tree)
-		p("  This is the WEAKEST result in this report and the one most often over-read. Every")
-		p("  incident in #54 merged cleanly. \"No conflict\" means git could combine the bytes.")
-	}
-
-	// ── Probe 2: stale base — the CI-invoked files the base has and the head lacks.
-	baseFiles, err := treeFiles(absRoot, baseSHA)
-	if err != nil {
-		unknown = append(unknown, fmt.Sprintf("stale-base probe: the base tree could not be listed: %v", err))
-	}
-	headFiles, err := treeFiles(absRoot, headSHA)
-	if err != nil {
-		unknown = append(unknown, fmt.Sprintf("stale-base probe: the head tree could not be listed: %v", err))
-	}
-	if baseFiles != nil && headFiles != nil {
-		missing := staleBaseFiles(baseFiles, headFiles)
-		if len(missing) > 0 {
-			notices = append(notices, fmt.Sprintf(
-				"STALE-BASE: the base carries %d CI-invoked path(s) your head does not have — %s.\n"+
-					"    Your branch is STALE here, not BROKEN. A CI job that calls one of these against your\n"+
-					"    tree fails with exit 127 (file not found) and the failure is about currency, not your\n"+
-					"    work. Measured 2026-08-13: 46 of 52 open PRs predate .github/scripts/verify-inscope.sh\n"+
-					"    alone. Resync before you investigate the failure.",
-				len(missing), strings.Join(missing, ", ")))
-		} else {
-			p("checked-clean: no CI-invoked path exists on the base and is missing from your head (no stale-base exit-127 class).")
-		}
-	}
-
-	// ── Probe 3: the numbering-space collision, read off the MERGED tree.
-	// This is the probe that can see what neither branch's own diff shows.
-	mergedRules, mergedOK, err := fileInTree(absRoot, tm.Tree, briefRulesRelPath)
-	if err != nil {
-		unknown = append(unknown, fmt.Sprintf("numbering-space probe: %s could not be read from the merged tree: %v", briefRulesRelPath, err))
-	} else if !mergedOK {
-		p("checked-clean: %s is not present in the merged tree — numbering-space probe not applicable.", briefRulesRelPath)
-	} else {
-		headRules, headOK, herr := fileInTree(absRoot, headSHA, briefRulesRelPath)
-		if herr != nil {
-			unknown = append(unknown, fmt.Sprintf("numbering-space probe: %s could not be read from the head tree, so merge-introduced and pre-existing cannot be told apart: %v", briefRulesRelPath, herr))
-		} else {
-			mergedFindings := numberSpaceCollisions(mergedRules)
-			preExisting := map[string]bool{}
-			if headOK {
-				for _, f := range numberSpaceCollisions(headRules) {
-					preExisting[f] = true
-				}
-			}
-			introduced := 0
-			for _, f := range mergedFindings {
-				if preExisting[f] {
-					notices = append(notices, "PRE-EXISTING numbering collision (already on your branch, the merge did not create it): "+f)
-					continue
-				}
-				introduced++
-				failed = append(failed, "MERGE-INTRODUCED numbering collision — invisible in either diff alone, present in the tree you would land: "+f)
-			}
-			if len(mergedFindings) == 0 {
-				p("checked-clean: no rule-number collision in the merged copy of %s.", briefRulesRelPath)
-			} else if introduced == 0 {
-				p("checked-failed(pre-existing): %d numbering collision(s) in the merged tree, all already present on your head.", len(mergedFindings))
+		if *doFetch {
+			if _, err := gitOut(absRoot, "fetch", "--quiet", "origin"); err != nil {
+				fmt.Fprintf(stderr, "could-not-check: --fetch failed: %v\n"+
+					"The base ref would be stale and the whole re-check would be about an old main. Nothing was checked.\n", err)
+				return 2
 			}
 		}
-	}
 
-	// ── Probe 4: --exec over the merged tree, with the same merge-introduced /
-	// pre-existing split. This is the only probe that can see a compile-level
-	// collision such as the emit() arity case.
-	if *execCmd == "" {
-		notices = append(notices, "no --exec given: NOTHING WAS COMPILED. The emit() arity class of collision is not covered by this run.")
-	} else {
-		code, out, xerr := execOverTree(absRoot, tm.Tree, *execCmd)
-		if xerr != nil {
-			unknown = append(unknown, fmt.Sprintf("--exec probe: the merged tree could not be materialised or run: %v", xerr))
-		} else if code == 0 {
-			p("checked-clean: `%s` exits 0 over the merged tree.", *execCmd)
+		headSHA, err := resolveCommit(absRoot, *head)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: the head ref %q would not resolve: %v\nNothing was checked.\n", *head, err)
+			return 2
+		}
+		baseSHA, err := resolveCommit(absRoot, *base)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: the base ref %q would not resolve: %v\n"+
+				"This is the fail-open case the check exists to refuse: an unreachable base must never render as \"current\". Nothing was checked.\n", *base, err)
+			return 2
+		}
+
+		p("statusgen mergecheck — merge-time re-check")
+		p("  head: %s (%s)", headSHA, *head)
+		p("  base: %s (%s)", baseSHA, *base)
+
+		mergeBase, err := gitOut(absRoot, "merge-base", baseSHA, headSHA)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: no merge-base between %s and %s: %v\n", *base, *head, err)
+			return 2
+		}
+		p("  merge-base: %s", mergeBase)
+
+		behindStr, err := gitOut(absRoot, "rev-list", "--count", headSHA+".."+baseSHA)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: the currency distance could not be counted: %v\n", err)
+			return 2
+		}
+		behind, _ := strconv.Atoi(behindStr)
+		p("  currency: head is %d commit(s) behind the base — ADVISORY, this never fails the check.", behind)
+		p("            (measured 2026-08-13: 52 of 52 open PRs in this repo are behind main; a gate here reds the whole queue)")
+		p("")
+
+		failed := []string{}  // merge-introduced findings → exit 1
+		notices := []string{} // pre-existing / advisory → reported, never fails
+		unknown := []string{} // could-not-check → exit 2, dominates
+
+		// ── Probe 1: the trial merge itself.
+		tm, err := trialMerge(absRoot, baseSHA, headSHA)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: the trial merge could not be computed: %v\n"+
+				"No conclusion is drawn about this merge — this is the absence of a check, not a pass.\n", err)
+			return 2
+		}
+		if len(tm.Conflicts) > 0 {
+			failed = append(failed, fmt.Sprintf("TEXTUAL CONFLICT in %d path(s): %s", len(tm.Conflicts), strings.Join(tm.Conflicts, ", ")))
 		} else {
-			headTree, terr := gitOut(absRoot, "rev-parse", headSHA+"^{tree}")
-			if terr != nil {
-				unknown = append(unknown, fmt.Sprintf("--exec probe: the command failed over the merged tree (exit %d) but the head tree could not be resolved, so merge-introduced and pre-existing cannot be told apart: %v", code, terr))
+			p("checked-clean: the trial merge is textually clean (merged tree %s).", tm.Tree)
+			p("  This is the WEAKEST result in this report and the one most often over-read. Every")
+			p("  incident in #54 merged cleanly. \"No conflict\" means git could combine the bytes.")
+		}
+
+		// ── Probe 2: stale base — the CI-invoked files the base has and the head lacks.
+		baseFiles, err := treeFiles(absRoot, baseSHA)
+		if err != nil {
+			unknown = append(unknown, fmt.Sprintf("stale-base probe: the base tree could not be listed: %v", err))
+		}
+		headFiles, err := treeFiles(absRoot, headSHA)
+		if err != nil {
+			unknown = append(unknown, fmt.Sprintf("stale-base probe: the head tree could not be listed: %v", err))
+		}
+		if baseFiles != nil && headFiles != nil {
+			missing := staleBaseFiles(baseFiles, headFiles)
+			if len(missing) > 0 {
+				notices = append(notices, fmt.Sprintf(
+					"STALE-BASE: the base carries %d CI-invoked path(s) your head does not have — %s.\n"+
+						"    Your branch is STALE here, not BROKEN. A CI job that calls one of these against your\n"+
+						"    tree fails with exit 127 (file not found) and the failure is about currency, not your\n"+
+						"    work. Measured 2026-08-13: 46 of 52 open PRs predate .github/scripts/verify-inscope.sh\n"+
+						"    alone. Resync before you investigate the failure.",
+					len(missing), strings.Join(missing, ", ")))
 			} else {
-				headCode, _, herr := execOverTree(absRoot, headTree, *execCmd)
-				switch {
-				case herr != nil:
-					unknown = append(unknown, fmt.Sprintf("--exec probe: the command failed over the merged tree (exit %d) but could not be run over the head tree, so the two cannot be told apart: %v", code, herr))
-				case headCode == 0:
-					failed = append(failed, fmt.Sprintf(
-						"MERGE-INTRODUCED: `%s` exits 0 on your head and %d over the merged tree.\n"+
-							"    Your branch is correct and the COMBINATION is not — this is the emit() arity class.\n"+
-							"    Output:\n%s", *execCmd, code, indent(out, "      ")))
-				default:
-					notices = append(notices, fmt.Sprintf(
-						"PRE-EXISTING: `%s` exits %d over the merged tree and %d on your head alone. The merge is not the cause.",
-						*execCmd, code, headCode))
+				p("checked-clean: no CI-invoked path exists on the base and is missing from your head (no stale-base exit-127 class).")
+			}
+		}
+
+		// ── Probe 3: the numbering-space collision, read off the MERGED tree.
+		// This is the probe that can see what neither branch's own diff shows.
+		mergedRules, mergedOK, err := fileInTree(absRoot, tm.Tree, briefRulesRelPath)
+		if err != nil {
+			unknown = append(unknown, fmt.Sprintf("numbering-space probe: %s could not be read from the merged tree: %v", briefRulesRelPath, err))
+		} else if !mergedOK {
+			p("checked-clean: %s is not present in the merged tree — numbering-space probe not applicable.", briefRulesRelPath)
+		} else {
+			headRules, headOK, herr := fileInTree(absRoot, headSHA, briefRulesRelPath)
+			if herr != nil {
+				unknown = append(unknown, fmt.Sprintf("numbering-space probe: %s could not be read from the head tree, so merge-introduced and pre-existing cannot be told apart: %v", briefRulesRelPath, herr))
+			} else {
+				mergedFindings := numberSpaceCollisions(mergedRules)
+				preExisting := map[string]bool{}
+				if headOK {
+					for _, f := range numberSpaceCollisions(headRules) {
+						preExisting[f] = true
+					}
+				}
+				introduced := 0
+				for _, f := range mergedFindings {
+					if preExisting[f] {
+						notices = append(notices, "PRE-EXISTING numbering collision (already on your branch, the merge did not create it): "+f)
+						continue
+					}
+					introduced++
+					failed = append(failed, "MERGE-INTRODUCED numbering collision — invisible in either diff alone, present in the tree you would land: "+f)
+				}
+				if len(mergedFindings) == 0 {
+					p("checked-clean: no rule-number collision in the merged copy of %s.", briefRulesRelPath)
+				} else if introduced == 0 {
+					p("checked-failed(pre-existing): %d numbering collision(s) in the merged tree, all already present on your head.", len(mergedFindings))
 				}
 			}
 		}
-	}
 
-	// ── Report.
-	p("")
-	for _, n := range notices {
-		p("notice: %s", n)
-	}
-	for _, u := range unknown {
-		p("could-not-check: %s", u)
-	}
-	for _, f := range failed {
-		p("checked-failed: %s", f)
-	}
+		// ── Probe 4: --exec over the merged tree, with the same merge-introduced /
+		// pre-existing split. This is the only probe that can see a compile-level
+		// collision such as the emit() arity case.
+		if *execCmd == "" {
+			notices = append(notices, "no --exec given: NOTHING WAS COMPILED. The emit() arity class of collision is not covered by this run.")
+		} else {
+			code, out, xerr := execOverTree(absRoot, tm.Tree, *execCmd)
+			if xerr != nil {
+				unknown = append(unknown, fmt.Sprintf("--exec probe: the merged tree could not be materialised or run: %v", xerr))
+			} else if code == 0 {
+				p("checked-clean: `%s` exits 0 over the merged tree.", *execCmd)
+			} else {
+				headTree, terr := gitOut(absRoot, "rev-parse", headSHA+"^{tree}")
+				if terr != nil {
+					unknown = append(unknown, fmt.Sprintf("--exec probe: the command failed over the merged tree (exit %d) but the head tree could not be resolved, so merge-introduced and pre-existing cannot be told apart: %v", code, terr))
+				} else {
+					headCode, _, herr := execOverTree(absRoot, headTree, *execCmd)
+					switch {
+					case herr != nil:
+						unknown = append(unknown, fmt.Sprintf("--exec probe: the command failed over the merged tree (exit %d) but could not be run over the head tree, so the two cannot be told apart: %v", code, herr))
+					case headCode == 0:
+						failed = append(failed, fmt.Sprintf(
+							"MERGE-INTRODUCED: `%s` exits 0 on your head and %d over the merged tree.\n"+
+								"    Your branch is correct and the COMBINATION is not — this is the emit() arity class.\n"+
+								"    Output:\n%s", *execCmd, code, indent(out, "      ")))
+					default:
+						notices = append(notices, fmt.Sprintf(
+							"PRE-EXISTING: `%s` exits %d over the merged tree and %d on your head alone. The merge is not the cause.",
+							*execCmd, code, headCode))
+					}
+				}
+			}
+		}
 
-	p("")
-	p("Collision shapes this check CANNOT see — read them before treating a clean run as safe:")
-	for _, b := range blindSpots {
-		p("  · %s", b)
-	}
-	p("")
-	p("mergecheck does not merge, flip, approve, or push. Merge is always the human's.")
-
-	// 2 dominates 1: "I could not establish this" has to be repaired before a failure
-	// count means anything. Same precedence as verifyrun.yml's gate.
-	if len(unknown) > 0 {
+		// ── Report.
 		p("")
-		p("VERDICT: could-not-check — %d probe(s) did not run. This is NOT a pass.", len(unknown))
-		return 2
-	}
-	if len(failed) > 0 {
+		for _, n := range notices {
+			p("notice: %s", n)
+		}
+		for _, u := range unknown {
+			p("could-not-check: %s", u)
+		}
+		for _, f := range failed {
+			p("checked-failed: %s", f)
+		}
+
 		p("")
-		p("VERDICT: checked-failed — %d merge-introduced finding(s).", len(failed))
-		return 1
-	}
-	p("")
-	p("VERDICT: checked-clean for the probes listed above, and only those.")
-	return 0
+		p("Collision shapes this check CANNOT see — read them before treating a clean run as safe:")
+		for _, b := range blindSpots {
+			p("  · %s", b)
+		}
+		p("")
+		p("mergecheck does not merge, flip, approve, or push. Merge is always the human's.")
+
+		// 2 dominates 1: "I could not establish this" has to be repaired before a failure
+		// count means anything. Same precedence as verifyrun.yml's gate.
+		if len(unknown) > 0 {
+			p("")
+			p("VERDICT: could-not-check — %d probe(s) did not run. This is NOT a pass.", len(unknown))
+			return 2
+		}
+		if len(failed) > 0 {
+			p("")
+			p("VERDICT: checked-failed — %d merge-introduced finding(s).", len(failed))
+			return 1
+		}
+		p("")
+		p("VERDICT: checked-clean for the probes listed above, and only those.")
+		return 0
+	})
+	return cmd
 }
 
 // indent prefixes every line of s, for embedding command output in a finding.

@@ -3,8 +3,8 @@ package main
 // brief — resolve an item KEY (`<stream>/<NN>`) to the three facts every dispatch
 // and verify consumer currently re-derives by hand: which file the key names, what
 // its frontmatter (`gate:` / `risk:` / `exec-tier:` …) says, and what the stream
-// README's board row reports for its status. A positional subcommand intercepted
-// before the parent flag parse (like verifyrun/conform/init), reusing the SAME
+// README's board row reports for its status. A positional subcommand with its own
+// flags (like verifyrun/conform/init), reusing the SAME
 // parsers the lint uses — parseBriefFile for the frontmatter and parseBriefTable
 // for the row — so the answer this prints and the answer --lint validates can
 // never disagree (desk-tools/12).
@@ -39,7 +39,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // briefInfoExit* — the exit contract described above.
@@ -85,45 +88,53 @@ type briefInfo struct {
 
 // runBriefInfo is the `statusgen brief` entry point; it returns the process exit
 // code. Flags may appear before or after the positional keys
-// (`brief desk-tools/12 --root .. --json`), so args are scanned by hand rather
-// than handed to flag.Parse, which stops at the first non-flag token.
+// (`brief desk-tools/12 --root .. --json`); --json and --text are one choice, the
+// last given wins.
 func runBriefInfo(args []string, stdout, stderr io.Writer) int {
-	root := "."
-	asText := false
-	checkVerified := false
-	var keys []string
+	return runVerb(newBriefInfoCmd, args, cliIO{Out: stdout, Err: stderr})
+}
 
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "--root" || a == "-root":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "brief: --root needs a value")
-				return briefInfoExitResolve
-			}
-			root = args[i]
-		case strings.HasPrefix(a, "--root="):
-			root = a[len("--root="):]
-		case strings.HasPrefix(a, "-root="):
-			root = a[len("-root="):]
-		case a == "--check-verified":
-			checkVerified = true
-		case a == "--json" || a == "-json":
-			asText = false
-		case a == "--text" || a == "-text":
-			asText = true
-		case a == "-h" || a == "--help":
-			fmt.Fprintln(stderr, "usage: statusgen brief [--root DIR] [--json|--text] [--check-verified] <stream>/<NN> [<stream>/<NN> ...]")
-			return briefInfoExitResolve
-		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(stderr, "brief: unknown flag %q\n", a)
-			return briefInfoExitResolve
-		default:
-			keys = append(keys, a)
-		}
+// briefFormatFlag is one of the --json/--text pair: both write one shared choice, so
+// the last given wins. Its String is constant — the pair's state lives in the choice,
+// not in either flag — so resolving one flag's default never undoes the other.
+type briefFormatFlag struct {
+	asText *bool
+	text   bool
+}
+
+func (f briefFormatFlag) String() string   { return "false" }
+func (f briefFormatFlag) Type() string     { return "bool" }
+func (f briefFormatFlag) IsBoolFlag() bool { return true }
+func (f briefFormatFlag) Set(v string) error {
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
 	}
+	*f.asText = on == f.text
+	return nil
+}
 
+// newBriefInfoCmd builds `statusgen brief`.
+func newBriefInfoCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("brief [--root DIR] [--json|--text] [--check-verified] <stream>/<NN> [<stream>/<NN> ...]",
+		"Resolve item keys to their brief file, frontmatter and board row", "")
+	cmd.Args = cobra.ArbitraryArgs
+	fs := cmd.Flags()
+	rootFlag := fs.String("root", ".", "repository root")
+	checkVerified := fs.Bool("check-verified", false, "also require a verified/done board row, a dated verifier stamp and passing witnesses for every Verify row")
+	asText := false
+	fs.Var(briefFormatFlag{&asText, false}, "json", "print JSON (the default)")
+	fs.Lookup("json").NoOptDefVal = "true"
+	fs.Var(briefFormatFlag{&asText, true}, "text", "print text")
+	fs.Lookup("text").NoOptDefVal = "true"
+	cmd.RunE = verbHandler(func(keys []string) int {
+		return resolveBriefInfo(*rootFlag, asText, *checkVerified, keys, stdout, stderr)
+	})
+	return cmd
+}
+
+func resolveBriefInfo(root string, asText, checkVerified bool, keys []string, stdout, stderr io.Writer) int {
 	if len(keys) == 0 {
 		fmt.Fprintln(stderr, "brief: need at least one <stream>/<NN> key")
 		return briefInfoExitResolve

@@ -43,11 +43,11 @@ package main
 // evaluate.
 
 import (
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -83,97 +83,96 @@ Flags:
 // runVerifyclosure is the `statusgen verifyclosure` entry point. args excludes
 // the "verifyclosure" token main() already stripped.
 func runVerifyclosure(args []string, stdout, stderr *os.File) int {
-	fs := flag.NewFlagSet("verifyclosure", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {}
+	return runVerb(newVerifyclosureCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newVerifyclosureCmd builds the `statusgen verifyclosure` command.
+func newVerifyclosureCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := fileOr(rio.Out, os.Stdout), fileOr(rio.Err, os.Stderr)
+	cmd := newCommand("verifyclosure", "Report whether the tree presents a lint-valid verified closure", verifyclosureUsage)
+	fs := cmd.Flags()
 	briefKey := fs.String("brief", "", "brief key <stream>/<NN> to evaluate")
 	rootDir := fs.String("root", "", "repo root to read (default: cwd)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(stdout, verifyclosureUsage)
+	cmd.RunE = verbHandler(func(args []string) int {
+		key := strings.TrimSpace(*briefKey)
+		if key == "" {
+			fmt.Fprint(stderr, verifyclosureUsage)
+			return verifyclosureExitCouldNotCheck
+		}
+		stream, num, ok := splitBriefKey(key)
+		if !ok {
+			fmt.Fprintf(stderr, "statusgen verifyclosure: --brief must be <stream>/<NN>, got %q\n", key)
+			return verifyclosureExitCouldNotCheck
+		}
+
+		root := *rootDir
+		if root == "" {
+			root = "."
+		}
+
+		streams, _, err := loadStreams(root)
+		if err != nil {
+			// The board could not be read at all — could-not-check, never a verdict
+			// on a tree we could not evaluate.
+			fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — cannot read the board at %s: %v\n", root, err)
+			return verifyclosureExitCouldNotCheck
+		}
+
+		s, br := findBriefRow(streams, stream, num)
+		if s == nil || br == nil {
+			fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — brief %s is not on any stream board under %s (nothing records its Status)\n", key, root)
+			return verifyclosureExitCouldNotCheck
+		}
+
+		// Half 1 — the stamp. A brief still at implemented (or any non-closed state),
+		// or one at verified/done with no dated runner in the Verified cell, does not
+		// present a lint-valid closure. This is the stuck-flip discriminator.
+		if br.Status != "verified" && br.Status != "done" {
+			fmt.Fprintf(stdout, "%s: NOT accepted — Status is %q, not verified/done — a `verified` sidecar row for a brief the board still calls %q is the stuck-flip mismatch (#1309)\n", key, br.Status, br.Status)
+			return verifyclosureExitNotAccepted
+		}
+		if !verifiedCellRe.MatchString(br.Verified) {
+			fmt.Fprintf(stdout, "%s: NOT accepted — Status is %q but the Verified cell %q carries no dated runner stamp (YYYY-MM-DD <runner>)\n", key, br.Status, br.Verified)
+			return verifyclosureExitNotAccepted
+		}
+
+		// Half 2 — the witness. Every Verify row must carry a matching, passing
+		// execution witness. A brief with no Verify rows has nothing to witness and
+		// clears this half on the stamp alone.
+		art, ok := loadBriefArtifacts(s, num)
+		if !ok {
+			fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — cannot read the brief file for %s under %s\n", key, root)
+			return verifyclosureExitCouldNotCheck
+		}
+		// This verb does not run the lint, so it refuses an unterminated `<!--`
+		// itself (#1939): a line-start one hides the witness table on the page.
+		findings, refusal := closureWitnesses(art.Verify, art.Evidence)
+		if refusal != "" {
+			fmt.Fprintf(stdout, "%s: NOT accepted — %s\n", key, refusal)
+			return verifyclosureExitNotAccepted
+		}
+		if len(findings) == 0 {
+			// No Verify rows: nothing to witness. The stamp already passed.
+			fmt.Fprintf(stdout, "%s: accepted — Status %q with a stamped Verified cell; no Verify rows to witness\n", key, br.Status)
 			return verifyclosureExitAccepted
 		}
-		fmt.Fprint(stderr, verifyclosureUsage)
-		return verifyclosureExitCouldNotCheck
-	}
-
-	key := strings.TrimSpace(*briefKey)
-	if key == "" {
-		fmt.Fprint(stderr, verifyclosureUsage)
-		return verifyclosureExitCouldNotCheck
-	}
-	stream, num, ok := splitBriefKey(key)
-	if !ok {
-		fmt.Fprintf(stderr, "statusgen verifyclosure: --brief must be <stream>/<NN>, got %q\n", key)
-		return verifyclosureExitCouldNotCheck
-	}
-
-	root := *rootDir
-	if root == "" {
-		root = "."
-	}
-
-	streams, _, err := loadStreams(root)
-	if err != nil {
-		// The board could not be read at all — could-not-check, never a verdict
-		// on a tree we could not evaluate.
-		fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — cannot read the board at %s: %v\n", root, err)
-		return verifyclosureExitCouldNotCheck
-	}
-
-	s, br := findBriefRow(streams, stream, num)
-	if s == nil || br == nil {
-		fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — brief %s is not on any stream board under %s (nothing records its Status)\n", key, root)
-		return verifyclosureExitCouldNotCheck
-	}
-
-	// Half 1 — the stamp. A brief still at implemented (or any non-closed state),
-	// or one at verified/done with no dated runner in the Verified cell, does not
-	// present a lint-valid closure. This is the stuck-flip discriminator.
-	if br.Status != "verified" && br.Status != "done" {
-		fmt.Fprintf(stdout, "%s: NOT accepted — Status is %q, not verified/done — a `verified` sidecar row for a brief the board still calls %q is the stuck-flip mismatch (#1309)\n", key, br.Status, br.Status)
-		return verifyclosureExitNotAccepted
-	}
-	if !verifiedCellRe.MatchString(br.Verified) {
-		fmt.Fprintf(stdout, "%s: NOT accepted — Status is %q but the Verified cell %q carries no dated runner stamp (YYYY-MM-DD <runner>)\n", key, br.Status, br.Verified)
-		return verifyclosureExitNotAccepted
-	}
-
-	// Half 2 — the witness. Every Verify row must carry a matching, passing
-	// execution witness. A brief with no Verify rows has nothing to witness and
-	// clears this half on the stamp alone.
-	art, ok := loadBriefArtifacts(s, num)
-	if !ok {
-		fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — cannot read the brief file for %s under %s\n", key, root)
-		return verifyclosureExitCouldNotCheck
-	}
-	// This verb does not run the lint, so it refuses an unterminated `<!--`
-	// itself (#1939): a line-start one hides the witness table on the page.
-	findings, refusal := closureWitnesses(art.Verify, art.Evidence)
-	if refusal != "" {
-		fmt.Fprintf(stdout, "%s: NOT accepted — %s\n", key, refusal)
-		return verifyclosureExitNotAccepted
-	}
-	if len(findings) == 0 {
-		// No Verify rows: nothing to witness. The stamp already passed.
-		fmt.Fprintf(stdout, "%s: accepted — Status %q with a stamped Verified cell; no Verify rows to witness\n", key, br.Status)
-		return verifyclosureExitAccepted
-	}
-	if code := checkExitCode(findings); code != verifyrunExitPass {
-		var missing []string
-		for _, f := range findings {
-			if f.State != statePass {
-				missing = append(missing, fmt.Sprintf("row %s: %s", f.ID, f.State))
+		if code := checkExitCode(findings); code != verifyrunExitPass {
+			var missing []string
+			for _, f := range findings {
+				if f.State != statePass {
+					missing = append(missing, fmt.Sprintf("row %s: %s", f.ID, f.State))
+				}
 			}
+			fmt.Fprintf(stdout, "%s: NOT accepted — Status %q but %d Verify row(s) lack a passing execution witness (%s) — `statusgen verifyrun --brief <path>` writes one\n",
+				key, br.Status, len(missing), strings.Join(missing, "; "))
+			return verifyclosureExitNotAccepted
 		}
-		fmt.Fprintf(stdout, "%s: NOT accepted — Status %q but %d Verify row(s) lack a passing execution witness (%s) — `statusgen verifyrun --brief <path>` writes one\n",
-			key, br.Status, len(missing), strings.Join(missing, "; "))
-		return verifyclosureExitNotAccepted
-	}
 
-	fmt.Fprintf(stdout, "%s: accepted — Status %q, Verified cell stamped, and all %d Verify row(s) carry a passing execution witness\n",
-		key, br.Status, len(findings))
-	return verifyclosureExitAccepted
+		fmt.Fprintf(stdout, "%s: accepted — Status %q, Verified cell stamped, and all %d Verify row(s) carry a passing execution witness\n",
+			key, br.Status, len(findings))
+		return verifyclosureExitAccepted
+	})
+	return cmd
 }
 
 // splitBriefKey splits a "<stream>/<NN>" brief key into its stream name and

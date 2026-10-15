@@ -44,7 +44,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,6 +53,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -201,107 +201,113 @@ func reconstructBackfill(root string) (entries []HistoryEntry, couldNotParse int
 // (idempotently) to docs/streams/.history.jsonl, leaving the live rows
 // untouched. --dry-run computes and reports without writing.
 func runBackfill(args []string, stdout, stderr *os.File) int {
-	flags := flag.NewFlagSet("backfill", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	return runVerb(newBackfillCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newBackfillCmd builds the `statusgen backfill` command.
+func newBackfillCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := fileOr(rio.Out, os.Stdout), fileOr(rio.Err, os.Stderr)
+	cmd := newCommand("backfill", "Replay stream README history into the status-transition log (one-off)", "")
+	flags := cmd.Flags()
 	root := flags.String("root", ".", "repository root whose docs/streams/*/README.md history to replay")
 	dryRun := flags.Bool("dry-run", false, "compute and report the reconstructed rows without writing the log")
-	if err := flags.Parse(args); err != nil {
-		return backfillCouldNot
-	}
-	if hasNoGitDir(*root) {
-		fmt.Fprintf(stderr, "could-not-check: %s has no .git — backfill replays git history and has none to read\n", *root)
-		return backfillCouldNot
-	}
-
-	path := filepath.Join(*root, filepath.FromSlash(historyRelPath))
-	existing, err := LoadHistory(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: reading existing history: %v\n", err)
-		return backfillCouldNot
-	}
-	seen := make(map[string]bool, len(existing))
-	for _, e := range existing {
-		seen[historyKey(e)] = true
-	}
-
-	reconstructed, couldNotParse, streamsSeen, rerr := reconstructBackfill(*root)
-	if rerr != nil {
-		fmt.Fprintf(stderr, "could-not-check: %v\n", rerr)
-		return backfillCouldNot
-	}
-
-	// Filter to genuinely-new rows (idempotent against live rows AND a prior
-	// backfill run AND intra-batch duplicates).
-	var fresh []HistoryEntry
-	for _, e := range reconstructed {
-		k := historyKey(e)
-		if seen[k] {
-			continue
+	cmd.RunE = verbHandler(func(args []string) int {
+		if hasNoGitDir(*root) {
+			fmt.Fprintf(stderr, "could-not-check: %s has no .git — backfill replays git history and has none to read\n", *root)
+			return backfillCouldNot
 		}
-		seen[k] = true
-		fresh = append(fresh, e)
-	}
-	// Chronological, then brief, then status — a deterministic, readable
-	// prepended block. (File order is cosmetic for the ts-keyed consumers, but
-	// determinism keeps re-runs and diffs stable.)
-	sort.SliceStable(fresh, func(i, j int) bool {
-		if fresh[i].Ts != fresh[j].Ts {
-			return fresh[i].Ts < fresh[j].Ts
+
+		path := filepath.Join(*root, filepath.FromSlash(historyRelPath))
+		existing, err := LoadHistory(path)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: reading existing history: %v\n", err)
+			return backfillCouldNot
 		}
-		if fresh[i].Brief != fresh[j].Brief {
-			return fresh[i].Brief < fresh[j].Brief
+		seen := make(map[string]bool, len(existing))
+		for _, e := range existing {
+			seen[historyKey(e)] = true
 		}
-		return fresh[i].To < fresh[j].To
-	})
 
-	fmt.Fprintf(stdout, "backfill: %d stream README(s) replayed, %d reconstructed transition(s), %d new after idempotent filter",
-		streamsSeen, len(reconstructed), len(fresh))
-	if couldNotParse > 0 {
-		fmt.Fprintf(stdout, ", %d snapshot(s) skipped (unparseable table at that commit)", couldNotParse)
-	}
-	fmt.Fprintln(stdout)
-	if len(fresh) > 0 {
-		fmt.Fprintf(stdout, "backfill: recovered date range %s .. %s\n", fresh[0].Ts, fresh[len(fresh)-1].Ts)
-	}
+		reconstructed, couldNotParse, streamsSeen, rerr := reconstructBackfill(*root)
+		if rerr != nil {
+			fmt.Fprintf(stderr, "could-not-check: %v\n", rerr)
+			return backfillCouldNot
+		}
 
-	if len(fresh) == 0 {
-		fmt.Fprintln(stdout, "backfill: nothing new — log unchanged (idempotent no-op)")
-		return backfillOK
-	}
-	if *dryRun {
-		fmt.Fprintf(stdout, "backfill: --dry-run — %d row(s) NOT written\n", len(fresh))
-		return backfillOK
-	}
+		// Filter to genuinely-new rows (idempotent against live rows AND a prior
+		// backfill run AND intra-batch duplicates).
+		var fresh []HistoryEntry
+		for _, e := range reconstructed {
+			k := historyKey(e)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			fresh = append(fresh, e)
+		}
+		// Chronological, then brief, then status — a deterministic, readable
+		// prepended block. (File order is cosmetic for the ts-keyed consumers, but
+		// determinism keeps re-runs and diffs stable.)
+		sort.SliceStable(fresh, func(i, j int) bool {
+			if fresh[i].Ts != fresh[j].Ts {
+				return fresh[i].Ts < fresh[j].Ts
+			}
+			if fresh[i].Brief != fresh[j].Brief {
+				return fresh[i].Brief < fresh[j].Brief
+			}
+			return fresh[i].To < fresh[j].To
+		})
 
-	// Preserve the live rows byte-for-byte: read the raw file and PREPEND the
-	// new block in front of it rather than re-encoding what is already there.
-	var rawExisting []byte
-	if b, rerr := os.ReadFile(path); rerr == nil {
-		rawExisting = b
-	} else if !os.IsNotExist(rerr) {
-		fmt.Fprintf(stderr, "backfill: reading %s: %v\n", path, rerr)
-		return backfillFailed
-	}
+		fmt.Fprintf(stdout, "backfill: %d stream README(s) replayed, %d reconstructed transition(s), %d new after idempotent filter",
+			streamsSeen, len(reconstructed), len(fresh))
+		if couldNotParse > 0 {
+			fmt.Fprintf(stdout, ", %d snapshot(s) skipped (unparseable table at that commit)", couldNotParse)
+		}
+		fmt.Fprintln(stdout)
+		if len(fresh) > 0 {
+			fmt.Fprintf(stdout, "backfill: recovered date range %s .. %s\n", fresh[0].Ts, fresh[len(fresh)-1].Ts)
+		}
 
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false) // match appendHistory's encoding exactly
-	for _, e := range fresh {
-		if err := enc.Encode(e); err != nil {
-			fmt.Fprintf(stderr, "backfill: encoding row: %v\n", err)
+		if len(fresh) == 0 {
+			fmt.Fprintln(stdout, "backfill: nothing new — log unchanged (idempotent no-op)")
+			return backfillOK
+		}
+		if *dryRun {
+			fmt.Fprintf(stdout, "backfill: --dry-run — %d row(s) NOT written\n", len(fresh))
+			return backfillOK
+		}
+
+		// Preserve the live rows byte-for-byte: read the raw file and PREPEND the
+		// new block in front of it rather than re-encoding what is already there.
+		var rawExisting []byte
+		if b, rerr := os.ReadFile(path); rerr == nil {
+			rawExisting = b
+		} else if !os.IsNotExist(rerr) {
+			fmt.Fprintf(stderr, "backfill: reading %s: %v\n", path, rerr)
 			return backfillFailed
 		}
-	}
-	buf.Write(rawExisting)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		fmt.Fprintf(stderr, "backfill: %v\n", err)
-		return backfillFailed
-	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		fmt.Fprintf(stderr, "backfill: writing %s: %v\n", path, err)
-		return backfillFailed
-	}
-	fmt.Fprintf(stdout, "backfill: prepended %d reconstructed transition(s) to %s\n", len(fresh), path)
-	return backfillOK
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false) // match appendHistory's encoding exactly
+		for _, e := range fresh {
+			if err := enc.Encode(e); err != nil {
+				fmt.Fprintf(stderr, "backfill: encoding row: %v\n", err)
+				return backfillFailed
+			}
+		}
+		buf.Write(rawExisting)
+
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			fmt.Fprintf(stderr, "backfill: %v\n", err)
+			return backfillFailed
+		}
+		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+			fmt.Fprintf(stderr, "backfill: writing %s: %v\n", path, err)
+			return backfillFailed
+		}
+		fmt.Fprintf(stdout, "backfill: prepended %d reconstructed transition(s) to %s\n", len(fresh), path)
+		return backfillOK
+	})
+	return cmd
 }

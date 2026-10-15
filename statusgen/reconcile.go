@@ -24,11 +24,12 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // reconcileResult is the machine-readable output shape (--json). Its per-brief
@@ -89,9 +90,14 @@ const (
 var reconcileGHClient = newGHClient
 
 func runReconcile(args []string, stdout, stderr *os.File) int {
-	fs := flag.NewFlagSet("reconcile", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {}
+	return runVerb(newReconcileCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newReconcileCmd builds the `statusgen reconcile` command.
+func newReconcileCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := fileOr(rio.Out, os.Stdout), fileOr(rio.Err, os.Stderr)
+	cmd := newCommand("reconcile", "Derive lifecycle cells from PRs, witnesses and approvals", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "repository root whose briefs to reconcile")
 	repo := fs.String("repo", "", "owner/name of the repo to read PRs from (online mode)")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON")
@@ -100,189 +106,186 @@ func runReconcile(args []string, stdout, stderr *os.File) int {
 	backfill := fs.Bool("backfill", false, "declared history-only fallback (brief-07): a merged PR whose branch name or body names the brief in <stream>/<NN> or <stream>-<NN> form counts as a witness when no trailer links one; a hand-asserted implemented/verified/done with neither renders unknown, never a silent todo. Without --apply it also reports the rows --apply would write (JSON: wouldApply, present only when the run could look) and writes no stream README; it writes the drift report file only when --report is also given")
 	report := fs.Bool("report", false, "with --backfill: write docs/streams/board-drift-<date>.md, one row per brief where the last hand-edited (pre-generation) README cell disagrees with what this run derives; requires --backfill")
 	apply := fs.Bool("apply", false, "WRITE a witnessed todo|in-progress -> implemented cell back into the brief's stream README Status column (only, never Verified/Reviewed, never verified/done, never a demotion). Without --backfill only a `Brief:` trailer witness is written; with --backfill the declared branch/body match is written too. A row whose move would add a lint PROBLEM is held and reported, never written. Exits 3 when the PR read could not be done")
-	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
-			return reconcileOK
-		}
-		return reconcileUsageErr
-	}
-	if *report && !*backfill {
-		fmt.Fprintln(stderr, "reconcile: --report requires --backfill (the report compares against the backfill-adjusted cells)")
-		return reconcileUsageErr
-	}
-	if *backfill && hasNoGitDir(*root) {
-		fmt.Fprintf(stderr, "could-not-check: %s has no .git — --backfill reads the hand-said history from git log\n", *root)
-		return reconcileUsageErr
-	}
-
-	idents, err := reconcileBriefIdents(*root)
-	if err != nil {
-		fmt.Fprintf(stderr, "could-not-check: %v\n", err)
-		return reconcileUsageErr
-	}
-
-	in := LifecycleInput{Briefs: idents}
-	var client *ghClient
-	var classifier *authoringClassifier
-	var authoringUndecided map[string]string
-	var unread []string
-	switch {
-	case *offline:
-		in.LookedAt = false
-		in.Reason = "offline (--offline) — the PR fetch was not attempted"
-	case *repo == "":
-		// No repo and not --offline: there is nothing to dereference against. Report
-		// it as a could-not-check, never a clean board.
-		in.LookedAt = false
-		in.Reason = "no --repo given and not --offline — nothing to dereference PR-derived cells against"
-	default:
-		token, terr := resolveGitHubToken(*tokenFile)
-		if terr != nil {
-			fmt.Fprintf(stderr, "could-not-check: %v\n", terr)
+	cmd.RunE = verbHandler(func(args []string) int {
+		if *report && !*backfill {
+			fmt.Fprintln(stderr, "reconcile: --report requires --backfill (the report compares against the backfill-adjusted cells)")
 			return reconcileUsageErr
 		}
-		client = reconcileGHClient(token)
-		prs, lookedAt, reason := client.ListPRs(*repo)
-		in.PRs = prs
-		in.LookedAt = lookedAt
-		in.Reason = reason
-		// A PR that only AUTHORED a brief is not a witness that it is implemented
-		// (briefauthoring.go): drop it from the trailer fold before anything reads
-		// in.PRs, so the cell, the approval fold and --apply all see the same set.
-		var more []string
-		classifier, authoringUndecided, more = admitPRWitnesses(&in, client, *repo, *root, stderr)
-		unread = append(unread, more...)
-		// The witness fold (#1787): populate the inputs DeriveLifecycle needs
-		// to derive above `implemented`, each by its owner's rule (see
-		// reconcilefold.go). Every read that could not be made is disclosed in
-		// `unread` and leaves the briefs it touches `unknown`. Online only:
-		// --offline keeps every map nil and every cell unknown.
-		if boardRoot, found := findBoardRoot(*root); found {
-			unread = append(unread, wireFoldInputs(&in, boardRoot, client, *repo, stderr)...)
+		if *backfill && hasNoGitDir(*root) {
+			fmt.Fprintf(stderr, "could-not-check: %s has no .git — --backfill reads the hand-said history from git log\n", *root)
+			return reconcileUsageErr
 		}
-		mergeUndecided(&in, authoringUndecided)
-	}
 
-	cells := DeriveLifecycle(in)
+		idents, err := reconcileBriefIdents(*root)
+		if err != nil {
+			fmt.Fprintf(stderr, "could-not-check: %v\n", err)
+			return reconcileUsageErr
+		}
 
-	var lookup handSaidLookup
-	pullsUnread := ""
-	if *backfill {
-		lookup = func(stream, num string) (string, string, bool) {
-			return handSaidBeforeGeneration(*root, stream, num)
-		}
-		var pulls []ghPull
-		pullsLookedAt := false
-		if client != nil {
-			var reason string
-			pulls, pullsLookedAt, reason = client.fetchAllPulls(*repo)
-			if !pullsLookedAt {
-				fmt.Fprintf(stderr, "reconcile --backfill: could-not-check the raw pull list: %s\n", reason)
-				pullsUnread = reason
-			}
-		}
-		var authoring backfillAuthoring
-		if classifier != nil {
-			authoring = classifier.authoringOnly
-		}
-		var bfUnread []string
-		cells, bfUnread = applyReconcileBackfillWith(cells, in, pulls, pullsLookedAt, lookup, authoring)
-		for _, m := range bfUnread {
-			fmt.Fprintf(stderr, "reconcile --backfill: %s\n", m)
-		}
-		unread = append(unread, bfUnread...)
-	}
-
-	// The whole-run admission decision, shared by both forms (#2472 C10):
-	// --apply refuses on it, and the read-only form reports the same refusal
-	// instead of rows, so `wouldApply` never lists a row the writer refuses.
-	refusal := reconcileWriteRefusal(in, pullsUnread, unread)
-	if *apply && refusal != "" {
-		fmt.Fprintf(stderr, "reconcile --apply: could-not-check — %s; nothing written\n", refusal)
-		return reconcileCouldNotCheck
-	}
-
-	var applied []appliedRow
-	var wouldApply *[]appliedRow
-	var held []heldRow
-	wouldRefuse := ""
-	if *backfill || *apply {
-		// One decision path for both forms (reconcileWrites), lint hold
-		// included: --apply writes the rows (trailer-only without --backfill);
-		// --backfill without it reports the same rows as wouldApply and writes
-		// no stream README (--report, when given, still writes its own drift
-		// report file below). wouldApply is set only when the run looked — no
-		// whole-run refusal (the PR list, the raw pull list and every fold read
-		// made) and a board found — so an empty list always means "looked and
-		// found nothing" (#2443).
-		// boardRoot mirrors reconcileBriefIdents' own resolution (reconcile is
-		// commonly run from a subdirectory), so the rows land on the same
-		// docs/streams tree the briefs above were enumerated from.
-		rows := []appliedRow{}
-		boardRoot, found := findBoardRoot(*root)
-		if refusal != "" {
-			// Only the read-only form reaches here (--apply returned above):
-			// --apply would write nothing, so neither is a row listed.
-			wouldRefuse = refusal
-			fmt.Fprintf(stderr, "reconcile --backfill: could-not-check — %s; --apply would exit %d and write nothing\n", refusal, reconcileCouldNotCheck)
-		} else if found {
-			var werr error
-			// The lint hold's progress goes to stderr: --json's stdout is unchanged.
-			opts := holdOptions{crossCheck: holdCrossCheck, progress: stderr}
-			if rows, held, werr = reconcileWritesWith(boardRoot, cells, *apply, opts); werr != nil {
-				label := "reconcile --backfill"
-				if *apply {
-					label = "reconcile --apply"
-				}
-				fmt.Fprintf(stderr, "%s: %v\n", label, werr)
+		in := LifecycleInput{Briefs: idents}
+		var client *ghClient
+		var classifier *authoringClassifier
+		var authoringUndecided map[string]string
+		var unread []string
+		switch {
+		case *offline:
+			in.LookedAt = false
+			in.Reason = "offline (--offline) — the PR fetch was not attempted"
+		case *repo == "":
+			// No repo and not --offline: there is nothing to dereference against. Report
+			// it as a could-not-check, never a clean board.
+			in.LookedAt = false
+			in.Reason = "no --repo given and not --offline — nothing to dereference PR-derived cells against"
+		default:
+			token, terr := resolveGitHubToken(*tokenFile)
+			if terr != nil {
+				fmt.Fprintf(stderr, "could-not-check: %v\n", terr)
 				return reconcileUsageErr
 			}
-			if rows == nil {
-				rows = []appliedRow{}
+			client = reconcileGHClient(token)
+			prs, lookedAt, reason := client.ListPRs(*repo)
+			in.PRs = prs
+			in.LookedAt = lookedAt
+			in.Reason = reason
+			// A PR that only AUTHORED a brief is not a witness that it is implemented
+			// (briefauthoring.go): drop it from the trailer fold before anything reads
+			// in.PRs, so the cell, the approval fold and --apply all see the same set.
+			var more []string
+			classifier, authoringUndecided, more = admitPRWitnesses(&in, client, *repo, *root, stderr)
+			unread = append(unread, more...)
+			// The witness fold (#1787): populate the inputs DeriveLifecycle needs
+			// to derive above `implemented`, each by its owner's rule (see
+			// reconcilefold.go). Every read that could not be made is disclosed in
+			// `unread` and leaves the briefs it touches `unknown`. Online only:
+			// --offline keeps every map nil and every cell unknown.
+			if boardRoot, found := findBoardRoot(*root); found {
+				unread = append(unread, wireFoldInputs(&in, boardRoot, client, *repo, stderr)...)
+			}
+			mergeUndecided(&in, authoringUndecided)
+		}
+
+		cells := DeriveLifecycle(in)
+
+		var lookup handSaidLookup
+		pullsUnread := ""
+		if *backfill {
+			lookup = func(stream, num string) (string, string, bool) {
+				return handSaidBeforeGeneration(*root, stream, num)
+			}
+			var pulls []ghPull
+			pullsLookedAt := false
+			if client != nil {
+				var reason string
+				pulls, pullsLookedAt, reason = client.fetchAllPulls(*repo)
+				if !pullsLookedAt {
+					fmt.Fprintf(stderr, "reconcile --backfill: could-not-check the raw pull list: %s\n", reason)
+					pullsUnread = reason
+				}
+			}
+			var authoring backfillAuthoring
+			if classifier != nil {
+				authoring = classifier.authoringOnly
+			}
+			var bfUnread []string
+			cells, bfUnread = applyReconcileBackfillWith(cells, in, pulls, pullsLookedAt, lookup, authoring)
+			for _, m := range bfUnread {
+				fmt.Fprintf(stderr, "reconcile --backfill: %s\n", m)
+			}
+			unread = append(unread, bfUnread...)
+		}
+
+		// The whole-run admission decision, shared by both forms (#2472 C10):
+		// --apply refuses on it, and the read-only form reports the same refusal
+		// instead of rows, so `wouldApply` never lists a row the writer refuses.
+		refusal := reconcileWriteRefusal(in, pullsUnread, unread)
+		if *apply && refusal != "" {
+			fmt.Fprintf(stderr, "reconcile --apply: could-not-check — %s; nothing written\n", refusal)
+			return reconcileCouldNotCheck
+		}
+
+		var applied []appliedRow
+		var wouldApply *[]appliedRow
+		var held []heldRow
+		wouldRefuse := ""
+		if *backfill || *apply {
+			// One decision path for both forms (reconcileWrites), lint hold
+			// included: --apply writes the rows (trailer-only without --backfill);
+			// --backfill without it reports the same rows as wouldApply and writes
+			// no stream README (--report, when given, still writes its own drift
+			// report file below). wouldApply is set only when the run looked — no
+			// whole-run refusal (the PR list, the raw pull list and every fold read
+			// made) and a board found — so an empty list always means "looked and
+			// found nothing" (#2443).
+			// boardRoot mirrors reconcileBriefIdents' own resolution (reconcile is
+			// commonly run from a subdirectory), so the rows land on the same
+			// docs/streams tree the briefs above were enumerated from.
+			rows := []appliedRow{}
+			boardRoot, found := findBoardRoot(*root)
+			if refusal != "" {
+				// Only the read-only form reaches here (--apply returned above):
+				// --apply would write nothing, so neither is a row listed.
+				wouldRefuse = refusal
+				fmt.Fprintf(stderr, "reconcile --backfill: could-not-check — %s; --apply would exit %d and write nothing\n", refusal, reconcileCouldNotCheck)
+			} else if found {
+				var werr error
+				// The lint hold's progress goes to stderr: --json's stdout is unchanged.
+				opts := holdOptions{crossCheck: holdCrossCheck, progress: stderr}
+				if rows, held, werr = reconcileWritesWith(boardRoot, cells, *apply, opts); werr != nil {
+					label := "reconcile --backfill"
+					if *apply {
+						label = "reconcile --apply"
+					}
+					fmt.Fprintf(stderr, "%s: %v\n", label, werr)
+					return reconcileUsageErr
+				}
+				if rows == nil {
+					rows = []appliedRow{}
+				}
+			}
+			if *apply {
+				applied = rows
+			} else if refusal == "" && found {
+				wouldApply = &rows
 			}
 		}
-		if *apply {
-			applied = rows
-		} else if refusal == "" && found {
-			wouldApply = &rows
-		}
-	}
 
-	res := reconcileResult{
-		Repo:        *repo,
-		LookedAt:    in.LookedAt,
-		Reason:      in.Reason,
-		Briefs:      cells,
-		Applied:     applied,
-		WouldApply:  wouldApply,
-		WouldRefuse: wouldRefuse,
-		Held:        held,
-		Unread:      unread,
-		applyRun:    *apply,
-	}
-
-	if *report {
-		rows := buildDriftRows(cells, lookup)
-		path, werr := writeDriftReport(*root, *repo, rows, time.Now())
-		if werr != nil {
-			fmt.Fprintf(stderr, "reconcile --report: writing drift report: %v\n", werr)
-			return reconcileUsageErr
+		res := reconcileResult{
+			Repo:        *repo,
+			LookedAt:    in.LookedAt,
+			Reason:      in.Reason,
+			Briefs:      cells,
+			Applied:     applied,
+			WouldApply:  wouldApply,
+			WouldRefuse: wouldRefuse,
+			Held:        held,
+			Unread:      unread,
+			applyRun:    *apply,
 		}
-		fmt.Fprintf(stderr, "reconcile --report: wrote %s (%d drift row(s))\n", path, len(rows))
-		res.reportWrote = true
-	}
 
-	if *jsonOut {
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(res); err != nil {
-			fmt.Fprintf(stderr, "reconcile: encoding JSON: %v\n", err)
-			return reconcileUsageErr
+		if *report {
+			rows := buildDriftRows(cells, lookup)
+			path, werr := writeDriftReport(*root, *repo, rows, time.Now())
+			if werr != nil {
+				fmt.Fprintf(stderr, "reconcile --report: writing drift report: %v\n", werr)
+				return reconcileUsageErr
+			}
+			fmt.Fprintf(stderr, "reconcile --report: wrote %s (%d drift row(s))\n", path, len(rows))
+			res.reportWrote = true
 		}
+
+		if *jsonOut {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(res); err != nil {
+				fmt.Fprintf(stderr, "reconcile: encoding JSON: %v\n", err)
+				return reconcileUsageErr
+			}
+			return reconcileOK
+		}
+		printReconcileTable(stdout, res)
 		return reconcileOK
-	}
-	printReconcileTable(stdout, res)
-	return reconcileOK
+	})
+	return cmd
 }
 
 // reconcileWriteRefusal is the whole-run admission decision: why no row may be

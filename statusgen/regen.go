@@ -16,67 +16,70 @@ package main
 // NOTICE fires — a could-not-check is never rendered as a drift.
 
 import (
-	"flag"
 	"fmt"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 func runRegen(args []string, stdout, stderr *os.File) int {
-	fs := flag.NewFlagSet("regen", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {}
+	return runVerb(newRegenCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newRegenCmd builds the `statusgen regen` command.
+func newRegenCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := fileOr(rio.Out, os.Stdout), fileOr(rio.Err, os.Stderr)
+	cmd := newCommand("regen", "Regenerate the generated stream README tables (--readmes)", "")
+	fs := cmd.Flags()
 	readmes := fs.Bool("readmes", false, "regenerate the marker-wrapped Briefs table in every board: generated stream README")
 	root := fs.String("root", ".", "repository root whose stream READMEs to regenerate")
 	offline := fs.Bool("offline", false, "do not touch the network; PR-derived cells are unknown, so no drift NOTICE fires")
 	repo := fs.String("repo", "", "owner/name to read PRs from for the drift comparator (online mode)")
 	tokenFile := fs.String("token-file", "", "file holding the GitHub API token (else GITHUB_TOKEN)")
-	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+	cmd.RunE = verbHandler(func(args []string) int {
+		if !*readmes {
+			fmt.Fprintln(stderr, "statusgen regen: nothing to do — pass --readmes to regenerate stream README tables")
+			return reconcileUsageErr
+		}
+
+		boardRoot, found := findBoardRoot(*root)
+		if !found {
+			// A tree with no docs/streams is a valid empty board — nothing to regen.
 			return reconcileOK
 		}
-		return reconcileUsageErr
-	}
-	if !*readmes {
-		fmt.Fprintln(stderr, "statusgen regen: nothing to do — pass --readmes to regenerate stream README tables")
-		return reconcileUsageErr
-	}
-
-	boardRoot, found := findBoardRoot(*root)
-	if !found {
-		// A tree with no docs/streams is a valid empty board — nothing to regen.
-		return reconcileOK
-	}
-	streams, _, err := loadStreams(boardRoot)
-	if err != nil {
-		fmt.Fprintf(stderr, "statusgen regen: could-not-check: %v\n", err)
-		return reconcileUsageErr
-	}
-
-	rc := reconcileOK
-	for _, s := range streams {
-		if s.Board != "generated" {
-			// Per brief-04: an ungenerated board is rendered as today (hand table)
-			// and NOTICEd — the per-stream migration signal brief 06 flips fleet-wide.
-			fmt.Fprintf(stderr, "NOTICE: %s README: ungenerated board (no board: generated) — its Briefs table stays hand-maintained until the stream is wrapped in markers\n", s.Name)
-			continue
-		}
-		path := s.Dir + "/README.md"
-		changed, err := rewriteReadmeRegion(s, path)
+		streams, _, err := loadStreams(boardRoot)
 		if err != nil {
-			fmt.Fprintf(stderr, "PROBLEM: %v\n", err)
-			rc = reconcileUsageErr
-			continue
+			fmt.Fprintf(stderr, "statusgen regen: could-not-check: %v\n", err)
+			return reconcileUsageErr
 		}
-		if changed {
-			fmt.Fprintf(stdout, "regenerated %s\n", path)
-		}
-	}
 
-	// Drift comparator — only when a reconcile read is available.
-	for _, n := range regenDriftNotices(boardRoot, streams, *repo, *offline, *tokenFile, stderr) {
-		fmt.Fprintf(stderr, "NOTICE: %s\n", n)
-	}
-	return rc
+		rc := reconcileOK
+		for _, s := range streams {
+			if s.Board != "generated" {
+				// Per brief-04: an ungenerated board is rendered as today (hand table)
+				// and NOTICEd — the per-stream migration signal brief 06 flips fleet-wide.
+				fmt.Fprintf(stderr, "NOTICE: %s README: ungenerated board (no board: generated) — its Briefs table stays hand-maintained until the stream is wrapped in markers\n", s.Name)
+				continue
+			}
+			path := s.Dir + "/README.md"
+			changed, err := rewriteReadmeRegion(s, path)
+			if err != nil {
+				fmt.Fprintf(stderr, "PROBLEM: %v\n", err)
+				rc = reconcileUsageErr
+				continue
+			}
+			if changed {
+				fmt.Fprintf(stdout, "regenerated %s\n", path)
+			}
+		}
+
+		// Drift comparator — only when a reconcile read is available.
+		for _, n := range regenDriftNotices(boardRoot, streams, *repo, *offline, *tokenFile, stderr) {
+			fmt.Fprintf(stderr, "NOTICE: %s\n", n)
+		}
+		return rc
+	})
+	return cmd
 }
 
 // regenDriftNotices folds the PR witnesses through DeriveLifecycle and returns the

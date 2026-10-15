@@ -40,7 +40,6 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -52,6 +51,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,6 +103,7 @@ var newBriefWriteFile = os.WriteFile
 type depList []string
 
 func (d *depList) String() string { return strings.Join(*d, ", ") }
+func (d *depList) Type() string   { return "string" }
 func (d *depList) Set(v string) error {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -139,7 +140,14 @@ func newBriefSlug(title string) string {
 // runNewBrief is the `statusgen newbrief` entry point. See the file header for the
 // device it implements.
 func runNewBrief(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("newbrief", flag.ContinueOnError)
+	return runVerb(newNewBriefCmd, args, cliIO{In: stdin, Out: stdout, Err: stderr})
+}
+
+// newNewBriefCmd builds the `statusgen newbrief` command.
+func newNewBriefCmd(rio cliIO) *cobra.Command {
+	stdin, stdout, stderr := rio.In, rio.Out, rio.Err
+	cmd := newCommand("newbrief", "Author a lint-clean brief skeleton", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "repository root (the streams tree lives under docs/streams/)")
 	stream := fs.String("stream", "", "the stream this brief belongs to (its docs/streams/<stream>/ must exist)")
 	number := fs.String("number", "", "the brief number NN (default: the next free number in the stream)")
@@ -157,270 +165,268 @@ func runNewBrief(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	shell := fs.String("shell", "sh", "the shell the first Verify row runs under: sh (POSIX bash, the DEFAULT — portable across Git-bash and `--in-container`), cmd (Windows cmd.exe) or pwsh (PowerShell). A native-Windows command (e.g. `findstr`) MUST declare cmd/pwsh here so the marker is attached at authoring time; the default POSIX row carries no Shell column (issues #1466 / #1424).")
 	offline := fs.Bool("offline", false, "skip the freshness fetch (no stamp is written; use when there is deliberately no network)")
 	dryRun := fs.Bool("dry-run", false, "print every file that would be written and its rendered body, and write NOTHING")
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return newBriefExitRefuse
-	}
-
-	// The gate is a CONCLUSION, never an input. There is no path that accepts a
-	// supplied gate — the flag exists only so a supplied one gets a clear refusal
-	// rather than being silently ignored.
-	if strings.TrimSpace(*gate) != "" {
-		fmt.Fprintln(stderr, "statusgen newbrief: --gate is not accepted — the gate is DERIVED from the four risk answers (any yes => human, all no => model). Answer the risk questions instead.")
-		return newBriefExitRefuse
-	}
-
-	if strings.TrimSpace(*stream) == "" {
-		fmt.Fprintln(stderr, "statusgen newbrief: --stream is required")
-		return newBriefExitRefuse
-	}
-	if strings.TrimSpace(*title) == "" {
-		fmt.Fprintln(stderr, "statusgen newbrief: --title is required")
-		return newBriefExitRefuse
-	}
-	if !validEffort[*effort] {
-		fmt.Fprintf(stderr, "statusgen newbrief: invalid --effort %q (want S, M or L)\n", *effort)
-		return newBriefExitRefuse
-	}
-
-	streamDir := filepath.Join(*root, "docs", "streams", *stream)
-	readmePath := filepath.Join(streamDir, "README.md")
-	if _, err := os.Stat(readmePath); err != nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: stream %q has no README at %s — a brief is added to an existing stream (scaffold the stream with `statusgen init` first)\n", *stream, readmePath)
-		return newBriefExitRefuse
-	}
-	streamMeta, err := parseStreamREADME(readmePath)
-	if err != nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: %s: %v\n", readmePath, err)
-		return newBriefExitRefuse
-	}
-
-	// The target stream's brief SCHEMA (v1 vs v2) is DETECTED, never assumed: it is
-	// read off the stream's own existing briefs (issue #1280) — the same signal
-	// checkBriefFiles/parseBriefFile already use to opt a file into v1 or v2
-	// validation, so this reuses that reader rather than inventing a second
-	// detector. A brand-new, brief-less stream has no signal to detect and stays
-	// v1 (today's default) — a schema bump is something a stream's first brief
-	// declares, not something newbrief can guess.
-	schema := newBriefStreamSchema(streamDir)
-	isV2 := schema == briefSchemaV2
-
-	// Risk answers → the four canonical questions. Non-interactive: one flag per
-	// question, and an UNANSWERED question is a refusal. Interactive: prompt each.
-	risk, code := newBriefRiskAnswers(*interactive, stdin, stdout, stderr,
-		map[string]string{
-			"regulatory":     *regulatory,
-			"customer":       *customer,
-			"irreversible":   *irreversible,
-			"sensitive-data": *sensitiveData,
-		})
-	if code != newBriefExitOK {
-		return code
-	}
-	// The gate is the conclusion of the four answers.
-	derivedGate := "model"
-	anyYes := false
-	for _, k := range riskKeyOrder {
-		if risk[k] == "yes" {
-			anyYes = true
-		}
-	}
-	if anyYes {
-		derivedGate = "human"
-	}
-
-	// Resolve the number: the next free one in the stream, or an explicit one that
-	// must be free (never overwrite an existing brief).
-	num, code := newBriefResolveNumber(streamDir, *number, stderr)
-	if code != newBriefExitOK {
-		return code
-	}
-	slug := newBriefSlug(*title)
-	briefPath := filepath.Join(streamDir, fmt.Sprintf("brief-%s-%s.md", num, slug))
-	if _, err := os.Stat(briefPath); err == nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: %s already exists — newbrief never overwrites an existing file\n", briefPath)
-		return newBriefExitRefuse
-	}
-
-	// Derive the wave from the declared dependencies, and refuse a dependency that
-	// does not exist rather than emit a dangling edge. depPaths carries each dep's
-	// resolved brief file, so the inverse edge is written into the right target.
-	wave, depPaths, code := newBriefDeriveWave(*root, *stream, deps, stderr)
-	if code != newBriefExitOK {
-		return code
-	}
-
-	// The shell the first Verify row runs under (issues #1466 / #1424). Resolved to
-	// one of the three known shells; the DEFAULT is `sh` (POSIX bash), which is
-	// portable across Git-for-Windows bash and the `--in-container` harness and needs
-	// no Shell column. An unknown value is refused at authoring time rather than
-	// silently defaulted — a marker the runner cannot resolve routes nowhere.
-	rowShell := strings.TrimSpace(*shell)
-	rowShell = strings.ToLower(rowShell)
-	if rowShell == "" {
-		rowShell = legacyRowShell
-	}
-	if !knownRowShells[rowShell] {
-		fmt.Fprintf(stderr, "statusgen newbrief: invalid --shell %q (want sh, cmd or pwsh)\n", *shell)
-		return newBriefExitRefuse
-	}
-
-	// The first Verify row: a supplied command is validated (step 7 — an unusable
-	// row is not a Verify row); the default is a real, runnable starter row.
-	verifyCmd := strings.TrimSpace(*verifyCommand)
-	verifySupplied := verifyCmd != ""
-	if verifyCmd == "" {
-		verifyCmd = "go test ./..."
-	} else if err := usableVerifyCommand(verifyCmd); err != nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: --verify-command is not a usable Verify row: %v\n", err)
-		return newBriefExitRefuse
-	}
-
-	// Shell / command consistency (issues #1466 / #1424). Two fail-closed checks so a
-	// freshly-generated brief never ships the #1424 defect — a native-Windows row
-	// (`findstr`, backslash paths) landing as the default `bash -o pipefail` row with
-	// no Shell marker, which then FAILS the first verify pass under Git-bash and
-	// `--in-container` and can only be repaired by a separate worker PR:
-	//   1. A non-sh shell with the DEFAULT command is nonsense — the default row is
-	//      POSIX; a genuine native row must be supplied.
-	//   2. A native-Windows command under the DEFAULT sh shell is refused: the author
-	//      POSIX-izes it (portable, no marker) or declares --shell so the marker is
-	//      attached in THIS pass, never left for a later Evidence-edit worker.
-	// Neither GUESSES a shell from the command text (the sniff rowclass.go forbids):
-	// they refuse an under-declared row and make the author choose.
-	if rowShell != legacyRowShell && !verifySupplied {
-		fmt.Fprintf(stderr, "statusgen newbrief: --shell %s needs a --verify-command — the default `go test ./...` starter row is POSIX and runs under sh\n", rowShell)
-		return newBriefExitRefuse
-	}
-	if rowShell == legacyRowShell && looksWindowsNative(verifyCmd) {
-		fmt.Fprintf(stderr, "statusgen newbrief: --verify-command %q is a native-Windows command that cannot run under the default POSIX shell — POSIX-ize it (e.g. `grep -F` and forward-slash paths) so Git-bash and `--in-container` both run it, or declare `--shell cmd`/`--shell pwsh` so the row is marked at authoring time, never left for a later Evidence edit (issues #1466 / #1424)\n", verifyCmd)
-		return newBriefExitRefuse
-	}
-
-	// The freshness stamp is produced by a fetch the tool performs. On failure it
-	// stamps NOTHING and says could-not-check — never an invented value.
-	var freshness string
-	if *offline {
-		fmt.Fprintln(stderr, "statusgen newbrief: --offline — no freshness stamp written")
-	} else if sha, date, err := newBriefFreshness(*root); err != nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: could-not-check: freshness fetch failed (%v) — no stamp written (an absent stamp is honest; an invented one is the defect)\n", err)
-	} else {
-		freshness = fmt.Sprintf("freshness-checked %s @ %s (origin/main)", date, sha)
-	}
-
-	// The brief `brief:` id form is schema-dependent: v1 keeps the short
-	// `<stream>/<NN>` form; v2 is the hierarchical `<cell>:<repo-alias>:<stream>:<NN>`
-	// form (docs/dependency-graph-design.md §3.3, checkBriefV2Semantics) — reusing
-	// the SAME registry reader (loadGraphRepos) the v2 lint validates against, so
-	// newbrief's id can never diverge from what --lint accepts.
-	var briefID string
-	if isV2 {
-		id, code, msg := newBriefV2ID(*root, streamMeta.Repo, *stream, num)
-		if code != newBriefExitOK {
-			fmt.Fprintf(stderr, "statusgen newbrief: %s\n", msg)
-			return code
-		}
-		briefID = id
-	} else {
-		briefID = *stream + "/" + num
-	}
-	body := renderNewBrief(newBriefSpec{
-		id:        briefID,
-		num:       num,
-		schema:    schema,
-		title:     *title,
-		wave:      wave,
-		depends:   []string(deps),
-		effort:    *effort,
-		gate:      derivedGate,
-		risk:      risk,
-		anyYes:    anyYes,
-		stream:    *stream,
-		freshness: freshness,
-		verifyCmd: verifyCmd,
-		shell:     rowShell,
-	})
-
-	// Assemble every planned write: the new brief, the README row, and the inverse
-	// edge into each named dependency — then commit them atomically (all or none).
-	rows := []newBriefRow{{path: briefPath, content: body, origExisted: false}}
-
-	readmeRaw, err := os.ReadFile(readmePath)
-	if err != nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: reading %s: %v\n", readmePath, err)
-		return newBriefExitWrite
-	}
-	// A `board: generated` stream's Briefs table is a SINGLE-WRITER generated
-	// region (readmetable.go, `statusgen regen --readmes`'s own job) — the row is
-	// rendered through the exact same pipeline regen uses (newBriefRegenReadme),
-	// never through insertBriefRow's independent hand-rolled row writer, so the
-	// brief this call creates never immediately trips `--lint`'s "hand edit to a
-	// generated table" the way the old direct-insert path did (issue #1280). A
-	// hand-maintained (not `board: generated`) stream keeps the pre-existing
-	// insertBriefRow path unchanged.
-	var newReadme string
-	if streamMeta.Board == "generated" {
-		newReadme, err = newBriefRegenReadme(string(readmeRaw), newBriefGenRows(streamDir, genRow{
-			num: num, title: *title, file: filepath.Base(briefPath), wave: wave, effort: *effort,
-		}))
-	} else {
-		newReadme, err = insertBriefRow(string(readmeRaw), num, *title, slug, wave, *effort)
-	}
-	if err != nil {
-		fmt.Fprintf(stderr, "statusgen newbrief: %s: %v\n", readmePath, err)
-		return newBriefExitRefuse
-	}
-	rows = append(rows, newBriefRow{path: readmePath, content: newReadme, origExisted: true, orig: readmeRaw})
-
-	for _, dp := range depPaths {
-		depRaw, err := os.ReadFile(dp.path)
-		if err != nil {
-			fmt.Fprintf(stderr, "statusgen newbrief: reading dependency %s: %v\n", dp.path, err)
-			return newBriefExitWrite
-		}
-		edited, err := addUnblocksEdge(string(depRaw), briefID)
-		if err != nil {
-			fmt.Fprintf(stderr, "statusgen newbrief: cannot write inverse edge into %s (%s): %v\n", dp.id, dp.path, err)
+	cmd.RunE = verbHandler(func(args []string) int {
+		// The gate is a CONCLUSION, never an input. There is no path that accepts a
+		// supplied gate — the flag exists only so a supplied one gets a clear refusal
+		// rather than being silently ignored.
+		if strings.TrimSpace(*gate) != "" {
+			fmt.Fprintln(stderr, "statusgen newbrief: --gate is not accepted — the gate is DERIVED from the four risk answers (any yes => human, all no => model). Answer the risk questions instead.")
 			return newBriefExitRefuse
 		}
-		rows = append(rows, newBriefRow{path: dp.path, content: edited, origExisted: true, orig: depRaw})
-	}
 
-	// Verify each target PARSES after the edit before writing anything — a brief
-	// file that no longer parses, or a README whose table no longer reads, aborts
-	// the whole change (write all or none).
-	if code := newBriefValidatePlan(rows, stderr); code != newBriefExitOK {
-		return code
-	}
+		if strings.TrimSpace(*stream) == "" {
+			fmt.Fprintln(stderr, "statusgen newbrief: --stream is required")
+			return newBriefExitRefuse
+		}
+		if strings.TrimSpace(*title) == "" {
+			fmt.Fprintln(stderr, "statusgen newbrief: --title is required")
+			return newBriefExitRefuse
+		}
+		if !validEffort[*effort] {
+			fmt.Fprintf(stderr, "statusgen newbrief: invalid --effort %q (want S, M or L)\n", *effort)
+			return newBriefExitRefuse
+		}
 
-	if *dryRun {
-		for _, r := range rows {
-			verb := "would create"
-			if r.origExisted {
-				verb = "would update"
+		streamDir := filepath.Join(*root, "docs", "streams", *stream)
+		readmePath := filepath.Join(streamDir, "README.md")
+		if _, err := os.Stat(readmePath); err != nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: stream %q has no README at %s — a brief is added to an existing stream (scaffold the stream with `statusgen init` first)\n", *stream, readmePath)
+			return newBriefExitRefuse
+		}
+		streamMeta, err := parseStreamREADME(readmePath)
+		if err != nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: %s: %v\n", readmePath, err)
+			return newBriefExitRefuse
+		}
+
+		// The target stream's brief SCHEMA (v1 vs v2) is DETECTED, never assumed: it is
+		// read off the stream's own existing briefs (issue #1280) — the same signal
+		// checkBriefFiles/parseBriefFile already use to opt a file into v1 or v2
+		// validation, so this reuses that reader rather than inventing a second
+		// detector. A brand-new, brief-less stream has no signal to detect and stays
+		// v1 (today's default) — a schema bump is something a stream's first brief
+		// declares, not something newbrief can guess.
+		schema := newBriefStreamSchema(streamDir)
+		isV2 := schema == briefSchemaV2
+
+		// Risk answers → the four canonical questions. Non-interactive: one flag per
+		// question, and an UNANSWERED question is a refusal. Interactive: prompt each.
+		risk, code := newBriefRiskAnswers(*interactive, stdin, stdout, stderr,
+			map[string]string{
+				"regulatory":     *regulatory,
+				"customer":       *customer,
+				"irreversible":   *irreversible,
+				"sensitive-data": *sensitiveData,
+			})
+		if code != newBriefExitOK {
+			return code
+		}
+		// The gate is the conclusion of the four answers.
+		derivedGate := "model"
+		anyYes := false
+		for _, k := range riskKeyOrder {
+			if risk[k] == "yes" {
+				anyYes = true
 			}
-			fmt.Fprintf(stdout, "%s  %s\n", verb, r.path)
-			fmt.Fprintln(stdout, "----------------------------------------")
-			fmt.Fprintln(stdout, r.content)
-			fmt.Fprintln(stdout, "----------------------------------------")
+		}
+		if anyYes {
+			derivedGate = "human"
+		}
+
+		// Resolve the number: the next free one in the stream, or an explicit one that
+		// must be free (never overwrite an existing brief).
+		num, code := newBriefResolveNumber(streamDir, *number, stderr)
+		if code != newBriefExitOK {
+			return code
+		}
+		slug := newBriefSlug(*title)
+		briefPath := filepath.Join(streamDir, fmt.Sprintf("brief-%s-%s.md", num, slug))
+		if _, err := os.Stat(briefPath); err == nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: %s already exists — newbrief never overwrites an existing file\n", briefPath)
+			return newBriefExitRefuse
+		}
+
+		// Derive the wave from the declared dependencies, and refuse a dependency that
+		// does not exist rather than emit a dangling edge. depPaths carries each dep's
+		// resolved brief file, so the inverse edge is written into the right target.
+		wave, depPaths, code := newBriefDeriveWave(*root, *stream, deps, stderr)
+		if code != newBriefExitOK {
+			return code
+		}
+
+		// The shell the first Verify row runs under (issues #1466 / #1424). Resolved to
+		// one of the three known shells; the DEFAULT is `sh` (POSIX bash), which is
+		// portable across Git-for-Windows bash and the `--in-container` harness and needs
+		// no Shell column. An unknown value is refused at authoring time rather than
+		// silently defaulted — a marker the runner cannot resolve routes nowhere.
+		rowShell := strings.TrimSpace(*shell)
+		rowShell = strings.ToLower(rowShell)
+		if rowShell == "" {
+			rowShell = legacyRowShell
+		}
+		if !knownRowShells[rowShell] {
+			fmt.Fprintf(stderr, "statusgen newbrief: invalid --shell %q (want sh, cmd or pwsh)\n", *shell)
+			return newBriefExitRefuse
+		}
+
+		// The first Verify row: a supplied command is validated (step 7 — an unusable
+		// row is not a Verify row); the default is a real, runnable starter row.
+		verifyCmd := strings.TrimSpace(*verifyCommand)
+		verifySupplied := verifyCmd != ""
+		if verifyCmd == "" {
+			verifyCmd = "go test ./..."
+		} else if err := usableVerifyCommand(verifyCmd); err != nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: --verify-command is not a usable Verify row: %v\n", err)
+			return newBriefExitRefuse
+		}
+
+		// Shell / command consistency (issues #1466 / #1424). Two fail-closed checks so a
+		// freshly-generated brief never ships the #1424 defect — a native-Windows row
+		// (`findstr`, backslash paths) landing as the default `bash -o pipefail` row with
+		// no Shell marker, which then FAILS the first verify pass under Git-bash and
+		// `--in-container` and can only be repaired by a separate worker PR:
+		//   1. A non-sh shell with the DEFAULT command is nonsense — the default row is
+		//      POSIX; a genuine native row must be supplied.
+		//   2. A native-Windows command under the DEFAULT sh shell is refused: the author
+		//      POSIX-izes it (portable, no marker) or declares --shell so the marker is
+		//      attached in THIS pass, never left for a later Evidence-edit worker.
+		// Neither GUESSES a shell from the command text (the sniff rowclass.go forbids):
+		// they refuse an under-declared row and make the author choose.
+		if rowShell != legacyRowShell && !verifySupplied {
+			fmt.Fprintf(stderr, "statusgen newbrief: --shell %s needs a --verify-command — the default `go test ./...` starter row is POSIX and runs under sh\n", rowShell)
+			return newBriefExitRefuse
+		}
+		if rowShell == legacyRowShell && looksWindowsNative(verifyCmd) {
+			fmt.Fprintf(stderr, "statusgen newbrief: --verify-command %q is a native-Windows command that cannot run under the default POSIX shell — POSIX-ize it (e.g. `grep -F` and forward-slash paths) so Git-bash and `--in-container` both run it, or declare `--shell cmd`/`--shell pwsh` so the row is marked at authoring time, never left for a later Evidence edit (issues #1466 / #1424)\n", verifyCmd)
+			return newBriefExitRefuse
+		}
+
+		// The freshness stamp is produced by a fetch the tool performs. On failure it
+		// stamps NOTHING and says could-not-check — never an invented value.
+		var freshness string
+		if *offline {
+			fmt.Fprintln(stderr, "statusgen newbrief: --offline — no freshness stamp written")
+		} else if sha, date, err := newBriefFreshness(*root); err != nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: could-not-check: freshness fetch failed (%v) — no stamp written (an absent stamp is honest; an invented one is the defect)\n", err)
+		} else {
+			freshness = fmt.Sprintf("freshness-checked %s @ %s (origin/main)", date, sha)
+		}
+
+		// The brief `brief:` id form is schema-dependent: v1 keeps the short
+		// `<stream>/<NN>` form; v2 is the hierarchical `<cell>:<repo-alias>:<stream>:<NN>`
+		// form (docs/dependency-graph-design.md §3.3, checkBriefV2Semantics) — reusing
+		// the SAME registry reader (loadGraphRepos) the v2 lint validates against, so
+		// newbrief's id can never diverge from what --lint accepts.
+		var briefID string
+		if isV2 {
+			id, code, msg := newBriefV2ID(*root, streamMeta.Repo, *stream, num)
+			if code != newBriefExitOK {
+				fmt.Fprintf(stderr, "statusgen newbrief: %s\n", msg)
+				return code
+			}
+			briefID = id
+		} else {
+			briefID = *stream + "/" + num
+		}
+		body := renderNewBrief(newBriefSpec{
+			id:        briefID,
+			num:       num,
+			schema:    schema,
+			title:     *title,
+			wave:      wave,
+			depends:   []string(deps),
+			effort:    *effort,
+			gate:      derivedGate,
+			risk:      risk,
+			anyYes:    anyYes,
+			stream:    *stream,
+			freshness: freshness,
+			verifyCmd: verifyCmd,
+			shell:     rowShell,
+		})
+
+		// Assemble every planned write: the new brief, the README row, and the inverse
+		// edge into each named dependency — then commit them atomically (all or none).
+		rows := []newBriefRow{{path: briefPath, content: body, origExisted: false}}
+
+		readmeRaw, err := os.ReadFile(readmePath)
+		if err != nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: reading %s: %v\n", readmePath, err)
+			return newBriefExitWrite
+		}
+		// A `board: generated` stream's Briefs table is a SINGLE-WRITER generated
+		// region (readmetable.go, `statusgen regen --readmes`'s own job) — the row is
+		// rendered through the exact same pipeline regen uses (newBriefRegenReadme),
+		// never through insertBriefRow's independent hand-rolled row writer, so the
+		// brief this call creates never immediately trips `--lint`'s "hand edit to a
+		// generated table" the way the old direct-insert path did (issue #1280). A
+		// hand-maintained (not `board: generated`) stream keeps the pre-existing
+		// insertBriefRow path unchanged.
+		var newReadme string
+		if streamMeta.Board == "generated" {
+			newReadme, err = newBriefRegenReadme(string(readmeRaw), newBriefGenRows(streamDir, genRow{
+				num: num, title: *title, file: filepath.Base(briefPath), wave: wave, effort: *effort,
+			}))
+		} else {
+			newReadme, err = insertBriefRow(string(readmeRaw), num, *title, slug, wave, *effort)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "statusgen newbrief: %s: %v\n", readmePath, err)
+			return newBriefExitRefuse
+		}
+		rows = append(rows, newBriefRow{path: readmePath, content: newReadme, origExisted: true, orig: readmeRaw})
+
+		for _, dp := range depPaths {
+			depRaw, err := os.ReadFile(dp.path)
+			if err != nil {
+				fmt.Fprintf(stderr, "statusgen newbrief: reading dependency %s: %v\n", dp.path, err)
+				return newBriefExitWrite
+			}
+			edited, err := addUnblocksEdge(string(depRaw), briefID)
+			if err != nil {
+				fmt.Fprintf(stderr, "statusgen newbrief: cannot write inverse edge into %s (%s): %v\n", dp.id, dp.path, err)
+				return newBriefExitRefuse
+			}
+			rows = append(rows, newBriefRow{path: dp.path, content: edited, origExisted: true, orig: depRaw})
+		}
+
+		// Verify each target PARSES after the edit before writing anything — a brief
+		// file that no longer parses, or a README whose table no longer reads, aborts
+		// the whole change (write all or none).
+		if code := newBriefValidatePlan(rows, stderr); code != newBriefExitOK {
+			return code
+		}
+
+		if *dryRun {
+			for _, r := range rows {
+				verb := "would create"
+				if r.origExisted {
+					verb = "would update"
+				}
+				fmt.Fprintf(stdout, "%s  %s\n", verb, r.path)
+				fmt.Fprintln(stdout, "----------------------------------------")
+				fmt.Fprintln(stdout, r.content)
+				fmt.Fprintln(stdout, "----------------------------------------")
+			}
+			return newBriefExitOK
+		}
+
+		if code := newBriefCommit(rows, stderr); code != newBriefExitOK {
+			return code
+		}
+
+		fmt.Fprintf(stdout, "created  %s\n", briefPath)
+		fmt.Fprintf(stdout, "updated  %s (brief %s row)\n", readmePath, num)
+		for _, dp := range depPaths {
+			fmt.Fprintf(stdout, "updated  %s (unblocks: += %s)\n", dp.path, briefID)
+		}
+		fmt.Fprintf(stdout, "\nbrief %s — gate: %s (derived from risk), wave: %d\n", briefID, derivedGate, wave)
+		if freshness == "" && !*offline {
+			fmt.Fprintln(stdout, "note: no freshness stamp (fetch could not be checked) — re-run with network to stamp it, or dereference-check the brief's Verify rows by hand.")
 		}
 		return newBriefExitOK
-	}
-
-	if code := newBriefCommit(rows, stderr); code != newBriefExitOK {
-		return code
-	}
-
-	fmt.Fprintf(stdout, "created  %s\n", briefPath)
-	fmt.Fprintf(stdout, "updated  %s (brief %s row)\n", readmePath, num)
-	for _, dp := range depPaths {
-		fmt.Fprintf(stdout, "updated  %s (unblocks: += %s)\n", dp.path, briefID)
-	}
-	fmt.Fprintf(stdout, "\nbrief %s — gate: %s (derived from risk), wave: %d\n", briefID, derivedGate, wave)
-	if freshness == "" && !*offline {
-		fmt.Fprintln(stdout, "note: no freshness stamp (fetch could not be checked) — re-run with network to stamp it, or dereference-check the brief's Verify rows by hand.")
-	}
-	return newBriefExitOK
+	})
+	return cmd
 }
 
 // riskKeyOrder is the canonical order of the four risk questions, so prompts and

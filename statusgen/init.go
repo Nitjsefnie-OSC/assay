@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // initStreamPlaceholder is the token every scaffold template uses where the
@@ -1077,3 +1079,53 @@ STATUS.md has a SINGLE writer (main's CI): regenerate it locally freely to previ
 but never commit it on a branch. The scaffolded example stream keeps docs/streams/
 non-empty, so --lint is green from the first commit — no --allow-empty-root needed.
 `
+
+// newInitCmd builds `statusgen init [--dry-run] [--forge github|gitlab] [--root DIR | DIR]`:
+// scaffold the streams structure into one repo (like `git init`). The target is --root DIR
+// or a single positional DIR — exactly one, either way.
+func newInitCmd(rio cliIO) *cobra.Command {
+	cmd := newCommand("init [--root DIR | DIR]", "Scaffold the streams structure into a repo", "")
+	cmd.Args = cobra.ArbitraryArgs
+	fs := cmd.Flags()
+	var initRoots rootFlags
+	fs.Var(&initRoots, "root", "repository root to scaffold")
+	dryRun := fs.Bool("dry-run", false, "print what would be scaffolded (paths + bodies) without writing anything")
+	forgeFlag := fs.String("forge", "", "which forge's CI half to scaffold: github | gitlab (default: auto-detect from the origin remote; an unrecognised host writes no CI half rather than defaulting to github)")
+	cmd.RunE = verbHandler(func(pos []string) int {
+		forge, err := parseForgeFlag(*forgeFlag)
+		if err != nil {
+			fmt.Fprintln(rio.Err, "statusgen:", err)
+			return 2
+		}
+		// The target may be given as --root DIR or as a single trailing positional
+		// (`statusgen init [--dry-run] DIR`); the positional is the natural
+		// first-run UX. Exactly one target either way.
+		if len(pos) > 0 {
+			if len(initRoots) > 0 || len(pos) > 1 {
+				fmt.Fprintf(rio.Err, "statusgen: init takes exactly one target — a single --root or a single positional DIR, not both/several\n")
+				return 2
+			}
+			initRoots = rootFlags{pos[0]}
+		}
+		// Scaffolding is inherently one-repo-at-a-time; taking the first of
+		// several silently would scaffold the wrong tree.
+		resolved, err := resolveRoots(initRoots)
+		if err != nil {
+			fmt.Fprintln(rio.Err, "statusgen:", err)
+			return 2
+		}
+		if len(resolved) > 1 {
+			fmt.Fprintf(rio.Err, "statusgen: init accepts exactly one --root; got %d — scaffold one repo at a time\n", len(resolved))
+			return 2
+		}
+		// An explicit --forge wins; otherwise detect from the target's origin
+		// remote (runInit does the detection). --dry-run previews either way.
+		if forge != forgeUnknown {
+			// An explicit --forge is always a resolved forge, so the CI half is
+			// written unconditionally (remotePresent=true; host unused).
+			return runInitForge(resolved[0], forge, true, "", *dryRun)
+		}
+		return runInit(resolved[0], *dryRun)
+	})
+	return cmd
+}

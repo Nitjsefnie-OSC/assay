@@ -90,8 +90,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,6 +101,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // ---------------------------------------------------------------------------
@@ -1725,6 +1727,13 @@ var forbiddenRunnerFlags = map[string]bool{
 // runVerifyrun is the `statusgen verifyrun` entry point. args excludes the
 // sub-command name itself.
 func runVerifyrun(args []string, stdout, stderr *os.File) int {
+	return runVerb(newVerifyrunCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// verifyrunRefuseRunnerFlags refuses a runner-captioning flag over verifyrun's raw arguments,
+// before the parser would replace this message with its generic unknown-flag error. It is
+// verifyrun's pre-parse check (cli.go preParseChecks).
+func verifyrunRefuseRunnerFlags(args []string, stderr io.Writer) int {
 	for _, a := range args {
 		// Only actual flags: a positional brief path that happens to be spelled
 		// `who` is a path, not an attempt to caption the run.
@@ -1738,15 +1747,14 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			return verifyrunExitUsageError
 		}
 	}
+	return 0
+}
 
-	fs := flag.NewFlagSet("verifyrun", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	// Silenced deliberately. flag.ContinueOnError calls Usage on BOTH a parse
-	// error and `--help`, and the two want different streams: help is output and
-	// belongs on stdout, a usage error is diagnostics and belongs on stderr.
-	// Letting the package print it would emit it twice on `--help` — once here
-	// and once from the ErrHelp branch below.
-	fs.Usage = func() {}
+// newVerifyrunCmd builds the `statusgen verifyrun` command.
+func newVerifyrunCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := fileOr(rio.Out, os.Stdout), fileOr(rio.Err, os.Stderr)
+	cmd := newCommand("verifyrun", "Run a brief's Verify rows and write the execution witness", verifyrunUsage)
+	fs := cmd.Flags()
 	briefPath := fs.String("brief", "", "brief file whose Verify table to run")
 	checkMode := fs.Bool("check", false, "audit an existing witness table instead of running anything")
 	dryRun := fs.Bool("dry-run", false, "print the witness table without writing it back")
@@ -1758,63 +1766,86 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	failFirstMode := fs.Bool("fail-first", false, "run each risk-bearing row at the merge-base first and record red/green in a Base column")
 	baseRev := fs.String("base", "", "base revision for --fail-first (default: the merge-base of HEAD and origin/main)")
 	envFile := fs.String("env-file", "", "role env-file passed to the container as --env-file (path only; contents never read/logged); defaults to $"+inContainerEnvFileVar)
-	// --help is handled by ContinueOnError returning flag.ErrHelp; print the
-	// usage and exit 0, because asking for help is not an error.
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(stdout, verifyrunUsage)
-			return 0
+	cmd.RunE = verbHandler(func(args []string) int {
+		// The sandbox mode is validated before anything else runs: an unknown value,
+		// the container mode in the CI lane, or the container mode with
+		// --in-container is a usage refusal (issue #2350).
+		if why := sandboxRefusal(*sandbox, *ci, *inContainer); why != "" {
+			fmt.Fprintln(stderr, "statusgen verifyrun:", why)
+			return verifyrunExitUsageError
 		}
-		fmt.Fprint(stderr, verifyrunUsage)
-		return verifyrunExitUsageError
-	}
 
-	// The sandbox mode is validated before anything else runs: an unknown value,
-	// the container mode in the CI lane, or the container mode with
-	// --in-container is a usage refusal (issue #2350).
-	if why := sandboxRefusal(*sandbox, *ci, *inContainer); why != "" {
-		fmt.Fprintln(stderr, "statusgen verifyrun:", why)
-		return verifyrunExitUsageError
-	}
-
-	if *baseRev != "" && !*failFirstMode {
-		fmt.Fprintln(stderr, "statusgen verifyrun: --base only applies to --fail-first")
-		return verifyrunExitUsageError
-	}
-	if *failFirstMode && (*checkMode || *inContainer) {
-		fmt.Fprintln(stderr, "statusgen verifyrun: --fail-first runs rows on two trees; it is refused with --check (which runs nothing) and with --in-container (which does not mount the base)")
-		return verifyrunExitUsageError
-	}
-
-	path := *briefPath
-	if path == "" && fs.NArg() > 0 {
-		path = fs.Arg(0)
-	}
-	if path == "" {
-		fmt.Fprint(stderr, verifyrunUsage)
-		return verifyrunExitUsageError
-	}
-
-	attestation := ""
-	if !*checkMode {
-		admissionRoot := *rootDir
-		if admissionRoot == "" {
-			admissionRoot = repoRootFor(path)
+		if *baseRev != "" && !*failFirstMode {
+			fmt.Fprintln(stderr, "statusgen verifyrun: --base only applies to --fail-first")
+			return verifyrunExitUsageError
 		}
-		var admissionErr error
-		attestation, admissionErr = verifierAdmission(admissionRoot, path)
-		if admissionErr != nil {
-			fmt.Fprintln(stderr, "statusgen verifyrun:", admissionErr)
+		if *failFirstMode && (*checkMode || *inContainer) {
+			fmt.Fprintln(stderr, "statusgen verifyrun: --fail-first runs rows on two trees; it is refused with --check (which runs nothing) and with --in-container (which does not mount the base)")
+			return verifyrunExitUsageError
+		}
+
+		path := *briefPath
+		if path == "" && fs.NArg() > 0 {
+			path = fs.Arg(0)
+		}
+		if path == "" {
+			fmt.Fprint(stderr, verifyrunUsage)
+			return verifyrunExitUsageError
+		}
+
+		attestation := ""
+		if !*checkMode {
+			admissionRoot := *rootDir
+			if admissionRoot == "" {
+				admissionRoot = repoRootFor(path)
+			}
+			var admissionErr error
+			attestation, admissionErr = verifierAdmission(admissionRoot, path)
+			if admissionErr != nil {
+				fmt.Fprintln(stderr, "statusgen verifyrun:", admissionErr)
+				return verifyrunExitCouldNot
+			}
+		}
+
+		// --in-container hands the whole run off to a `statusgen verifyrun` inside the
+		// pinned harness container (windows-port/10). The host does no Verify-row
+		// execution and does not need to parse the brief here — the inner run reads it
+		// against the bind-mounted /work. The pass-through flags (--check/--dry-run/--ci
+		// and a non-default --timeout) travel into the container.
+		if *inContainer {
+			root := *rootDir
+			if root == "" {
+				root = repoRootFor(path)
+			}
+			if why := verifyrunRootBelowToplevel(root); why != "" {
+				fmt.Fprintln(stderr, "statusgen verifyrun:", why)
+				return verifyrunExitUsageError
+			}
+			ef := *envFile
+			if ef == "" {
+				ef = strings.TrimSpace(os.Getenv(inContainerEnvFileVar))
+			}
+			innerTimeout := ""
+			if *timeout != witnessTimeoutDefault {
+				innerTimeout = timeout.String()
+			}
+			return runInContainer(path, root, ef, *checkMode, *dryRun, *ci, innerTimeout, stdout, stderr)
+		}
+
+		verify, evidence, err := briefSections(path)
+		if err != nil {
+			fmt.Fprintln(stderr, "statusgen verifyrun:", err)
 			return verifyrunExitCouldNot
 		}
-	}
+		if strings.TrimSpace(verify) == "" {
+			fmt.Fprintf(stderr, "statusgen verifyrun: %s has no `## Verify` section — there is nothing to witness\n", path)
+			return verifyrunExitCouldNot
+		}
 
-	// --in-container hands the whole run off to a `statusgen verifyrun` inside the
-	// pinned harness container (windows-port/10). The host does no Verify-row
-	// execution and does not need to parse the brief here — the inner run reads it
-	// against the bind-mounted /work. The pass-through flags (--check/--dry-run/--ci
-	// and a non-default --timeout) travel into the container.
-	if *inContainer {
+		if *checkMode {
+			return runVerifyrunCheck(path, verify, evidence, stdout)
+		}
+
 		root := *rootDir
 		if root == "" {
 			root = repoRootFor(path)
@@ -1823,134 +1854,103 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			fmt.Fprintln(stderr, "statusgen verifyrun:", why)
 			return verifyrunExitUsageError
 		}
-		ef := *envFile
-		if ef == "" {
-			ef = strings.TrimSpace(os.Getenv(inContainerEnvFileVar))
-		}
-		innerTimeout := ""
-		if *timeout != witnessTimeoutDefault {
-			innerTimeout = timeout.String()
-		}
-		return runInContainer(path, root, ef, *checkMode, *dryRun, *ci, innerTimeout, stdout, stderr)
-	}
-
-	verify, evidence, err := briefSections(path)
-	if err != nil {
-		fmt.Fprintln(stderr, "statusgen verifyrun:", err)
-		return verifyrunExitCouldNot
-	}
-	if strings.TrimSpace(verify) == "" {
-		fmt.Fprintf(stderr, "statusgen verifyrun: %s has no `## Verify` section — there is nothing to witness\n", path)
-		return verifyrunExitCouldNot
-	}
-
-	if *checkMode {
-		return runVerifyrunCheck(path, verify, evidence, stdout)
-	}
-
-	root := *rootDir
-	if root == "" {
-		root = repoRootFor(path)
-	}
-	if why := verifyrunRootBelowToplevel(root); why != "" {
-		fmt.Fprintln(stderr, "statusgen verifyrun:", why)
-		return verifyrunExitUsageError
-	}
-	runner, runnerSource, ok := executingRunner(root)
-	if !ok {
-		fmt.Fprintln(stderr, "statusgen verifyrun: could-not-attribute — no executing identity is available (no GITHUB_ACTOR under GitHub Actions, no git user.name/user.email in this repo). Refusing to write a witness with no runner: an unattributed witness is not a witness, and inventing a placeholder would make the one field naming who ran this the one field anybody could have written. Set the repo's git identity and re-run.")
-		return verifyrunExitCouldNot
-	}
-
-	rows := briefVerifyRows(verify)
-	if len(rows) == 0 {
-		fmt.Fprintf(stderr, "statusgen verifyrun: %s has a `## Verify` section with no runnable rows\n", path)
-		return verifyrunExitCouldNot
-	}
-
-	plan := resolveShellPlan()
-	if attestation != "" {
-		plan.env = admittedRowEnv(os.Environ())
-	}
-	// Fail-first (verify-integrity/03): the base run comes FIRST, on its own
-	// checkout, so the head run below is the ordinary run, unchanged.
-	var ff map[string]failFirst
-	var riskyIDs map[string]bool
-	if *failFirstMode {
-		base, berr := failFirstBaseRev(root, *baseRev, path)
-		if berr != nil {
-			fmt.Fprintln(stderr, "statusgen verifyrun: --fail-first:", berr)
+		runner, runnerSource, ok := executingRunner(root)
+		if !ok {
+			fmt.Fprintln(stderr, "statusgen verifyrun: could-not-attribute — no executing identity is available (no GITHUB_ACTOR under GitHub Actions, no git user.name/user.email in this repo). Refusing to write a witness with no runner: an unattributed witness is not a witness, and inventing a placeholder would make the one field naming who ran this the one field anybody could have written. Set the repo's git identity and re-run.")
 			return verifyrunExitCouldNot
 		}
-		var risk map[string]string
-		if bf, ok, perr := parseBriefFile(path); perr == nil && ok {
-			risk = bf.Risk
-		}
-		riskyIDs = failFirstRiskyIDs(risk, rows)
-		if len(riskyIDs) == 0 {
-			fmt.Fprintln(stdout, "--fail-first: no risk-bearing row in this table; every row is recorded not-selected at base")
-		}
-		var ferr error
-		ff, ferr = runFailFirstBase(plan, *sandbox, root, base, rows, riskyIDs, *timeout, *ci)
-		if ferr != nil {
-			fmt.Fprintln(stderr, "statusgen verifyrun: --fail-first:", ferr)
+
+		rows := briefVerifyRows(verify)
+		if len(rows) == 0 {
+			fmt.Fprintf(stderr, "statusgen verifyrun: %s has a `## Verify` section with no runnable rows\n", path)
 			return verifyrunExitCouldNot
 		}
-	}
-	ws := runWitnessesSandboxed(plan, *sandbox, root, rows, runner, runnerSource, treeSHA(root), nowFunc().Format("2006-01-02"), *timeout, *ci)
-	if ff != nil {
-		for i := range ws {
-			f := ff[ws[i].ID]
-			ws[i].Base = failFirstCell(f.Base, f.State, f.Exit, ws[i].Tree)
-		}
-	}
-	target := witnessAnnotationRepo(witnessTargetRepo(path), witnessOriginRepo(root))
-	for i := range ws {
-		ws[i].Repo = target
-	}
-	table := witnessTable(ws)
-	if attestation != "" {
-		table += "\n" + attestation + "\n"
-	}
 
-	worst := verifyrunExitPass
-	for _, w := range ws {
-		if w.State == stateSkipped {
-			// A skip is neither a run nor a verdict — report it, but it never
-			// enters the exit-code fold and it is not in the witness table.
-			fmt.Fprintf(stdout, "row %s: skip — %s\n", w.ID, w.Note)
-			continue
+		plan := resolveShellPlan()
+		if attestation != "" {
+			plan.env = admittedRowEnv(os.Environ())
 		}
-		line := fmt.Sprintf("row %s: %s (exit=%s, sha256:%s)", w.ID, w.State, exitCell(w.Exit), w.OutHash)
-		if w.Note != "" {
-			line += " — " + w.Note
-		}
-		fmt.Fprintln(stdout, line)
-		switch w.State {
-		case stateCouldNotRun:
-			worst = verifyrunExitCouldNot
-		case stateFail:
-			if worst != verifyrunExitCouldNot {
-				worst = verifyrunExitFail
+		// Fail-first (verify-integrity/03): the base run comes FIRST, on its own
+		// checkout, so the head run below is the ordinary run, unchanged.
+		var ff map[string]failFirst
+		var riskyIDs map[string]bool
+		if *failFirstMode {
+			base, berr := failFirstBaseRev(root, *baseRev, path)
+			if berr != nil {
+				fmt.Fprintln(stderr, "statusgen verifyrun: --fail-first:", berr)
+				return verifyrunExitCouldNot
+			}
+			var risk map[string]string
+			if bf, ok, perr := parseBriefFile(path); perr == nil && ok {
+				risk = bf.Risk
+			}
+			riskyIDs = failFirstRiskyIDs(risk, rows)
+			if len(riskyIDs) == 0 {
+				fmt.Fprintln(stdout, "--fail-first: no risk-bearing row in this table; every row is recorded not-selected at base")
+			}
+			var ferr error
+			ff, ferr = runFailFirstBase(plan, *sandbox, root, base, rows, riskyIDs, *timeout, *ci)
+			if ferr != nil {
+				fmt.Fprintln(stderr, "statusgen verifyrun: --fail-first:", ferr)
+				return verifyrunExitCouldNot
 			}
 		}
-	}
-	if ff != nil {
-		worst = foldFailFirst(ws, ff, riskyIDs, worst, stdout)
-	}
-	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, table)
+		ws := runWitnessesSandboxed(plan, *sandbox, root, rows, runner, runnerSource, treeSHA(root), nowFunc().Format("2006-01-02"), *timeout, *ci)
+		if ff != nil {
+			for i := range ws {
+				f := ff[ws[i].ID]
+				ws[i].Base = failFirstCell(f.Base, f.State, f.Exit, ws[i].Tree)
+			}
+		}
+		target := witnessAnnotationRepo(witnessTargetRepo(path), witnessOriginRepo(root))
+		for i := range ws {
+			ws[i].Repo = target
+		}
+		table := witnessTable(ws)
+		if attestation != "" {
+			table += "\n" + attestation + "\n"
+		}
 
-	if *dryRun {
-		fmt.Fprintf(stdout, "\n--dry-run: the table above was NOT written to %s\n", path)
+		worst := verifyrunExitPass
+		for _, w := range ws {
+			if w.State == stateSkipped {
+				// A skip is neither a run nor a verdict — report it, but it never
+				// enters the exit-code fold and it is not in the witness table.
+				fmt.Fprintf(stdout, "row %s: skip — %s\n", w.ID, w.Note)
+				continue
+			}
+			line := fmt.Sprintf("row %s: %s (exit=%s, sha256:%s)", w.ID, w.State, exitCell(w.Exit), w.OutHash)
+			if w.Note != "" {
+				line += " — " + w.Note
+			}
+			fmt.Fprintln(stdout, line)
+			switch w.State {
+			case stateCouldNotRun:
+				worst = verifyrunExitCouldNot
+			case stateFail:
+				if worst != verifyrunExitCouldNot {
+					worst = verifyrunExitFail
+				}
+			}
+		}
+		if ff != nil {
+			worst = foldFailFirst(ws, ff, riskyIDs, worst, stdout)
+		}
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, table)
+
+		if *dryRun {
+			fmt.Fprintf(stdout, "\n--dry-run: the table above was NOT written to %s\n", path)
+			return worst
+		}
+		if err := appendWitnessTable(path, table); err != nil {
+			fmt.Fprintln(stderr, "statusgen verifyrun:", err)
+			return verifyrunExitCouldNot
+		}
+		fmt.Fprintf(stdout, "\nwitness appended to the `## Evidence` section of %s\n", path)
 		return worst
-	}
-	if err := appendWitnessTable(path, table); err != nil {
-		fmt.Fprintln(stderr, "statusgen verifyrun:", err)
-		return verifyrunExitCouldNot
-	}
-	fmt.Fprintf(stdout, "\nwitness appended to the `## Evidence` section of %s\n", path)
-	return worst
+	})
+	return cmd
 }
 
 // runVerifyrunCheck is the `--check` half: audit, never execute.

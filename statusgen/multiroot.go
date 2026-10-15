@@ -41,6 +41,7 @@ import (
 type rootFlags []string
 
 func (r *rootFlags) String() string { return strings.Join(*r, ", ") }
+func (r *rootFlags) Type() string   { return "string" }
 
 func (r *rootFlags) Set(v string) error {
 	v = strings.TrimSpace(v)

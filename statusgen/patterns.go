@@ -32,7 +32,6 @@ package main
 
 import (
 	"embed"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -40,6 +39,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -115,89 +115,95 @@ func embeddedPatternSchemaBytes() []byte {
 // exit code. Today the only verb is --lint; an unrecognized invocation (no verb,
 // or a future verb this build does not know) is a usage refusal.
 func runPatterns(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("patterns", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	return runVerb(newPatternsCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newPatternsCmd builds the `statusgen patterns` command.
+func newPatternsCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("patterns", "Validate workflow-pattern files (--lint)", "")
+	flags := cmd.Flags()
 	var roots rootFlags
 	flags.Var(&roots, "root", "repository root to scan (repeatable; default \".\")")
 	lint := flags.Bool("lint", false, "validate every spec/workflow-patterns/*.yaml file against the schema and MUST rules")
-	if err := flags.Parse(args); err != nil {
-		return patternsExitUsageError
-	}
-	if !*lint {
-		fmt.Fprintln(stderr, "statusgen patterns: no verb given (want --lint)")
-		return patternsExitUsageError
-	}
-
-	resolvedRoots, err := resolveRoots(roots)
-	if err != nil {
-		fmt.Fprintln(stderr, "patterns:", err)
-		return patternsExitUsageError
-	}
-
-	schema, err := parseSchema(embeddedPatternSchemaBytes())
-	if err != nil {
-		fmt.Fprintf(stderr, "patterns: embedded schema is not valid JSON: %v\n", err)
-		return patternsExitCouldNot
-	}
-
-	var clean, failed, couldNot, scanned int
-	for _, root := range resolvedRoots {
-		dir := filepath.Join(root, "spec", "workflow-patterns")
-		info, statErr := os.Stat(dir)
-		if statErr != nil || !info.IsDir() {
-			// A root with no spec/workflow-patterns directory is could-not-look, not
-			// a clean pass — the three-state instrument rule forbids reading
-			// "nothing scanned" as "nothing wrong".
-			couldNot++
-			fmt.Fprintf(stdout, "could-not-check: %s: no spec/workflow-patterns directory to scan (%v)\n", root, statErr)
-			continue
+	cmd.RunE = verbHandler(func(args []string) int {
+		if !*lint {
+			fmt.Fprintln(stderr, "statusgen patterns: no verb given (want --lint)")
+			return patternsExitUsageError
 		}
-		entries, readErr := os.ReadDir(dir)
-		if readErr != nil {
-			couldNot++
-			fmt.Fprintf(stdout, "could-not-check: %s: %v\n", dir, readErr)
-			continue
+
+		resolvedRoots, err := resolveRoots(roots)
+		if err != nil {
+			fmt.Fprintln(stderr, "patterns:", err)
+			return patternsExitUsageError
 		}
-		names := make([]string, 0, len(entries))
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+
+		schema, err := parseSchema(embeddedPatternSchemaBytes())
+		if err != nil {
+			fmt.Fprintf(stderr, "patterns: embedded schema is not valid JSON: %v\n", err)
+			return patternsExitCouldNot
+		}
+
+		var clean, failed, couldNot, scanned int
+		for _, root := range resolvedRoots {
+			dir := filepath.Join(root, "spec", "workflow-patterns")
+			info, statErr := os.Stat(dir)
+			if statErr != nil || !info.IsDir() {
+				// A root with no spec/workflow-patterns directory is could-not-look, not
+				// a clean pass — the three-state instrument rule forbids reading
+				// "nothing scanned" as "nothing wrong".
+				couldNot++
+				fmt.Fprintf(stdout, "could-not-check: %s: no spec/workflow-patterns directory to scan (%v)\n", root, statErr)
 				continue
 			}
-			names = append(names, e.Name())
-		}
-		sort.Strings(names) // deterministic scan/report order
-		for _, name := range names {
-			scanned++
-			path := filepath.Join(dir, name)
-			state, violations := lintPatternFile(path, schema)
-			switch state {
-			case patternStateClean:
-				clean++
-			case patternStateFailed:
-				failed++
-				for _, v := range violations {
-					fmt.Fprintf(stdout, "checked-failed: %s\n", v)
-				}
-			case patternStateCouldNot:
+			entries, readErr := os.ReadDir(dir)
+			if readErr != nil {
 				couldNot++
-				for _, v := range violations {
-					fmt.Fprintf(stdout, "could-not-check: %s\n", v)
+				fmt.Fprintf(stdout, "could-not-check: %s: %v\n", dir, readErr)
+				continue
+			}
+			names := make([]string, 0, len(entries))
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+					continue
+				}
+				names = append(names, e.Name())
+			}
+			sort.Strings(names) // deterministic scan/report order
+			for _, name := range names {
+				scanned++
+				path := filepath.Join(dir, name)
+				state, violations := lintPatternFile(path, schema)
+				switch state {
+				case patternStateClean:
+					clean++
+				case patternStateFailed:
+					failed++
+					for _, v := range violations {
+						fmt.Fprintf(stdout, "checked-failed: %s\n", v)
+					}
+				case patternStateCouldNot:
+					couldNot++
+					for _, v := range violations {
+						fmt.Fprintf(stdout, "could-not-check: %s\n", v)
+					}
 				}
 			}
 		}
-	}
 
-	fmt.Fprintf(stdout, "patterns: %d checked-clean, %d checked-failed, %d could-not-check (%d file(s) scanned)\n",
-		clean, failed, couldNot, scanned)
+		fmt.Fprintf(stdout, "patterns: %d checked-clean, %d checked-failed, %d could-not-check (%d file(s) scanned)\n",
+			clean, failed, couldNot, scanned)
 
-	switch {
-	case failed > 0:
-		return patternsExitFailed
-	case couldNot > 0:
-		return patternsExitCouldNot
-	default:
-		return patternsExitClean
-	}
+		switch {
+		case failed > 0:
+			return patternsExitFailed
+		case couldNot > 0:
+			return patternsExitCouldNot
+		default:
+			return patternsExitClean
+		}
+	})
+	return cmd
 }
 
 type patternState int

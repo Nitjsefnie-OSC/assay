@@ -34,7 +34,6 @@ package main
 
 import (
 	"crypto/rand"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -42,6 +41,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -64,25 +64,29 @@ const (
 
 // runMigrate is the `statusgen migrate <target> [flags]` entry point.
 func runMigrate(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, "statusgen migrate: a migration target is required (only brief-v1-to-v2 is defined)")
-		return migrateExitUsage
-	}
-	target := args[0]
-	if target != "brief-v1-to-v2" {
-		fmt.Fprintf(stderr, "statusgen migrate: unknown migration target %q (only brief-v1-to-v2 is defined)\n", target)
-		return migrateExitUsage
-	}
+	return runVerb(newMigrateCmd, args, cliIO{Out: stdout, Err: stderr})
+}
 
-	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+// newMigrateCmd builds the `statusgen migrate` command.
+func newMigrateCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("migrate <target>", "Run a tree migration (brief-v1-to-v2)", "")
+	fs := cmd.Flags()
 	root := fs.String("root", ".", "tree root to migrate")
 	dryRun := fs.Bool("dry-run", false, "preview only; write nothing")
-	if err := fs.Parse(args[1:]); err != nil {
-		return migrateExitUsage
-	}
-
-	return migrateBriefV1ToV2(*root, *dryRun, stdout, stderr)
+	cmd.RunE = verbHandler(func(args []string) int {
+		if len(args) == 0 {
+			fmt.Fprintln(stderr, "statusgen migrate: a migration target is required (only brief-v1-to-v2 is defined)")
+			return migrateExitUsage
+		}
+		target := args[0]
+		if target != "brief-v1-to-v2" {
+			fmt.Fprintf(stderr, "statusgen migrate: unknown migration target %q (only brief-v1-to-v2 is defined)\n", target)
+			return migrateExitUsage
+		}
+		return migrateBriefV1ToV2(*root, *dryRun, stdout, stderr)
+	})
+	return cmd
 }
 
 // migratePlan is one line of the per-file migration plan a --dry-run prints and an
@@ -200,7 +204,7 @@ func loadMigrateRegistry(root string) (migrateRegistry, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return migrateRegistry{}, fmt.Errorf(
-				"docs/streams/graph-repos.yaml is absent — the brief-v2 id form <cell>:<repo>:<stream>:<NN> "+
+				"docs/streams/graph-repos.yaml is absent — the brief-v2 id form <cell>:<repo>:<stream>:<NN> " +
 					"cannot be minted without the alias registry; write docs/streams/graph-repos.yaml first (see the release note)")
 		}
 		return migrateRegistry{}, fmt.Errorf("cannot read docs/streams/graph-repos.yaml: %v", err)

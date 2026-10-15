@@ -60,7 +60,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -69,6 +68,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -141,65 +142,65 @@ var (
 
 // runVerifyflip is the `statusgen verifyflip` entry point.
 func runVerifyflip(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("verifyflip", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {}
+	return runVerb(newVerifyflipCmd, args, cliIO{Out: stdout, Err: stderr})
+}
+
+// newVerifyflipCmd builds the `statusgen verifyflip` command.
+func newVerifyflipCmd(rio cliIO) *cobra.Command {
+	stdout, stderr := rio.Out, rio.Err
+	cmd := newCommand("verifyflip", "Flip a gate:model brief implemented to verified from its recorded PASS", verifyflipUsage)
+	fs := cmd.Flags()
 	briefKey := fs.String("brief", "", "")
 	sha := fs.String("sha", "", "")
 	runner := fs.String("runner", "", "")
 	rootDir := fs.String("root", ".", "")
 	dryRun := fs.Bool("dry-run", false, "")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(stdout, verifyflipUsage)
+	cmd.RunE = verbHandler(func(args []string) int {
+		if fs.NArg() > 0 || *briefKey == "" || *sha == "" || *runner == "" {
+			fmt.Fprint(stderr, verifyflipUsage)
+			return verifyflipExitCouldNotCheck
+		}
+		if !flipShaRe.MatchString(*sha) {
+			fmt.Fprintf(stderr, "statusgen verifyflip: --sha must be 7–40 hex characters, got %q\n", *sha)
+			return verifyflipExitCouldNotCheck
+		}
+
+		plan, err := planVerifyFlip(*rootDir, *briefKey, *sha, *runner)
+		if err != nil {
+			var r *flipRefusal
+			if errors.As(err, &r) {
+				fmt.Fprintf(stderr, "statusgen verifyflip: %s: %v\n", *briefKey, err)
+				return verifyflipExitRefused
+			}
+			fmt.Fprintf(stderr, "statusgen verifyflip: could-not-check — %s: %v\n", *briefKey, err)
+			return verifyflipExitCouldNotCheck
+		}
+		rel, rerr := filepath.Rel(*rootDir, plan.Readme)
+		if rerr != nil {
+			rel = plan.Readme
+		}
+		fmt.Fprintf(stdout, "brief: %s\nreadme: %s\nverified-stamp: %s\n", *briefKey, filepath.ToSlash(rel), plan.Stamp)
+		if *dryRun {
+			fmt.Fprintln(stdout, "dry-run: nothing written")
 			return verifyflipExitOK
 		}
-		fmt.Fprint(stderr, verifyflipUsage)
-		return verifyflipExitCouldNotCheck
-	}
-	if fs.NArg() > 0 || *briefKey == "" || *sha == "" || *runner == "" {
-		fmt.Fprint(stderr, verifyflipUsage)
-		return verifyflipExitCouldNotCheck
-	}
-	if !flipShaRe.MatchString(*sha) {
-		fmt.Fprintf(stderr, "statusgen verifyflip: --sha must be 7–40 hex characters, got %q\n", *sha)
-		return verifyflipExitCouldNotCheck
-	}
-
-	plan, err := planVerifyFlip(*rootDir, *briefKey, *sha, *runner)
-	if err != nil {
-		var r *flipRefusal
-		if errors.As(err, &r) {
-			fmt.Fprintf(stderr, "statusgen verifyflip: %s: %v\n", *briefKey, err)
+		info, err := os.Lstat(plan.Readme)
+		if err != nil {
+			fmt.Fprintf(stderr, "statusgen verifyflip: could-not-check — %v\n", err)
+			return verifyflipExitCouldNotCheck
+		}
+		if !info.Mode().IsRegular() {
+			fmt.Fprintf(stderr, "statusgen verifyflip: %s: %v\n", *briefKey, refuseFlip("%s is not a regular file — the flip never writes through a link", plan.Readme))
 			return verifyflipExitRefused
 		}
-		fmt.Fprintf(stderr, "statusgen verifyflip: could-not-check — %s: %v\n", *briefKey, err)
-		return verifyflipExitCouldNotCheck
-	}
-	rel, rerr := filepath.Rel(*rootDir, plan.Readme)
-	if rerr != nil {
-		rel = plan.Readme
-	}
-	fmt.Fprintf(stdout, "brief: %s\nreadme: %s\nverified-stamp: %s\n", *briefKey, filepath.ToSlash(rel), plan.Stamp)
-	if *dryRun {
-		fmt.Fprintln(stdout, "dry-run: nothing written")
+		if err := os.WriteFile(plan.Readme, plan.Updated, info.Mode().Perm()); err != nil {
+			fmt.Fprintf(stderr, "statusgen verifyflip: could-not-check — write %s: %v\n", plan.Readme, err)
+			return verifyflipExitCouldNotCheck
+		}
+		fmt.Fprintln(stdout, "flipped: implemented → verified")
 		return verifyflipExitOK
-	}
-	info, err := os.Lstat(plan.Readme)
-	if err != nil {
-		fmt.Fprintf(stderr, "statusgen verifyflip: could-not-check — %v\n", err)
-		return verifyflipExitCouldNotCheck
-	}
-	if !info.Mode().IsRegular() {
-		fmt.Fprintf(stderr, "statusgen verifyflip: %s: %v\n", *briefKey, refuseFlip("%s is not a regular file — the flip never writes through a link", plan.Readme))
-		return verifyflipExitRefused
-	}
-	if err := os.WriteFile(plan.Readme, plan.Updated, info.Mode().Perm()); err != nil {
-		fmt.Fprintf(stderr, "statusgen verifyflip: could-not-check — write %s: %v\n", plan.Readme, err)
-		return verifyflipExitCouldNotCheck
-	}
-	fmt.Fprintln(stdout, "flipped: implemented → verified")
-	return verifyflipExitOK
+	})
+	return cmd
 }
 
 // planVerifyFlip runs every check and returns what would be written. A
