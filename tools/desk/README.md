@@ -23,6 +23,28 @@ tools/desk/
 Everything after that is the deep reference, one section per tool, and you do not need
 it on day one.
 
+## Review planner state contract
+
+`reviewloop plan` proposes review dispatches and draft-to-ready operations from the
+supplied board; it does not execute either operation. A posted review verdict is
+not evidence that a reviewer is currently assigned, and verdict kinds and outcomes
+must remain distinct. The audit ledger records completed writes; planning must not
+reparse its complete history separately for each proposed operation.
+
+Planning uses only the supplied board observations and performs zero audit-history
+loads ([issue #2793](https://github.com/medici-finance/assay/issues/2793)). Historical
+review verdicts, including legacy generic `review` entries, cannot suppress a new
+review dispatch. Historical `ready` entries cannot suppress a current `FLIP`: a
+still-draft PR needs the retry that `deskpost ready` already permits (#805).
+
+Coalescing suppresses repeated keys within a plan and operations whose head is
+unresolved. It does not reserve a reviewer or authorize a write. Before execution,
+`deskdispatch` must acquire a live reviewer claim; `deskpost` must validate history
+under its outward lock and recheck current forge state and exact write identity.
+Missing, unreadable or corrupt audit history does not change a plan, and still
+retains its existing meaning at those write boundaries. No retained history is
+changed or discarded.
+
 ## Tool reference
 
 | Tool | Verb(s) | Class | Write budget + breaker |
@@ -52,6 +74,7 @@ it on day one.
 | `deskclaim` | `acquire`, `release`, `list`, `stale` — the flock-backed claimable-action lock | local-only (claims dir) | no |
 | `desksupervise` | `tick` (one classification sweep of every `state=dispatched` dispatch claim against `internal/loopengine`'s liveness taxonomy; `--claims-fixture`/`--observations-fixture` run it fully offline), `run --interval` (loop `tick` forever) — turns a wedged worker into a logged, minutes-scale reclaim (`RECLAIM-ELIGIBLE` / `BLOCKED-TIMEOUT`) instead of a silent hold on the 120-minute stale-claim backstop; fires the `after_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (logged, non-fatal) when it releases or lands a claim | read-mostly (probes read the audit trail, a branch's SHA, and a PR's `updated_at`) / outward write on a non-dry-run reclaim or blocked-timeout filing | no |
 | `opmetrics` | (no verbs) — operator-layer collector: reads transcripts/beacons/claims, writes one **aggregates-only** day-file | local-only (strictly read-only against every input) | no |
+| `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
 | `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); each takes `--dry-run` to report the hook plan without touching anything | local-only | no |
 | `deskgit` | `fetch` (bare / `--prune` / `--pr <N>` / `--branch <B>`) — the only git verb | local-only (inbound refs) | no |
 | `desktoken` | `<role>` — mint/reuse an App installation token | local-only (token cache) | no |
@@ -127,6 +150,31 @@ deskclaim list             # which claimable actions are held right now
 Each run echoes the effective configuration (`assay-config:` lines) before its output —
 the allowed-repo set, the trusted identities, the risk triggers. That echo is the point:
 a widened scope shows up in run output and CI history rather than in someone's memory.
+
+By default the echo is **one line** carrying a digest of the full block:
+
+```
+assay-config: class=write source=config file … configured=true digest=sha256:<12 hex> humans=N bots=N roles=N repos=N (full: ASSAY_CONFIG_ECHO=full)
+```
+
+The digest is sha256 over the full block, so it moves on any change in either direction. The
+**full block** prints instead whenever any of these holds:
+
+- the run is in CI (`CI=true` or `CI=1`, any case, or `GITHUB_ACTIONS=true`) — CI history keeps
+  every line;
+- the roster carries a `REFUSED` or `unrecognised-keys` line — those are never quieter;
+- the digest differs from the last recorded one (in `config-echo.state`, beside the roster) —
+  so the first run after a change shows it whole. Only a default-form run whose output someone
+  sees records, and only after the whole block was written without error (a closed or failing
+  stderr records nothing); a forced, CI or refused run prints the full block without recording;
+- the run is one whose stderr nobody sees: a harness hook (`writeguard`, the `cellctl
+  model-policy hook`) and a child whose stderr a desk tool captures (it is given
+  `ASSAY_CONFIG_ECHO=full`) print the full block and never read or record the state;
+- that state file cannot be read or written, or is not a regular file (a symlink is not followed);
+- `ASSAY_CONFIG_ECHO=full` is set (any value other than `compact` counts as `full`); this forced
+  form neither reads nor updates the state file.
+
+To read every line on demand: `ASSAY_CONFIG_ECHO=full deskboard --version`.
 
 ### 3. Learn the exit codes before you run a write verb
 
@@ -355,6 +403,71 @@ assertions. A verb opts into the whole contract by routing its terminal error th
 Retrofitted so far: `deskdispatch`, `deskwt`, `desktoken`, `deskfile`. Other verbs are
 unaffected and keep their current behaviour until they are moved over.
 
+### Local performance history — `deskperf`
+
+The audit ledger records WHAT a verb did; it records nothing about how long it took. With
+`ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
+first-wave verbs — `deskpr`, `deskpost`, `deskboard`, `desktoken`, `deskwt`, `deskdispatch`
+and `deskboot` — each append ONE `perf-v1` line per invocation to a local day file:
+
+```sh
+export ASSAY_TELEMETRY=1        # opt in; unset it to stop — the history then ages out
+deskperf report                 # last 7 UTC days, every wrapped tool
+deskperf report --tool deskpr --days 2 --top 5
+deskperf boot --role worker-desk --json
+```
+
+**What is recorded** — and nothing else, enforced by the record's type: the schema tag, a
+second-resolution UTC timestamp, the tool (canonical key, else `other`), the verb (the verb's
+own registered subcommand, else `other`; boot steps as `step:<name>`), the role (`$DESK_LOOP`
+canonical name, else `none`), wall ms, process CPU ms (omitted where unmeasurable, e.g.
+Windows), the exit code and its fixed result word, how many child processes the verb started
+through the shared runner (`deskkit.Run`) and their summed wall ms, how many HTTP
+round-trips went through the forge client's counting transport, the build stamp (hex, else
+`unpinned`), and a random per-install id.
+
+**The two counts are lower bounds.** A verb's own child-process runner or its own direct
+HTTP client is outside both seams and is not counted: `deskboot`'s boot-step children,
+`desktoken`'s token mint, `deskpost`'s posts, and the repository-visibility read when no
+client is injected. A `0` from those means "not counted", not "none made".
+
+**What is never recorded:** argv, flags or their values, repo, PR or issue numbers, branch,
+path, title, body, error text, session tag, any environment value, hostname, user name, or
+any token. Every string field passes through a mapper whose return is one of its OWN
+constants — an unknown input becomes `other` / `none`, never the input.
+
+**Where it lives:** `<state dir>/perf/<YYYY-MM-DD>.jsonl` (state dir: `~/.config/assay`), files
+0600 in a 0700 directory, plus `perf/install-id`. With the switch off, nothing is created —
+no directory, no file, no id. Nothing is ever sent anywhere: no file this adds opens a
+network connection.
+
+**Retention: 7 UTC days, pruned on write.** The first record a process writes removes day
+files older than today and the six days before it. The pruner removes only a name that is
+EXACTLY `YYYY-MM-DD.jsonl`; `install-id`, anything else in `perf/`, and everything outside it
+— the audit ledger and its segments included — are never touched.
+
+**It is not the audit ledger, and never touches it.** The ledger is load-bearing (the
+rate-limit counter, the circuit breaker and the idempotency store read its rows) and is never
+pruned; the perf history is opt-in, disposable and read by nobody but you. A perf write is
+best-effort and silent: a full disk or an unwritable directory never changes a verb's exit
+code or its output. Per-invocation agent usage (tokens, cost) is the agent runner's to report
+(`loopadmin/runner`'s `Usage`), not this record's.
+
+`deskperf` reads it:
+
+- `deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]` — per tool: count,
+  p50 / p90 / max wall ms (nearest-rank), total wall ms, share of total wall, and refusal ratio
+  (refused + unwritten + unverifiable over count); then the N slowest invocations (default
+  10) as ts / tool / verb / wall ms. Boot-step records are excluded (they subdivide a
+  `deskboot` run already counted once).
+- `deskperf boot [--days N] [--role R] [--json]` — `deskboot`'s per-step p50 / p90 / max, in
+  boot order, and the summed boot cost per role.
+
+`--days` defaults to 7 and refuses anything above it (exit 5): there is no eighth day to read.
+An empty history is a REFUSAL (exit 6) that names its reason — logging off, or on but nothing
+recorded yet — never an all-zeroes report; a filter matching nothing is exit 5; unparseable
+lines (a truncated final line) are counted and reported, never silently dropped.
+
 ### Runtime state (NOT created by this repo)
 
 At runtime the tools read/write, under `~/.config/assay/`:
@@ -392,6 +505,10 @@ At runtime the tools read/write, under `~/.config/assay/`:
   kind, name, attempt, conclusion). A check name is whatever the check's poster supplied:
   unauthenticated, sanitize before display. Schema: [`ci-check-v1`](internal/deskkit/ci-check-v1.md);
   fail-first: `muhar -spec internal/deskkit/cicheckhistory-mutations.json`.
+- `perf/` — the OPT-IN local perf history (`ASSAY_TELEMETRY=1` only; absent otherwise):
+  `perf/<YYYY-MM-DD>.jsonl` day files kept 7 UTC days and pruned on write, plus
+  `perf/install-id`. Separate from the audit ledger by design — see
+  [Local performance history](#local-performance-history--deskperf).
 - `DISABLED` — kill switch. `touch ~/.config/assay/DISABLED` (or export
   `DESK_TOOLS_DISABLED=1`) halts the whole suite: every tool exits 3 after auditing
   `result=disabled`. Its first line is shown as the reason.
@@ -2561,8 +2678,9 @@ deskwt role-clean <role> [--repo-root <checkout>] [--session <s>]              #
      roots under the cells root (`--cells-root`, then `$CELLS_ROOT`, then the compiled
      per-user default; a custom `CELL_GO_CACHE_ROOT` outside it is out of the sweep's
      sight) and runs the package's own `Check` against each root's last recorded policy:
-     reclaim only under pressure, never while a consumer record exists, never a warm
-     purge. A root whose owning directory the same sweep removed is reaped as an orphan,
+     reclaim only under pressure, never a warm purge. Active consumer records protect
+     `mod/` and `gopath/`; `build/` entries older than the policy's trim age
+     (`CELL_GO_CACHE_BUILD_MAX_AGE`) are trimmed under pressure regardless. A root whose owning directory the same sweep removed is reaped as an orphan,
      gated on its lease set re-read under its own lock at act time. The pass is silent
      when every cache is within policy; the summary gains a cache segment only when it
      reclaimed, reaped, or found pressure it could not clear.
@@ -3205,12 +3323,12 @@ for why a refusal-guard that honoured `DISABLED` the ordinary way would fail ope
   *failed* creates (which record no number) locked the tool out for an hour while
   ninety-nine successes did not move it.
 
-  Creates therefore gate on `AllowWriteRepoWide` — every charged write the tool made on that
-  repo, held at the **per-PR cap**. That scope is a superset of wherever a create's line
-  lands, whatever number it gets, and it keeps the created number in the audit trail (the
-  one field that makes a create traceable) rather than blanking it to force the buckets to
-  agree. `TestGateReadsTheBucketItsWritesLandIn` pins the invariant for every gated call
-  site: seed the shape that call site really writes, and its own gate must refuse.
+  `deskpr create` gates on `AllowPRCreate`: new PR attempts are counted across
+  the repository, including their created PR numbers and uncertain outcomes.
+  Updates and body edits have their own per-PR budgets and do not consume this
+  20/hour creation counter. All verbs still share the aggregate 100/hour ceiling.
+  Legacy missing or unknown verbs count conservatively rather than opening an
+  unmetered lane. Other new-object call sites retain `AllowWriteRepoWide`.
 
   **The cap values are pinned by test** (`TestCapValuesArePinned`). Every other test seeds
   by reading the constant the code reads, so raising 10 → 20 was green across the whole
@@ -5535,6 +5653,15 @@ claim, allocates no worktree, invokes no lifecycle hook, registers no roster ent
 launches no worker. It does not revive a released review claim. `--model` and `--tier`
 are explicit, never inferred from an old stamp or a model-name lookup.
 
+**Two label pairs (#2760).** A worker kit (the default) writes the AUTHORING pair,
+`authored-model:<slug>` + `authored-tier:<tier>`: which model the coordinator launched to
+write the change. `--kit review` writes `dispatched-model:<slug>` + `dispatched-tier:<tier>`:
+the review session's attestation. Each stamp reads, removes and verifies only its own pair,
+so neither overwrites the other. Before the split both wrote `dispatched-*`, and whichever
+ran later replaced the other. A full worker dispatch with `--pr` writes the authoring pair
+too. The verifier kit retains `dispatched-*` for validation and stamp-only; normal
+verifier dispatch uses its separate issue-attestation path.
+
 The model slug vocabulary remains open. `gpt-6-astra` and `gpt-6.1-sol` are preserved;
 `gpt-6-1-sol` is a distinct accepted literal, not an alias. Use the exact harness selection.
 Existing label normalization (lowercase and trim) remains shared with ordinary dispatch.
@@ -5543,15 +5670,16 @@ The existing stamp step owns both modes: absent stamps are applied, an identical
 pair is a verified no-op, and partial/conflicting/foreign/unattributed stamps are repaired
 from the supplied selection through `ReStampRemovals`. A failed label or timeline read
 returns unverifiable before mutation. Writes are followed by label and timeline readback;
-only the exact pair accepted by `AttestedModelStampOf` produces an applied-and-verified
-receipt. Failed or unobserved writes return exit 6; retry with the same selection after
+only the exact pair accepted by the applier-aware reader for that kit's pair
+(`AttestedModelStampOf` for `dispatched-*`) produces an applied-and-verified receipt. Failed or unobserved writes return exit 6; retry with the same selection after
 investigating the failure. No receipt claims execution surveillance or invented provenance.
 `--dry-run` prints the read-derived plan without mutation or audit append.
 
 Real invocations record `verb=stamp-only` in the standard desk audit log, including the
 repo, PR, requested model/tier/kit and the verified result or refusal. The downstream
-capability floor (including review posting and ready-flip) and auto-lane reader retain
-their existing shared applier-aware semantics. Legacy `deskrestamp` remains the separate,
+capability floor (including review posting and ready-flip) and auto-lane reader still read
+`dispatched-*` only, with their existing applier-aware semantics. They never read
+`authored-*`, so an authoring stamp does not satisfy a review floor. Legacy `deskrestamp` remains the separate,
 cutoff-gated migration that preserves existing content; its provenance rules are unchanged.
 
 **Verifier pre-work admission.** A verifier has no result yet and needs no PR to start.
@@ -6956,3 +7084,11 @@ closes #146 end to end: the primitive alone did not help until the skill docs ac
 it instead of the shell idiom the writeguard hook blocks. **Routing, filing, and closing**
 (rows 4, 5, 9) remain the next adopters: closing waits on `deskclose` (#282), and filing
 composes with `deskfile` (#283).
+
+### PR creation budget
+
+`deskpr create` admits at most 20 new-PR attempts that succeeded or may have
+reached the remote per repository per rolling hour. `update` and `edit` do not
+consume that counter. All three still share the aggregate 100-write/hour limit,
+and updates/edits retain their per-PR budgets. Existing-PR no-ops do not consume
+creation capacity. Missing or unknown legacy audit verbs count conservatively.
