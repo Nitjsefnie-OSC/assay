@@ -27,7 +27,8 @@ each '-', '/' and '.' replaced by '_' (example-cell -> cell_example_cell).
   --connection-limit <n> the role's CONNECTION LIMIT (default 20).
   --disable-login        set the role NOLOGIN (nothing else changes).
   --enable-login         set the role LOGIN — after a restore, once the consumer's reconcile
-                         procedure has run (docs/postgres.md §Restore).
+                         procedure has run (docs/postgres.md §Restore). The two login flags
+                         are mutually exclusive.
   --project <p>          the compose project (default assay-postgres).
 
 The role is LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS and owns its
@@ -51,8 +52,11 @@ while [ $# -gt 0 ]; do
 	--passfile) passfile=${2:?--passfile needs a value}; shift 2 ;;
 	--generate) generate=1; shift ;;
 	--connection-limit) limit=${2:?--connection-limit needs a value}; shift 2 ;;
-	--disable-login) login_action=disable; shift ;;
-	--enable-login) login_action=enable; shift ;;
+	--disable-login | --enable-login)
+		# One login action per run: the pair is refused, never resolved by whichever came last.
+		want=${1#--}; want=${want%-login}
+		{ [ -z "$login_action" ] || [ "$login_action" = "$want" ]; } || { usage >&2; die "--disable-login and --enable-login are mutually exclusive" 2; }
+		login_action=$want; shift ;;
 	--project) PG_PROJECT=${2:?--project needs a value}; shift 2 ;;
 	-h | --help) usage; exit 0 ;;
 	*) usage >&2; die "unknown argument '$1'" 2 ;;

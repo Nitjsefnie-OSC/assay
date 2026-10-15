@@ -507,7 +507,9 @@ and before the container's own check. They are never a `MISS`.
 
 **Cell database rows** — only when `cell.env` sets `CELL_DB_DSN` (with it unset, no row is
 printed, so the transcript of a cell with no database is unchanged): the DSN carries no password
-(no `password=` keyword and no password in URI userinfo — the value is withheld when it does), and
+(no `password=` keyword, including one inside a quoted `dbname` value, and no password in URI
+userinfo, including a URI given as the `dbname` value — the value is withheld when it does, and
+`desk` refuses the launch rather than compose it), and
 `CELL_DB_PASSFILE` is set, absolute, readable and mode `0600` or `0400` (the same mode helper as the
 PEM rows). On a `container` cell the key is a `MISS` naming the gap: a container cell's plan
 carries no such environment or mount yet. The mode keeps out other OS users only; these rows never

@@ -140,7 +140,10 @@ cellctl set example-cell "CELL_DB_PASSFILE=$HOME/.config/assay/cells/example-cel
 
 With `CELL_DB_DSN` set, every role window of the cell gets `ASSAY_CELL_DB_DSN` (the DSN, which
 carries no password) and `PGPASSFILE` (the path); libpq reads the password from the file itself.
-Unset, neither variable exists and the cell is unchanged. `cellctl check` adds rows for a cell
+Unset, neither variable exists in the window, and one the launching shell carried (another
+database cell's) is removed rather than passed through; with `CELL_DB_DSN` set and no
+`CELL_DB_PASSFILE`, the cell gets no `PGPASSFILE` at all. A DSN that carries a password is never
+composed: `cellctl desk` refuses the launch without printing it. `cellctl check` adds rows for a cell
 with a database: the DSN carries no password, the passfile is absolute, readable and 0600/0400,
 and a `container` kind cell fails (container cells cannot reach this database yet). See
 [`docs/cellctl.md`](cellctl.md).

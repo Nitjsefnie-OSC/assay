@@ -326,6 +326,11 @@ func cmdDesk(c *Cell, role string, o deskInputs) {
 		c.reconcilePreflight("desk", []string{role}, nil, dryRun, "desk: unfinished cadence pass; inspect and reconcile before restarting")
 	}
 
+	// A CELL_DB_DSN that carries a password is refused before anything is composed or printed.
+	if msg := c.cellDBRefusal(); msg != "" {
+		die("%s", msg)
+	}
+
 	if dryRun {
 		c.printCachePolicy()
 		if c.Cadence != nil {
@@ -346,7 +351,7 @@ func cmdDesk(c *Cell, role string, o deskInputs) {
 		}
 		// The cell database pointer, one line each, exactly as deskLaunch composes it: absent
 		// when CELL_DB_DSN is unset. Neither value is a password.
-		if dsn, passfile := c.cellDBValues(); dsn != "" {
+		if dsn, passfile := c.cellDBComposed(); dsn != "" {
 			fmt.Printf("[dry-run] env %s=%s (cell database, from CELL_DB_DSN)\n", envCellDBDSN, dsn)
 			if passfile != "" {
 				fmt.Printf("[dry-run] env %s=%s (cell database credential file, from CELL_DB_PASSFILE)\n", envCellDBPassfile, passfile)

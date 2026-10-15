@@ -3,7 +3,6 @@ package main
 import (
 	"path/filepath"
 	"regexp"
-	"strings"
 )
 
 // The cell database rows of `cellctl check` (docs/postgres.md, docs/cellctl.md). A cell points at
@@ -16,34 +15,26 @@ import (
 // claim that cells are separated from each other — on one OS user they are not at the credential
 // layer (docs/postgres.md §"Isolation boundary").
 
-// dsnPasswordKeyword matches libpq's `password` keyword in the key=value form, or as a query
-// parameter of the URI form, case-insensitively, with optional spaces around the `=`.
-var dsnPasswordKeyword = regexp.MustCompile(`(?i)(^|[\s?&])password\s*=`)
+// dsnPasswordKeyword matches libpq's `password` keyword in the key=value form, as a query
+// parameter of the URI form, or directly after the opening quote of a quoted value or after the
+// `=` of an unquoted one (libpq expands a `dbname` value containing `=` as a nested conninfo, and
+// cell.env's own quoting is stripped on read), case-insensitively, with optional spaces around
+// the `=`.
+var dsnPasswordKeyword = regexp.MustCompile(`(?i)(^|[\s?&'"=])password\s*=`)
+
+// dsnURIUserinfoPassword matches a postgres:// or postgresql:// URI whose userinfo carries a
+// password (`user:secret@host`) ANYWHERE in the string, not only at its start: libpq also expands
+// a `dbname` value that is itself a URI. The userinfo cannot hold an unescaped `/`, `?`, `#` or
+// `@`, so a `:` in a host:port that is not followed by `@` before the path does not match.
+var dsnURIUserinfoPassword = regexp.MustCompile(`(?i)postgres(?:ql)?://[^\s/?#'"@:]*:[^\s/?#'"@]*@`)
 
 // dsnCarriesPassword reports whether a libpq connection string carries a password: a `password=`
 // keyword or URI parameter, or a password in the userinfo of a postgres:// or postgresql:// URI
-// (`user:secret@host`). The URI is read by hand rather than with net/url, which refuses libpq's
-// multi-host form (`host1:5432,host2:5432`).
+// (`user:secret@host`), including a URI given as a `dbname` value. Both forms are matched by
+// pattern rather than parsed with net/url, which refuses libpq's multi-host form
+// (`host1:5432,host2:5432`).
 func dsnCarriesPassword(dsn string) bool {
-	if dsnPasswordKeyword.MatchString(dsn) {
-		return true
-	}
-	lower := strings.ToLower(dsn)
-	for _, scheme := range []string{"postgresql://", "postgres://"} {
-		if !strings.HasPrefix(lower, scheme) {
-			continue
-		}
-		authority := dsn[len(scheme):]
-		if i := strings.IndexAny(authority, "/?#"); i >= 0 {
-			authority = authority[:i]
-		}
-		at := strings.LastIndex(authority, "@")
-		if at < 0 {
-			return false
-		}
-		return strings.Contains(authority[:at], ":")
-	}
-	return false
+	return dsnPasswordKeyword.MatchString(dsn) || dsnURIUserinfoPassword.MatchString(dsn)
 }
 
 // checkCellDB prints the cell database rows: a MISS on a container cell (which cannot reach the

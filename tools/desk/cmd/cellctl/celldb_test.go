@@ -121,6 +121,75 @@ func TestCellDB(t *testing.T) {
 		}
 	})
 
+	// regression: F3 (review) — a launch from inside a database cell's window carries that cell's
+	// ASSAY_CELL_DB_DSN and PGPASSFILE; a cell that does not compose a key must not inherit it.
+	t.Run("inherited keys are removed not passed through", func(t *testing.T) {
+		inherited := []string{"PATH=/usr/bin", envCellDBDSN + "=host=127.0.0.1 dbname=cell_other", envCellDBPassfile + "=/example/other.pgpass"}
+
+		none := &Cell{Env: envWith(map[string]string{})}
+		env := none.cellDBEnv(inherited)
+		for _, k := range []string{envCellDBDSN, envCellDBPassfile} {
+			if v, ok := envLookup(env, k); ok {
+				t.Errorf("unset cell inherits %s=%q", k, v)
+			}
+		}
+		if envValue(env, "PATH") != "/usr/bin" {
+			t.Errorf("unrelated keys must survive, PATH = %q", envValue(env, "PATH"))
+		}
+
+		noPassfile := &Cell{Env: envWith(map[string]string{"CELL_DB_DSN": dsn})}
+		env = noPassfile.cellDBEnv(inherited)
+		if got := envValue(env, envCellDBDSN); got != dsn {
+			t.Errorf("%s = %q, want the cell's own DSN", envCellDBDSN, got)
+		}
+		if v, ok := envLookup(env, envCellDBPassfile); ok {
+			t.Errorf("cell with no CELL_DB_PASSFILE inherits %s=%q", envCellDBPassfile, v)
+		}
+	})
+
+	// regression: A1 (review) — a password-bearing DSN is withheld at every compose site and the
+	// launch is refused, and the value is never printed.
+	t.Run("password DSN is withheld and refused", func(t *testing.T) {
+		const bad = "host=127.0.0.1 dbname='password=example-not-a-secret'"
+		pf := writePassfile(t, 0o600)
+		c := &Cell{Env: envWith(map[string]string{"CELL_DB_DSN": bad, "CELL_DB_PASSFILE": pf})}
+		env := c.cellDBEnv([]string{"PATH=/usr/bin"})
+		for _, k := range []string{envCellDBDSN, envCellDBPassfile} {
+			if _, ok := envLookup(env, k); ok {
+				t.Errorf("host: %s composed from a password-bearing DSN", k)
+			}
+		}
+		sc := scrubbedFixture(t)
+		sc.Env.Put("CELL_DB_DSN", bad)
+		sc.Env.Put("CELL_DB_PASSFILE", pf)
+		composed := sc.scrubbedComposeEnv("worker-desk", "claude", "s")
+		for _, k := range []string{envCellDBDSN, envCellDBPassfile} {
+			if _, ok := envLookup(composed.Pairs, k); ok {
+				t.Errorf("scrubbed: %s composed from a password-bearing DSN", k)
+			}
+		}
+		if c.cellDBRefusal() == "" {
+			t.Error("cellDBRefusal is empty for a password-bearing DSN")
+		}
+		if strings.Contains(c.cellDBRefusal(), "example-not-a-secret") {
+			t.Error("the refusal printed the password")
+		}
+		ok := &Cell{Env: envWith(map[string]string{"CELL_DB_DSN": dsn})}
+		if msg := ok.cellDBRefusal(); msg != "" {
+			t.Errorf("a clean DSN is refused: %s", msg)
+		}
+
+		f := newRepairFixture(t)
+		f.writeCellEnv(t, "CELL_DB_DSN="+bad+"\nCELL_DB_PASSFILE="+pf+"\n")
+		r := f.run(t, []string{"DRY_RUN=1"}, "desk", "example", "worker-desk")
+		if r.code == 0 {
+			t.Fatalf("dry-run with a password-bearing DSN exited 0:\n%s%s", r.stdout, r.stderr)
+		}
+		if strings.Contains(r.stdout+r.stderr, "example-not-a-secret") {
+			t.Errorf("desk printed the password:\n%s%s", r.stdout, r.stderr)
+		}
+	})
+
 	// regression: a DSN carrying a password fails `check`, in either libpq form, and the row
 	// never prints the value.
 	t.Run("DSN carrying a password fails check", func(t *testing.T) {
@@ -131,6 +200,11 @@ func TestCellDB(t *testing.T) {
 			"postgresql://cell_example_cell:example-not-a-secret@127.0.0.1:5432/cell_example_cell",
 			"postgres://cell_example_cell:example-not-a-secret@127.0.0.1:5432,127.0.0.2:5432/cell_example_cell",
 			"postgresql://cell_example_cell@127.0.0.1/cell_example_cell?sslmode=disable&password=example-not-a-secret",
+			// libpq expands a quoted dbname value, or a URI given as one, as a nested conninfo.
+			"host=127.0.0.1 dbname='password=example-not-a-secret'",
+			`host=127.0.0.1 dbname="password = example-not-a-secret"`,
+			"host=127.0.0.1 dbname=password=example-not-a-secret",
+			"host=127.0.0.1 dbname=postgresql://cell_example_cell:example-not-a-secret@127.0.0.1/cell_example_cell",
 		} {
 			ok, out := runCellDBCheck(t, "house", bad, passfile)
 			if ok || !strings.Contains(out, "MISS  cell database: CELL_DB_DSN carries a password") {

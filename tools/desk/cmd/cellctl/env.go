@@ -109,10 +109,10 @@ func (c *Cell) scrubbedEnvValue(key, role, harness, session, composedPath string
 		return c.Env.Get("LANG")
 	case envCellDBDSN:
 		// "" when CELL_DB_DSN is unset: a cell with no database composes neither variable.
-		dsn, _ := c.cellDBValues()
+		dsn, _ := c.cellDBComposed()
 		return dsn
 	case envCellDBPassfile:
-		_, passfile := c.cellDBValues()
+		_, passfile := c.cellDBComposed()
 		return passfile
 	}
 	return ""
