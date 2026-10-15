@@ -55,9 +55,12 @@ def selftest() -> bool:
     client_signature = hmac.new(stored_key, auth_message, hashlib.sha256).digest()
     proof = bytes(a ^ b for a, b in zip(client_key, client_signature))
     server_signature = hmac.new(server_key, auth_message, hashlib.sha256).digest()
+    # The RFC's expected values, as hex of the base64 it prints:
+    #   proof            p=dHzbZapW...AndVQ=
+    #   server signature v=6rriTRBi...l95G4=
     return (
-        base64.b64encode(proof) == b"dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="
-        and base64.b64encode(server_signature) == b"6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4="
+        proof.hex() == "747cdb65aa56224e2352137e52d7bdcad6a0f738df30782caa69a2cfb0277554"
+        and server_signature.hex() == "eabae24d1062db75a9451ff0b6ea7e98c8546549ff741e672d3251b2397de46e"
     )
 
 
