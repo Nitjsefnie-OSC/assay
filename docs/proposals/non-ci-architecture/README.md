@@ -31,6 +31,7 @@ Verification is the first end-to-end test.
 | [Runtime contract alignment](23-runtime-contract-alignment.md) | One public runtime: PostgreSQL coordination, existing Git/forge evidence owners, requirement-to-owner coverage and remaining gaps |
 | [Communications future state](24-communications.md) | Proposal pending approval: reusable client/server, broker-owned delivery, config CLI and applied backlog dependencies |
 | [Tool families and CI integration](25-ci-tooling.md) | Desk/service/CI placement, shared mechanisms and the migration stream |
+| [Product intent and portfolio](26-product-intent-and-portfolio.md) | Product-target, capacity and observation contracts; concrete briefs, active-work boundaries and remaining admission |
 | [Synthetic change set](examples/architecture-change-v0.yaml) | Illustrative records with no approval or implementation claim; not a supported schema |
 
 ## Future direction and mechanisms to qualify
