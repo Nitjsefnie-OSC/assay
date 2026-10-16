@@ -388,6 +388,10 @@ func TestVerbClassification(t *testing.T) {
 // read-only tier. An unlisted pre-verb flag makes the call unclassifiable, so
 // the value-flag table's completeness is never load-bearing for safety.
 //
+// Both wrong guesses about an unlisted flag's arity are pinned: "takes no value"
+// (`--username get delete`) and "consumes the next token" (`--debug uninstall
+// list`, where helm's --debug is boolean and the real verb is uninstall).
+//
 // regression: #2179
 func TestUnlistedFlagNotReadOnly(t *testing.T) {
 	cases := []struct {
@@ -409,6 +413,17 @@ func TestUnlistedFlagNotReadOnly(t *testing.T) {
 		{"flux", []string{"--added-upstream", "get", "reconcile", "source", "git", "x"}, false, "an unknown flag's arity is unknown"},
 		{"talosctl", []string{"--added-upstream", "get", "reset"}, false, "an unknown flag's arity is unknown"},
 		{"kubectl", []string{"-v", "get", "delete", "pod", "x"}, false, "a short flag with no = is unlisted too"},
+		// The other wrong guess: an unlisted flag that is really BOOLEAN takes no
+		// value, so the token after it IS the verb. A scan that assumed every
+		// unlisted flag consumes one token would skip the mutating verb and
+		// classify on its first argument.
+		{"helm", []string{"--debug", "uninstall", "list"}, false, "--debug is boolean; helm uninstalls the release named list"},
+		{"kubectl", []string{"--insecure-skip-tls-verify", "drain", "get"}, false, "a boolean flag; kubectl drains the node named get"},
+		{"kubectl", []string{"--warnings-as-errors", "delete", "events", "--all"}, false, "a boolean flag; kubectl deletes every event"},
+		{"flux", []string{"--verbose", "reconcile", "get"}, false, "a boolean flag; flux reconciles"},
+		{"talosctl", []string{"--added-upstream", "reset", "get"}, false, "an unknown flag may be boolean; the real verb is reset"},
+		{"kubectl", []string{"-nprod", "delete", "get"}, false, "an attached short value is self-contained; the real verb is delete"},
+		{"helm", []string{"-vd", "uninstall", "list"}, false, "a short-flag cluster may be all booleans; the real verb is uninstall"},
 		// What still classifies: listed value flags, self-contained flags, flags after the verb.
 		{"kubectl", []string{"-n", "ns", "get", "pods"}, true, "a listed value flag still consumes its value"},
 		{"kubectl", []string{"--username=u", "get", "pods"}, true, "--flag=value is self-contained whatever the flag"},
@@ -425,7 +440,8 @@ func TestUnlistedFlagNotReadOnly(t *testing.T) {
 // TestROTierUnlistedFlagRefuses drives the reported bypass end to end: under
 // the READ-ONLY opt-in, `kubectl --username get delete pod x` is refused with
 // exit 5, the fixture never runs, and the refusal names the flag it could not
-// classify and the self-contained form that would.
+// classify and the self-contained form that would. The same holds in the
+// boolean direction, `kubectl --insecure-skip-tls-verify drain get`.
 //
 // regression: #2179
 func TestROTierUnlistedFlagRefuses(t *testing.T) {
@@ -443,6 +459,23 @@ func TestROTierUnlistedFlagRefuses(t *testing.T) {
 	for _, want := range []string{`"--username"`, "--username=<value>"} {
 		if !strings.Contains(got.stderr, want) {
 			t.Errorf("the refusal does not name %s; stderr %q", want, got.stderr)
+		}
+	}
+
+	// The boolean direction: --insecure-skip-tls-verify takes no value, so
+	// kubectl runs `drain get` (drains the node named get). Guessing that the
+	// flag consumed "drain" would classify on "get" and let the drain through.
+	got = h.invoke(t, "kubectl", "1", nil, "--insecure-skip-tls-verify", "drain", "get")
+
+	if got.code != 5 {
+		t.Errorf("boolean direction: exit = %d, want 5; stderr %q", got.code, got.stderr)
+	}
+	if strings.Contains(got.stdout, "FAKE-KUBECTL") {
+		t.Errorf("a drain behind an unlisted boolean flag reached the CLI under the read-only opt-in; stdout %q", got.stdout)
+	}
+	for _, want := range []string{`"--insecure-skip-tls-verify"`, "--insecure-skip-tls-verify=<value>"} {
+		if !strings.Contains(got.stderr, want) {
+			t.Errorf("boolean direction: the refusal does not name %s; stderr %q", want, got.stderr)
 		}
 	}
 }

@@ -14,6 +14,18 @@
       "new": "\t\t\tcontinue"
     },
     {
+      "name": "an unlisted pre-verb flag is guessed to consume the next token, still recorded for the refusal text (the --debug uninstall list false pass)",
+      "file": "cmd/clusterguard/shim.go",
+      "old": "\t\t\treturn verbScan{unlisted: a} // unknown arity: unclassifiable",
+      "new": "\t\t\tif i+1 < len(args) {\n\t\t\t\ts := scanVerb(cli, args[i+2:])\n\t\t\t\ts.unlisted = a\n\t\t\t\treturn s\n\t\t\t}\n\t\t\treturn verbScan{unlisted: a}"
+    },
+    {
+      "name": "an unlisted pre-verb flag takes one value and the next non-flag token is the verb, cobra-style (the --warnings-as-errors delete events false pass)",
+      "file": "cmd/clusterguard/shim.go",
+      "old": "\t\t\treturn verbScan{unlisted: a} // unknown arity: unclassifiable",
+      "new": "\t\t\tif i+2 < len(args) && !strings.HasPrefix(args[i+2], \"-\") {\n\t\t\t\treturn verbScan{verb: args[i+2], unlisted: a}\n\t\t\t}\n\t\t\treturn verbScan{unlisted: a}"
+    },
+    {
       "name": "a listed value flag no longer consumes its value (-n ns get classifies on ns)",
       "file": "cmd/clusterguard/shim.go",
       "old": "\t\t\t\ti++ // skip the value this flag consumes\n",
