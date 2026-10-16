@@ -500,7 +500,7 @@ func writeReviewFinish(b *strings.Builder, o dispatchOpts, plan dispatchPlan, re
 // contract), not on a branch push — a verifier does not push a branch as its ordinary output.
 func writeVerifierAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan, repo, home string) {
 	brief := o.brief
-	if filepath.IsAbs(brief) {
+	if filepath.IsAbs(brief) && vpWithin(o.root, brief) {
 		if rel, err := filepath.Rel(o.root, brief); err == nil {
 			brief = rel
 		}

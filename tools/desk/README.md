@@ -5792,6 +5792,56 @@ verifier App, but that App never becomes stamp authority. Configurations binding
 and verifier to the same actor refuse this attestation. Existing PR self-stamp rules stay
 unchanged. No record claims execution surveillance or a verification result.
 
+**Cross-repository tracking (#2485).** Keep `--root` and `--repo` on the
+deliverable repository, with `--claim-root` on the tracking repository and `--brief`
+pointing to its absolute brief path. The immutable tracking brief must declare that
+deliverable through `deliverable_repo`, registered `homed-in`, or its registered
+`files:` aliases. Both checkouts must be at fetched `origin/main`. Before materializing the isolated
+tracking tree, Git 2.41 or later reads its immutable attributes: filter-backed trees,
+submodules and executable post-checkout hooks refuse before checkout programs run.
+Version 2 of the
+attestation binds the deliverable repository/commit/home separately from the tracking
+repository/commit/brief/plan/home. Same-repository runs retain version 1.
+
+The dispatcher creates an isolated tracking checkout outside both source roots and
+retains its exact location in local run metadata. The tracking repository owns the
+attestation issue, Evidence and outcome records; no tracking file is copied into the
+deliverable tree. Private tracking with a public deliverable, and two separate private
+repositories, are supported. Unknown visibility or a public tracking destination for a
+restricted deliverable refuses. Prompts and packets are local, owner-only files outside
+Git trees; they must not be published. The packet names both immutable revisions, reads
+its brief/history from tracking, and checks both heads before returning.
+
+`--check-verifier` returns the local `BriefRoot` and the admitted deliverable home
+(`SourceHome`) after admission. `statusgen verifyrun --brief <tracking-relative-brief>`,
+run from the deliverable home, reads the admitted tracking brief and writes its Evidence
+there while Verify rows execute in the admitted deliverable home and nowhere else: the
+row root is that home whether or not `--root` is given, and an explicit `--root` (or an
+admission root) naming any other directory, the tracking clone included, is refused
+before a row runs.
+For `deskevidence`, keep `--root <deliverable-home>` and select the **tracking** repository
+and branch; only the isolated tracking brief's Evidence and permitted index row may
+change. Refresh landed Evidence bytes in `BriefRoot` without moving either admitted HEAD.
+The native/interim adapters carry the same two-repository binding through queue, launch
+and landing; native ACP's filesystem fence remains the deliverable home. Container
+execution retains its existing single-root mount boundary, so `--in-container` refuses
+a cross-repository run outright, with or without `--root`.
+
+A failed/blocked outcome's `sha` names its landed tracking Evidence commit. Its
+`file:` inputs describe tracking files, while `repo-source:<owner/name>` binds the full
+observed deliverable commit. Delivery PRs for that source must also be ancestors of the
+admitted commit. The offline wake reader requires a configured root with the right origin
+and a clean readable tree. Any new clean deliverable commit, including an unrelated or
+empty commit, wakes this conservative manifest; tracking input changes also wake it.
+Missing, wrong or dirty roots are could-not-check. Older readers cannot establish
+unchangedness for the new key. Explicit-recheck receipts keep their existing predicate.
+
+Recovery retains the original nonce, source home and isolated tracking home, including
+a lost issue-create response. A legacy failure with no record or missing association
+provenance is could-not-check: the tool cannot reconstruct the original run and never
+creates a replacement under the name of recovery. Neither a refused dispatch nor a
+successfully stamped association is a verification result.
+
 Successful readback closes the record before the prompt is emitted. `ListOpenIssues`
 excludes its reserved typed title only when authored by the bound dispatcher, across
 issueboard, deskread, deskinbox, deskmonitor and deskboard intake/work scans, including
@@ -6487,9 +6537,9 @@ Caps are the shared builder's — 64 KiB for one item, 512 KiB overall — plus 
 above, all stated in the file; an item over a cap is listed by name and size, never cut short. The file is written
 beside `--prompt-file`, else under the user cache directory, and **never inside the verifier
 home**: an additional file there refuses `--check-verifier`, so a prompt file that sits in
-the home gets no packet. The packet records the home's commit, reads the brief from that
-commit's tree rather than the working tree, and is discarded if the home moved while it was
-being built. It starts no process — every read is in-process through `internal/gitcore` —
+the home gets no packet. The packet records the deliverable home's commit and reads the brief from its
+attested tracking commit (the same commit for same-repository work). It is discarded if
+either home moved while it was being built. It starts no process — every read is in-process through `internal/gitcore` —
 and stops reading history after ten seconds. A read that fails inside a section is stated
 as an omission in one of two fixed sentences; the reader's own error text is never written
 into the file, and a test fails each read in turn to hold that. **Building it can never fail a dispatch:** on
