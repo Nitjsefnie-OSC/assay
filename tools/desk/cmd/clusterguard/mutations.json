@@ -1,0 +1,35 @@
+{
+  "test": "go test ./cmd/clusterguard/... -count=1",
+  "control": {
+    "name": "CONTROL — the read-only tier stops consulting the classification (every verb passes under ASSAY_ALLOW_CLUSTER=1)",
+    "file": "cmd/clusterguard/shim.go",
+    "old": "\tcase tierReadOnly:\n\t\tif ro {",
+    "new": "\tcase tierReadOnly:\n\t\tif true {"
+  },
+  "mutations": [
+    {
+      "name": "an unlisted pre-verb flag is read as boolean again, so the token after it is taken as the verb (the --username get delete false pass)",
+      "file": "cmd/clusterguard/shim.go",
+      "old": "\t\t\treturn verbScan{unlisted: a} // unknown arity: unclassifiable",
+      "new": "\t\t\tcontinue"
+    },
+    {
+      "name": "a listed value flag no longer consumes its value (-n ns get classifies on ns)",
+      "file": "cmd/clusterguard/shim.go",
+      "old": "\t\t\t\ti++ // skip the value this flag consumes\n",
+      "new": "\n"
+    },
+    {
+      "name": "a self-contained --flag=value is treated as an unlisted flag (the documented workaround stops classifying)",
+      "file": "cmd/clusterguard/shim.go",
+      "old": "\t\t\tif strings.Contains(a, \"=\") {",
+      "new": "\t\t\tif false && strings.Contains(a, \"=\") {"
+    },
+    {
+      "name": "the unclassified-flag refusal stops naming the flag and the --flag=value form",
+      "file": "cmd/clusterguard/shim.go",
+      "old": "\t\tif scan.unlisted != \"\" && len(readOnlyVerbs[cli]) > 0 {",
+      "new": "\t\tif false && scan.unlisted != \"\" && len(readOnlyVerbs[cli]) > 0 {"
+    }
+  ]
+}
