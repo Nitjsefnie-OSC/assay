@@ -1,2 +1,0 @@
-- Make the umbrella release own all nine container images and their checksummed digest references before immutable GitHub release publication. Re-pins only copy published versions and references. The producer reuses its Linux release binaries and supplies the freshly built tools image to desk-base. Workflow changes are staged pending maintainer promotion.
-- Fix three exact packed decision-label scanner false positives without exempting entire binaries; real keys elsewhere in the same file still fail.
