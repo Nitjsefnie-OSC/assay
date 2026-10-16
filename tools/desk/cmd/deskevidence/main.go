@@ -8,13 +8,13 @@
 // Reads the local file at <repo-path>, BodyChecks it, fetches the
 // current file from GitHub on <branch> to get the tree SHA, checks
 // idempotency (same content at same head → noop), and commits via the
-// GitHub Contents API AS the verifier App. The commit author is
+// conditional forge API AS the verifier App. The commit author is
 // the verifier App because the API call uses the App's installation
 // token — unforgeable (a PAT commit would be example-org, which is the
 // whole point).
 //
 // The tool has NO push, no merge — commit only (weakest-verb). "Commit
-// only" does NOT mean the write is local: a Contents-API PUT carries the
+// only" does NOT mean the write is local: a forge commit carries the
 // branch, so the commit lands on the REMOTE branch as soon as the call
 // returns. There is nothing left to push and nothing to stage — including
 // on main. Because of that, main/master are refused unless VERIFIER_MAIN_OK
@@ -53,8 +53,9 @@ USAGE:
   deskevidence --version
 
 Commits the content of the local file at --evidence-file (a repo-relative path)
-to the same path on <branch> via the GitHub Contents API, using the verifier App
-installation token. Author = the verifier App.
+to the same path on <branch> through a conditional forge write, using the verifier
+credential. GitHub batches admission and destination reads, then commits only if
+the validated file revision is unchanged. GitLab retains its protected-branch MR path.
 
 --root <dir> resolves a repo-relative --evidence-file against <dir> (e.g. the verifier
 worktree) instead of the current working directory, so a stale cwd cannot read the wrong
@@ -102,20 +103,22 @@ verifier App's bot identity on the worktree's branch — never main, never pushe
 Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
 
 func main() {
-	// The roster class is an EXPLICIT declaration, never the zero value by accident
-	// (a correctness review found: SetToolClass had no caller anywhere,
-	// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
-	// the roster, so it is ciEligible=false: it reads the config-home file and never
-	// the environment, in CI as well as locally.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	// P3: echo the effective roster once per run. Every tool that reads a configured
-	// control surface echoes it — a value that lives in settings rather than in a diff
-	// is only visible at RUN time, and a NARROWING must be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("deskevidence", nil, os.Args[1:], func([]string) int {
+		// The roster class is an EXPLICIT declaration, never the zero value by accident
+		// (a correctness review found: SetToolClass had no caller anywhere,
+		// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
+		// the roster, so it is ciEligible=false: it reads the config-home file and never
+		// the environment, in CI as well as locally.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		// P3: echo the effective roster once per run. Every tool that reads a configured
+		// control surface echoes it — a value that lives in settings rather than in a diff
+		// is only visible at RUN time, and a NARROWING must be as visible as a widening.
+		deskkit.EchoEffectiveConfig(os.Stderr)
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:])
+	}))
 }
 
 func run(args []string) int {

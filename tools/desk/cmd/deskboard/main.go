@@ -69,7 +69,11 @@ usage:
                                     caps: reports the held-back decomposition (N by per-stream
                                     caps, M by span) and per-root claim-degradation, so an empty
                                     queue is distinguishable from a throttled one (#321).
-                                    Aliases: todo, next, next-up.
+                                    Drops the rows deskdispatch refuses at claim-acquire: a
+                                    gate: human brief whose decision issue is open and unruled
+                                    and, with --tier T, a brief whose exec-tier is stricter
+                                    than T (no --tier: no tier filter; each row carries its
+                                    execTier). Aliases: todo, next, next-up.
   deskboard awaiting                cross-repo AWAITING-VERIFICATION queue — briefs at
                                     implemented/verified, merged from every configured root
                                     via the PINNED statusgen.
@@ -457,7 +461,11 @@ func dispatch(sub string, rest []string, hdr Header, mergeNowThreshold, unreview
 		// Next-up selection the STATUS.md board shows — merged cross-root here. The
 		// verb is deliberately distinct from `awaiting`: dispatching from `awaiting`
 		// sends workers at finished work.
-		return cmdDispatch(hdr, sub)
+		tier, err := dispatchTierArg(rest)
+		if err != nil {
+			return nil, err
+		}
+		return cmdDispatch(hdr, sub, tier)
 	case "throughput":
 		return cmdThroughput(hdr, mergeNowThreshold, unreviewedThreshold)
 	case "policydrift":
@@ -961,11 +969,17 @@ func printBanners(w io.Writer, h Header) {
 	}
 	// Stop flags banner: any active STOP flag or stale HEARTBEAT is surfaced
 	// on every board read so a silently-stopped loop is not discovered by absence.
+	// Cell-scoped flags (STOP.cell.<cell>[.<loop>]) ride the same banner; an INERT one
+	// (unknown loop, malformed or unregistered cell) is tagged so: the first two halt nothing;
+	// the unregistered-cell reason names the root looked in and says it may still be live.
 	if len(h.StopFlags) > 0 {
 		for _, f := range h.StopFlags {
 			tag := "STOP"
-			if f.Stale {
+			switch {
+			case f.Stale:
 				tag = "STALE"
+			case f.Inert:
+				tag = "INERT STOP"
 			}
 			fmt.Fprintf(w, "WARNING: %s flag active — %s: %s\n", tag, f.Name, f.Reason)
 		}

@@ -735,8 +735,10 @@ const (
 // CheckRun.databaseId is the same numeric run id the REST check-runs read serves as `id`; it
 // is selected so both reads render one run to the same RollupNode.ID / CheckRun.ID (via
 // checkRunID), which is the CI-check history's attempt key (ci-check-v1). It is a scalar on a
-// node already requested — no extra request, and no scope beyond `checks:read`.
-const ghOpenChangesQuery = `query($owner:String!,$name:String!,$limit:Int!){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:$limit,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number title body state isDraft createdAt lastEditedAt updatedAt author{login __typename} mergeStateStatus headRefOid headRefName baseRefName labels(first:100){nodes{name}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ...on CheckRun{databaseId name status conclusion startedAt completedAt} ...on StatusContext{context state createdAt}}}}}}}}}}}`
+// node already requested — no extra request, and no scope beyond `checks:read`. The head
+// commit's oid and committedDate are scalars on that same commit node, selected for the
+// stale-approval test (#3093, ReviewPredatesHead) at the same zero request/point cost.
+const ghOpenChangesQuery = `query($owner:String!,$name:String!,$limit:Int!){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:$limit,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number title body state isDraft createdAt lastEditedAt updatedAt author{login __typename} mergeStateStatus headRefOid headRefName baseRefName labels(first:100){nodes{name}} commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){nodes{__typename ...on CheckRun{databaseId name status conclusion startedAt completedAt} ...on StatusContext{context state createdAt}}}}}}}}}}}`
 
 // ghListChangesQuery is the states-scoped, cursor-paginated changes read behind ListChanges. It
 // requests EXACTLY the ChangeRef fields — number, state, head oid, source branch (headRefName),
@@ -766,7 +768,7 @@ const ghReviewQueueReviewsSel = `reviews(first:100){pageInfo{hasNextPage} nodes{
 // rollup contexts and every change's reviews — so the head a change is classified at and the
 // reviews reduced against it come from one consistent read. Its point cost is the open-changes
 // read's plus one nested connection per change (see the stream's query-cost record).
-const ghReviewQueueQuery = `query($owner:String!,$name:String!,$limit:Int!){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:$limit,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number title body state isDraft createdAt lastEditedAt updatedAt author{login __typename} mergeStateStatus headRefOid headRefName baseRefName reviews(first:100){pageInfo{hasNextPage} nodes{databaseId author{login __typename ...on User{databaseId} ...on Bot{databaseId}} state commit{oid} body submittedAt}} labels(first:100){nodes{name}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ...on CheckRun{databaseId name status conclusion startedAt completedAt} ...on StatusContext{context state createdAt}}}}}}}}}}}`
+const ghReviewQueueQuery = `query($owner:String!,$name:String!,$limit:Int!){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:$limit,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number title body state isDraft createdAt lastEditedAt updatedAt author{login __typename} mergeStateStatus headRefOid headRefName baseRefName reviews(first:100){pageInfo{hasNextPage} nodes{databaseId author{login __typename ...on User{databaseId} ...on Bot{databaseId}} state commit{oid} body submittedAt}} labels(first:100){nodes{name}} commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){nodes{__typename ...on CheckRun{databaseId name status conclusion startedAt completedAt} ...on StatusContext{context state createdAt}}}}}}}}}}}`
 
 // forgeQueueReviewsCap is the per-change review bound of ghReviewQueueReviewsSel's first:.
 const forgeQueueReviewsCap = 100
@@ -801,6 +803,8 @@ type ghOpenChangeNode struct {
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
+				Oid               string `json:"oid"`
+				CommittedDate     string `json:"committedDate"`
 				StatusCheckRollup *struct {
 					Contexts struct {
 						Nodes []struct {
@@ -897,6 +901,12 @@ func ghOpenChange(n ghOpenChangeNode) OpenChange {
 		oc.Labels = append(oc.Labels, l.Name)
 	}
 	if len(n.Commits.Nodes) > 0 {
+		// The head commit's committer date (#3093), bound to the head by oid: commits(last:1)
+		// is the head in every case GitHub serves, but a date that cannot be tied to
+		// headRefOid is left empty — the consumer then reads it per change or fails closed.
+		if c := n.Commits.Nodes[0].Commit; c.Oid != "" && c.Oid == n.HeadRefOid {
+			oc.HeadCommittedAt = c.CommittedDate
+		}
 		if r := n.Commits.Nodes[0].Commit.StatusCheckRollup; r != nil {
 			for _, c := range r.Contexts.Nodes {
 				oc.Rollup = append(oc.Rollup, RollupNode{
@@ -1505,9 +1515,9 @@ func dedupContexts(lists ...[]string) []string {
 	return out
 }
 
-// IssueReactions is SINGLE PAGE by decision — the same reasoning HTTPRepoInfoFetcher's
-// IssueReactions carries in full (repovis.go): fails closed past 100 reactions on one
-// issue, never a false pass. Routed through the go-gh client like every other read; the
+// IssueReactions is SINGLE PAGE by decision: it reads at most 100 reactions on one issue
+// and reports what it read, so a caller that needs a POSITIVE match is never opened by an
+// unread reaction. Routed through the go-gh client like every other read; the
 // squirrel-girl preview accept header the pre-go-gh raw request set is no longer required
 // (the reactions API has been GA for years and returns awards under the default accept).
 func (g *GitHubForge) IssueReactions(repo ForgeRepo, number int) ([]Reaction, error) {
@@ -2710,18 +2720,28 @@ func (g *GitHubForge) ReadFile(repo ForgeRepo, in ReadFileInput) (*FileContent, 
 // and ignores StartBranch: on GitHub the Evidence row lands on the target branch directly. The
 // idempotency read and the append-only shrink guard are folded in per WriteFileInput.
 func (g *GitHubForge) WriteFile(repo ForgeRepo, in WriteFileInput) (*WriteFileResult, error) {
-	res := &WriteFileResult{}
-	var priorSHA string
-	var priorContent []byte
-	exists := false
 	cur, rerr := g.ReadFile(repo, ReadFileInput{File: in.File, Ref: in.Branch})
 	if rerr != nil {
 		if !IsForgeNotFound(rerr) {
 			return nil, rerr
 		}
 		// Absent on the branch → this is a create.
-	} else {
-		priorSHA, priorContent, exists = cur.SHA, cur.Content, true
+	} else if cur == nil || !cur.Exists {
+		cur = nil
+	}
+	return g.writeEvidenceFileFromSnapshot(repo, in, cur)
+}
+
+// writeEvidenceFileFromSnapshot shares all native write checks and the Contents
+// request with a publication snapshot. The server compares the supplied blob SHA;
+// a create omits SHA, which GitHub refuses if the path has appeared meanwhile.
+func (g *GitHubForge) writeEvidenceFileFromSnapshot(repo ForgeRepo, in WriteFileInput, prior *FileContent) (*WriteFileResult, error) {
+	res := &WriteFileResult{}
+	var priorSHA string
+	var priorContent []byte
+	exists := prior != nil && prior.Exists
+	if exists {
+		priorSHA, priorContent = prior.SHA, prior.Content
 	}
 
 	// Conditional write (see WriteFileInput.ExpectedSHA): refuse when the file is no longer the
