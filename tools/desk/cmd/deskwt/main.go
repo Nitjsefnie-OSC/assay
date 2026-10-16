@@ -161,6 +161,10 @@ and the shape a reclaim-by-detach leaves behind) must additionally pass three at
 old enough to be no session's just-created workspace (the fresh-worktree safety window),
 nothing uncommitted or untracked (the untracked-inclusive status), and no git-ignored
 payload. An at-tip tree passing all three drains; any other is LEFT with the reason named.
+A worktree holding a verifier admission record (an admitted verifier run's home, whose
+Evidence still lands from it) is LEFT by both this sweep and --reap-dead-sessions for 24h
+after admission; ` + "`deskwt remove`" + ` is the explicit release. An unreadable record holds that
+worktree; a record that names no worktree holds every candidate in the sweep.
 Ahead of every content gate, in this arm and the --reap-dead-sessions arm alike, the
 ACTIVITY gate holds any worktree git shows activity in within --min-idle (default 1h;
 tunable, never disableable): the newest mtime of its admin HEAD, index, logs/HEAD,

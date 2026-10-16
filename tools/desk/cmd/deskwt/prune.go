@@ -920,6 +920,12 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 	// activity gate's.
 	sweepNow := time.Now()
 
+	// Verifier admissions, read once per sweep (#2830). An admitted verifier home is
+	// clean and, once main moves on, merged — so the ordinary gates would remove it while
+	// its Evidence still has to land from it. A registry that cannot be read holds every
+	// candidate this sweep.
+	admissions, admErr := guard.verifierAdmissions()
+
 	// The activity gate's admin map, read once per sweep (after the reclaim pass's
 	// bookkeeping prune, so it maps the registration as it stands). A failed read is kept,
 	// not returned: every candidate is then HELD as unverifiable, never judged idle.
@@ -980,11 +986,26 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 		// asked moved, and the reported reason for each is unchanged.
 		protected := rt == guard.sharedCheckout || rt == cwd || !guard.allowed(rt)
 
-		// The activity gate binds BOTH removal arms, so it is decided once, here. A
-		// protected tree is never a candidate, so it is never asked.
+		// The admission hold binds BOTH arms: the dead-session arm removes unlocked, clean,
+		// pushed trees and locked trees of dead sessions, and an admitted home is either.
+		// The activity gate binds BOTH removal arms too, so both holds are decided once,
+		// here. A protected tree is never a candidate, so it is never asked.
+		admHold := ""
 		idleHold := ""
 		if !protected {
 			idleHold = activityHold(admins, adminsErr, rt, opts.minIdle, sweepNow)
+			if admErr != nil {
+				admHold = "could-not-check: verifier admissions: " + errText(admErr)
+			} else {
+				admHold = admissionHoldReason(admissions, rt, sweepNow)
+			}
+		}
+		if opts.reapDeadSessions && admHold != "" {
+			v := reapVerdict{path: rt, reason: admHold}
+			if isLocked {
+				v.session = sessionFromLockReason(reason)
+			}
+			res.plan = append(res.plan, v)
 		}
 
 		if opts.reapDeadSessions && protected {
@@ -994,14 +1015,14 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 			res.plan = append(res.plan, reapVerdict{path: rt, reason: "protected: " + protectedReason(guard, cwd, rt)})
 		}
 
-		if opts.reapDeadSessions && !protected && idleHold != "" {
+		if opts.reapDeadSessions && !protected && admHold == "" && idleHold != "" {
 			// Recent activity is a live session whatever its lock (or the lack of one)
 			// says: KEEP, named in the plan, before ownership is even asked. It falls
 			// through to the ordinary arm, which holds it on the same gate.
 			res.plan = append(res.plan, reapVerdict{path: rt, reason: "held: " + idleHold})
 		}
 
-		if opts.reapDeadSessions && !protected && idleHold == "" {
+		if opts.reapDeadSessions && !protected && admHold == "" && idleHold == "" {
 			mt, haveMtime := reapMtimes[rt]
 			v := judgeReap(sc, rt, reason, isLocked, mt, haveMtime, opts.lockTTL, reapRoster, reapNow)
 			if v.reap {
@@ -1045,6 +1066,10 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 		}
 		if protected {
 			res.skips = append(res.skips, skipEntry{rt, protectedReason(guard, cwd, rt)})
+			continue
+		}
+		if admHold != "" {
+			res.skips = append(res.skips, skipEntry{rt, admHold})
 			continue
 		}
 		// Activity gate: ahead of every content gate. It is a handful of stats, and a tree
