@@ -23,6 +23,21 @@ Pending notable changes are recorded as one-file-per-PR fragments under
 here at release time. This section is written only by the release workflow;
 do not add highlight bullets to it directly.
 
+## v1.0.47 — 2026-10-16
+
+### Added
+- A bounded investigation brief will test whether acceptance-criterion edits leave stale evidence claims, compare existing controls and recommend whether any additional mapping is warranted.
+- `deskgitlab create` provisions the GitLab fleet natively on every OS: the seven role service accounts, their memberships, first PATs and own avatars, and, with `--project`, the protected `main`, approval settings, protected release tags, merge checks and labels. It takes the same flags as `tools/create-fleet-gitlab.sh` and reads the group-owner PAT from `GITLAB_TOKEN` only, never a flag. Help and `--version` read nothing and start nothing.
+
+### Fixed
+- `deskgit fetch` separates configured fetch URLs from push destinations, preserving local URL rewrites and rejecting multiple fetch URLs or a push-only origin.
+
+### Changed
+- Fix three exact packed decision-label scanner false positives without exempting entire binaries; real keys elsewhere in the same file still fail.
+- Make the umbrella release own all nine container images and their checksummed digest references before immutable GitHub release publication. Re-pins only copy published versions and references. The producer reuses its Linux release binaries and supplies the freshly built tools image to desk-base. Workflow changes are staged pending maintainer promotion.
+- Specification authoring now checks independently verifiable outcomes, condition-to-criterion coverage and contradictions across revisions, while keeping evidence applicability separate from execution and acceptance.
+- `tools/create-fleet-gitlab.sh` is now a bash adapter that runs `deskgitlab create` with its arguments unchanged. It uses the `deskgitlab` on PATH, or builds one from `tools/desk` with Go, and no longer needs curl or jq. When no `deskgitlab` can be found or built it exits 127 before any effect. Output, exit codes and idempotency are unchanged. `--flag=value` and `--` now work. Unknown flags and bad values still exit 2 before any effect, and some values the script accepted are now refused there: a `--pat-expiry-days` that is not a whole number of days (1 or more), a plain-http `--gitlab-url` off loopback (also in `--dry-run`), and `--avatars-dir` given together with `--no-avatars`. The unknown-flag message is now `unknown flag: --x`, and single-dash spellings such as `-group` are refused. A token directory the run creates is owner-only (0700), an existing `--out-dir` that other users can write to is refused before any request is sent (not on Windows), each token file is created new and then moved into place, the `.board-writer-id` file beside them is now 0600 like the token files (it took the umask before), a dry run creates no directory, and the temporary avatar directory is removed afterwards. API calls do not follow redirects and time out after two minutes each; a transport failure is recorded as HTTP 000, as before.
+
 ## v1.0.46 — 2026-10-16
 
 ### Added
