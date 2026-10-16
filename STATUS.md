@@ -74,7 +74,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **DRIVE NOT APPLIED.** drive manifest(s) rejected: build-less-brittle, desktools-v2. The board generated normally with **zero** drive boost — a malformed, expired, or over-concurrent drive manifest is fail-neutral by design and can never freeze the board (see `--lint` WARN lines).
 
-_Next-up: 16 of 50 eligible — 34 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 17 of 51 eligible — 34 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
 _Held by per-stream caps: 34 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (33), desk-tools (1). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
@@ -82,6 +82,7 @@ _Held by per-stream caps: 34 brief(s) across 2 stream(s) — top: desktools-v2. 
 |---|---|---|---|
 | forge-neutral | 39 — Typed forge service contract and scoped client SDK [exec:strong] | 1 | 5000 |
 | comms-core | 01 — Extract the comms contract and isolate Assay policy [exec:strong] | 0 | 4500 |
+| desk-containers | 16 — Interim mechanism for the runner-lifecycle `pause` transition — cell-scoped stop flags `STOP.cell.<cell>[.<loop>]`, honoured by the Guard for any session carrying the cell marker [exec:strong] | 7 | 4500 |
 | apps-installer | 10 — `deskavatar --tier team` emits a third tile for `<org>-review`, proofed at 20 px against read and act | 0 | 3000 |
 | forge-neutral | 18 — statusgen off gh — one desk-tools read verb on the seam, offline lint by default, one git walk [exec:strong] | 5 | 3000 |
 | graph-execution | 11 — Optional pinned Laya provider with explicit CPU and GPU profiles [exec:strong] | 1 | 3000 |
