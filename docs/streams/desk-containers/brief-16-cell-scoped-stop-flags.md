@@ -77,7 +77,7 @@ facts:
 ## Human decision
 Should desks be stoppable one cell at a time, by adding a cell-scoped stop flag to the safety check every desk tool runs?
 
-Today a stop switch either stops every desk on the machine or every desk with a given role, across all cells, because host cells share one settings folder. This adds a switch aimed at one cell (and one for one role in one cell). It can only add stops; it never lifts an existing stop or the master kill switch. A desk belongs to a cell only through a marker the launcher sets. A switch naming a cell that does not exist is shown as having no effect, rather than silently ignored.
+Today a stop switch either stops every desk on the machine or every desk with a given role, across all cells, because host cells share one settings folder. This adds a switch aimed at one cell (and one for one role in one cell). It can only add stops; it never lifts an existing stop or the master kill switch. A desk belongs to a cell only through a marker the launcher sets. A switch naming a cell with no registration under the cells root the board resolves is tagged INERT on the board, its reason naming that root and saying the cell may be registered elsewhere, rather than silently ignored.
 
 Options:
 1. **Adopt** — add both cell-scoped flags to the safety check and to the loop check of the three desks that have one. Drain and pause (brief 18) build on it.

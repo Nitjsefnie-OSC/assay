@@ -595,15 +595,15 @@ At runtime the tools read/write, under `~/.config/assay/`:
     every outward verb independently. `intake-desk` and `the-desk` have no
     iteration-boundary check and rely on the Guard alone.
 
-  `deskboard` lists cell flags beside the others and marks one **inert** ("halts
-  nothing") only when it can prove that: the cell name breaks the `[a-z0-9-]` rule
-  (the same rule `cellctl` holds every cell name to) or the loop part matches no
-  known loop. A flag whose cell has no registration
+  `deskboard` lists cell flags beside the others and tags one **INERT**. It says the
+  flag "halts nothing" only when it can prove that: the cell name breaks the
+  `[a-z0-9-]` rule (the same rule `cellctl` holds every cell name to) or the loop part
+  matches no known loop. A flag whose cell has no registration
   (`<cells-root>/<cell>/cell.env`) under the cells root *as the board's own shell
   resolves it* (`$CELLS_ROOT`, else `$XDG_DATA_HOME/assay/cells`, else
-  `~/.local/share/assay/cells`) is listed live, with a note that names the root it
-  looked in: the Guard keys on the session's marker alone, so a cell registered under
-  another root is still stopped by it. Any desk on the
+  `~/.local/share/assay/cells`) is tagged INERT too, but its reason names the root it
+  looked in and does not say "halts nothing": the Guard keys on the session's marker
+  alone, so a cell registered under another root is still stopped by it. Any desk on the
   machine can write a cell flag for another cell — no escalation over `STOP`, which
   any desk can already write.
 - `HEARTBEAT` — dead-man lease (brief 08, optional). If the file EXISTS and its

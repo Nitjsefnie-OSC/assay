@@ -397,12 +397,13 @@ type ActiveStopFlag struct {
 	// Inert marks a STOP.<name> flag whose <name> matches no known loop (see
 	// loopnames.go), and a STOP.cell.<cell>[.<name>] flag whose cell name is malformed, whose
 	// <name> matches no known loop, or whose cell has no registration under the cells root
-	// AS THIS PROCESS RESOLVES IT (the Reason then names that root: the Guard keys on the
-	// session's marker alone, so a cell registered under another root is still stopped).
-	// Such a flag halts NOTHING — it is a human believing they hold a
-	// stop that no loop will ever read. That belief is the human-side half of the same
-	// silent failure the Guard fix closes, so the board must say so rather than list
-	// the file alongside flags that really are armed.
+	// AS THIS PROCESS RESOLVES IT. A flag with a malformed cell name or an unknown loop halts
+	// NOTHING — it is a human believing they hold a stop that no loop will ever read. That
+	// belief is the human-side half of the same silent failure the Guard fix closes, so the
+	// board must say so rather than list the file alongside flags that really are armed.
+	// The unregistered-cell case is tagged INERT too, but its Reason names the cells root this
+	// process looked in and does NOT claim the flag halts nothing: the Guard keys on the
+	// session's marker alone, so a cell registered under another root is still stopped.
 	Inert bool `json:"inert,omitempty"`
 }
 
