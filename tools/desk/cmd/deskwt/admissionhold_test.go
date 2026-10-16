@@ -200,3 +200,105 @@ func TestAdmissionHoldReasonWindow(t *testing.T) {
 		}
 	}
 }
+
+// A tree that is BOTH admitted and recently active: the two holds are independent
+// controls at the same sweep points, and a merge that keeps one silently drops the other.
+// Each phase leaves exactly one hold standing, so a resolution that drops either one
+// lets the tree drain in the phase that depends on it.
+//
+// regression: #2830
+func TestPruneAdmittedAndActiveBothHold(t *testing.T) {
+	work := newRepo(t)
+	withEnv(t, work)
+	home := verifierHome(t, work, "vboth")
+	admin := filepath.Join(work, ".git", "worktrees", filepath.Base(home))
+	rec := admitHome(t, home, time.Now().Add(-2*time.Hour))
+	ageActivity(t, work, home, 3*time.Hour)
+	touchNow(t, filepath.Join(admin, "index"))
+
+	// Both apply: held, and the admission is the reason named (it is checked first).
+	errout := pruneOK(t, "--min-idle", "1h")
+	assertExists(t, home)
+	if !strings.Contains(errout, "active verifier admission") {
+		t.Fatalf("both holds apply but the admission is not named; stderr:\n%s", errout)
+	}
+
+	// Idle, still admitted: the admission alone holds it.
+	ageActivity(t, work, home, 3*time.Hour)
+	errout = pruneOK(t, "--min-idle", "1h")
+	assertExists(t, home)
+	if !strings.Contains(errout, "active verifier admission") {
+		t.Fatalf("an admitted idle home was not held by its admission; stderr:\n%s", errout)
+	}
+
+	// Admission expired, still active: the activity gate alone holds it.
+	old := time.Now().Add(-verifierAdmissionHold - time.Hour)
+	if err := os.Chtimes(rec, old, old); err != nil {
+		t.Fatal(err)
+	}
+	touchNow(t, filepath.Join(admin, "index"))
+	errout = pruneOK(t, "--min-idle", "1h")
+	assertExists(t, home)
+	if !strings.Contains(errout, "--min-idle window") {
+		t.Fatalf("an active home with an expired admission was not held by activity; stderr:\n%s", errout)
+	}
+
+	// Both clear: the ordinary rules remove it.
+	ageActivity(t, work, home, 3*time.Hour)
+	errout = pruneOK(t, "--min-idle", "1h")
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("a home with no hold left survived (err=%v); stderr:\n%s", err, errout)
+	}
+}
+
+// The reap arm writes ONE KEEP row for a tree both holds apply to, and reaps only when
+// neither does.
+//
+// regression: #2830
+func TestReapAdmittedAndActiveBothHold(t *testing.T) {
+	work := newRepo(t)
+	withEnv(t, work)
+	target, branch := openPRWorktree(t, work, "vreapboth")
+	lockAs(t, work, target, "dead-b")
+	plantBeacon(t, "dead-b", time.Now().Add(-6*time.Hour))
+	admin := filepath.Join(work, ".git", "worktrees", filepath.Base(target))
+	rec := admitHome(t, target, time.Now().Add(-2*time.Hour))
+	ageActivity(t, work, target, 3*time.Hour)
+	touchNow(t, filepath.Join(admin, "HEAD"))
+	keep := "KEEP " + resolvePath(target)
+
+	// Both apply: one row, the admission's; main's activity row is not added beside it.
+	plan := pruneOK(t, "--reap-dead-sessions", "--min-idle", "1h", "--dry-run")
+	if n := strings.Count(plan, keep); n != 1 {
+		t.Fatalf("want exactly one KEEP row, got %d; plan:\n%s", n, plan)
+	}
+	if !strings.Contains(plan, "active verifier admission") || strings.Contains(plan, "held: active") {
+		t.Fatalf("the single row must be the admission's; plan:\n%s", plan)
+	}
+
+	// Admission expired, still active: the activity row alone.
+	old := time.Now().Add(-verifierAdmissionHold - time.Hour)
+	if err := os.Chtimes(rec, old, old); err != nil {
+		t.Fatal(err)
+	}
+	touchNow(t, filepath.Join(admin, "HEAD"))
+	plan = pruneOK(t, "--reap-dead-sessions", "--min-idle", "1h", "--dry-run")
+	if !strings.Contains(plan, keep) || !strings.Contains(plan, "held: active") {
+		t.Fatalf("an active tree with an expired admission was not KEPT by activity; plan:\n%s", plan)
+	}
+	errout := pruneOK(t, "--reap-dead-sessions", "--min-idle", "1h")
+	assertExists(t, target)
+	if !strings.Contains(errout, "dead-session-reaped 0") {
+		t.Fatalf("an active tree was reaped; stderr:\n%s", errout)
+	}
+
+	// Both clear: reaped.
+	ageActivity(t, work, target, 3*time.Hour)
+	errout = pruneOK(t, "--reap-dead-sessions", "--min-idle", "1h")
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("a tree with no hold left was not reaped (err=%v); stderr:\n%s", err, errout)
+	}
+	if localBranchExists(t, work, branch) {
+		t.Logf("branch %s survives the reap (kept by the branch gates)", branch)
+	}
+}
