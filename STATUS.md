@@ -72,15 +72,13 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 > **COULD-NOT-CHECK — dead-claim decay did not run.** branch pull-request state through `gh api graphql` could not be read: gh api graphql (branch pull requests): exec: "gh": executable file not found in $PATH
 > Open branches whose PR/merge request has already **merged or closed** are still counted as claims, so they keep consuming their stream's dispatch cap. The rows below are a **subset**: briefs held behind those dead claims are missing from this board, not absent from the backlog.
 
-> **ACTIVE DRIVE — the Next-up score below carries an operator-declared steer.** `build-less-brittle` (push, +1500, 2026-10-16→2026-10-30); `desktools-v2` (push, +1500, 2026-10-16→2026-10-30). Each boosted pick shows its score DECOMPOSED as `base + term (drive:<slug>)` — the term is a temporal, attributed steer, ADDITIVE and walled off from every measured metric, never a value claim.
-
-> **DRIVE COVERAGE — drive "desktools-v2" covers 67% of the eligible board (> 40%) — its boost is self-taxed (concave scale-down) so tagging the whole board buys progressively less (anti-Goodhart, methodology-metrics/45)**
+> **DRIVE COVERAGE — drive "desktools-v2" covers 65% of the eligible board (> 40%) — its boost is self-taxed (concave scale-down) so tagging the whole board buys progressively less (anti-Goodhart, methodology-metrics/45)**
 
 > **COULD NOT CHECK — main-red arm could not check — no `--main-health` input was supplied, so whether main is red is unknown here (statusgen does not read live CI). A main-red fix cannot be lifted into the critical tier on this run; this is not a reading that main is green.**
 
-_Next-up: 18 of 51 eligible — 33 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 15 of 49 eligible — 34 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
-_Held by per-stream caps: 33 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (32), desk-tools (1). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
+_Held by per-stream caps: 34 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (32), desk-tools (2). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
 | Stream | Brief | Wave | Score |
 |---|---|---|---|
@@ -91,8 +89,6 @@ _Held by per-stream caps: 33 brief(s) across 2 stream(s) — top: desktools-v2. 
 | apps-installer | 10 — `deskavatar --tier team` emits a third tile for `<org>-review`, proofed at 20 px against read and act | 0 | 3000 |
 | forge-neutral | 18 — statusgen off gh — one desk-tools read verb on the seam, offline lint by default, one git walk [exec:strong] | 5 | 3000 |
 | graph-execution | 11 — Optional pinned Laya provider with explicit CPU and GPU profiles [exec:strong] | 1 | 3000 |
-| desktools-v2 | 30 — Port the GitLab fleet provisioner to a Go command [exec:strong] | 3 | 2000 + 900 (drive:desktools-v2) |
-| desktools-v2 | 19 — Migrate qualgen to Cobra and Viper [exec:strong] | 3 | 1500 + 900 (drive:desktools-v2) |
 | measured-status | 05 — attribution.go: a same-identity author/verifier pair in a multi-identity repo becomes a hard PROBLEM, not a NOTICE — the independence gate the check exists to establish [exec:strong] | 1 | 2200 |
 | measured-status | 06 — model-floor: derive dispatch authority from the dispatch stamp, and give a first-class re-stamp path — stop refusing verdicts by guessing at a label actor's login [exec:strong] | 1 | 2200 |
 | composability | 02 — Install ledger, paired inverses, and the `disable` verb | 1 | 2000 |
@@ -100,14 +96,13 @@ _Held by per-stream caps: 33 brief(s) across 2 stream(s) — top: desktools-v2. 
 | measured-status | 01 — Derive the deskkit exit-code table — record the convention ExitOK/Disabled/RateLimited/Refused/Unverifiable follow, and pin it with a test | 0 | 2000 |
 | desk-tools | 34 — Pinned golangci-lint across every Go module [exec:strong] | 1 | 1500 |
 | desk-tools | 27 — `deskboard`'s last serial repo loops onto the pool, `throughput` from one root resolution, `deskflip`'s cheapest gate first, and refusals that name the offline check [exec:strong] | 2 | 1000 |
-| desk-tools | 30 — verify-desk lands verdicts through the verdict-transcription lane; `deskevidence` demoted to break-glass [exec:strong] | 1 | 1000 |
 | forge-gitlab | 18 — Rotate the board-push credential in one process — the new value never reaches a shell, a transcript, a log or argv [exec:strong] | 5 | 1000 |
 
 ## Drive: `build-less-brittle`
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: f52bdaf 2026-10-16T03:37:54Z_
+_last regen: fc2cacb8 2026-10-16T07:16:04-05:00_
 
 **Progress:** 10/13 brief items done.
 
@@ -128,13 +123,15 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: f52bdaf 2026-10-16T03:37:54Z_
+_last regen: fc2cacb8 2026-10-16T07:16:04-05:00_
 
 **Progress:** 16/73 brief items done.
 
 **In-flight:**
 
 - desktools-v2/18
+- desktools-v2/19
+- desktools-v2/30
 
 **Blocked on review:**
 
@@ -154,7 +151,6 @@ _last regen: f52bdaf 2026-10-16T03:37:54Z_
 
 **Frontier next:**
 
-- desktools-v2/19
 - desktools-v2/20
 - desktools-v2/21
 - desktools-v2/22
@@ -164,7 +160,6 @@ _last regen: f52bdaf 2026-10-16T03:37:54Z_
 - desktools-v2/26
 - desktools-v2/27
 - desktools-v2/28
-- desktools-v2/30
 - desktools-v2/31
 - desktools-v2/32
 - desktools-v2/33
@@ -195,13 +190,13 @@ _last regen: f52bdaf 2026-10-16T03:37:54Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (14 for the desk · 28 for the driver · 33 for workers · 26 for an operator · 13 runner-pending — of 119 total; 5 could-not-check)
+## Awaiting verification / review (14 for the desk · 30 for the driver · 31 for workers · 26 for an operator · 13 runner-pending — of 119 total; 5 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
 _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a live/mutating check with no completed Evidence row behind it. UNRUN is DERIVED from Verify-vs-Evidence coverage — a row counts as run only when an Evidence row names it with a date and a runner, so silence reads as unrun. `--lint` names each one and whether it was routed to a follow-up._
 
-### Awaiting human gate (28)
+### Awaiting human gate (30)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -225,6 +220,8 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 10 [exec:strong] | implemented | 1500 | 1 | — | driver | close the sign-off card | — | — |
 | forge-gitlab | 11 [exec:strong] | implemented | 1500 | 1 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
 | desk-supervision | 09 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1185 | — | — |
+| desk-tools | 01 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
+| desk-tools | 18 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | desktools-v2 | 11 [exec:strong] | implemented | 1000 | 0 | — | driver | close the sign-off card | — | — |
 | forge-gitlab | 05 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
 | forge-gitlab | 12 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
@@ -234,7 +231,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | statusgen | 09 | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (no recognised kind), no blocker ref recorded | — | — |
 | windows-port | 10 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 
-### Awaiting implementer rework (33)
+### Awaiting implementer rework (31)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -261,11 +258,9 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-supervision | 08 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1363 | — | — |
 | desk-supervision | 18 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1922 | — | — |
 | desk-supervision | 22 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
-| desk-tools | 01 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1546 | — | — |
 | desk-tools | 02 | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1792 — row 5 is a prose PR-body check the witness cannot execute (check-definition); row 1 environment flake #612/#1232; row 4 vacuous post-merge self-diff (#1657 class) | — | — |
 | desk-tools | 03 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1784 | — | — |
 | desk-tools | 07 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2179 | — | — |
-| desk-tools | 18 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1791 | — | — |
 | desk-tools | 26 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | desk-tools | 28 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1735 | — | — |
 | desk-tools | 31 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2684 | — | — |
