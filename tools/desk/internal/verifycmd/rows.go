@@ -7,9 +7,9 @@ import "strings"
 // that writes a shell pipeline (`a \| b`) or an `\|\|` stays ONE cell. The escape
 // is kept in the cell text exactly as written (`\|`); an executor un-escapes the
 // command it lifts with UnescapePipes just before running it. One outer pipe is
-// dropped from each end. This is the rule statusgen's table reader applies
-// (statusgen/parse.go splitRow), so the two readers agree on what a row's
-// command is (#1953).
+// dropped from each end, so a zero-length leading cell keeps its column. This is
+// the rule statusgen's Verify-row reader applies (statusgen/verifyrows.go
+// splitRowEscaped), so the two readers agree on what a row's command is (#1953).
 func SplitRow(line string) []string {
 	s := strings.TrimSpace(line)
 	s = strings.TrimPrefix(s, "|")

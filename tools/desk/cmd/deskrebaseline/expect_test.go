@@ -4,7 +4,8 @@ import "testing"
 
 // TestExpectMirrorsStatusgen — the Expect reader is a mirror of statusgen's (a separate
 // module), so it is held to the same vectors as statusgen/verifyrun_test.go
-// TestParseExpectReadsTheCorpusConventions and TestVerdictThreeState.
+// TestParseExpectReadsTheCorpusConventions and TestVerdictThreeState. Where statusgen passes
+// on the exit status alone (nothing in the Expect is checkable), the mirror says undecided.
 func TestExpectMirrorsStatusgen(t *testing.T) {
 	for _, tc := range []struct {
 		expect string
@@ -48,7 +49,11 @@ func TestExpectMirrorsStatusgen(t *testing.T) {
 		{"≥ `1`", true, 0, "a.go:2\nb_test.go:5\n", judgePass},
 		{"≥ `1`", true, 0, "no numbers here\n", judgeCouldNotRun},
 		{"exit 127", false, 127, "", judgeCouldNotRun},
-		{"`exit=1`; output names the leaked marker", true, 0, "exit=1\n", judgePass},
+		{"`exit=1`; output names the leaked marker", true, 0, "exit=1\n", judgeUndecided},
+		{"the reviewer weighs the residue", true, 0, "", judgeUndecided},
+		{"exit non-zero (the marker is absent)", true, 0, "", judgeUndecided},
+		{"exits nonzero; output is `refused`", true, 0, "refused\n", judgeUndecided},
+		{"output is `rc=0`", false, 127, "", judgeCouldNotRun},
 	} {
 		if got := parseExpect(tc.expect).judge(tc.ran, tc.rc, tc.out); got != tc.want {
 			t.Errorf("judge(%q, rc %d) = %s, want %s", tc.expect, tc.rc, got, tc.want)

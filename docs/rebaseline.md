@@ -74,6 +74,10 @@ deskrebaseline <brief> --row K [--root DIR] [--repo owner/name] [--open]
     verify runner reads it: the exit code it names (`exit 1`; default `0`; a backticked
     `exit=N` is printed output, not the required exit), an `output is` line, and a `≥ N`
     floor. A row whose Expect is `exit 1` and whose command exits 1 has not changed.
+    An Expect that names none of those is **undecided**, not a pass: prose only, a backticked
+    token only, or an exit given as "non-zero" with no number. `statusgen` would pass such a
+    row on its exit status alone. Here it is never proof, so a renamed row with an undecided
+    Expect is `refused:unclassified`, and so is an undecided behaviour probe.
   - **An escaped pipe `\|` in the Command cell is part of the command.** Rows are split the way
     `statusgen` splits them, and the probe runs the un-escaped pipeline.
 - **With `--open`** — on a `safe:*` verdict it rewrites that one row, commits it on a
