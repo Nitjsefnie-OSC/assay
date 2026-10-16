@@ -3015,9 +3015,16 @@ Read-only classification is an **allowlist per CLI**, which is the fail-closed d
 nobody classified is MUTATING, so a subcommand added upstream tomorrow is refused rather than
 waved through on the day it appears. `k9s` carries an EMPTY allowlist on purpose: it is an
 interactive TUI whose mutating operations are reachable from inside the session, so nothing in its
-`argv` can establish that a call is read-only. The verb scan skips flags and the values of global
-flags that consume one (`-n ns get pods` classifies on `get`, not on `ns`); that table can only
-remove false REFUSALS, since an unrecognised token still lands on the mutating side.
+`argv` can establish that a call is read-only. The verb scan skips `--flag=value` tokens and the
+global flags it knows consume a value, with that value (`-n ns get pods` classifies on `get`, not
+on `ns`). Any OTHER flag before the subcommand makes the call unclassifiable, so it lands on the
+mutating side: its arity is unknown, and a flag that consumes the next argument hides the real
+verb — real `kubectl --username get delete pod x` runs `delete`, with `get` as the username. So
+the value-flag table can be incomplete without a false pass; a missing entry costs a false
+refusal, which the operator answers by writing the flag as `--flag=value` or after the subcommand.
+The table's one hazard is the reverse: an entry for a flag that takes NO value would make the
+scan skip the real verb, so a flag goes into it only when the CLI's own help shows it consumes an
+argument.
 
 Exit `5` is a **refusal, not a fallback trigger**. The message says so explicitly: reaching the
 same CLI by absolute path, by a rebuilt `PATH`, or through another tool is not the sanctioned
