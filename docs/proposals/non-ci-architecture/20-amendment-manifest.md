@@ -122,3 +122,90 @@ Owner rows for the [cell operator surface amendment](21-cell-operator-surface.md
 
 Adopters make their corresponding local amendments separately; nothing in this manifest edits an
 adopter repository or names private repositories, credentials or deployment details.
+
+## Portfolio/drift follow-through — 13 October 2026
+
+The [product-intent and portfolio amendment](26-product-intent-and-portfolio.md) adds a concrete owner/dependency table and six brief files,
+not just owner rows. Statusgen/19's merged work is unchanged; /23 extends its reviewed
+result after /20. Statusgen/20–21 amendments are limited to declared coverage and supported
+product-binding consumption. Continuing-operations remains parked pending explicit admission.
+R2 and R6 are covered by the merged PRs #2750 and #2743; this amendment changes neither.
+R7 must consume statusgen/25 and map independent product/architecture/binding/allocation/
+observation dimensions; its `cell-api` owner stream is named above, and its scaffolding and
+serving brief remain owed.
+
+## Forge-service follow-on — amendment of 14 October 2026
+
+The new [bounded design](22-forge-service-and-source-queries.md) extends R6/R4 and R7's
+read interface. The original dated manifest above remains its source account. PR 2743
+(merged as `6b479a573`) authored forge-neutral/37–38 (mirror and event adapter) and the follow-on
+forge-neutral/39–45. Reconcile its reciprocal edges and waves
+against the landed R2 amendments before delivery. Do not duplicate the mirror or silently
+rebind in-progress forge-neutral/18, populated Evidence or historical decisions.
+
+| Extension | Owner/delivery | Dependencies and active-work treatment |
+|---|---|---|
+| Typed service contract and SDK | forge-neutral/39; `forgeread/service/`, separate `forgeread/client/` | Pure contract first; root/offline reader and implemented 36 are preserved |
+| Authenticated serving and executor custody | forge-neutral/40; `tools/desk/internal/forgeservice/`, private role executor, thin commands | 39 and R2/R3 incarnation/ownership contract; preserve role-specific custody and guards |
+| Write-through receipt/projection | forge-neutral/41; service composition plus `workflow/store/` adapters | 37, 40, graph-execution/04 and /19; no second intent/outbox or issue authority |
+| SHA-bound source queries | forge-neutral/42; pure query contract plus trusted Git/provider adapters | 39–40; consume existing gitcore and exact-candidate meanings |
+| Incremental indexes and invalidation | forge-neutral/43; mirror-derived indexes and application query composition | 37 and 42; domain evaluators unchanged; explicit access/time/input dependencies |
+| Shared Git reuse trial | forge-neutral/44; gitcore test harness and public experiment report | 42; reuse existing maintenance/retirement owners, no daemon or live fetch required |
+| Served flow, recovery and cutover | forge-neutral/45; disposable integration harness and operator runsheet | 38, 41, 43, 44 and R3/R4 proofs; write activation independent of read release |
+
+The existing R7 owner choice still governs full remote ingress/cockpit work. This amendment
+supplies a narrow reusable local forge surface, not an alternative application framework.
+The source baseline and the merged forge-neutral/37–45 state are pinned in doc 22; implementation workers
+refresh current source/claims and resolve existing human decisions before starting.
+
+
+## Public runtime alignment — 14 October 2026
+
+Controlling delta: [one public runtime](23-runtime-contract-alignment.md). Existing R1–R8
+rows remain owners; no separate implementation programme is opened. Actual patches here:
+
+| Gap/consumer | Applied authoring amendment | Qualification |
+|---|---|---|
+| Evaluation context and expiry | new graph-execution/30 after /28; complete inputs, time-bound validity and conservative reuse | pure context/schema and real evaluator flow; cached result grants no authority |
+| Accountable principals/proof provenance | new graph-execution/31 after /28; shared issuer versus delegation, proof classes and missing corroboration | synthetic independent-principal and trusted-selector bypass cases; no crypto/custody deployment claim |
+| Dispatch/admission | /14 depends on /30–31, version 4; dated consumption and two Verify rows | current context and corroborated independence checked at actual admission |
+| PostgreSQL bindings | /19 depends on /30, version 4; dated context persistence and real-PG Verify row | restore cannot renew validity or source coverage |
+| Scoped control exports | /15 depends on /31, version 2; proof-provenance consumption and Verify row | truthful assurance and missing/denied coverage in independently read exports |
+| Publication/review | /25 depends on /31, version 2; dated provenance consumption and Verify row | existing exact-candidate, role and disabled-profile controls retained |
+
+Historical Evidence is byte-preserved. /28 receives reciprocal unblocks only, not Task/Verify
+changes. The merged forge-neutral/39–45 and performance-collection/01–06 are reused unchanged.
+R3/R4 custody and R5/R7/R8 integration/migration remain their existing proof obligations.
+
+### Operating-report owner routing — 15 October 2026
+
+| Slice | Owner and delivery | Runtime boundary |
+|---|---|---|
+| Capture and retained coverage/distributions | performance-collection/01–02; preserve /03–06 separate database/transport qualification | Local-first optional observations, no operational authority |
+| On-demand command/skill and daily three-report bundle | performance-collection/07–08; existing flow/lifecycle meanings retained | R7 consumes the same projection; local report-pack host can precede R2–R8 |
+| Later issue/draft-repair proposal loop | performance-collection/09; continuing-operations assessment and existing desk consumers | Managed activation depends on R2/R3/R4 and the brief's typed graph prerequisites; no new scheduler or autonomous merge |
+
+This is a requested specification/brief amendment, not implementation or activation evidence. It supersedes the "reused unchanged" record above for performance-collection/01, 02 and 06 only: the 15 October operating-report amendment extends those briefs and adds 07–09, with their collection/storage boundaries and runtime authority unchanged.
+
+## Operation-count brakes and pacing — 15 October 2026
+
+Controlling delta: [brake and pacing contract](11-target-architecture.md#pacing-counts-are-best-effort-brakes-fail-closed).
+Counts that bound a runaway or blast radius are brakes and stay fail-closed: write
+ceilings, daily and new-issue caps, the circuit breaker, the child-launch budget, ingress
+and retry budgets. Only pacing counts become best effort, with a shared estimate (always
+re-derived from durable admission records for effect-class counts) and a
+declared drift bound for effect-class counts (cap + C, or
+2 × (cap + C) after one recorded reset per window and operator incarnation); read-class
+pacing counts carry no numeric bound and are unbounded on counter loss.
+Unknown usage still cannot become a fresh allowance. Docs 14, 15, 19 and 23 carry the
+split; doc 15 adds an operation-count qualification section. No brake is relaxed;
+relaxing one is a separate human decision.
+
+| Consumer | Applied amendment | Qualification |
+|---|---|---|
+| R2 store/ownership: graph-execution/16 and /19, versions 7 | Cumulative attempt budgets and brake counts keep fail-closed reservations; pacing counts need no exact budget slot and keep one shared estimate, re-derived from window intents and receipts for effect-class counts, never from a cached row | New Verify rows: brake holds on an unavailable count; restart or per-process fallback cannot multiply a pacing cap |
+| R3 supervisor: graph-execution/26, version 6 | The child-launch budget is classified as a fail-closed brake; only desk/tool pacing is best effort, and launch pacing is effect-class, re-derived from recorded launches | Missing configuration and an unavailable child-launch count both refuse; new Verify row with a mutation that treats the count as under budget |
+
+Existing Task/Verify rows and historical Evidence remain intact; each brief adds rows and
+bumps `version:`. No installed limiter, default, credential, executor activation or hard
+resource limit changes in this documentation PR.

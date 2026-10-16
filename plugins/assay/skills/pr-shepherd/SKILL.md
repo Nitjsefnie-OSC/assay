@@ -31,11 +31,13 @@ Before touching the branch, verify no other session or worker owns it:
   `state=claimed` past ~20 minutes or `state=dispatched` past ~120 minutes is a DEAD claim,
   not an owner. **The claim tool is `deskclaim-ref`** — installed with desk-tools, verbs
   `acquire` / `progress` / `release` / `steal` / `show` / `list`, deskkit exit codes **0** ok ·
-  **5** refused (a live holder owns it) · **6** unverifiable. A repo may ship its own
+  **5** refused (a live holder owns it) · **6** unverifiable; `list` alone adds **7** partial
+  (some refs unreadable and named on stderr — incomplete, never idle). A repo may ship its own
   `tools/dispatch-claim.sh`; `deskdispatch` prefers `deskclaim-ref` when it is on PATH and falls
   back to that script when the resolved root carries it, and the two speak the same wire
   protocol, so either one's `show` answers this question. Hand either tool your own role's token
-  (`--token-file "$(desktoken worker)"` for the binary, `GH_TOKEN` exported for the script) —
+  (`--token-file "$(desktoken worker)"` for the binary, `GH_TOKEN` set on the script's own
+  command, never exported — desk-shell.md §Forge CLI as the role) —
   neither reads anything but the credential it is given.
   Run BOTH reads: the tool acquires and lists in the `refs/dispatch/*` namespace, while the
   `ls-remote` pattern above lists the `refs/heads/dispatch/*` branch refs the Go claim readers
@@ -63,7 +65,9 @@ rehearse with `--dry-run` before the real upsert.
 
 Work in your **own worktree** (`capability:isolate-workspace`), never the shared checkout:
 
-> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, and role/repo coverage — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, role/repo coverage, and running a `gh` call as the role App (never a human's CLI login: [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role)) — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+
+> **Every `gh` call carries this role's `GH_TOKEN`, reads included.** When no desk verb covers a forge call, run it only through the recipe in [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role), never a hand-typed shortcut. That recipe takes the role from `$DESK_LOOP`, mints it with `desktoken`, scopes the token to that one command without exporting it, and stops before `gh` unless the mint exited 0 and the token file holds a non-whitespace token. A bare `gh` call runs as the host's stored login, which is usually a human's, so a desk never runs one, not even for a read.
 
 ```bash
 git fetch origin <branch>:<branch>            # branch may not exist locally yet

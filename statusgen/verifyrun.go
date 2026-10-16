@@ -1242,7 +1242,11 @@ func briefVerifyRows(verifySection string) []verifyRow {
 		}
 		row := verifyRow{ID: id, Command: cmd, Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect)}
 		if first, why := proseLedCommandWhy(r.Command); why != "" {
-			row.ProseLed = "first span " + strings.ReplaceAll(first, "|", "\\|") + " is " + why
+			what := "first span "
+			if why == shellCommentMarkedWhy {
+				what = "marked command "
+			}
+			row.ProseLed = what + strings.ReplaceAll(first, "|", "\\|") + " is " + why
 		}
 		rows = append(rows, row)
 	})
@@ -1331,7 +1335,8 @@ func runWitnessesSandboxed(plan shellPlan, sandbox, root string, rows []verifyRo
 		// command is a mention, and running it measures nothing — it exits 127
 		// (could-not-run anyway) or, for a word like `gh`, exits 0 and would record
 		// a pass for a check that never ran. Recorded could-not-run with the lint's
-		// rule tag, so the Evidence says why; a `cmd:` marker clears it.
+		// rule tag, so the Evidence says why; a `cmd:` marker naming a real command
+		// clears it, a marked comment does not (#2684).
 		if r.ProseLed != "" {
 			out = append(out, witness{
 				ID: r.ID, Command: r.Command, State: stateCouldNotRun, Exit: -1,
@@ -1392,7 +1397,7 @@ func runWitnessesSandboxed(plan shellPlan, sandbox, root string, rows []verifyRo
 // proseLedNote is the could-not-run note for a prose-led row: the lint's
 // stable rule tag first (greppable in Evidence), then the reason and the fix.
 func proseLedNote(reason string) string {
-	return ruleProseLedCommand + ": not executed; the " + reason + ", not a command. Mark the command with a cmd: code span"
+	return ruleProseLedCommand + ": not executed; the " + reason + ", not a command. " + proseLedRemedy(reason)
 }
 
 // witnessTable renders a full Evidence table for a run.
@@ -1657,7 +1662,10 @@ Flags:
   --dry-run         run the rows and print the witness table, but do not write it back
   --timeout <dur>   per-row wall-clock limit (default 10m); a row that times out is could-not-run
   --root <dir>      repo root the commands run in (default: the git toplevel of the cwd);
-                    a directory below its repository's toplevel is refused
+                    a directory below its repository's toplevel is refused. A
+                    cross-repository verifier run executes its rows only in the
+                    admitted deliverable home (the default); any other --root,
+                    and --in-container, is refused before a row runs
   --ci              CI context: EXPLICITLY-classed check (env-bound) rows are
                     SKIPPED (runner-executed, not selected here); legacy rows and
                     check:ci rows are unaffected. check:ci rows always run network-off.
@@ -1795,18 +1803,38 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		return verifyrunExitUsageError
 	}
 
-	attestation := ""
+	attestation, admittedHome := "", ""
 	if !*checkMode {
 		admissionRoot := *rootDir
 		if admissionRoot == "" {
 			admissionRoot = repoRootFor(path)
 		}
 		var admissionErr error
-		attestation, admissionErr = verifierAdmission(admissionRoot, path)
+		attestation, path, admittedHome, admissionErr = verifierAdmission(admissionRoot, path)
 		if admissionErr != nil {
 			fmt.Fprintln(stderr, "statusgen verifyrun:", admissionErr)
 			return verifyrunExitCouldNot
 		}
+		// A cross-repository admission has moved path to the tracking checkout,
+		// so the row root is never derived from it: it is the admitted
+		// deliverable home, and any other root is refused before a row runs.
+		if admittedHome != "" {
+			if why := admittedRowRootRefusal(*rootDir, admissionRoot, admittedHome); why != "" {
+				fmt.Fprintln(stderr, "statusgen verifyrun:", why)
+				return verifyrunExitCouldNot
+			}
+		}
+	}
+	// rowRoot is where the Verify rows run: the admitted deliverable home for a
+	// cross-repository run, else --root, else the brief's repository toplevel.
+	rowRoot := func() string {
+		switch {
+		case admittedHome != "":
+			return admittedHome
+		case *rootDir != "":
+			return *rootDir
+		}
+		return repoRootFor(path)
 	}
 
 	// --in-container hands the whole run off to a `statusgen verifyrun` inside the
@@ -1815,9 +1843,14 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	// against the bind-mounted /work. The pass-through flags (--check/--dry-run/--ci
 	// and a non-default --timeout) travel into the container.
 	if *inContainer {
-		root := *rootDir
-		if root == "" {
-			root = repoRootFor(path)
+		root := rowRoot()
+		// The container bind-mounts only the row root, and a cross-repository
+		// brief lives in the tracking checkout outside the admitted deliverable
+		// home by construction; the inner run would also not carry the host's
+		// admission. Refuse rather than run the rows against any other tree.
+		if admittedHome != "" {
+			fmt.Fprintf(stderr, "statusgen verifyrun: refusing --in-container: a cross-repository verifier run executes its Verify rows only in the admitted deliverable home %s on the host; the container would mount that home without the tracking brief, and its inner run would not carry this run's admission\n", admittedHome)
+			return verifyrunExitCouldNot
 		}
 		if why := verifyrunRootBelowToplevel(root); why != "" {
 			fmt.Fprintln(stderr, "statusgen verifyrun:", why)
@@ -1848,10 +1881,7 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		return runVerifyrunCheck(path, verify, evidence, stdout)
 	}
 
-	root := *rootDir
-	if root == "" {
-		root = repoRootFor(path)
-	}
+	root := rowRoot()
 	if why := verifyrunRootBelowToplevel(root); why != "" {
 		fmt.Fprintln(stderr, "statusgen verifyrun:", why)
 		return verifyrunExitUsageError
