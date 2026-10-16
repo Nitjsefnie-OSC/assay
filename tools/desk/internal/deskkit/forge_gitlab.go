@@ -4454,6 +4454,7 @@ func (g *GitLabForge) runLog(repo ForgeRepo, run RunRef, lim runLogBounds) ([]Ru
 			pid, repo.Slug()), nil)
 	}
 	parts := make([]RunLogPart, 0, len(jobs))
+	kept := 0
 	for _, j := range jobs {
 		rel := fmt.Sprintf("projects/%s/jobs/%d/trace", g.projectPath(repo), j.ID)
 		req, rerr := cl.NewRequest(http.MethodGet, rel, nil, nil)
@@ -4470,6 +4471,10 @@ func (g *GitLabForge) runLog(repo ForgeRepo, run RunRef, lim runLogBounds) ([]Ru
 			return nil, g.mapErr(http.MethodGet, "/"+rel, derr)
 		}
 		text, trunc := sink.tail()
+		if kept += len(text); kept > lim.runCap {
+			return nil, Unverifiable(fmt.Sprintf("could-not-check: pipeline %d on %s keeps more than %d bytes of log across its jobs — "+
+				"refusing to return a silently shortened run", pid, repo.Slug(), lim.runCap), nil)
+		}
 		parts = append(parts, RunLogPart{Name: j.Name, Text: text, Truncated: trunc})
 	}
 	return parts, nil

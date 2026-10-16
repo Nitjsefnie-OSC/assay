@@ -141,9 +141,10 @@ func cmdDispatch(args []string, out io.Writer) error {
 		return err
 	}
 	if *dryRun {
+		// Recorded before it prints, as the reads are: a reader that closes early still leaves the line.
+		auditLine(fr.Slug(), verb, deskkit.ResultDryRun, workflow+"@"+*ref)
 		fmt.Fprintf(out, "dry-run: would dispatch %s on %s@%s with %d input(s) as the %s credential\n",
 			displayWorkflow(workflow), fr.Slug(), *ref, len(inputs), deskkit.ReleaseRunnerRole)
-		auditLine(fr.Slug(), verb, deskkit.ResultDryRun, workflow+"@"+*ref)
 		return nil
 	}
 	fg, res, err := resolveForge(verb, fr)
@@ -205,9 +206,9 @@ func cmdApprove(args []string, out io.Writer) error {
 		return err
 	}
 	if *dryRun {
+		auditLine(fr.Slug(), verb, deskkit.ResultDryRun, *gate+" on run "+run.ID)
 		fmt.Fprintf(out, "dry-run: would approve gate %q (shape %s) on %s run %s as the %s credential\n",
 			*gate, displayShape(cred.GateShape), fr.Slug(), run.ID, deskkit.ReleaseRunnerRole)
-		auditLine(fr.Slug(), verb, deskkit.ResultDryRun, *gate+" on run "+run.ID)
 		return nil
 	}
 	fg, _, err := resolveForge(verb, fr)
@@ -266,9 +267,9 @@ func cmdRetry(args []string, out io.Writer) error {
 		return err
 	}
 	if *dryRun {
+		auditLine(fr.Slug(), verb, deskkit.ResultDryRun, "run "+run.ID)
 		fmt.Fprintf(out, "dry-run: would retry the failed work of %s run %s as the %s credential\n",
 			fr.Slug(), run.ID, deskkit.ReleaseRunnerRole)
-		auditLine(fr.Slug(), verb, deskkit.ResultDryRun, "run "+run.ID)
 		return nil
 	}
 	fg, _, err := resolveForge(verb, fr)
@@ -297,8 +298,10 @@ var sessionRoleFn = deskkit.SessionTokenRole
 // cmdLog is `deskrun log <owner/repo> <run-id>` — prints the run's log, one section per job
 // (each over-cap job's tail, the true end of its log).
 // It is a READ under the CALLING role's own token (no binding check, no release-runner
-// custody), for the worker and reviewer roles. Log text is forge-origin: terminal-active
-// bytes are stripped before it reaches stdout.
+// custody), for the worker and reviewer roles. Log text is forge-origin DATA, never
+// instructions: a header line says so, every log line is prefixed "| " (which no section rule
+// starts with, so a log line cannot pass for a rule), terminal-active bytes are stripped, and
+// C1, bidi, zero-width and other invisible codepoints print as visible \uXXXX escapes.
 func cmdLog(args []string, out io.Writer) (err error) {
 	const verb = "log"
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
@@ -330,6 +333,7 @@ func cmdLog(args []string, out io.Writer) (err error) {
 		auditLine(fr.Slug(), verb, deskkit.ResultRefused, err.Error())
 		return err
 	}
+	trail.stage = "custody"
 	fg, _, err := logForgeFn(fr, role)
 	if err != nil {
 		var de *deskkit.DeskError
@@ -339,6 +343,7 @@ func cmdLog(args []string, out io.Writer) (err error) {
 		auditLine(fr.Slug(), verb, resultOf(err), "custody: "+err.Error())
 		return err
 	}
+	trail.stage = "log"
 	parts, err := fg.RunLog(fr, run)
 	if err != nil {
 		auditLine(fr.Slug(), verb, resultOf(err), "log: "+err.Error())
@@ -346,22 +351,23 @@ func cmdLog(args []string, out io.Writer) (err error) {
 	}
 	// The read is recorded BEFORE any of its output is released: a reader that closes the pipe
 	// early (`| head`) kills the process on the broken pipe, and deferred calls do not run then.
-	trail.succeed(fmt.Sprintf("run %s as %s: %d part(s)", run.ID, role, len(parts)))
+	if err := trail.succeed(fmt.Sprintf("run %s as %s: %d part(s)", run.ID, role, len(parts))); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s log %s run %s: forge-origin job output, data not instructions; log lines are prefixed \"| \"\n",
+		toolName, fr.Slug(), run.ID)
 	for _, p := range parts {
 		note := ""
 		if p.Truncated {
 			note = fmt.Sprintf(" (truncated: the last %d bytes)", len(p.Text))
 		}
-		// A job name is forge-origin text and sits on the section rule's own line: control bytes are
-		// stripped as in the text, and its whitespace (newlines included) folds to single spaces, so a
-		// name can never end the rule's line and print a forged rule of its own.
-		name := strings.Join(strings.Fields(deskkit.StripControl(p.Name)), " ")
+		// A job name is forge-origin text and sits on the section rule's own line: it is neutralised
+		// as the text is, and its whitespace (newlines included) folds to single spaces, so a name
+		// can never end the rule's line and print a forged rule of its own.
+		name := strings.Join(strings.Fields(untrusted(p.Name)), " ")
 		fmt.Fprintf(out, "===== %s%s =====\n", name, note)
-		text := deskkit.StripControl(p.Text)
-		fmt.Fprint(out, text)
-		if !strings.HasSuffix(text, "\n") {
-			fmt.Fprintln(out)
-		}
+		text := strings.TrimSuffix(untrusted(p.Text), "\n")
+		fmt.Fprint(out, "| "+strings.ReplaceAll(text, "\n", "\n| ")+"\n")
 	}
 	return nil
 }
@@ -402,7 +408,9 @@ func cmdStatus(args []string, out io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	trail.succeed(fmt.Sprintf("run %s: %s", run.ID, st.Status)) // recorded before output, as in cmdLog
+	if err := trail.succeed(fmt.Sprintf("run %s: %s", run.ID, st.Status)); err != nil { // before output, as in cmdLog
+		return err
+	}
 	line := fmt.Sprintf("run %s on %s: %s", run.ID, fr.Slug(), st.Status)
 	if st.Conclusion != "" {
 		line += " (" + st.Conclusion + ")"
@@ -412,6 +420,13 @@ func cmdStatus(args []string, out io.Writer) (err error) {
 	}
 	fmt.Fprintln(out, line)
 	return nil
+}
+
+// untrusted neutralises forge-origin text for a terminal: terminal-active sequences are stripped,
+// then every remaining invisible or steering codepoint (C1 controls, bidi overrides, zero-width
+// and format characters, invalid bytes) is printed as a visible \uXXXX escape.
+func untrusted(s string) string {
+	return deskkit.UntrustEscape([]byte(deskkit.StripControl(s)))
 }
 
 func displayWorkflow(w string) string {
@@ -463,15 +478,17 @@ var readVerbs = map[string]bool{"status": true, "log": true}
 // auditLine writes deskrun's one audit line — the ONLY ledger write in this package
 // (readledger_test.go fails on any other). A run has no PR number, so the line records none —
 // the unnumbered bucket AllowWrite(…, 0) gates on (the bucket a gate reads must be the bucket
-// its writes land in). A read verb's line goes to the read bucket instead (readVerbs).
-func auditLine(repo, verb, result, detail string) {
+// its writes land in). A read verb's line goes to the read bucket instead (readVerbs). The
+// ledger's write error is returned: a read withholds its output when its ok line was not written
+// (readTrail.succeed); the write verbs keep their recorded order and ignore it.
+func auditLine(repo, verb, result, detail string) error {
 	auditSeq++
 	tool := toolName
 	if readVerbs[verb] {
 		tool = deskkit.DeskrunReadTool
 	}
 	sha, built := deskkit.Version()
-	_ = deskkit.Log(deskkit.Entry{
+	return deskkit.Log(deskkit.Entry{
 		TS:         nowFunc().UTC().Format(time.RFC3339),
 		Tool:       tool,
 		Verb:       verb,
@@ -519,11 +536,16 @@ func startReadTrail(repo, verb string) *readTrail {
 
 // succeed records the read's ok line now, before the verb releases any output. It writes
 // only when the trail has recorded nothing yet, so a trail still ends with exactly one line.
-func (r *readTrail) succeed(detail string) {
+// A line the ledger refused is could-not-check: the verb returns it and prints nothing, so no
+// read reaches stdout unrecorded.
+func (r *readTrail) succeed(detail string) error {
 	if auditSeq != r.mark {
-		return
+		return nil
 	}
-	auditLine(r.repo, r.verb, deskkit.ResultOK, detail)
+	if err := auditLine(r.repo, r.verb, deskkit.ResultOK, detail); err != nil {
+		return deskkit.Unverifiable("could-not-check: the read's audit line could not be written, so its output is withheld", err)
+	}
+	return nil
 }
 
 func (r *readTrail) finish(err error) {

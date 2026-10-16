@@ -42,8 +42,14 @@ var (
 	}
 	// logForgeFn resolves the backend serving `deskrun log` under the CALLING role's own custody
 	// (a read: worker or reviewer, never the release-runner). Package var so a test can
-	// substitute a recording fake.
+	// substitute a recording fake. The role set is closed HERE, before any custody is read, for
+	// every forge: the GitHub minter checks it again (githubCustodyMint), but GitLab custody reads
+	// whatever role's token file it is asked for.
 	logForgeFn = func(fr deskkit.ForgeRepo, role string) (deskkit.Forge, deskkit.ForgeResolution, error) {
+		if !logRoles[role] {
+			return nil, deskkit.ForgeResolution{}, deskkit.Refused(fmt.Sprintf(
+				"refused: %s log reads under the worker or reviewer role's own credential, never %q", toolName, role))
+		}
 		return deskkit.ResolveForge(fr, role)
 	}
 )

@@ -1503,12 +1503,15 @@ type RunLogPart struct {
 //   - RunLogReadCap bounds the bytes READ per part (64 MiB). A log longer than that is a
 //     could-not-check naming the job, never a slice of it presented as its tail.
 //   - RunLogMaxParts bounds the jobs read from one run (200); more is a could-not-check.
+//   - RunLogRunCap bounds the text KEPT across all of one run's parts (64 MiB), so the per-part
+//     cap times the part count (800 MiB) is never held at once; more is a could-not-check.
 //   - runLogArchiveCap bounds the bytes of a GitHub log archive downloaded (64 MiB); more is a
 //     could-not-check.
 const (
 	RunLogPartCap    = 4 << 20
 	RunLogReadCap    = 64 << 20
 	RunLogMaxParts   = 200
+	RunLogRunCap     = 64 << 20
 	runLogArchiveCap = 64 << 20
 )
 
@@ -1519,6 +1522,7 @@ type runLogBounds struct {
 	partCap    int   // bytes of tail kept per part
 	readCap    int64 // bytes read per part before could-not-check
 	maxParts   int   // jobs per run
+	runCap     int   // bytes of text kept across one run's parts
 	archiveCap int64 // bytes of one GitHub archive
 	perPage    int64 // GitLab job-list page size
 	maxPages   int   // GitLab job-list pages walked before could-not-check
@@ -1528,6 +1532,7 @@ var defaultRunLogBounds = runLogBounds{
 	partCap:    RunLogPartCap,
 	readCap:    RunLogReadCap,
 	maxParts:   RunLogMaxParts,
+	runCap:     RunLogRunCap,
 	archiveCap: runLogArchiveCap,
 	perPage:    gitlabPerPage,
 	maxPages:   gitlabMaxCIPage,
@@ -2075,8 +2080,9 @@ type Forge interface {
 	// success). GitLab's trace is per JOB, so EVERY page of the pipeline's jobs is listed and
 	// EVERY job's trace is streamed — a multi-job pipeline is never reduced to the first job or
 	// the first page. A part over RunLogPartCap keeps its true TAIL and is marked Truncated; a
-	// part over RunLogReadCap, a run over RunLogMaxParts jobs or a GitHub archive over its
-	// download cap is could-not-check, never a silently shortened log.
+	// part over RunLogReadCap, a run over RunLogMaxParts jobs, a run keeping more than
+	// RunLogRunCap across its parts or a GitHub archive over its download cap is
+	// could-not-check, never a silently shortened log.
 	RunLog(repo ForgeRepo, run RunRef) ([]RunLogPart, error)
 	// RetryRun re-runs the FAILED work of one run and nothing else (forge-neutral brief 17;
 	// consumer: cmd/deskrun retry). It needs GitHub `actions: write` / GitLab `api`, the

@@ -82,8 +82,8 @@
     {
       "name": "brief 17 — GitLab log reads only the FIRST job's trace of a multi-job pipeline",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "\tparts := make([]RunLogPart, 0, len(jobs))\n\tfor _, j := range jobs {",
-      "new": "\tparts := make([]RunLogPart, 0, len(jobs))\n\tfor _, j := range jobs[:1] {"
+      "old": "\tkept := 0\n\tfor _, j := range jobs {",
+      "new": "\tkept := 0\n\tfor _, j := range jobs[:1] {"
     },
     {
       "name": "brief 17 — GitLab retry re-runs every job, not only the failed ones",
@@ -228,6 +228,30 @@
       "file": "internal/deskkit/forge_github.go",
       "old": "\tout := whole\n\tfor _, j := range steps {",
       "new": "\tout := whole\n\tif len(whole) > 0 {\n\t\treturn out\n\t}\n\tfor _, j := range steps {"
+    },
+    {
+      "name": "SEC-9 — GitHub keeps a run's text with no run-wide bound",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\t\tif kept += len(text); kept > lim.runCap {",
+      "new": "\t\tif kept += len(text); false && kept > lim.runCap {"
+    },
+    {
+      "name": "SEC-9 — GitLab keeps a pipeline's text with no run-wide bound",
+      "file": "internal/deskkit/forge_gitlab.go",
+      "old": "\t\tif kept += len(text); kept > lim.runCap {",
+      "new": "\t\tif kept += len(text); false && kept > lim.runCap {"
+    },
+    {
+      "name": "SEC-9 — the run-wide bound drifts from its documented 64 MiB",
+      "file": "internal/deskkit/forge.go",
+      "old": "\tRunLogRunCap     = 64 << 20",
+      "new": "\tRunLogRunCap     = 1 << 40"
+    },
+    {
+      "name": "SEC-8 — the signed archive URL's query reaches the error text",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\"GET %s failed\", path), redactURLQuery(rerr))",
+      "new": "\"GET %s failed\", path), rerr)"
     }
   ]
 }

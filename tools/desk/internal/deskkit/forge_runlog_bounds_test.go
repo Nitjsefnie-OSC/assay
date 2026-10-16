@@ -6,6 +6,8 @@ package deskkit
 // code path production runs (runLog with explicit bounds), so removing any of them goes red.
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -35,11 +37,11 @@ func wantCouldNotCheck(t *testing.T, err error, parts []RunLogPart, frags ...str
 
 // TestRunLogBoundsDefaults: production's bounds are the documented constants.
 func TestRunLogBoundsDefaults(t *testing.T) {
-	want := runLogBounds{partCap: 4 << 20, readCap: 64 << 20, maxParts: 200, archiveCap: 64 << 20, perPage: 100, maxPages: 25}
+	want := runLogBounds{partCap: 4 << 20, readCap: 64 << 20, maxParts: 200, runCap: 64 << 20, archiveCap: 64 << 20, perPage: 100, maxPages: 25}
 	if defaultRunLogBounds != want {
 		t.Fatalf("defaultRunLogBounds = %+v, want %+v", defaultRunLogBounds, want)
 	}
-	if RunLogPartCap != want.partCap || RunLogReadCap != want.readCap || RunLogMaxParts != want.maxParts ||
+	if RunLogPartCap != want.partCap || RunLogReadCap != want.readCap || RunLogMaxParts != want.maxParts || RunLogRunCap != want.runCap ||
 		runLogArchiveCap != want.archiveCap || gitlabPerPage != want.perPage || gitlabMaxCIPage != want.maxPages {
 		t.Fatalf("a run-log constant drifted from the documented bound")
 	}
@@ -175,5 +177,50 @@ func TestRunLogGitlabTailBound(t *testing.T) {
 	parts, err := s.forge(t).runLog(rlRepo, RunRef{ID: "5"}, lim)
 	if err != nil || len(parts) != 1 || parts[0].Text != "FAILURE!" || !parts[0].Truncated {
 		t.Fatalf("want the last 8 bytes flagged truncated, got %+v err %v", parts, err)
+	}
+}
+
+// TestRunLogGithubRunBound: the text kept across a run's jobs is bounded (SEC-9) — exactly the
+// bound reads, one byte more refuses rather than returning a shortened run.
+func TestRunLogGithubRunBound(t *testing.T) {
+	lim := lowBounds(func(b *runLogBounds) { b.runCap = 8 })
+	at := zipOf(t, [][2]string{{"0_a.txt", "1234"}, {"1_b.txt", "5678"}})
+	if parts, err := ghRunLogStub(t, at).runLog(rlRepo, RunRef{ID: "501"}, lim); err != nil || len(parts) != 2 {
+		t.Fatalf("at the run bound: %d part(s), err %v", len(parts), err)
+	}
+	over := zipOf(t, [][2]string{{"0_a.txt", "1234"}, {"1_b.txt", "5678"}, {"2_c.txt", "9"}})
+	parts, err := ghRunLogStub(t, over).runLog(rlRepo, RunRef{ID: "501"}, lim)
+	wantCouldNotCheck(t, err, parts, "run 501", "more than 8 bytes")
+}
+
+// TestRunLogGitlabRunBound: the same run-wide bound on GitLab.
+func TestRunLogGitlabRunBound(t *testing.T) {
+	jobs, traces := glJobs(2)
+	lim := lowBounds(func(b *runLogBounds) { b.runCap = len(traces[70]) + len(traces[71]) })
+	if parts, err := (&glRunLogStub{jobs: jobs, traces: traces}).forge(t).runLog(rlRepo, RunRef{ID: "5"}, lim); err != nil || len(parts) != 2 {
+		t.Fatalf("at the run bound: %d part(s), err %v", len(parts), err)
+	}
+	jobs, traces = glJobs(3)
+	parts, err := (&glRunLogStub{jobs: jobs, traces: traces}).forge(t).runLog(rlRepo, RunRef{ID: "5"}, lim)
+	wantCouldNotCheck(t, err, parts, "pipeline 5", "more than 26 bytes")
+}
+
+// TestRunLogRedactsURL: a transport failure on the redirect to GitHub's signed archive URL
+// never carries that URL's query (a short-lived credential) into the error text (SEC-8).
+func TestRunLogRedactsURL(t *testing.T) {
+	gone := httptest.NewServer(http.NotFoundHandler())
+	target := gone.URL + "/_run_archive/501.zip?sig=SIGVALUE&X-Amz-Credential=CREDVALUE#frag"
+	gone.Close() // nothing listens there now: following the redirect fails in transport
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target, http.StatusFound)
+	}))
+	t.Cleanup(api.Close)
+	g := &GitHubForge{Token: "test-token", BaseURL: api.URL, Client: api.Client()}
+	parts, err := g.RunLog(rlRepo, RunRef{ID: "501"})
+	wantCouldNotCheck(t, err, parts, "/_run_archive/501.zip")
+	for _, secret := range []string{"SIGVALUE", "CREDVALUE", "frag"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("the signed URL's %q reached the error text: %v", secret, err)
+		}
 	}
 }

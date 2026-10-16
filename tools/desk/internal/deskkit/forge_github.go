@@ -3096,7 +3096,7 @@ func (g *GitHubForge) runLog(repo ForgeRepo, run RunRef, lim runLogBounds) ([]Ru
 			return nil, &ForgeAPIError{Status: he.StatusCode, Method: http.MethodGet, Path: path,
 				Message: he.Message, RateLimited: ghHTTPErrorRateLimited(he)}
 		}
-		return nil, Unverifiable(fmt.Sprintf("GET %s failed", path), rerr)
+		return nil, Unverifiable(fmt.Sprintf("GET %s failed", path), redactURLQuery(rerr))
 	}
 	defer resp.Body.Close()
 	arc := &runLogSink{limit: lim.archiveCap}
@@ -3122,6 +3122,7 @@ func (g *GitHubForge) runLog(repo ForgeRepo, run RunRef, lim runLogBounds) ([]Ru
 			"refusing to return a silently shortened log", id, repo.Slug(), lim.maxParts), nil)
 	}
 	parts := make([]RunLogPart, 0, len(jobs))
+	kept := 0
 	for _, j := range jobs {
 		sink := &runLogSink{limit: lim.readCap, keep: lim.partCap}
 		for _, f := range j.files {
@@ -3140,9 +3141,30 @@ func (g *GitHubForge) runLog(repo ForgeRepo, run RunRef, lim runLogBounds) ([]Ru
 			}
 		}
 		text, trunc := sink.tail()
+		if kept += len(text); kept > lim.runCap {
+			return nil, Unverifiable(fmt.Sprintf("could-not-check: run %d on %s keeps more than %d bytes of log across its jobs — "+
+				"refusing to return a silently shortened run", id, repo.Slug(), lim.runCap), nil)
+		}
 		parts = append(parts, RunLogPart{Name: j.name, Text: text, Truncated: trunc})
 	}
 	return parts, nil
+}
+
+// redactURLQuery drops the query, fragment and userinfo from a transport error's URL. The log
+// download is redirected to a signed archive URL whose query is a short-lived credential, and
+// this error text reaches stderr and the audit ledger; the scheme, host and path still name
+// where the read failed.
+func redactURLQuery(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	u, perr := url.Parse(ue.URL)
+	if perr != nil {
+		return &url.Error{Op: ue.Op, URL: "(an unparseable URL, withheld)", Err: ue.Err}
+	}
+	u.User, u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = nil, "", false, "", ""
+	return &url.Error{Op: ue.Op, URL: u.String(), Err: ue.Err}
 }
 
 // githubLogJob is one job of a run-log archive and the entries its text is read from.
