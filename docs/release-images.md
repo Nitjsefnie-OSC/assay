@@ -96,3 +96,9 @@ The image-producer tests use fake Docker and check real metadata and artifact
 bytes without registry access. The scan suites separately prove real-key and
 hidden-layer detection, fail-closed errors and exact-label precision. The
 complete release workflow must still be exercised after maintainer promotion.
+
+The changelog-roll job uses the same board-writer App through the token action's
+`client-id` input. Configure its public client ID as the `BOARD_APP_CLIENT_ID`
+variable in the protected `board-writer` environment; the existing
+`BOARD_APP_PRIVATE_KEY` secret remains the signing key. The client ID is not the
+numeric App ID.
