@@ -15,7 +15,7 @@ import (
 // One deliberate difference: statusgen passes a row whose Expect names no checkable
 // constraint on its exit status alone (and says so in its run log). Here that run is
 // judgeUndecided, never judgePass, because a pass is the proof a re-baseline rests on. An
-// Expect that says the exit is "non-zero" is undecided too: the reader has no exit number to
+// Expect that says the exit is "non-zero" without naming a number is undecided too: it has no number to
 // compare, and defaulting to 0 would pass the very run the row forbids.
 
 // judgement is the three-state result of one probed row.
@@ -33,6 +33,7 @@ const (
 // an "output is" line, and a "≥ N" floor on the last output line's trailing integer.
 type expectSpec struct {
 	exitCode int
+	invalid  bool // a named numeric constraint overflowed; never proof
 	exitFrom bool // the Expect named the exit explicitly
 	nonZero  bool // the Expect says the exit is non-zero, which names no number to check
 	wantLine string
@@ -43,7 +44,7 @@ type expectSpec struct {
 // decidable reports whether the Expect names a constraint the judge can check (statusgen's
 // decidable), and does not leave the exit open as "non-zero".
 func (e expectSpec) decidable() bool {
-	return !e.nonZero && (e.exitFrom || e.wantLine != "" || e.minSet)
+	return !e.invalid && !e.nonZero && (e.exitFrom || e.wantLine != "" || e.minSet)
 }
 
 var (
@@ -68,12 +69,15 @@ func parseExpect(cell string) expectSpec {
 	if m := expectExitRe.FindStringSubmatch(exitRest); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil {
 			spec.exitCode, spec.exitFrom = n, true
+		} else {
+			spec.invalid = true
 		}
 	}
-	spec.nonZero = expectNonZeroRe.MatchString(exitRest)
+	spec.nonZero = !spec.exitFrom && expectNonZeroRe.MatchString(exitRest)
 	if m := expectMinRe.FindStringSubmatch(rest); m != nil {
-		spec.minCount, _ = strconv.Atoi(m[1])
-		spec.minSet = true
+		n, err := strconv.Atoi(m[1])
+		spec.minCount, spec.minSet = n, true
+		spec.invalid = spec.invalid || err != nil
 	}
 	return spec
 }

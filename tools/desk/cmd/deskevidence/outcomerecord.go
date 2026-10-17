@@ -127,7 +127,7 @@ func cmdOutcomeRecordWrite(localFile, repoSlug, owner, name, branch, root string
 	// attestation for another brief refuses here. The refusals above need only the record's
 	// own bytes, so a record they refuse never mints; everything below reads or writes the
 	// forge and runs only for an admitted landing.
-	fg, fr, receipt, aerr := admitLanding(root, repoSlug, owner, name, targetRepoPath, ac)
+	fg, fr, receipt, aerr := admitLanding(root, repoSlug, owner, name, targetRepoPath, branch, ac)
 	if aerr != nil {
 		return aerr
 	}
@@ -233,6 +233,9 @@ func cmdOutcomeRecordWrite(localFile, repoSlug, owner, name, branch, root string
 			return cerr
 		}
 	} else {
+		if kerr := plainFileRead(cur, fr, targetRepoPath, branch, "whether the outcome record is already recorded", true); kerr != nil {
+			return kerr
+		}
 		remoteExists, remoteContent = cur.Exists, cur.Content
 	}
 
@@ -337,12 +340,16 @@ func cmdOutcomeRecordWrite(localFile, repoSlug, owner, name, branch, root string
 		return landOutcomeRecordAsChange(fg, fr, repoSlug, branch, targetRepoPath, commitContent, wr.Brief, ac)
 	}
 
-	attr, aerr := checkAttribution(fg, fr, res.SHA, res.Author)
-	ac.detail = fmt.Sprintf("committed %s to %s on %s (sha %s) — %s", targetRepoPath, repoSlug, branch, shortSHA(res.SHA), attr)
+	if reportWriteNoop(res, targetRepoPath, ac) {
+		return nil
+	}
+
+	attr, aerr := checkWriteAttribution(fg, fr, res)
+	ac.detail = fmt.Sprintf("committed %s to %s on %s (sha %s) — %s", targetRepoPath, repoSlug, branch, string(res.CommitSHA), attr)
 	if aerr != nil {
 		return aerr
 	}
-	fmt.Fprintf(stdout, "committed %s to %s on %s (sha %s) — %s\n", targetRepoPath, repoSlug, branch, shortSHA(res.SHA), attr)
+	fmt.Fprintf(stdout, "committed %s to %s on %s (sha %s) — %s\n", targetRepoPath, repoSlug, branch, string(res.CommitSHA), attr)
 	return nil
 }
 
@@ -374,6 +381,10 @@ func landOutcomeRecordAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug,
 				"verify-outcome record was NOT landed", side), nil)
 	}
 
+	if reportWriteNoop(res, target, ac) {
+		return nil
+	}
+
 	// CreateHeldDraftChange, never the raw CreateDraftChange — see landEvidenceAsChange (#2254).
 	pr, perr := deskkit.CreateHeldDraftChange(fg, fr, deskkit.DraftChangeInput{
 		Title: "Evidence: " + target,
@@ -390,24 +401,18 @@ func landOutcomeRecordAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug,
 		return perr
 	}
 
-	headSHA := ""
-	if res.Author == "" && pr != nil {
-		if got, gerr := fg.GetPullRequest(fr, pr.Number); gerr == nil && got != nil {
-			headSHA = got.HeadSHA
-		}
-	}
-	attr, aerr := checkAttribution(fg, fr, headSHA, res.Author)
+	attr, aerr := checkWriteAttribution(fg, fr, res)
 	loc := fmt.Sprintf("change #%d", pr.Number)
 	if pr.URL != "" {
 		loc = pr.URL
 	}
-	ac.detail = fmt.Sprintf("landed %s on %s in %s via draft %s — default branch not directly writable — %s",
-		target, repoSlug, side, loc, attr)
+	ac.detail = fmt.Sprintf("landed %s on %s in %s via draft %s (commit %s) — default branch not directly writable — %s",
+		target, repoSlug, side, loc, res.CommitSHA, attr)
 	if aerr != nil {
 		return aerr
 	}
-	fmt.Fprintf(stdout, "landed %s on %s: %s takes no direct write, so wrote branch %s and opened draft %s — %s\n",
-		target, repoSlug, base, side, loc, attr)
+	fmt.Fprintf(stdout, "landed %s on %s: %s takes no direct write, so wrote branch %s and opened draft %s (commit %s) — %s\n",
+		target, repoSlug, base, side, loc, res.CommitSHA, attr)
 	return nil
 }
 
@@ -461,6 +466,9 @@ func deriveOutcomeReceipt(raw []byte, root string, fg deskkit.Forge, fr deskkit.
 	landed, rerr := fg.ReadFile(fr, deskkit.ReadFileInput{File: briefPath, Ref: branch})
 	if rerr != nil {
 		return nil, deskkit.Unverifiable("cannot read "+briefPath+" on "+branch+" to hash the receipt's brief revision", rerr)
+	}
+	if kerr := plainFileRead(landed, fr, briefPath, branch, "the receipt's brief revision", true); kerr != nil {
+		return nil, kerr
 	}
 	if len(observedSource) != 40 {
 		return nil, deskkit.Refused("refused: outcome receipt needs its admitted observation commit")

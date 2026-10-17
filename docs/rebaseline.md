@@ -24,7 +24,7 @@ the review and the human merge are the independent layers behind it.
 
 | Class | Proof required | Status |
 |-------|----------------|--------|
-| `safe:rename` | The row pins a path that no longer exists, and git records a **single** rename/move hop from it to a path that exists now (`git log --follow`). The row is then **re-run** with the old path rewritten to the new one in its Command and Expect, and it must pass that Expect. The work is intact; only the pinned path moved. | **live** |
+| `safe:rename` | The row pins a path that no longer exists, and git records a **single** rename/move hop from it to a path that exists now (`git log --follow`). The row is then **re-run** with the old path rewritten to the new one in its Command and Expect, and it must pass that Expect. Only whole literal path tokens are rewritten; similarly named paths keep their meaning. The work is intact; only the pinned path moved. | **live** |
 | `safe:count` | The row's Expect is a count whose current value differs, and the target files changed **only by additions** since the Evidence date — the higher count is growth, not a regression. | *not yet implemented* |
 | `safe:idiom` | The row pins a tool idiom **retired by a recorded ruling** (e.g. a renamed flag). The command idiom moved; the checked behaviour did not. | *not yet implemented* |
 
@@ -75,9 +75,10 @@ deskrebaseline <brief> --row K [--root DIR] [--repo owner/name] [--open]
     `exit=N` is printed output, not the required exit), an `output is` line, and a `≥ N`
     floor. A row whose Expect is `exit 1` and whose command exits 1 has not changed.
     An Expect that names none of those is **undecided**, not a pass: prose only, a backticked
-    token only, or an exit given as "non-zero" with no number. `statusgen` would pass such a
+    token only, or an exit given as "non-zero" with no number. An explicit numeric exit wins over explanatory "non-zero" prose; an overflowed numeric constraint is undecided. `statusgen` would pass such a
     row on its exit status alone. Here it is never proof, so a renamed row with an undecided
     Expect is `refused:unclassified`, and so is an undecided behaviour probe.
+  - **Comment-led and comment-only rows are never executed**, by either the behaviour probe or the rename re-run. A comment's no-op exit is never proof of `safe:rename`.
   - **An escaped pipe `\|` in the Command cell is part of the command.** Rows are split the way
     `statusgen` splits them, and the probe runs the un-escaped pipeline.
 - **With `--open`** — on a `safe:*` verdict it rewrites that one row, commits it on a

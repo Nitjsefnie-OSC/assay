@@ -19,6 +19,9 @@ type verifyRow struct {
 	Num     int
 	Class   string // check | check:ci | gate:model | gate:human
 	Command string
+	// CommentLed is verifycmd.CommentLed of the raw cell: why the row's command is
+	// only a shell comment, or "". runBriefRows never executes such a row (#2684).
+	CommentLed string
 }
 
 // runnerExecuted reports whether this class is one the deterministic runner executes.
@@ -86,9 +89,10 @@ func parseVerifyRowsIn(section string) []verifyRow {
 			// otherwise unwraps a fully-backticked cell exactly as before. The split
 			// kept `\|` in the cell; the runner executes the un-escaped pipeline (#1953).
 			rows = append(rows, verifyRow{
-				Num:     num,
-				Class:   class,
-				Command: verifycmd.UnescapePipes(verifycmd.Lift(cell(cmdCol))),
+				Num:        num,
+				Class:      class,
+				Command:    verifycmd.UnescapePipes(verifycmd.Lift(cell(cmdCol))),
+				CommentLed: verifycmd.CommentLed(cell(cmdCol)),
 			})
 		}
 		return rows

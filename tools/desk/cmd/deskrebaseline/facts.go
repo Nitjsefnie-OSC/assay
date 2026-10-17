@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
 // facts.go — gather the RowFacts the classifier decides on, from a real checkout: which
@@ -61,11 +63,6 @@ func probeRow(dir, command, expectCell string) (ran bool, j judgement) {
 	return ran, parseExpect(expectCell).judge(ran, rc, out)
 }
 
-// renamed substitutes a row's stale pinned path with its rename hop. The rename re-run
-// (gatherRowFacts) and the rewrite (computeNewRow) share it, so the row that is proven is
-// the row that is written.
-func renamed(s string, f RowFacts) string { return strings.ReplaceAll(s, f.PathRef, f.RenameHop) }
-
 // pathToken matches a path-like token in a command cell: a run of path characters that
 // either contains a slash or ends in a common source/artifact extension. It is intentionally
 // conservative — a false path candidate that exists is simply reported PathExists, and one
@@ -87,6 +84,12 @@ func gatherRowFacts(repoRoot string, row verifyRow, riskBearing bool, riskReason
 
 	f.PathRef, f.PathExists, f.RenameHop = resolvePinnedPath(repoRoot, row.Command)
 
+	// Both execution paths share the comment gate. Neither a raw comment-led cell nor
+	// a directly constructed comment-only command can establish rename proof (#2684).
+	if row.Command == "" || row.CommentLed != "" || verifycmd.CommentOnly(row.Command) {
+		return f
+	}
+
 	// A rename hop is only proof once the row, rewritten to the hop, passes its own Expect
 	// against the renamed file (#1953). This runs the rewritten command, even in dry-run.
 	if f.PathRef != "" && !f.PathExists && f.RenameHop != "" && row.Command != "" {
@@ -101,7 +104,7 @@ func gatherRowFacts(repoRoot string, row verifyRow, riskBearing bool, riskReason
 
 	// Behaviour probe only when there is no stale-path question to answer first.
 	if f.PathRef == "" || f.PathExists {
-		if row.Command != "" {
+		if row.Command != "" && row.CommentLed == "" && !verifycmd.CommentOnly(row.Command) {
 			ran, j := probeRow(repoRoot, row.Command, row.ExpectCell)
 			f.CommandProbed = true
 			f.CommandRan = ran

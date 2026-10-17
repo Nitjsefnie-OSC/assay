@@ -30,6 +30,8 @@ type verifyRow struct {
 	Command    string
 	Expect     string
 	ExpectCell string
+	// CommentLed judges the raw cell before command lifting (#2684).
+	CommentLed string
 }
 
 // loadedBrief is a brief resolved to a file, with its risk declaration and Verify rows.
@@ -205,6 +207,7 @@ func parseVerifyRows(content string) []verifyRow {
 				Command:    verifycmd.UnescapePipes(verifycmd.Lift(cell(cmdCol))),
 				Expect:     expect,
 				ExpectCell: expectCell,
+				CommentLed: verifycmd.CommentLed(cell(cmdCol)),
 			})
 		}
 		return rows

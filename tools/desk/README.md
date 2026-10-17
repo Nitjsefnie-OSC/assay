@@ -54,7 +54,7 @@ changed or discarded.
 | `verifyloop` | `plan` | read-only (spawns nothing, writes nothing) | no |
 | `scanloop` | `plan` (read-only queue print), `run` (one drain pass), `land` (record a judgment exit for a parked item) — the intake desk's drain consumer: it wraps the durable inbound poller, applies the trust gate BEFORE queueing, dispatches the whole-scope scan ONCE per pass (batching every mechanical item behind one branch and one PR), bounds the scan-PR coalesce window, regenerates the scan PR's title/body on every push, and records exactly ONE tracked exit per inbound item, each also appended as an `intake-exit-v1` record to `<state dir>/intake-exits.jsonl` (schema: `spec/intake-exit-v1.md`) | read-only (`plan`) / outward write (`run`, through `deskpr` and `deskfile`) / local state (`land`) | yes (`run`) |
 | `reviewloop` | `plan` — pr-review-desk's BOARD REACTOR: classifies a `deskboard` sweep against an action table derived from deskboard's own ACTION constants, coalesces outward verbs on `(repo, pr, head, verb)`, and answers the #79 idle question in THREE states. Not a drain: it does not link `internal/loopengine`. `--records <thread.json>` additionally derives the PERSISTENT REVIEW-FINDING ledger for one PR (`review-finding/v1`; `deskkit.DeriveLedger`): outstanding findings, per-class rounds against the existing cap, the single arbiter packet, and every could-not-check — so finding IDs and round counts survive a replacement agent | read-only (spawns nothing, writes nothing, makes no GitHub call) | no |
-| `deskboot` | `<role>` — the adapter verb for a loop's BOOT seam: loop identity, worktree prune + lock, roster register, envelope preflight, token-mint proof, board summary. Fails closed with the step NAMED | local-only (delegates every step to the verb that owns it) | no |
+| `deskboot` | `<role>` — the adapter verb for a loop's BOOT seam: loop identity, worktree prune + lock, roster register, envelope preflight, token-mint proof, board summary, worktree currency, first-sweep prerequisites (a roster forge mapping for the repo; desk-tools provenance — a pin line or the in-tree source, never statusgen lines alone). Fails closed with the step NAMED | local-only (delegates every step to the verb that owns it) | no |
 | `deskdispatch` | `<item-key>` — the adapter verb for a loop's DISPATCH seam: durable claim, worktree in the item's own repo, the `before_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (failure ⇒ exit 6, no prompt, claim released), roster register, human-decision gate, model-stamp labels, assembled agent prompt from `cmd/deskdispatch/references/` | outward write (the wrapped claim + stamp) | no |
 | `deskflip` | `<N>` — the adapter verb for a loop's LAND seam: the ready-flip gate. Refuses unless the reviewer App approved AT HEAD, checks are green, the PR is mergeable, the `desk-decided` label and body block agree with no standing `Undeclared-desk-decision:` finding, a risk-classed PR carries a security verdict at head, and the caller is the review role | outward write | no |
 | `deskpost` | `review`, `security-review`, `comment`, `ready` — as the reviewer App; `finish` posts a verdict, confirms it at the reviewed head and releases the review claim in one command | outward write | yes |
@@ -67,7 +67,7 @@ changed or discarded.
 | `deskdisposition` | `set`, `read`, `sweep` — machine-readable PR disposition records (#728/#827); records a verdict, never closes | outward write (`set`) / read-only (`read`, `sweep`) | yes |
 | `deskmerge` | `check` — merge-currency in three states, writes nothing; `merge` — merges main INTO a PR branch, gated on a fetched human sign-off of R-5 (unsigned today, so it merges nothing) | read-only (`check`) / outward write (`merge`) | yes (`merge`) |
 | `deskscanbody` | `emit`, `check` — derives the issue-loop scan PR title/body from the branch diff (#685) | local-only (git read) | no |
-| `deskevidence` | `commit` — Evidence via the Contents API, as the verifier App | outward write | yes |
+| `deskevidence` | `commit` — conditional Evidence publication, as the verifier App | outward write | yes |
 | `deskrun` | `<owner/repo> <workflow> --ref <r> [-f k=v …]` (dispatch one run, print the run it created), `approve <owner/repo> <run-id> --gate <name>` (clear ONE named deployment gate), `status <owner/repo> <run-id>` — under the repo's roster-bound run credential (`ASSAY_RUN_CREDENTIALS`): the dedicated `release-runner` credential proceeds, a `human:<name>` binding is REFUSED (exit 5) before anything is minted, an unbound repo is could-not-check (exit 6). On GitHub, `approve` is could-not-check under an App credential (required reviewers are users or teams). Never `repository_dispatch`; GitLab starts pipelines with the trigger token | outward write (`status`: read) | yes |
 | `deskreconcile` | (no verbs) `--worktree DIR [--issue N] [--dry-run]` — the desk-side board-reconcile writer: fetches origin/main into an isolated worktree, runs `statusgen reconcile --backfill --apply` (the command that flips a stream README Status cell `todo`/`in-progress` → `implemented`, real merged-PR witness only), and — only when a stream README changed — commits ONLY those README files as ONE commit on the fixed branch `board/reconcile` and opens/UPDATES exactly one draft PR titled `chore(board): reconcile`. Removes the scheduled-CI dependency #1175 is blocked on (no App may push the workflow change). `--dry-run` reports the rows it would flip and writes nothing | outward write (the commit + `deskpr` carry) | yes |
 | `deskrelease` | `cut <tag>` — create-only tag ref, as the desk App | outward write | yes |
@@ -80,6 +80,7 @@ changed or discarded.
 | `desktoken` | `<role>` — mint/reuse an App installation token | local-only (token cache) | no |
 | `deskapps` | `init` — the GitHub App Manifest-flow installer: serves the loopback page, posts the tier's manifests, converts the callback code, writes the PEM/records/role bindings. `resume`/`status`/`avatar` are later briefs (03/04/06) | local-only + loopback HTTP (no outward GitHub write of its own — the App is created by GitHub on the person's own click) | no |
 | `deskfleet` | `provision` — GitLab fleet bootstrap, the Go port of `tools/create-fleet-gitlab.sh`: seven role service accounts, memberships and PATs written owner-only to `gitlab-<role>.token` and read back through the deskkit custody check (inconclusive read-back = WARN; definite failure = stop; a partial run STOPS and REPORTS every minted token, every account created with no token and every could-not-check request, never revokes — the recorded custody ruling), then with `--project` the protected `main` / approvals / release tags / merge checks / labels; `--avatars-dir` has each new account set its own avatar (no default icon fetch; skipped and named without it), `--avatars-only` sets existing accounts' avatars; `labels` — the nine fleet labels on a GitHub repo or GitLab project from ONE table. `--dry-run` makes zero network calls; a real run refuses without `GITLAB_API_BASE` | outward write (bootstrap: reads no roster; the credential is a human-supplied file) | no |
+| `deskgitlab` | `create` — the Go port of `tools/create-fleet-gitlab.sh` (desktools-v2/30), which is now an adapter that execs `deskgitlab create` with its arguments unchanged: the same flags, output, exit codes and idempotent steps (seven role service accounts, memberships, first PATs and own avatars, then with `--project` the protected `main` / approvals / release tags / merge checks / labels, and `--tier ultimate`'s two refinements). The owner PAT is read from `GITLAB_TOKEN` only, never a flag. `--dry-run` makes zero network calls; help and version read nothing | outward write (bootstrap: reads no roster; the credential is a human-supplied environment variable) | no |
 | `deskroster` | `set`, `drop`, `list`, `mine`, `width`, `repos`, `apps`, `preflight` | local-only, out-of-git (`preflight` mints a token and runs one read-only transport probe) | no |
 | `muhar` | `-spec <file>` mutation harness, `-j <n>` mutations in flight (isolated tree per worker), `-shard i/n` this invocation's slice of the spec (shards partition it; baseline + control run per shard) | local diagnostic (no `Guard`) | no |
 | `writeguard` | PreToolUse hook (F-34 isolation backstop) | hook | n/a |
@@ -100,6 +101,32 @@ defaults. Malformed, duplicate or disallowed entries refuse the whole inventory 
 before printing any rows. This read checks the mapping, not checkout existence or board contents.
 `--scope topology` retains the stated compiled topology. The default `--scope all` retains its
 write, scan and topology inventories; request `roots` explicitly for board-root coverage.
+
+### Evidence publication requests
+
+`deskevidence` shares a snapshot within one publication. On GitHub its admission
+read batches the dispatcher attestation, body-edit history, current labels and
+label provenance, live repository visibility, and the destination file under one
+branch commit. Existing validators consume those facts only after admission.
+The outbound checker and the write use the same file bytes. The existing Contents write
+requires that exact file revision, so a concurrent edit refuses the publication
+rather than overwriting a change. Commits to unrelated files remain compatible. A normal single-file Evidence update takes
+**two requests: one read and one conditional commit**. An already-landed update
+or a dry run needs only the read.
+
+GitLab reuses the attestation issue, destination file and project metadata within
+the publication. It retains its native description-edit history, resource-label
+events and author-identity reads; file updates carry the observed `last_commit_id`.
+The protected default branch still returns the existing sentinel and the caller
+publishes through a side branch and draft merge request. It does not inherit a
+two-request promise: the offline ordinary-update fixture takes seven requests,
+including the author lookup; merge-request publication adds its own calls.
+
+Snapshots never survive an invocation. Overflowing GitHub label histories use
+the complete existing reader. Outcome records can require additional related-file
+and blocker reads. Token minting, conflicts and recovery are outside the two-call
+happy path. A failed commit acknowledgement stays unknown and is never replayed
+automatically; a fresh invocation reads the branch to reconcile it.
 
 ## Your first hour with desk-tools
 
@@ -248,9 +275,14 @@ gh pr view <pr> -R <owner/repo> --json isDraft   # must print true
 Two constraints worth knowing before you reach for them. `deskreply` replies **only on
 your own PR** — it compares the branch checked out in this worktree against the PR's head
 branch and refuses with exit 5 otherwise, so it is not a way to comment on someone else's
-work. And `deskpost comment` posts under the reviewer App identity
-(`assay-reviewer-app[bot]`), not yours; it offers no worker identity, which is precisely
-why `deskreply` exists.
+work. `deskpost comment` uses reviewer credentials and admits only callers whose
+`DESK_LOOP` resolves to the reviewer role. Other roles refuse before credential minting
+or forge access, with guidance for the caller's target: use
+`deskfile attach -R <owner/repo> --to <issue-number> --body-file F --kind issue`
+for an issue comment under your session's role, or `deskreply` for your own PR.
+Keep your own loop identity; changing it to the reviewer loop would change the role you
+are claiming rather than select your caller's App. Review, security-review and ready
+retain their existing reviewer authority.
 
 Every write verb runs `deskkit.BodyCheck` over what you are about to post — titles,
 branch name, body, and for `deskpr create` the diff against the default branch. A hit is
@@ -413,7 +445,9 @@ desk commands append ONE `perf-v1` line per completed invocation to a local day 
 All 67 operational commands are wrapped, including deskfile, deskreply, scanloop, issueboard,
 reviewloop, verifyloop and the supervisor. `deskperf` is excluded so reading a report cannot
 change its input; `muhar` is a developer mutation harness with separate execution accounting.
-A command-inventory test fails when a new entrypoint forgets its wrapper:
+A command-inventory test fails when a new entrypoint forgets its wrapper. `statusgen` writes the same
+record (tool `statusgen`, verb = its mode) through the same shared `perfrec` module, so
+`deskperf report --tool statusgen` reads it too:
 
 ```sh
 export ASSAY_TELEMETRY=1        # opt in; unset it to stop — the history then ages out
@@ -3015,9 +3049,16 @@ Read-only classification is an **allowlist per CLI**, which is the fail-closed d
 nobody classified is MUTATING, so a subcommand added upstream tomorrow is refused rather than
 waved through on the day it appears. `k9s` carries an EMPTY allowlist on purpose: it is an
 interactive TUI whose mutating operations are reachable from inside the session, so nothing in its
-`argv` can establish that a call is read-only. The verb scan skips flags and the values of global
-flags that consume one (`-n ns get pods` classifies on `get`, not on `ns`); that table can only
-remove false REFUSALS, since an unrecognised token still lands on the mutating side.
+`argv` can establish that a call is read-only. The verb scan skips `--flag=value` tokens and the
+global flags it knows consume a value, with that value (`-n ns get pods` classifies on `get`, not
+on `ns`). Any OTHER flag before the subcommand makes the call unclassifiable, so it lands on the
+mutating side: its arity is unknown, and a flag that consumes the next argument hides the real
+verb — real `kubectl --username get delete pod x` runs `delete`, with `get` as the username. So
+the value-flag table can be incomplete without a false pass; a missing entry costs a false
+refusal, which the operator answers by writing the flag as `--flag=value` or after the subcommand.
+The table's one hazard is the reverse: an entry for a flag that takes NO value would make the
+scan skip the real verb, so a flag goes into it only when the CLI's own help shows it consumes an
+argument.
 
 Exit `5` is a **refusal, not a fallback trigger**. The message says so explicitly: reaching the
 same CLI by absolute path, by a rebuilt `PATH`, or through another tool is not the sanctioned
@@ -3837,6 +3878,9 @@ way).
 `deskkit.NoticeLaneVerdict`). An item is admitted only when ALL of these hold:
 
 - no caller label marks it one-way: `human-only`, `security`, `gate:human`;
+- it is not a human-only hand-off: `deskfile` checks this before the verdict, with the same
+  test its act gate uses, so a body whose first non-blank line opens with `BLOCKED-ON-HUMAN`
+  stays on `needs-decision` just as the `human-only` label does, and `--no-fork` refuses it;
 - no one-way term appears in the title or body — neither a `deskkit.HumanOnlySignals` needle
   (the list `deskdigest`'s classifier uses) nor a `deskkit.OneWayPatterns` match. The
   patterns are word-bounded and cover: merge; ready-flip; push to main and force-push;
@@ -4788,6 +4832,17 @@ no behavioural test can: it walks the AST and requires every return in `resolveI
 to be either `return "", <non-nil error>` or an ID from one of exactly three sanctioned
 sources (the `VERIFIER_INSTALL_ID` override, the process cache, GitHub's parsed answer).
 Adding a fourth source is then a deliberate edit to a named allow-list, in a diff.
+
+Landing receipts separate `WriteFileResult.ContentID`, the opaque file precondition, from
+`CommitSHA`, the exact commit created by the write. GitHub supplies `content.sha` and
+`commit.sha` separately. GitLab uses one Commit API action with the existing file's
+`last_commit_id` and optional `start_branch`, and takes the commit id from that write's
+response. Neither backend infers a commit from a blob digest or a later branch head.
+Both Evidence and outcome-record landings, direct or through a draft change, dereference
+the exact receipt as a commit before checking attribution. Missing or unresolvable commit
+identity is could-not-check (exit 6). A resolved account that contradicts the verifier
+binding also fails, even when the write response display-author matches. Successful output and the audit carry the full commit
+id for ancestry joins. A backend noop reports only the content id and creates no commit.
 
 After the PUT, the commit GitHub actually created is checked: `commit.author.name` must be
 `assay-verifier-app[bot]`. Three states, not two — matches → ok; a **different** name →
@@ -7246,11 +7301,14 @@ Two durable, stateful pollers ship in the plugin tree for a desk window to arm b
 harness `Monitor` tool: `inbound-monitor.sh` watches every repo's open issues and
 `pr-monitor.sh` watches every repo's open PRs (head sha, draft state, state, merge state).
 Both resolve the same repo set (args, `./.assay/repos.txt`, or the origin remote), keep a
-per-repo baseline so a repo's first sight SEEDS silently, poll as the keyring account (never an
-inherited App token that cannot see the private set), and RETAIN a repo's baseline on any read
+per-repo baseline so a repo's first sight SEEDS silently, read each repo under its own per-repo
+role token minted inside the poll (`desktoken <role> --repo <slug>`, the role resolved from
+`$DESK_LOOP`; `inbound-monitor.sh --token-file OWNER=PATH` outranks the mint for that owner) —
+never the ambient `gh` login and never an inherited `GH_TOKEN`; a repo whose mint fails is
+`MONITOR-DEGRADED` (could-not-check, exit 2), not an empty result — and RETAIN a repo's baseline on any read
 they cannot trust rather than go silently blind — a failed read, or a page that comes back at
 the explicit `--limit` (truncated: `gh` gives no truncation signal, so an at-limit read is a
-moving window, not ground truth). Neither script writes to the forge or holds a credential.
+moving window, not ground truth). Neither script writes to the forge or stores a credential (a minted token file is read in place).
 
 **The pacing contract** is the same for both scripts, so a wide repo set cannot become the
 tight-loop poll that trips the forge's secondary rate limit:
