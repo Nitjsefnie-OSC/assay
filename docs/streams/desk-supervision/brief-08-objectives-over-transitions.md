@@ -58,6 +58,8 @@ files:
   consumer routes against the exact historical delivery diff.
 - `docs/streams/desk-supervision/verify.d/08-mutations.py` — plant a failed task
   result and an additional consumer in scratch; require each oracle to reject it.
+- `docs/streams/desktools-v2/cli-migration.json` — classify these three source-only
+  acceptance instruments as tests, using exact-path entries.
 
 single-point-of-failure: the task set — if the five tasks do not exercise a state the
 procedural kit anticipates and the objective kit must discover, the comparison measures
@@ -121,6 +123,11 @@ command/oracle defects in rows 2, 5 and 9 tracked in #1363; it does not repeat t
 comparison. Row 9 reads only delivery `badd7b58c` against its first parent, so later
 skill edits cannot be misattributed to this item. Its consumer route now records the
 actual marker-only common-clause change; it never permits a guard-prose change.
+
+The rework CLI classifications are read by `tools/desk/internal/clicontract`;
+`TestCLIInventory` and `TestCLIRoutingMutations` validate their exact paths and
+retain the independent discovery, stale-rule and shipped-entrypoint checks. These
+classifications do not change the original delivery's three historical kit consumers.
 
 The later finding #2816 remains an acceptance blocker: the stored artifacts include
 no observer log, so duration records cannot establish wedges. The report now states
