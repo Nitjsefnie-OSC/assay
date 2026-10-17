@@ -23,6 +23,12 @@ Pending notable changes are recorded as one-file-per-PR fragments under
 here at release time. This section is written only by the release workflow;
 do not add highlight bullets to it directly.
 
+## v1.0.48 — 2026-10-17
+
+### Changed
+- Activate the release-owned container pipeline: umbrella releases build and verify all nine images and publish their immutable references with the binary artifacts.
+- The tag-push release resolves its authorizer from the selected pull request detail endpoint, since the commit pull-request list omits the merger. Both API responses must match the merged release marker and commit; missing or malformed details refuse publication. Offline tests execute the live and staged resolve shells against the actual list/detail response shapes.
+
 ## v1.0.47 — 2026-10-16
 
 ### Added
