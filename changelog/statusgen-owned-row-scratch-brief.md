@@ -1,0 +1,2 @@
+### Changed
+- Planned one owned scratch path for Verify rows: a documented idiom under the temp root with cleanup set before allocation, two lint rules for in-tree and unowned scratch that block added or changed rows, a run-owned temp directory in verifyrun that catches in-tree writes the lint cannot see, and corrections to the remaining named rows. This is an implementation brief; no runtime behavior changes yet.
