@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 1
+version: 3
 authored: 2026-10-17 by statusgen newbrief
 sources:
   - docs/desk-workflow-efficiency-spec.md
@@ -22,24 +22,34 @@ exec-tier: strong
 exec-tier-why: Semantic extraction, cost coverage and cross-caller failure behavior require independent contract judgment.
 domain: complicated
 consumers:
-  - "tools/desk/cmd/deskperf/: follow-up desk-tools/38"
-  - "tools/desk/internal/deskkit/: follow-up desk-tools/38"
-  - "tools/desk/cmd/deskboard/: follow-up desk-tools/38"
-  - "tools/desk/cmd/deskdispatch/: follow-up desk-tools/38"
-  - "tools/desk/cmd/issueboard/: follow-up desk-tools/38"
+  - "tools/desk/cmd/deskperf/: out-of-scope (unchanged reader accepts additive verb strings; exercised by existing command suite and LoadPerfHistory flow)"
+  - "tools/desk/internal/deskkit/: fixed-here (production attribution/counters and regression paths)"
+  - "tools/desk/cmd/deskboard/: fixed-here (production attribution/counters and regression paths)"
+  - "tools/desk/cmd/deskdispatch/: fixed-here (production attribution/counters and regression paths)"
+  - "tools/desk/cmd/issueboard/: fixed-here (production attribution/counters and regression paths)"
+  - "tools/desk/internal/reviewtest/perf_test.go: fixed-here (actual entrypoints, optional sink and planted production mutations)"
+  - "tools/desk/internal/deskkit/perf-mutations.json: fixed-here (retain the argv-leak mutation at the changed production record construction)"
+  - "docs/review-efficiency-qualification.md: fixed-here (production entrypoint acceptance and honest remaining coverage)"
+  - "docs/telemetry.md: fixed-here (closed vocabulary, inventory and measurement limits)"
+  - "tools/desk/cmd/deskread/: out-of-scope (existing reader/parser is unchanged; shared process/client helpers gain counters without caller changes)"
+  - "tools/desk/cmd/deskwt/: out-of-scope (existing hook caller and process policy unchanged)"
+  - "tools/desk/cmd/deskroster/: out-of-scope (existing liveness/visibility readers preserve results; shared transport now observes attempts)"
+  - "tools/desk/cmd/verifyloop/: out-of-scope (existing verifier Git caller and policy unchanged)"
+  - "tools/desk/cmd/{cellctl,deskautolane,deskclose,deskevidence,deskflip,deskgit,deskinbox,deskmerge,deskmonitor,deskpathguard,deskpost,deskrun,desksupervise,deskverdict,scanloop}/: out-of-scope (class sweep: shared helper counters apply; caller policy, argv and parsing contracts are unchanged)"
+  - "perfrec/: out-of-scope (closed schema and offline writer unchanged)"
 ---
 
 # Brief 38 — Correct desk performance attribution and counter coverage
 
 ## Context
 
-files: `tools/desk/internal/deskkit/perf.go` (existing), `tools/desk/internal/deskkit/perf_test.go` (existing), `tools/desk/internal/deskkit/perfcoverage_test.go` (existing), `tools/desk/cmd/deskboard/main.go` (existing), `tools/desk/cmd/deskdispatch/main.go` (existing), `tools/desk/cmd/issueboard/main.go` (existing), `tools/desk/internal/reviewtest/` (planned), `docs/telemetry.md` (existing), `changelog/desk-tools-38.md` (planned)
+files: `tools/desk/internal/deskkit/{perf,runtool,forgetransport,roletoken,verifierattestation,verifiertrackingcheckout,hooks,killswitch,dispatchrecord,callout,untrustscan,riskcallout,layaadvisor,trustliveness,trustliveness_gitlab,repovis}.go` (existing), `tools/desk/internal/deskkit/{perfprocess,perfhttp,citrigger}_test.go` (new/existing), `tools/desk/internal/deskkit/perf-mutations.json` (existing), `tools/desk/cmd/deskboard/{board,dispatch,nextup}.go` (existing), `tools/desk/cmd/deskboard/{perfchild,perfleaf,perfentry}_test.go` (new), `tools/desk/cmd/deskdispatch/{dispatch,stamponly,kits}.go` (existing), `tools/desk/cmd/{deskdispatch,issueboard}/perfentry_test.go` (new), `tools/desk/internal/deskkit/perf.go` (existing), `tools/desk/internal/deskkit/perf_test.go` (existing), `tools/desk/internal/deskkit/perfcoverage_test.go` (existing), `tools/desk/cmd/deskboard/main.go` (existing), `tools/desk/cmd/deskdispatch/main.go` (existing), `tools/desk/cmd/issueboard/main.go` (existing), `tools/desk/internal/reviewtest/` (planned), `docs/telemetry.md` (existing), `docs/review-efficiency-qualification.md` (existing), `changelog/desk-tools-38.md` (planned)
 
-facts: 17 October 2026 at the source pin above. Existing implementation is described in
+facts: 17 October 2026 at the source pin above. Version 2 expands the declared paths to the actual shared process/client observers and test-only entrypoint adapters; no execution policy or perf-v1 field changes. Version 3 retains the existing argv-leak mutation at its current source anchor and strengthens row 2 with successful ordinary-entrypoint work, nonempty audit history and actual budget/breaker reader observations plus production mutations. desk-tools/37 is merged through PR #3331 and integrated with a two-parent main merge. The deskboard CLI port #3248 merged at pickup and is integrated at its actual recording callback; its help/version/parse refusals keep their no-sample contract. The deskdispatch port #3302 remains open; preserve its parser acceptance separately. Existing implementation is described in
 approved spec §2. All named tests and paths marked planned below are deliverables, not
 passing claims. desk-tools/23 remains implemented, /24–25 done, /27 retains its own
 verification debt; desktools-v2/09 is verified and /45 implemented. Refresh actual source,
-claims and open PRs at pickup. #3248 and #3302 are active CLI ports; #3325 is proposed
+claims and open PRs at pickup. #3248 is merged and #3302 remains an active CLI port; #3325 is proposed
 supervision guidance and #3305 proposed generic improvement planning. Neither draft is
 assumed shipped. The initial blocker is the missing complete observation and attribution,
 not the full future runtime.
@@ -98,7 +108,7 @@ is asserted. Each test covers production flow plus the stated wrong-but-plausibl
 | # | Class | Command | Expect |
 |---|-------|---------|--------|
 | 1 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfCommandKit$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestPerfCommandKit ' "$o")` | exit 0; named PASS. Real entrypoints record stable allowlisted subcommands/kit mappings, including aliases/help/error forms; unknown/private argv never leak. Existing perf-v1 fixtures decode unchanged. |
-| 2 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfCoverageFlow$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestPerfCoverageFlow ' "$o")` | exit 0; named PASS. Production runner and transport record planted child/HTTP attempts, retry and 304 exactly once on instrumented paths; consent-off and broken optional sinks preserve exit/stdout/work/audit/budget. |
+| 2 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfCoverageFlow$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestPerfCoverageFlow ' "$o")` | exit 0; named PASS. Production runner and transport record planted child/HTTP attempts, retry and 304 exactly once on instrumented paths; consent-off and broken optional sinks preserve exit/stdout/work/audit/budget. Successful file-list, intake and stamp entrypoints preserve seeded history, append exactly one successful audit record and leave the same real budget/breaker decisions; skipped-work and erased-history production mutations fail these assertions. |
 | 3 | check:ci +dereference | `statusgen --root . --consumers --brief desk-tools/38` | exit 0; implementation consumer routing is corroborated against the actual diff. Out-of-scope judgments remain review obligations. |
 
 ## Pre-mortem and detection
