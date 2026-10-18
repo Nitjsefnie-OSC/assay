@@ -36,6 +36,7 @@ consumers:
 
 files: statusgen/difflint.go, statusgen/difflint_test.go, statusgen/main.go, docs/verify-row-strength.md, changelog/notice-ratchet.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - runDiffLintOne currently compares head PROBLEMs with base PROBLEMs and passes head NOTICEs through unchanged.
 - Existing closure gates in unfailableRowAudit must remain effective; a no-new-notices gate is an additional authoring boundary.
 - The base and head must be evaluated by the same binary, against immutable merge-base and head revisions.

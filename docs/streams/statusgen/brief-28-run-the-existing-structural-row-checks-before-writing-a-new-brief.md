@@ -4,7 +4,7 @@ title: "Run the existing structural row checks before writing a new brief"
 why: "The authoring generator can still write rows that the linter later calls broken. Refusing these rows before any file is written prevents repair work at its cheapest point."
 wave: 2
 depends: ["statusgen/26"]
-unblocks: []
+unblocks: ["statusgen/33"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}
@@ -37,6 +37,7 @@ consumers:
 
 files: statusgen/newbrief.go, statusgen/newbrief_test.go, statusgen/verifyrows.go, plugins/assay/skills/author-brief/SKILL.md, plugins/assay/skills/worker-desk/SKILL.md, changelog/newbrief-row-refusal.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - newbrief already derives risk, gate, wave and inverse edges, refuses placeholders/unusable commands, and writes atomically.
 - rowFindingsCtx is the canonical structural row evaluator; reuse it instead of copying its regular expressions.
 - The differential remains necessary for hand-authored briefs which bypass the generator.

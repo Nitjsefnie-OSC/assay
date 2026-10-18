@@ -38,6 +38,7 @@ consumers:
 
 files: statusgen/boardhonesty.go, statusgen/boardhonesty_test.go, statusgen/mergedstatus.go, statusgen/registerlinks.go, statusgen/verifiedrunneragree.go, tools/desk/cmd/deskevidence/flip.go, changelog/notice-loop-closure.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - homed-in already exists; do not add another dehousing field.
 - deskevidence already has a flip implementation; inspect and extend it rather than implement a duplicate Evidence writer.
 - Lifecycle boards are derived from corroborated events, not hand-edited status cells.

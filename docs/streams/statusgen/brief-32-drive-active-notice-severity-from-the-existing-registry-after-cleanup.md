@@ -38,6 +38,7 @@ consumers:
 
 files: statusgen/enforcementstatus.go, statusgen/enforcementstatus_test.go, statusgen/main.go, statusgen/verifyrows.go, statusgen/linkcheck.go, statusgen/riskfilescrossread.go, changelog/registry-severity.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - lintRuleRegistry currently documents enforcement; individual emitters and closure audits decide severity.
 - The registry already describes conditional fatal-on-closure behavior; replacing it with one unconditional boolean would weaken or overextend gates.
 - Consumer cleanup and release adoption are separate operations; a tool source merge does not prove a consumer is clean.

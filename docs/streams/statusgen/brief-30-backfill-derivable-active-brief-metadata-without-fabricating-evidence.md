@@ -37,6 +37,7 @@ consumers:
 
 files: statusgen/fixfrontmatter.go, statusgen/fixfrontmatter_test.go, statusgen/main.go, statusgen/consumers.go, statusgen/lifecyclelint.go, changelog/fix-frontmatter.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - No fix-frontmatter command exists at the checked source revision.
 - Consumers coverage requires a genuine back-reference, and routing tokens record whether work is still owed.
 - Git diff files are candidates for a declaration, not proof that every file belongs to the brief.

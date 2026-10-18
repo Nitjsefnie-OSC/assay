@@ -3,7 +3,7 @@ brief: assay:assay:statusgen:33
 title: "Drain actionable notice debt in this repository without rewriting closed records"
 why: "Repair tools do not remove the existing backlog until someone applies and reviews their output. One bounded corpus cleanup proves that the tools reduce real debt without changing old evidence."
 wave: 3
-depends: ["statusgen/26", "statusgen/27", "statusgen/29", "statusgen/30", "statusgen/31"]
+depends: ["statusgen/26", "statusgen/27", "statusgen/28", "statusgen/29", "statusgen/30", "statusgen/31"]
 unblocks: ["statusgen/32"]
 effort: M
 gate: model
@@ -32,6 +32,7 @@ consumers:
 
 files: docs/streams/*/brief-*.md, docs/streams/statusgen/active-notice-cleanup.md, changelog/active-notice-cleanup.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - Use the released/pinned binary containing statusgen/26 through statusgen/31, never an unrelated local build for before/after comparisons.
 - Only active brief Task/Context/Verify declarations may change; never alter Expect thresholds to obtain green.
 - No same-identity implementation can serve as independent verification of its own rewritten commands.

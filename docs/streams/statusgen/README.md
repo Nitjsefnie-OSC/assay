@@ -131,7 +131,7 @@ Existing completed history is unchanged.
 
 The [notice-debt contract](#lint-notice-debt) maps source briefs /26–/33.
 Wave 1: /26, /27, /31. Wave 2: /28 after /26; /29 and /30 after /27.
-Wave 3: /33 after /26, /27, /29, /30 and /31. Wave 4: /32 after /33 and
+Wave 3: /33 after /26, /27, /28, /29, /30 and /31. Wave 4: /32 after /33 and
 participating-consumer cleanup receipts. The longest source chain is /27 → /29
 and /30 → /33 → /32. /26 prevents replenishment before cleanup is accepted.
 Consumers separately verify a released artifact, adopt the pin and complete their
@@ -157,6 +157,50 @@ scoping and count reporting; full pre-write row validation; conservative row and
 metadata repair tools; remaining board-drift loop consumers; and registry-owned
 conditional severity after cleanup. Source ownership is the statusgen module;
 consumer CI and pinned adoption are separate delivery boundaries.
+
+### Public rule-family inventory
+
+This inventory defines the acceptance sets used by /26–/33 at the source revision
+above. It describes existing checks, not a new runtime registry or a severity
+change. Rule identities below come from the existing lintRuleRegistry or emitter
+constants, retaining their exact spelling; not every registered identity is
+currently emitted as a bracketed tag. For an unregistered check, the existing Go
+function plus the stated condition is the inventory key, not an invented emitted
+tag. Implementers must preserve these identities in structured reports and
+account for every included finding.
+
+| Family | Included current identifiers and source owner | Repair disposition |
+|---|---|---|
+| A — structural Verify rows | `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`, `rE2-literal-pipe`, `unsubstituted-metavar`, `gorun-exit`, `bre-alternation`, `shredded-cell`, `moving-ref`, `gnu-only`, `gotest-run-vacuous`, `prose-led-command`, `cmd-marker-ambiguous`, `cmd-marker-overrides-command`, `cmd-marker-not-honoured`, `cmd-marker-vacuous`, `grep-pipe-zero-count` in `statusgen/verifyrows.go`; the older `verify-row-portability` check in `statusgen/verifyportability.go` | /29 may repair only a unique, semantics-preserving rewrite supported by the original command, Expect and immutable source. Missing metavariable values, ambiguous cells/markers, intended test names or output assertions require author evidence. Every active A finding must be resolved before /33 acceptance; automation is not required to invent a repair. |
+| B — row strength and source dereference | `trivially-green`, `no-output-assertion`, `table-touches-no-files` in `statusgen/strength.go`; `id-dereference` in `statusgen/linkcheck.go` | Author-owed unless the existing contract and source uniquely establish the intended assertion or identifier. A nonexistent identifier is never repaired by inventing a test; explicitly planned names retain the existing planned-name handling. |
+| B — risk, rationale and declared paths | `risk-files-crossread` in `statusgen/riskfilescrossread.go`; `checkBriefFiles` in `statusgen/brieffile.go`, specifically absent/substance-invalid `why` and absent `exec-tier-why` | /30 may derive a truthful file list only from an unambiguous immutable carrying-PR record. Risk answers, rationale and a missing/ambiguous carrying record are author-owed. An unreadable file list is could-not-check, never a zero finding count. |
+| B — consumer routing | `consumers-unrouted`, `consumers-followup-no-target`, `consumers-followup-one-way`, `consumers-prose`, `consumers-no-verify-row`, `consumers-missing-list`, `consumers-out-of-scope-no-reason`, and the already-fatal `consumers-followup-missing-brief` in `statusgen/consumers.go` | /30 may add a back-reference only at the uniquely named, existing active follow-up target with corroborated source provenance. Selecting a target, inventing a consumer/reason or editing a closed target is author-owed. Existing fatal checks remain fatal. |
+| B — ordering and legacy review metadata | `orderingGateNotices` in `statusgen/orderinggate.go`, for gate-shaped prose with no corroborating typed edge; `checkBriefFiles` in `statusgen/brieffile.go`, for a risk-classed done record with no security-review claim | Ordering suggestions require author review, never automatic dependency choices. Never manufacture a review claim. Corroborated pre-2026-08-15 closure dates retain the stated grandfather boundary; unknown dates remain could-not-check. Closed records are reporting inputs, not repair targets. |
+| C — board ownership and merged delivery | `already-merged-unflipped`, `out-of-repo-deliverable`, `dehoused`, `re-homed`, `statusgen-source-elsewhere`, `deferred-by-gate` in `statusgen/boardhonesty.go`; `sibling-merge-unreconciled` in `statusgen/siblingmerge.go`; `mergedPRStatusNotices` in `statusgen/mergedstatus.go`, for a merged implementation whose row remains todo/in-progress | /31 routes each observed class to existing eligibility/reconciliation owners. A heuristic mention is not an ownership declaration; unavailable forge/sibling evidence stays unknown. An Authors trailer never proves delivery. |
+| C — accepted-run attribution and register links | `verified-runner-attribution` in `statusgen/verifiedrunneragree.go`; `registerRefProblems` in `statusgen/registerrefs.go`, specifically references to a generated register view rather than a durable entry | /31 derives new attribution from the accepted run; historical Evidence stays frozen. The existing register backfill may rewrite a uniquely identified durable entry. Missing/ambiguous targets remain author-owed and no target is invented. |
+
+“Derivable Family B” is an instance-level disposition, not every rule in a B row:
+the report must name the immutable source and unique derivation for each repair.
+All other B instances are author-owed, with a named owner and tracked disposition.
+The /33 zero count covers all active A findings and exactly that corroborated B
+subset; historical A/B counts are separate. /32's proposed promotion set is A plus
+`risk-files-crossread`, subject to its human gate and cleanup/adoption receipts;
+other B and C rules are not implicitly promoted. /26 includes actionable A/B
+findings on changed briefs; /28 uses A and the existing identifier check. C remains
+with the existing loop owners rather than becoming an authoring-notice failure.
+Heuristic prompts such as `consumers-missing-list` do not by themselves prove an
+actionable defect: record the author's disposition, and retain that existing
+prompt-versus-verdict boundary when implementing the differential.
+
+Exclusions are explicit: archived documents and pre-existing closed records are
+outside the active repair/zero-count corpus; new closures keep all existing
+closure, fail-first, witness and independence gates. Environment/eligibility
+unknowns (including `eligibility-could-not-check`), operational debt counters,
+informational summaries, and separate pattern/runtime-resource linters are not
+members of A/B/C. Exclusion never converts unknown to clean or removes an existing
+PROBLEM. Other detectors are outside this bounded cleanup/promotion set and must
+be listed separately if observed; adding one requires an explicit inventory
+amendment and its source owner, never an implicit expansion or silent suppression.
 
 ### Required behavior
 
@@ -206,7 +250,7 @@ repository, so none of these source briefs is marked homed elsewhere.
 
 Wave 1: /26 ratchet, /27 reporting, /31 remaining drift owners.
 Wave 2: /28 generator after /26; /29 and /30 repairs after /27.
-Wave 3: /33 source-corpus cleanup after /26, /27, /29, /30 and /31.
+Wave 3: /33 source-corpus cleanup after /26, /27, /28, /29, /30 and /31.
 Wave 4: /32 registry promotion after /33 and participating-consumer cleanup receipts.
 
 The critical dependency chain is /27 → /29 and /30 → /33 → /32;

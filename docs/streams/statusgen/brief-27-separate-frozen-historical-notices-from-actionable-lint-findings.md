@@ -42,6 +42,7 @@ consumers:
 
 files: statusgen/main.go, statusgen/verifyrows.go, statusgen/linkcheck.go, statusgen/riskfilescrossread.go, statusgen/orderinggate.go, statusgen/lifecyclelint.go, statusgen/consumers.go, statusgen/brieffile.go, statusgen/notice_report.go, statusgen/notice_report_test.go, changelog/historical-notices.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - unfailableRowAudit already aggregates gotest-run-vacuous, prose-led-command and strength findings on pre-existing closed records; most other emitters still print individual records.
 - The enforcement registry describes conditional closure severity and is not a runtime severity switch.
 - A new closure on this branch is not historical merely because the head README says done.

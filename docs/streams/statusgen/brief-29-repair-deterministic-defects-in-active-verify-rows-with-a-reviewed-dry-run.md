@@ -37,6 +37,7 @@ consumers:
 
 files: statusgen/fixrows.go, statusgen/fixrows_test.go, statusgen/main.go, statusgen/verifyrows.go, docs/verify-row-strength.md, changelog/fix-rows.md
 facts:
+- Rule membership, exclusions and derivable/author-owed dispositions are defined by the [public rule-family inventory](README.md#public-rule-family-inventory); use that shared inventory for this brief's Task and Verify acceptance.
 - No fix-rows command exists at the checked source revision.
 - Markdown escaping and shell quoting are distinct; changing a regex flag alone can invert a check.
 - Recorded Evidence, Expect cells and closed brief commands are outside the rewriter write set.
