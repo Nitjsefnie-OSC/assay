@@ -227,6 +227,10 @@ The brief remains implemented, without a Verified stamp, until the provenance fi
 
 The original three acceptance rows and bounded fixture scope are distinct from supplemental author-added row 4, which receives no acceptance credit. The separate closure-reader defect remains tracked in #3342.
 
+Admission binding (pre-work dispatch provenance only; not an accepted verification result):
+
+Verification-Attestation: medici-finance/assay#3335 run=79d4705247e9d206708c0ddcc28a00e1cfaf0e27f1caa4521ce582963e9f47fd source=8f1206fe5eb4b4ab19f5f2f7266c515aa71f8eae brief=docs/streams/desk-tools/brief-37-review-workflow-semantic-oracle-and-matched-cost-baseline.md model=gpt-6.1-sol tier=strong
+
 **VERIFY: BLOCKED** — provenance review and artifact-access approval pending.
 
 ## Review
