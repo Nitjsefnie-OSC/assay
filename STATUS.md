@@ -20,7 +20,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [derived-board](docs/streams/derived-board/README.md) | P1 | active | 3/9 | 2026-10-18 |  |
 | [desk-containers](docs/streams/desk-containers/README.md) | P2 | active | 2/27 | 2026-10-18 |  |
 | [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 7/35 | 2026-10-18 |  |
-| [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/43 | 2026-10-18 |  |
+| [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/51 | 2026-10-18 |  |
 | [desktools-go-git](docs/streams/desktools-go-git/README.md) | P2 | active | 5/8 | 2026-10-18 |  |
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/56 | 2026-10-18 |  |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-18 |  |
@@ -75,13 +75,13 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **ACTIVE DRIVE — the Next-up score below carries an operator-declared steer.** `build-less-brittle` (push, +1500, 2026-10-16→2026-10-30); `desktools-v2` (push, +1500, 2026-10-16→2026-10-30). Each boosted pick shows its score DECOMPOSED as `base + term (drive:<slug>)` — the term is a temporal, attributed steer, ADDITIVE and walled off from every measured metric, never a value claim.
 
-> **DRIVE COVERAGE — drive "desktools-v2" covers 64% of the eligible board (> 40%) — its boost is self-taxed (concave scale-down) so tagging the whole board buys progressively less (anti-Goodhart, methodology-metrics/45)**
+> **DRIVE COVERAGE — drive "desktools-v2" covers 59% of the eligible board (> 40%) — its boost is self-taxed (concave scale-down) so tagging the whole board buys progressively less (anti-Goodhart, methodology-metrics/45)**
 
 > **COULD NOT CHECK — main-red arm could not check — no `--main-health` input was supplied, so whether main is red is unknown here (statusgen does not read live CI). A main-red fix cannot be lifted into the critical tier on this run; this is not a reading that main is green.**
 
-_Next-up: 17 of 50 eligible — 33 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 17 of 54 eligible — 37 held back (per-stream caps; span-of-control cap 20 not reached). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
-_Held by per-stream caps: 33 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (31), desk-tools (2). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
+_Held by per-stream caps: 37 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (31), desk-tools (6). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
 | Stream | Brief | Wave | Score |
 |---|---|---|---|
@@ -89,25 +89,25 @@ _Held by per-stream caps: 33 brief(s) across 2 stream(s) — top: desktools-v2. 
 | comms-core | 01 — Extract the comms contract and isolate Assay policy [exec:strong] | 0 | 4500 |
 | desk-containers | 16 — Interim mechanism for the runner-lifecycle `pause` transition — cell-scoped stop flags `STOP.cell.<cell>[.<loop>]`, honoured by the Guard for any session carrying the cell marker [exec:strong] | 7 | 4500 |
 | desk-containers | 17 — `cellctl up <cell>` converges the cell — already-up roles are skipped, stale ones reconciled, launches serialized, one summary table [exec:strong] | 8 | 4000 |
+| desk-tools | 45 — Expose the canonical verification queue to its consumers [exec:strong] | 1 | 3000 |
 | iso-9001 | 08 — Versioned source obligations and project applicability [exec:strong] | 0 | 2500 |
+| desktools-v2 | 30 — Port the GitLab fleet provisioner to a Go command [exec:strong] | 3 | 2000 + 1012 (drive:desktools-v2) |
 | apps-installer | 10 — `deskavatar --tier team` emits a third tile for `<org>-review`, proofed at 20 px against read and act | 0 | 3000 |
 | forge-neutral | 18 — statusgen off gh — one desk-tools read verb on the seam, offline lint by default, one git walk [exec:strong] | 5 | 3000 |
 | graph-execution | 11 — Optional pinned Laya provider with explicit CPU and GPU profiles [exec:strong] | 1 | 3000 |
-| desktools-v2 | 30 — Port the GitLab fleet provisioner to a Go command [exec:strong] | 3 | 2000 + 937 (drive:desktools-v2) |
 | measured-status | 05 — attribution.go: a same-identity author/verifier pair in a multi-identity repo becomes a hard PROBLEM, not a NOTICE — the independence gate the check exists to establish [exec:strong] | 1 | 2200 |
 | measured-status | 06 — model-floor: derive dispatch authority from the dispatch stamp, and give a first-class re-stamp path — stop refusing verdicts by guessing at a label actor's login [exec:strong] | 1 | 2200 |
 | composability | 02 — Install ledger, paired inverses, and the `disable` verb | 1 | 2000 |
 | derived-board | 07 — per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills | 4 | 2000 |
 | measured-status | 01 — Derive the deskkit exit-code table — record the convention ExitOK/Disabled/RateLimited/Refused/Unverifiable follow, and pin it with a test | 0 | 2000 |
 | desk-tools | 34 — Pinned golangci-lint across every Go module [exec:strong] | 1 | 1500 |
-| desk-tools | 27 — `deskboard`'s last serial repo loops onto the pool, `throughput` from one root resolution, `deskflip`'s cheapest gate first, and refusals that name the offline check [exec:strong] | 2 | 1000 |
 | forge-gitlab | 18 — Rotate the board-push credential in one process — the new value never reaches a shell, a transcript, a log or argv [exec:strong] | 5 | 1000 |
 
 ## Drive: `build-less-brittle`
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: fda8066 2026-10-17T21:39:46-05:00_
+_last regen: 04370d1 2026-10-18T08:01:51-05:00_
 
 **Progress:** 10/13 brief items done.
 
@@ -128,7 +128,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: fda8066 2026-10-17T21:39:46-05:00_
+_last regen: 04370d1 2026-10-18T08:01:51-05:00_
 
 **Progress:** 16/74 brief items done.
 
@@ -565,7 +565,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 34 Worker usage counts at claim release — counts only, never transcripts — todo (wave 1)
 - 35 Records and retention page lists every analysis record and what is never recorded — todo (wave 2)
 
-### desk-tools (29 open)
+### desk-tools (37 open)
 
 - 01 Binary channel sealed — publish the `.assay-versions` contract, validate it, stamp desk-tools with its release tag — implemented (wave 1)
 - 02 Generalize — batch-fanout as the second drain-engine consumer (contract validation) — implemented (wave 1)
@@ -596,6 +596,14 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 42 Narrow issue discovery projections before enrichment — todo (wave 3)
 - 43 Migrate review callers with qualified versions and rollback — todo (wave 4)
 - 44 Qualify complete workflow cost and last-consumer retirement — todo (wave 5)
+- 45 Expose the canonical verification queue to its consumers — todo (wave 1)
+- 46 Reuse accepted verification inputs to stop repeated PASS dispatch — todo (wave 2)
+- 47 Resume interrupted Evidence landing through the existing sanctioned paths — todo (wave 3)
+- 48 Report remaining landing capacity from the enforced budget owners — todo (wave 2)
+- 49 Deduplicate verifier filings by their canonical work identity — todo (wave 1)
+- 50 Bind verifier environment evidence to the run admission — todo (wave 1)
+- 51 Drive the verifier skill from the current queue and landing contract — todo (wave 4)
+- 52 Link decision and verification cards without conflating their authority — todo (wave 1)
 
 ### desktools-go-git (3 open)
 
@@ -1005,4 +1013,4 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 
 ## Totals
 
-**30** streams (**21** active, **0** paused, **9** parked) · **106/470** briefs done · completed initiatives: see `docs/archive/`
+**30** streams (**21** active, **0** paused, **9** parked) · **106/478** briefs done · completed initiatives: see `docs/archive/`
