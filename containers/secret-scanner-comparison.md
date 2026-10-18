@@ -49,7 +49,7 @@ comparison; it is a diagnostic CI artifact, not published pin evidence.
 
 ## Reviewed upstream baseline
 
-Every stock rule remains enabled. The approved baseline contains 137 individual
+Every stock rule remains enabled. The content-bound baseline contains 137 individual
 findings across 28 upstream text files: public Go tests/documentation/constants,
 Node headers and package sources, and two Debian Python compiler-adapter sources.
 Every file was compared byte-for-byte with its official distribution archive

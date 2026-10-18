@@ -164,13 +164,26 @@ class Refusals(unittest.TestCase):
         with self.assertRaises(scan.Incomplete):
             scan.verdict(canary_report() + [{'File': 'unknown', 'RuleID': 'private-key'}], {})
 
-    def test_scanner_error_malformed_report_and_exit_disagreement(self):
+    def check_report_refused(self, code, body, exception):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / 'inputs'; p.mkdir()
-            for code, body in [(2, b'[]'), (0, b'not json'), (0, b'{}'), (0, json.dumps(canary_report()).encode()), (9, b'[]')]:
-                with self.subTest(code=code, body=body), patch.object(scan.subprocess, 'run', return_value=subprocess.CompletedProcess([], code, body, b'private input')):
-                    with self.assertRaises((scan.Incomplete, ValueError)):
-                        scan.gitleaks(p)
+            result = subprocess.CompletedProcess([], code, body, b'')
+            with patch.object(scan.subprocess, 'run', return_value=result):
+                with self.assertRaises(exception):
+                    scan.gitleaks(p)
+
+    def test_scanner_exit_error_is_incomplete(self):
+        self.check_report_refused(2, b'[]', scan.Incomplete)
+
+    def test_malformed_report_is_incomplete(self):
+        self.check_report_refused(0, b'not json', ValueError)
+
+    def test_non_list_report_is_incomplete(self):
+        self.check_report_refused(0, b'{}', scan.Incomplete)
+
+    def test_report_exit_disagreement_is_incomplete(self):
+        self.check_report_refused(0, json.dumps(canary_report()).encode(), scan.Incomplete)
+        self.check_report_refused(9, b'[]', scan.Incomplete)
 
     def test_scan_never_pulls_and_has_no_host_config_or_network(self):
         with tempfile.TemporaryDirectory() as d:

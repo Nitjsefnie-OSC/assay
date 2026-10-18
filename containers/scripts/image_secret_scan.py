@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 
 SCANNER_IMAGE = 'zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb'
-BASELINE = Path(__file__).with_name('image-secret-baseline.json')
+BASELINE = Path(__file__).resolve().with_name('image-secret-baseline.json')
 
 
 class Incomplete(Exception):
@@ -193,7 +193,3 @@ def main():
         reason = str(e) if isinstance(e, Incomplete) else type(e).__name__
         print('image-secret-scan: cannot scan (exit 2): ' + reason, file=sys.stderr)
         return 2
-
-
-if __name__ == '__main__':
-    sys.exit(main())

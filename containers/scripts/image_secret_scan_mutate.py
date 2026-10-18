@@ -9,6 +9,11 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 source = (HERE / 'image_secret_scan.py').read_text()
 mutations = {
+    'ignore-scanner-exit': ('if p.returncode not in (0, 9):', 'if False:'),
+    'ignore-scanner-stderr': ('if p.stderr.strip():', 'if False:'),
+    'ignore-malformed-json': ('report = json.loads(p.stdout)', "report = json.loads(p.stdout) if p.stdout != b'not json' else []"),
+    'ignore-report-type': ('not isinstance(report, list) or bool(report)', 'bool(report)'),
+    'ignore-report-exit-agreement': (' or bool(report) != (p.returncode == 9)', ''),
     'last-layer-only': ('for layer in layers:', 'for layer in layers[-1:]:'),
     'ignore-digest': ("if hashlib.sha256(data).hexdigest() != name.removeprefix('blobs/sha256/'):", 'if False:'),
     'missing-canary-clean': ('if not canary:', 'if False:'),
