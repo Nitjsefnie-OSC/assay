@@ -125,8 +125,8 @@ is asserted. Each test covers production flow plus the stated wrong-but-plausibl
 
 ## Evidence
 
-Historical record (superseded for closure while provenance is reviewed):
-
+> Historical record (superseded for closure while provenance is reviewed):
+> 
 > Historical host run — superseded by the admitted Linux run below; retained as quotation.
 > 
 > > <!-- Independent verifier appends one row per Verify command after implementation. -->
@@ -216,22 +216,64 @@ Historical record (superseded for closure while provenance is reviewed):
 > 
 > 
 > Lifecycle closure remains implemented with no Verified stamp: the closure checker cannot represent the protected-table author-added supplemental row. Reproduction: statusgen brief --check-verified desk-tools/37 exits 1 naming row 4 as could-not-run despite its recorded execution and exclusion from acceptance. Tracked by [assay#3342](https://github.com/medici-finance/assay/issues/3342); no result was relabelled to bypass that check.
+> 
+> Review follow-up — 2026-10-18, assay-verifier-app[bot].
+> 
+> The earlier record is preserved above as historical quotation. Its tool-emitted fingerprints do not make the original underlying row stdout/stderr available: the first Docker attempt did not retain those bytes. A new execution cannot authenticate an earlier fingerprint. The retained original reports, literal inventory, rederivation, supplemental outputs and admission logs have been preserved separately for inspection.
+> 
+> An independent verifier has completed a separately identified new attempt with captured row output, exact fingerprint comparison and genuine admission before execution and after normal credential recovery. This observed runtime result is not yet an accepted verification: access to primary artifacts and the authorization record remains under review. The earlier final admission failure from an expired cached credential is retained beside the later successful recovery check; no source or sandbox rule was changed to pass it.
+> 
+> The brief remains implemented, without a Verified stamp, until the provenance findings are independently cleared. No prior or new execution summary substitutes for inspectable primary proof. Publication of the prepared restricted artifact index awaits the driver's authorization; no restricted payload was posted after the publication refusal.
+> 
+> The original three acceptance rows and bounded fixture scope are distinct from supplemental author-added row 4, which receives no acceptance credit. The separate closure-reader defect remains tracked in #3342.
+> 
+> Admission binding (pre-work dispatch provenance only; not an accepted verification result):
+> 
+> Verification-Attestation: medici-finance/assay#3335 run=79d4705247e9d206708c0ddcc28a00e1cfaf0e27f1caa4521ce582963e9f47fd source=8f1206fe5eb4b4ab19f5f2f7266c515aa71f8eae brief=docs/streams/desk-tools/brief-37-review-workflow-semantic-oracle-and-matched-cost-baseline.md model=gpt-6.1-sol tier=strong
+> 
+> **VERIFY: BLOCKED** — provenance review and artifact-access approval pending.
 
-Review follow-up — 2026-10-18, assay-verifier-app[bot].
+Primary-artifact audit follow-up — 2026-10-18, independent non-implementer inspection.
 
-The earlier record is preserved above as historical quotation. Its tool-emitted fingerprints do not make the original underlying row stdout/stderr available: the first Docker attempt did not retain those bytes. A new execution cannot authenticate an earlier fingerprint. The retained original reports, literal inventory, rederivation, supplemental outputs and admission logs have been preserved separately for inspection.
+Independent audit of the newly captured 2026-10-18 attempt inspected the retained primary bytes and original temporary-container approval. All 68 fresh manifest entries, all 12 namespace capture pairs and the 22 original-index entries match full SHA-256/size; direct/recorded qualification confirms normal-completion output/status preservation and real namespace isolation. This audit is separate from execution and does not reconstruct the earlier discarded Linux output.
 
-An independent verifier has completed a separately identified new attempt with captured row output, exact fingerprint comparison and genuine admission before execution and after normal credential recovery. This observed runtime result is not yet an accepted verification: access to primary artifacts and the authorization record remains under review. The earlier final admission failure from an expired cached credential is retained beside the later successful recovery check; no source or sandbox rule was changed to pass it.
+The actual run observed source `8f1206fe5eb4b4ab19f5f2f7266c515aa71f8eae`. Pre-admission succeeded; the exact witness commands exited 0. The initial final admission exited 5 on credential expiry/masked mint refusal and remains recorded. A separate genuine recovery admission, following normal same-role refresh, succeeded with the identical original run/source binding. No row was repeated for that recovery.
 
-The brief remains implemented, without a Verified stamp, until the provenance findings are independently cleared. No prior or new execution summary substitutes for inspectable primary proof. Publication of the prepared restricted artifact index awaits the driver's authorization; no restricted payload was posted after the publication refusal.
+Original protected acceptance rows 1–3 pass their bounded expectations. Row 1 retains the named workflow-oracle PASS, row 2 the named cost-cohort PASS. Row 3's command emits four UNCHECKED entries; independent inspection of delivery #3331's exact diff confirms all four declared production-adapter routes. Exit 0 alone is not consumer corroboration. Supplemental row 4 remains **author-added**, with no acceptance credit.
 
-The original three acceptance rows and bounded fixture scope are distinct from supplemental author-added row 4, which receives no acceptance credit. The separate closure-reader defect remains tracked in #3342.
+Source/tool identities and build-modified flags are retained explicitly. These observations qualify the local fixture and preserve unknown/partial process, provider and real-agent cost; they establish no production savings. A read-only comparison with main `06587d38fc8195bde31098616f7143f287a06baa` found the declared delivery inputs unchanged, but the recorded execution remains source 8f.
 
-Admission binding (pre-work dispatch provenance only; not an accepted verification result):
+The driver authorized the restricted evidence index and it was posted for the authorized reviewer audience. A separate non-implementer has now inspected the primary execution bytes, manifests, recorder qualification and original approval excerpt. Artifact access and provenance are established for this fresh attempt; the normal PR review remains independent. No additional Verify command was run for this audit.
 
+Captured native execution witnesses for the separate fresh attempt:
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestWorkflowOracle$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestWorkflowOracle ' "$o")` | pass exit=0 sandbox=unshare | sha256:6466c2ce1409 | 2026-10-18 | assay-verifier-app[bot] @ 8f1206fe5eb4+dirty (on-behalf-of human:ian) (forge-identity) |
+| 2 | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestCostCohort$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestCostCohort ' "$o")` | pass exit=0 sandbox=unshare | sha256:4256ba3472fe | 2026-10-18 | assay-verifier-app[bot] @ 8f1206fe5eb4+dirty (on-behalf-of human:ian) (forge-identity) |
+| 3 | `statusgen --root . --consumers --brief desk-tools/37` | pass exit=0 sandbox=unshare | sha256:2b01a4a50528 | 2026-10-18 | assay-verifier-app[bot] @ 8f1206fe5eb4+dirty (on-behalf-of human:ian) (forge-identity) |
+| 4 | `(cd tools/desk && GOWORK=off go test -count=1 -v -run '^TestGitPackagesInstallQuiet$' ./internal/gitquiet)` | author-added; execution exit=0 sandbox=unshare; no acceptance credit | sha256:afec4dc4a43c | 2026-10-18 | assay-verifier-app[bot] @ 8f1206fe5eb4+dirty (on-behalf-of human:ian) (forge-identity) |
 Verification-Attestation: medici-finance/assay#3335 run=79d4705247e9d206708c0ddcc28a00e1cfaf0e27f1caa4521ce582963e9f47fd source=8f1206fe5eb4b4ab19f5f2f7266c515aa71f8eae brief=docs/streams/desk-tools/brief-37-review-workflow-semantic-oracle-and-matched-cost-baseline.md model=gpt-6.1-sol tier=strong
 
-**VERIFY: BLOCKED** — provenance review and artifact-access approval pending.
+Exact command-output excerpts for the named-PASS assertions (complete row streams, not retained inner verbose test logs):
+
+Row 1: 37 bytes, SHA-256 `6466c2ce1409b07dcd7c98d5dc66e6e7d0e06cf7b510932c50424f27084c88c9`.
+
+```text
+--- PASS: TestWorkflowOracle (9.07s)
+```
+
+Row 2: 34 bytes, SHA-256 `4256ba3472fe926516fa5ae2e70f3c8cde28ef762b91137f5b50d3a51bc76ae6`.
+
+```text
+--- PASS: TestCostCohort (11.11s)
+```
+
+The consumer row contains a configuration-bearing prefix in its raw stream. Its complete raw bytes remain restricted and were independently hashed; public excerpts are separately redacted and do not claim the raw digest. The raw consumer output SHA-256 is `2b01a4a505285fb7ea9972d4bebbc6092553aaa56bebf2980b99fd5d53d388f2`; the actual summary is 0 corroborated, 0 disproved, 4 unchecked. The exact delivery inspection establishes the four declared routes.
+
+Protected-table provenance remains delivery #3331 at `2f4aa073176da03d448accedd7cc40479f39d7ef`, merge `e28201023c74b5f407ae98f9833ee4f79999f1db`, genuine pre-delivery merge-base `352d5f26cf7e8d6b43fdab75934d17cacf5ba57d`. Original rows 1–3 govern acceptance. Supplemental row 4 executed successfully but remains author-added.
+
+**VERIFY: BLOCKED** — the original three rows and bounded fixture expectations have observed passing results with inspected primary proof. Formal closure remains blocked by the author-added-row reader defect [#3342](https://github.com/medici-finance/assay/issues/3342), followed by the separate outcome-history writer defect [#3343](https://github.com/medici-finance/assay/issues/3343), and normal independent PR disposition. Lifecycle remains implemented with no Verified stamp. No acceptance result was relabelled and no guard was bypassed.
 
 ## Review
 
