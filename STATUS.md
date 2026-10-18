@@ -63,6 +63,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 | [brief-quality](docs/streams/brief-quality/README.md) | P1 | 0/9 | 2026-10-18 |
 | [ci-tooling](docs/streams/ci-tooling/README.md) | P2 | 0/7 | 2026-10-18 |
 | [continuing-operations](docs/streams/continuing-operations/README.md) | P2 | 0/2 | 2026-10-18 |
+| [desk-improvement](docs/streams/desk-improvement/README.md) | P2 | 0/10 | 2026-10-18 |
 | [fresh-views](docs/streams/fresh-views/README.md) | P2 | 0/6 | 2026-10-18 |
 | [performance-collection](docs/streams/performance-collection/README.md) | P2 | 0/9 | 2026-10-18 |
 | [server-controls](docs/streams/server-controls/README.md) | P2 | 0/5 | 2026-10-18 |
@@ -106,7 +107,7 @@ _Held by per-stream caps: 33 brief(s) across 2 stream(s) — top: desktools-v2. 
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: eded7ba 2026-10-17T19:51:55-05:00_
+_last regen: b27d29a 2026-10-17T20:32:11-05:00_
 
 **Progress:** 10/13 brief items done.
 
@@ -127,7 +128,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: eded7ba 2026-10-17T19:51:55-05:00_
+_last regen: b27d29a 2026-10-17T20:32:11-05:00_
 
 **Progress:** 16/74 brief items done.
 
@@ -519,6 +520,19 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 25 `cellctl desk --force` — diagnose a failed desk boot, repair what it can, ask before each destructive step, `-y` answers yes — todo (wave 2)
 - 26 Local PostgreSQL in Docker for a multi-cell host — pinned image, one database and restricted role per cell, runtime credentials, backup and restore drill, and the `cell.env` keys a cell reads its DSN from — todo (wave 3)
 - 27 PostgreSQL on Kubernetes with CloudNativePG — a Kustomize component with one Cluster, a database and role per cell, out-of-band Secrets, object-store backups, and the explicit local-to-CNPG migration procedure — todo (wave 4)
+
+### desk-improvement (10 open)
+
+- 01 Define the reusable scorecard and experiment contracts — todo (wave 0)
+- 02 Implement configurable scorecards and pure reduction — todo (wave 1)
+- 03 Validate analysis experiments and follow-up offline — todo (wave 2)
+- 04 Add evidence-led improvement procedures to desk roles — todo (wave 3)
+- 05 Bind desk assessments to canonical evidence records — todo (wave 1)
+- 06 Capture native loop-admin lifecycle and usage evidence — todo (wave 2)
+- 07 Capture workflow attempt and decision evidence — todo (wave 3)
+- 08 Capture standing desk subjects and semantic outcomes — todo (wave 4)
+- 09 Integrate qualified improvement evidence into Improve — todo (wave 3)
+- 10 Qualify native evidence across execution modes — todo (wave 5)
 
 ### desk-supervision (28 open)
 
@@ -991,4 +1005,4 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 
 ## Totals
 
-**29** streams (**21** active, **0** paused, **8** parked) · **106/460** briefs done · completed initiatives: see `docs/archive/`
+**30** streams (**21** active, **0** paused, **9** parked) · **106/470** briefs done · completed initiatives: see `docs/archive/`
