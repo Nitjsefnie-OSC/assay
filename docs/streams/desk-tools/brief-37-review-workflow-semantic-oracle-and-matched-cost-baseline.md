@@ -212,6 +212,8 @@ The README discrepancy remains recorded: row 37 still says todo despite the merg
 **VERIFY: PASS** — original pre-delivery rows 1–3 and the bounded fixture Task/DoD are checked-clean. Current row 4 is author-added and receives no acceptance credit; its runtime execution is supplemental only. No production efficiency saving or complete real dispatcher/model-agent cost is certified. The parent desk owns landing and lifecycle.
 
 
+Lifecycle closure remains implemented with no Verified stamp: the closure checker cannot represent the protected-table author-added supplemental row. Reproduction: statusgen brief --check-verified desk-tools/37 exits 1 naming row 4 as could-not-run despite its recorded execution and exclusion from acceptance. Tracked by [assay#3342](https://github.com/medici-finance/assay/issues/3342); no result was relabelled to bypass that check.
+
 ## Review
 
 Retain the derived frontmatter gate. Approval of the source spec is recorded; this brief
