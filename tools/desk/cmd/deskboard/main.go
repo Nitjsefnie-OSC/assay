@@ -42,7 +42,7 @@ import (
 // release, where the namespaced ReleaseTag stamp supplies the version instead.
 var version string
 
-var perfVerbs = []string{"--json", "--table", "--delta", "--quiet", "--version"}
+var perfVerbs = []string{"prs", "actions", "queue", "health", "awaiting", "nextup", "scope", "dispatch", "throughput", "policydrift", "stalled", "reviews", "diff", "files"}
 
 func main() {
 	args := os.Args[1:]
@@ -151,7 +151,15 @@ func executeRecorded(args []string, stdout, stderr io.Writer, pre func(io.Writer
 						return boardExit(n)
 					}
 				}
-				invoke := func() int { return runBoard(sub, rest, args, o, stdout, stderr) }
+				invoke := func() int {
+					perfSub := sub
+					switch sub {
+					case "todo", "next", "next-up":
+						perfSub = "dispatch"
+					}
+					deskkit.PerfCommand(perfVerbs, perfSub)
+					return runBoard(sub, rest, args, o, stdout, stderr)
+				}
 				if record != nil {
 					return boardCode(record(invoke))
 				}
