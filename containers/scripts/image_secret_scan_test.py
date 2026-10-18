@@ -224,7 +224,8 @@ class Engine(unittest.TestCase):
         alphabet = string.ascii_letters + string.digits + '_-'
         anthro = ('sk-' + 'ant-api03-' + ''.join(rng.choices(alphabet, k=93)) + 'AA').encode()
         openai = ('sk-' + 'proj-' + ''.join(rng.choices(alphabet, k=74)) + 'T3BlbkFJ' + ''.join(rng.choices(alphabet, k=74))).encode()
-        fine = ('github_' + 'pat_' + 'Ab8Cd7Ef6Gh5Ij4Kl3Mn2Op' + '_' + 'Qr1St2Uv3Wx4Yz5Ab6Cd7Ef8Gh9Ij0Kl1Mn2Op3Qr4St5Uv6Wx7Yz8Ab9Cd').encode()
+        fine_alphabet = string.ascii_letters + string.digits
+        fine = ('github_' + 'pat_' + ''.join(rng.choices(fine_alphabet, k=22)) + '_' + ''.join(rng.choices(fine_alphabet, k=59))).encode()
         items = [('source.go', b'package main\nvar credential = "' + token() + b'"\n'),
                  ('file', self.pem), ('ANTHROPIC_API_KEY', anthro), ('OPENAI_API_KEY', openai),
                  ('app-token', token('ghs')), ('fine-token', fine)]
