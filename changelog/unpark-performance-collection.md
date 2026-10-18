@@ -1,0 +1,1 @@
+- Unpark performance-collection for its existing local-first delivery path, preserving consent, verification, deployment gates and brief completion states.

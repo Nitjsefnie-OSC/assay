@@ -101,7 +101,7 @@ unknowns. Reconstruct complete dispatcher-plus-agent cohorts using source-qualif
 never sum parent aggregates with children or compare pooled builds/workloads as controlled wins.
 Keep baseline/subject and tool-only/supervision-only/combined changes separate when #3325 is
 adopted; tokens are not a substitute for CPU or forge points. Allow local qualification exports
-consumed by desk-tools/44 without DB/API/upload; the parked stream is optional to early
+consumed by desk-tools/44 without DB/API/upload; performance collection remains optional to early
 qualification. Pending #3305 owns reusable scorecard/experiment policy if landed, not this report
 renderer.
 

@@ -2,7 +2,7 @@
 stream: performance-collection
 repo: medici-finance/assay
 serves: assay
-status: parked
+status: active
 priority: P2
 track: platform
 issues: []
@@ -12,12 +12,14 @@ spec: docs/streams/performance-collection/README.md
 
 # Optional performance collection
 
-**Status:** draft — collection and reporting amendment, updated 15 October 2026.
+**Status:** active for implementation — admission updated 18 October 2026.
 Collection can start locally before any database, API or managed cell exists. This stream
 owns delivery of optional collection/storage plumbing; it does not replace the semantic
 owners of work, runner accounting, measurement definitions or continuing outcomes.
-The stream is parked pending review and capacity admission. Authored is not implemented;
-no collection, deployment or new permission is activated by this document.
+The driver has unparked this stream. The existing local-first delivery path is admitted
+for implementation: /01 → /02 → /07 → /08. Brief dependencies, verification and human
+gates remain in force; all existing todo states remain todo. This admission does not
+enable collection, transmission, deployment or a new permission.
 
 ## Direction and source boundary
 
@@ -242,7 +244,7 @@ The remote path remains `01 → 03 → 04 → 06`, with 02 and 05 also required 
 Remote qualification does not hold local 07/08 hostage. The real local head is qualifying
 source coverage/retention, not deploying PostgreSQL. Existing perf-v1 import can start
 now, but absent historical CPU/call samples cannot be backfilled from delivery activity.
-Stream admission and acceptance remain separate from authoring these todo briefs.
+Stream admission is active; implementation acceptance and runtime/collection activation remain separate.
 
 ## Three operating reports — requested 15 October 2026
 
@@ -328,7 +330,7 @@ proposals are separate rollout modes; activation requires the applicable recorde
 
 ## Workflow-efficiency contract amendment — 17 October 2026
 
-The stream stays parked. /01, /02 and /07 receive bounded phase/correlation, producer and tool-panel acceptance from the approved workflow-efficiency spec. There is no new spool, profile activation or DB/API requirement for early local qualification. See the [delivery map](../../desk-workflow-efficiency-change-map.md#authored-delivery-routing). Existing Evidence and activation gates remain unchanged.
+The stream was parked when this amendment was authored; its admission is active as of 18 October 2026. /01, /02 and /07 receive bounded phase/correlation, producer and tool-panel acceptance from the approved workflow-efficiency spec. There is no new spool, profile activation or DB/API requirement for early local qualification. See the [delivery map](../../desk-workflow-efficiency-change-map.md#authored-delivery-routing). Existing Evidence and activation gates remain unchanged.
 
 ## Local instrument reuse — 2026-10-16
 
