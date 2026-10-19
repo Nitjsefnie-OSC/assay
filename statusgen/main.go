@@ -1255,6 +1255,14 @@ func main() {
 		fmt.Println(statusgenVersion)
 		exitProcess(0)
 	}
+	// `statusgen --version --json` — the same introspection, machine-readable:
+	// the version plus the brief schemas this build supports and the first
+	// release of each (briefschemaversions.go). The bare form above stays
+	// exactly one line, because pin checks compare it verbatim.
+	if len(os.Args) == 3 && (os.Args[1] == "--version" || os.Args[1] == "version") && os.Args[2] == "--json" {
+		printVersionJSON()
+		exitProcess(0)
+	}
 
 	// `statusgen verifyrun` — positional subcommand (like `init` below) that
 	// EXECUTES a brief's Verify rows and writes an execution witness into its
@@ -1272,6 +1280,9 @@ func main() {
 	// that executes arbitrary commands lifted out of a markdown table has no
 	// business inside it. `--lint` only NOTICEs the ABSENCE of a witness (see
 	// witnessNotices); producing one is always an explicit invocation.
+	if len(os.Args) > 1 && os.Args[1] == "withdrawal-audit" {
+		exitProcess(runWithdrawalAudit(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "verifyrun" {
 		exitProcess(runVerifyrun(os.Args[2:], os.Stdout, os.Stderr))
 	}
