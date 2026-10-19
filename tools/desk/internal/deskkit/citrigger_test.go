@@ -221,6 +221,17 @@ func ciCrossModuleRegistry() []ciEntry {
 
 	registry := []ciEntry{
 		{
+			test: "statusgen/acceptanceci_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads: []string{
+				".github/workflows/assay-statusgen.yml", ".github/workflows/verify-gate-close.yml",
+				"ci/staged-workflows/assay-statusgen.yml", "ci/staged-workflows/verify-gate-close.yml",
+				"tools/ci-load/activation/assay-statusgen.yml",
+			},
+			runInvokes: []string{"cd statusgen && go test ./..."},
+			why:        "the unconditional statusgen suite checks acceptance flags, mapped humans and read credentials across every authoritative workflow source and retry",
+		},
+		{
 			test: "statusgen/verifykitblocked_test.go", module: "statusgen",
 			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
 			reads:      []string{"tools/desk/cmd/deskdispatch/references/verifier-prompt.md"},
