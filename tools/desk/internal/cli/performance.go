@@ -107,10 +107,13 @@ func GoPerformance(fs *flag.FlagSet, sink func(perfrec.Context)) func() {
 	for _, name := range perfNames {
 		fs.Var(perfFlag{in, name}, name, "optional local performance context")
 	}
+	var once sync.Once
 	return func() {
-		if sink != nil {
-			sink(perfrec.ResolveContext(*in))
-		}
+		once.Do(func() {
+			if sink != nil {
+				sink(perfrec.ResolveContext(*in))
+			}
+		})
 	}
 }
 

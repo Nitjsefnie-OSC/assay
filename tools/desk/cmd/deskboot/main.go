@@ -107,7 +107,7 @@ func perfVerbs() []string { return append(knownRoles(), "--version", "--help") }
 
 func main() {
 	selected := perfrec.ResolveContext(perfrec.ContextInput{})
-	sink := func(c perfrec.Context) { selected = c }
+
 	// Explicit roster class: deskboot ACTS on the roster (it registers a role and
 	// resolves the repo set), so ciEligible=false — it reads the config-home file and
 	// never the environment, in CI as well as locally.
@@ -118,7 +118,15 @@ func main() {
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
-	os.Exit(deskkit.PerfRunResolved("deskboot", perfVerbs(), os.Args[1:], func(a []string) (int, perfrec.Context) { return runSelected(a, sink), selected }))
+	os.Exit(deskkit.PerfRunMeasured("deskboot", perfVerbs(), os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		return runSelected(a, sink), selected
+	}))
 }
 
 func run(args []string) int { return runSelected(args, nil) }

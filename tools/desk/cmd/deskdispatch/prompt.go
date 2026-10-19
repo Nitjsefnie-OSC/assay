@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -91,6 +92,16 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 		shownItem = o.itemAlias + ":" + o.item
 	}
 	fmt.Fprintf(&b, "# Assignment — %s\n\n", shownItem)
+	if plan.childPerformance.Profile() != "" {
+		b.WriteString("## Optional local performance context\n\nThis context is descriptive, never custody or dispatch authority. Keep it local; do not post it or native harness identifiers. Apply it only to this launch, not a shared shell.\n\n")
+		for _, kv := range perfrec.ContextEnv(nil, plan.childPerformance, false) {
+			fmt.Fprintf(&b, "- %c%s%c\n", 96, kv, 96)
+		}
+		if desk := o.performance.Data().DeskRole; desk != "" {
+			fmt.Fprintf(&b, "\nIf your operational DESK_LOOP changes, preserve originating attribution with the explicit --perf-desk-role=%s flag on instrumented tool calls. Never change DESK_LOOP for measurement.\n", desk)
+		}
+		b.WriteString("\nThe launcher forwards only operator-selected consent. It does not opt you in; keep ASSAY_TELEMETRY at the operator-selected value. Missing runtime propagation remains an uninstrumented boundary.\n\n")
+	}
 	fmt.Fprintf(&b, "- **Item key:** `%s`\n", shownItem)
 	switch {
 	case review:

@@ -46,7 +46,7 @@ func exitWith(code int) { panic(exitCode{code}) }
 
 func main() {
 	selected := perfrec.ResolveContext(perfrec.ContextInput{})
-	os.Exit(deskkit.PerfRunResolved("cellctl", perfVerbs(), commandArgs(os.Args[1:]), func([]string) (int, perfrec.Context) {
+	os.Exit(deskkit.PerfRunMeasured("cellctl", perfVerbs(), commandArgs(os.Args[1:]), func(_ []string, measurement *perfrec.Session) (int, perfrec.Context) {
 		// The roster class is an EXPLICIT declaration, never the zero value by accident
 		// (a correctness review found SetToolClass had no caller anywhere, so "ClassWrite is the
 		// safe default" was true only by luck — and TestEveryRosterReadingMainDeclaresClassAndEchoes
@@ -65,7 +65,12 @@ func main() {
 		deskkit.SetToolClass(deskkit.ClassForTool(false))
 		// The roster echo runs from the command tree's pre-run hook (cobra.go), once
 		// per run, so that --help and --version stay pure introspection.
-		code := runTreeSelected(os.Args[1:], func(c perfrec.Context) { selected = c })
+		code := runTreeSelected(os.Args[1:], func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		})
 		return code, selected
 	}))
 }

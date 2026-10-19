@@ -753,6 +753,7 @@ func cmdToken(args []string, sinks ...func(perfrec.Context)) (err error) {
 	noRotate := fs.Bool("no-rotate", false, "read-only credential lookup: verify the role's existing custody and print its PATH without performing a destructive rotation. GitLab: skips the self-rotation (and its network contact) entirely — the shape a read-only or dry-run verb asks for. GitHub: no effect, the App mint is cached and non-destructive already, so the flag is accepted for callers that do not know the forge before they ask")
 
 	positionals, perr := parseInterspersed(fs, args)
+	selected()
 	if perr != nil {
 		// TIER TWO: `-h`/`--help` in any spelling reaches the parser as flag.ErrHelp. A help
 		// screen is not a refusal and writes no audit row (deskkit/helprequest.go).

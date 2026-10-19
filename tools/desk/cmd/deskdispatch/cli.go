@@ -16,6 +16,7 @@ import (
 // dispatchCLI keeps parsing/configuration distinct from every domain authority.
 // Tests replace the typed handoff, never the custody checks in the domain handlers.
 type dispatchCLI struct {
+	measurement *perfrec.Session
 	performance func(perfrec.Context)
 	inputs      cli.Inputs
 	before      func() error
@@ -109,7 +110,7 @@ func newDispatchCLI(mode string, env dispatchCLI) *cobra.Command {
 		if mode == "" && v.Bool("kits") {
 			executionFlag := false
 			cmd.Flags().Visit(func(f *pflag.Flag) {
-				if f.Name != "kits" && f.Name != "trace" {
+				if f.Name != "kits" && f.Name != "trace" && !strings.HasPrefix(f.Name, "perf-") {
 					executionFlag = true
 				}
 			})
@@ -142,6 +143,8 @@ func newDispatchCLI(mode string, env dispatchCLI) *cobra.Command {
 		}
 		o := dispatchOpts{dryRun: v.Bool("dry-run")}
 		o.performance, _ = cli.PerformanceContext(cmd)
+		o.measurement = env.measurement
+		o.performanceWorkExplicit = cli.PerformanceInput(cmd).WorkPresent
 		if mode != "--stamp-only" {
 			o.root = v.String("root")
 			o.brief = v.String("brief")

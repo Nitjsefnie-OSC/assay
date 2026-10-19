@@ -688,7 +688,14 @@ func deskCmd() *cobra.Command {
 		v := resolve(set, c)
 		launchNeeds(v)
 		in := deskInputsFrom(v, lastBare(args[2:]))
-		in.Performance, _ = cli.PerformanceContext(cmd)
+		pi := cli.PerformanceInput(cmd)
+		pi.LookupEnv = func(k string) (string, bool) {
+			if k == envAssayTelemetry {
+				return c.telemetryValue(), true
+			}
+			return os.LookupEnv(k)
+		}
+		in.Performance = perfrec.ResolveContext(pi)
 		in.EndStaleLockHolder = v.Bool("end-stale-lock-holder") // declared on `desk` only, never `up`
 		cmdDesk(c, args[1], in)
 		return nil

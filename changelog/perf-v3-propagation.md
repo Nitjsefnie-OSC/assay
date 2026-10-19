@@ -1,0 +1,1 @@
+- Bind optional local performance context through shared CLI, current custody parsers, explicit desk launches and runner adapter contexts; document unsupported producer boundaries.

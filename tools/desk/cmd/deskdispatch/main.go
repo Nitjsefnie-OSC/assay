@@ -113,7 +113,14 @@ func main() {
 	// The one measurement finalizer wraps the whole command, parsing included, so
 	// the timer never restarts after Cobra. Consent is the environment opt-in only;
 	// help/version/kits classify themselves without reading operational config.
-	os.Exit(deskkit.PerfRunResolved("deskdispatch", perfVerbs, args, func(a []string) (int, perfrec.Context) {
+	os.Exit(deskkit.PerfRunMeasured("deskdispatch", perfVerbs, args, func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		env.performance = func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		env.measurement = measurement
 		code := parseDispatchCLI(a, env, cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 		return code, selected
 	}))

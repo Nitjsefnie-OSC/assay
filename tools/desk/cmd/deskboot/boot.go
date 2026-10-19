@@ -119,6 +119,7 @@ func cmdBoot(args []string, sinks ...func(perfrec.Context)) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return deskkit.Refused("deskboot: bad flags: " + err.Error())
 	}
+	selected()
 	if fs.NArg() != 0 {
 		return deskkit.Refused("deskboot: unexpected extra arguments after <role>: " + strings.Join(fs.Args(), " "))
 	}

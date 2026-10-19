@@ -87,8 +87,14 @@ Exit: 0 ok/noop/stale · 3 disabled · 5 refused (already claimed / live) · 6 u
 
 func main() {
 	selected := perfrec.ResolveContext(perfrec.ContextInput{})
-	sink := func(c perfrec.Context) { selected = c }
-	os.Exit(deskkit.PerfRunResolved("deskclaim", nil, os.Args[1:], func(a []string) (int, perfrec.Context) {
+
+	os.Exit(deskkit.PerfRunMeasured("deskclaim", nil, os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
 		// Explicit roster class (a correctness review): deskclaim acts on
 		// local state, ciEligible=false — it reads the config-home file, never the environment.
 		deskkit.SetToolClass(deskkit.ClassForTool(false))

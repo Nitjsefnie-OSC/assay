@@ -63,6 +63,7 @@ func cmdAcquire(args []string, sinks ...func(perfrec.Context)) error {
 	if err := fs.Parse(args); err != nil {
 		return deskkit.Refused(fmt.Sprintf("acquire: %v", err))
 	}
+	selected()
 	if item == "" {
 		return deskkit.Refused("acquire requires --item")
 	}
@@ -135,6 +136,7 @@ func cmdStale(args []string, sinks ...func(perfrec.Context)) error {
 	if err := fs.Parse(args); err != nil {
 		return deskkit.Refused(fmt.Sprintf("stale: %v", err))
 	}
+	selected()
 	if item == "" {
 		return deskkit.Refused("stale requires --item")
 	}
@@ -241,6 +243,7 @@ func cmdRelease(args []string, sinks ...func(perfrec.Context)) error {
 	if err := fs.Parse(args); err != nil {
 		return deskkit.Refused(fmt.Sprintf("release: %v", err))
 	}
+	selected()
 	if item == "" {
 		return deskkit.Refused("release requires --item")
 	}
@@ -266,6 +269,7 @@ func cmdList(args []string, sinks ...func(perfrec.Context)) error {
 	if err := fs.Parse(args); err != nil {
 		return deskkit.Refused(fmt.Sprintf("list: %v", err))
 	}
+	selected()
 
 	dir, err := claimsDir()
 	if err != nil {

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/cli"
@@ -21,11 +22,15 @@ var buildStore = newForgeStore
 // setup are checked before the verb runs, and an unknown flag or verb is a refusal (exit 5).
 func dispatchVerb(args []string, sinks ...func(perfrec.Context)) int {
 	var pc perfrec.ContextInput
-	defer func() {
-		if len(sinks) > 0 && sinks[0] != nil {
-			sinks[0](perfrec.ResolveContext(pc))
-		}
-	}()
+	var once sync.Once
+	selectContext := func() {
+		once.Do(func() {
+			if len(sinks) > 0 && sinks[0] != nil {
+				sinks[0](perfrec.ResolveContext(pc))
+			}
+		})
+	}
+	defer selectContext()
 	verb := args[0]
 	rest := args[1:]
 
@@ -58,6 +63,7 @@ func dispatchVerb(args []string, sinks ...func(perfrec.Context)) int {
 		}
 	}
 
+	selectContext()
 	repo := resolveRepo(repoFlag)
 	if repo == "" {
 		errf("unverifiable: could not resolve the target repo (pass --repo owner/name)")

@@ -137,8 +137,14 @@ Exit codes (deskkit contract): 0 ok/acquired · 5 refused (a live holder owns it
 
 func main() {
 	selected := perfrec.ResolveContext(perfrec.ContextInput{})
-	sink := func(c perfrec.Context) { selected = c }
-	os.Exit(deskkit.PerfRunResolved("deskclaim-ref", nil, os.Args[1:], func(a []string) (int, perfrec.Context) {
+
+	os.Exit(deskkit.PerfRunMeasured("deskclaim-ref", nil, os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
 		return runSelected(a, sink), selected
 	}))
 }

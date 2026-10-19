@@ -107,6 +107,7 @@ func cmdCoverage(args []string, sinks ...func(perfrec.Context)) (err error) {
 	asJSON := fs.Bool("json", false, "emit the enumeration as one JSON object")
 
 	positionals, perr := parseInterspersed(fs, args)
+	selected()
 	if perr != nil {
 		// TIER TWO: see cmdToken — a help request writes no audit row.
 		if deskkit.IsHelpRequest(perr) {

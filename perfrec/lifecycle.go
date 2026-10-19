@@ -2,6 +2,7 @@ package perfrec
 
 import (
 	"encoding/json"
+	"runtime"
 	"strings"
 )
 
@@ -10,6 +11,9 @@ import (
 // and assigned role always belong to this launch. Missing mapping means fresh IDs.
 // This function never enables collection, reads operational state or grants authority.
 func ChildContext(parent Context, role string, work []WorkRef, resume *Attribution) Context {
+	if parent.Profile() == "" {
+		return Context{}
+	}
 	p := parent.Data()
 	session, agent := "", ""
 	if resume != nil && IDValid(resume.SessionID) && IDValid(resume.AgentID) {
@@ -19,7 +23,12 @@ func ChildContext(parent Context, role string, work []WorkRef, resume *Attributi
 		agent, _ = NewID()
 	}
 	value := func(s string) Value { return Value{Value: s, Present: true} }
-	in := ContextInput{Profile: value(string(parent.Profile())), SessionID: value(session), AgentID: value(agent), ParentAgentID: value(p.AgentID), ParentInvocationID: value(parent.InvocationID()), DeskRole: value(p.DeskRole), Role: value(role), WorkPresent: true, LookupEnv: func(string) (string, bool) { return "", false }}
+	in := ContextInput{Profile: value(string(parent.Profile())), SessionID: value(session), AgentID: value(agent), ParentAgentID: value(p.AgentID), ParentInvocationID: value(parent.InvocationID()), DeskRole: value(p.DeskRole), Role: value(role), WorkPresent: true, LookupEnv: func(k string) (string, bool) {
+		if k == EnvVar && parent.Profile() != "" {
+			return "1", true
+		}
+		return "", false
+	}}
 	for _, w := range work {
 		b, err := json.Marshal(w)
 		if err == nil {
@@ -38,6 +47,9 @@ func ContextEnv(base []string, c Context, toolChild bool) []string {
 	out := make([]string, 0, len(base)+len(names))
 	for _, kv := range base {
 		k, _, _ := strings.Cut(kv, "=")
+		if runtime.GOOS == "windows" {
+			k = strings.ToUpper(k)
+		}
 		if !names[k] {
 			out = append(out, kv)
 		}

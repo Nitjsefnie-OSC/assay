@@ -172,7 +172,7 @@ func perfVerbs() []string {
 
 func main() {
 	selected := perfrec.ResolveContext(perfrec.ContextInput{})
-	sink := func(c perfrec.Context) { selected = c }
+
 	// Explicit roster class: desktoken ACTS (it mints a credential) and, when --repo
 	// is absent, it READS the configured allowed-repo roster to resolve the owner —
 	// file-only, never the environment — so ciEligible=false. The P3 echo makes that
@@ -183,5 +183,13 @@ func main() {
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
-	os.Exit(deskkit.PerfRunResolved("desktoken", perfVerbs(), os.Args[1:], func(a []string) (int, perfrec.Context) { return runSelected(a, sink), selected }))
+	os.Exit(deskkit.PerfRunMeasured("desktoken", perfVerbs(), os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		return runSelected(a, sink), selected
+	}))
 }
