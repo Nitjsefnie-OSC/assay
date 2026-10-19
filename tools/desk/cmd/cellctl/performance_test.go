@@ -2,13 +2,14 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/medici-finance/assay/perfrec"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/medici-finance/assay/perfrec"
 )
 
 // regression: desktools-v2/64
