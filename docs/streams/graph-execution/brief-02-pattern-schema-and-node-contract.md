@@ -498,6 +498,48 @@ RISK-VALUE: reversible knob, ranked last, no derivation owed — budget.attempts
 
 **VERIFY: BLOCKED** — rows 1-8 pass by hand, 8 of 9. Row 10 is could-not-check as written and fails the witness by check definition. It needs a Verify-row re-author (class #1281; tracked at #1927). Status stays implemented.
 
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd statusgen && go test -run TestPatterns ./...` | pass exit=0 sandbox=container-netns | sha256:b27525ef7111 | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 2 | `statusgen patterns --lint --root .; echo rc=$?` | pass exit=0 sandbox=container-netns | sha256:e86054a2ccc7 | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd statusgen && go test -run TestPatternsEffectExceedsRoleIsProblem ./...` | pass exit=0 sandbox=container-netns | sha256:26149d381025 | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd statusgen && go test -run TestPatternsReviewSameRoleIsProblem ./...` | pass exit=0 sandbox=container-netns | sha256:23adc314e5dd | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 5 | `python3 -c 'import json,yaml;s=json.load(open("schemas/workflow-pattern-v1.json"));import jsonschema;[jsonschema.validate(yaml.safe_load(open(p)),s) for p in ["spec/workflow-patterns/implementation-v1.yaml","spec/workflow-patterns/research-v1.yaml"]];print("ok")'` | pass exit=0 sandbox=container-netns | sha256:dc51b8c96c2d | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 6 | `grep -c 'workflow-pattern-v1' spec/README.md` | pass exit=0 sandbox=container-netns | sha256:4355a46b19d3 | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd statusgen && go test -run TestTopologyValuesMatchSource ./...` | pass exit=0 sandbox=container-netns | sha256:ad5c7938e008 | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 8 | `statusgen --root . --lint; echo rc=$?` | pass exit=0 sandbox=container-netns | sha256:d1a4d8af5037 | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+| 10 | `o=$(statusgen --root . --consumers --brief graph-execution/02 --delivery 5b384e52c684be71b1447949a9403250640b66a7 --base 060980aa0f1a34035b4ce47e9d4c932c0e829662); s=$?; printf '%s\n' "$o"; test "$s" -eq 0 && case "$o" in *'summary: 3 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing'*) ;; *) exit 1;; esac` | pass exit=0 sandbox=container-netns | sha256:efdeb4c8334a | 2026-10-19 | assay-verifier-app[bot] @ 810a5edf064b (on-behalf-of human:ian) (forge-identity) |
+
+### Non-implementer verifier re-run — 2026-10-19, merged main 810a5edf064b0d7e76a49c0d8b74b1d3f2dbd442
+
+Verification-Attestation: medici-finance/assay#3530 run=e05b5b26f2cb185b2ef54ecc8e84fbe6e98c60e70f0b5bf5376f70f4f48470b2 source=810a5edf064b0d7e76a49c0d8b74b1d3f2dbd442 brief=docs/streams/graph-execution/brief-02-pattern-schema-and-node-contract.md model=claude-opus-5-5 tier=strong
+
+The witness table directly above is statusgen verifyrun's own output, landed verbatim. It ran at source 810a5edf064b0d7e76a49c0d8b74b1d3f2dbd442 in a local docker container, image assay-verify:go1.27-py (id sha256:9951b77a257f). That image is assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e, git 2.47) with python3-yaml, python3-jsonschema and gh 2.46 added. The container ran with --network none, sandbox=container-netns and the engine's default seccomp profile. statusgen and the desk tools were built inside the container from this commit. Admission: deskdispatch --check-verifier exited 0 before any row ran. This run follows the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). verifyrun exited 0: 9 pass, 0 fail, 0 could-not-run. Row 5 now runs inside the witness, and its output hash dc51b8c96c2d matches earlier darwin witnesses of the same row. An earlier witness attempt in this pass used the base image, which has no PyYAML or jsonschema. There row 5 failed with ModuleNotFoundError: No module named 'yaml'. That output was this run's own, was never landed, and was replaced by the run above. Every row was also run by hand on the darwin host against the home at this commit, with a statusgen built from this commit's own statusgen package. All nine pass by hand; row 5 ran under the system python3 3.9.6 (PyYAML 6.0.3, jsonschema 4.21.1). A -count=1 -v run of the row 1 and row 7 selectors lists 12 PASS lines and 0 FAIL lines, so the selectors match real tests.
+
+Prior Evidence: 2026-10-16, merged main 1948dc0873705930b202f0e747047df844010d1a, VERIFY: BLOCKED. Rows 1-8 passed by hand. Row 10 was could-not-check as authored. Since then, row 10 has been re-authored (#3166) to the delivery-check form, with --delivery 5b384e52c and --base 060980aa0. That form rests on the statusgen fix that pins consumer checks to immutable deliveries (#3428). Between 1948dc08 and this commit the deliverable files have a zero diff: statusgen patterns.go, its tests and fixtures, both shipped patterns, the JSON schema, the spec document and topologyvalues.go. spec/README.md gained two unrelated index rows. Row 10 now passes in the witness and by hand: exit 0, summary 3 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing. The UNCHECKED entry is the out-of-scope desk-skill procedure claim, which the reviewer judges by brief-rule 9.
+
+Failing rows: none. As a side check, the five bad fixtures also validate against the JSON schema. Their faults are MUST-rule faults that only the Go lint enforces, and rows 3 and 4 cover that.
+
+Risk-bearing value enumeration, re-read at 810a5edf (unchanged from 1948dc08):
+
+1. patternRoleEffectPermissions: worker = push, pr-open, comment; reviewer = review, comment; verifier = evidence-commit, comment; desk = file-issue, comment, dispatch @ statusgen/patterns.go:92-95. Mirrored in the spec document's table at spec/workflow-pattern-v1.md:155-158.
+2. Implementation risk-input: low = [review]; standard = [review, verify]; elevated = [review, verify]; human = [review, verify] @ spec/workflow-patterns/implementation-v1.yaml:15-18. Research risk-input: all four = [review-artifact] @ spec/workflow-patterns/research-v1.yaml:13-16.
+3. topologyAppRoles = desk, reviewer, verifier, worker @ statusgen/topologyvalues.go:74-77.
+4. patternRiskVerdicts = low, standard, elevated, human @ statusgen/patterns.go:100.
+5. patternsExitClean = 0, patternsExitFailed = 1, patternsExitCouldNot = 2, patternsExitUsageError = 2 @ statusgen/patterns.go:67-70.
+6. budget.attempts = 2 @ spec/workflow-patterns/implementation-v1.yaml:31 and research-v1.yaml:26, 37 and 50.
+
+None of these values is irreversible. Each is undone by a spec, pattern or lint edit and a version bump, and a node that names a role mints no token. Ranked by consequence: entry 1 first, then 2, then 3 and 4, then 5, then 6.
+
+RISK-VALUE: DERIVED — patternRoleEffectPermissions worker = push, pr-open, comment; reviewer = review, comment; verifier = evidence-commit, comment; desk = file-issue, comment, dispatch @ statusgen/patterns.go:92-95 — equals Task 2's table exactly. Only the reviewer reviews and only the verifier commits evidence, which keeps the writer and the certifier apart. Row 3 passed in the witness.
+RISK-VALUE: NAMED, NOT DERIVED — implementation risk-input elevated = [review, verify], human = [review, verify] @ spec/workflow-patterns/implementation-v1.yaml:17-18 — Task 1's example maps these verdicts to security-review and human-signoff gates, but Task 3's fixed node list has neither node. The design question is still open at #1933, with no ruling.
+RISK-VALUE: DERIVED — topologyAppRoles = desk, reviewer, verifier, worker @ statusgen/topologyvalues.go:74-77 — equals the four apps: roles in topology.yaml. Row 7 pins them together and passed.
+RISK-VALUE: DERIVED — patternRiskVerdicts = low, standard, elevated, human @ statusgen/patterns.go:100 — the stream's fixed risk-class vocabulary, from the brief's Context.
+RISK-VALUE: DERIVED — patternsExitClean = 0, patternsExitFailed = 1, patternsExitCouldNot = 2, patternsExitUsageError = 2 @ statusgen/patterns.go:67-70 — Task 4's stated exit contract. Row 2 gave rc=0.
+RISK-VALUE: reversible knob, ranked last, no derivation owed — budget.attempts = 2 @ spec/workflow-patterns/implementation-v1.yaml:31.
+
+**VERIFY: PASS** — all 9 Verify rows pass in the network-off container witness (verifyrun exit 0, 9 pass, 0 fail) and by hand. The risk-input design question stays routed to #1933.
+
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
 Reviewer questions: (1) can any node in either shipped pattern act with an authority the
