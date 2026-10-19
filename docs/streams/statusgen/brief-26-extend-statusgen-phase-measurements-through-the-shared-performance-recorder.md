@@ -2,7 +2,7 @@
 brief: assay:assay:statusgen:26
 title: "Extend statusgen phase measurements through the shared performance recorder"
 why: "Statusgen already shares the local recorder but aggregate duration cannot explain discovery, parsing, evaluation, rendering or deskread overhead. Reusing the improved contract makes its costs comparable and identifies safe parse reuse without importing credential or desk internals."
-wave: 3
+wave: 4
 depends: ["desktools-v2/63", "desktools-v2/64"]
 unblocks: []
 effort: M

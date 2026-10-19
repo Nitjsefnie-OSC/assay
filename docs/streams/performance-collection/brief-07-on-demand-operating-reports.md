@@ -2,7 +2,7 @@
 brief: assay:assay:performance-collection:07
 title: "On-demand three-report bundle and thin skill"
 why: "Operators need one reproducible view of completions, stream movement and tool costs from collected data, without more provider calls."
-wave: 4
+wave: 5
 depends: ["performance-collection/02"]
 unblocks: ["performance-collection/08"]
 effort: L
@@ -12,7 +12,7 @@ gate-why: "Report collection, exposure and recurring effect boundaries need acce
 decision-trigger: spec
 issues: []
 schema: brief-v2
-version: 3
+version: 4
 id: 29c71b10-6ca6-4594-bc10-1f294a5d1463
 authored: "2026-10-15 by reporting authoring session"
 sources:
@@ -136,6 +136,20 @@ v1/v2. Deduplicate source/invocation, never sum parent inclusive wall with child
 wall, and do not sum rate gauges. Extend TestPhaseReportFlow (existing report Verify
 obligation) with these mixed-version/parent-child and false-zero negative fixtures; preserve
 all three reports and the offline/no-provider-read contract.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Preserve the query/cache boundary contract from docs/performance-attribution-spec.md:
+client logical service calls and transport attempts, handler timing/cache/coalescing outcomes,
+and actual direct/passthrough/refresh/poll/repair provider sends/cost remain different kinds.
+Import correlation only under the selected aliased workflow policy; never forward raw local
+locators or infer missing server coverage as zero. Shared refresh/background cost remains
+shared/unallocated and one provider observation cannot be copied to all waiting work items.
+Do not sum client wait, handler/provider spans or concurrent process CPU as elapsed savings.
+Extend the existing local/served/replay/report Verify flow for this owner with the shared
+50-query/three-page fixture, warm hit, passthrough retry, background poll and absent server
+data. Wrongly combining the two sides of one service call or multiplying upstream points
+must fail the independent expected result; existing selectors and all Evidence remain intact.
 
 ## Evidence
 

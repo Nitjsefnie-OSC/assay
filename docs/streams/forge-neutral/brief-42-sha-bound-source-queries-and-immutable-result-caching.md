@@ -13,7 +13,7 @@ decision-trigger: spec
 issues: []
 outcome: none
 schema: brief-v2
-version: 3
+version: 4
 id: 702efe9f-7a6c-4079-95cd-0ef3c82f9e69
 authored: 2026-10-14 by forge-service authoring
 sources:
@@ -172,6 +172,16 @@ metadata may join the same request. No copied descendant call total,
 and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
 service delivery; record unsupported boundaries until producer integration. /45's existing
 matched service qualification must include own-request and parent/child no-double-count cases.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
+
+Typed source-query/local object/cache work records fixed operation, handler latency, cache source and directly measured local work without pretending it is a GitHub/GitLab request. A miss/refresh records actual upstream sends only if they occur. Cache keys, paths and raw query text are excluded from diagnostics; missing source coverage remains unknown.
+
+Extend this brief's existing production-flow Verify cases with these boundary/false-count
+negative fixtures; all existing Tasks, exact selectors and Evidence remain obligations.
+No service activation or extra dependency on a live collector is introduced.
 
 ## Evidence
 

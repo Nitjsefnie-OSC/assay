@@ -12,7 +12,7 @@ gate-why: "sensitive-data is yes because the mirror copies private pull request,
 issues: []
 outcome: none
 schema: brief-v2
-version: 4
+version: 5
 id: 06dc3c03-bfb0-49cf-b171-8f7d192b7aea
 authored: 2026-10-13 by statusgen newbrief (non-CI R6 authoring follow-up)
 sources:
@@ -350,6 +350,16 @@ metadata may join the same request. No copied descendant call total,
 and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
 service delivery; record unsupported boundaries until producer integration. /45's existing
 matched service qualification must include own-request and parent/child no-double-count cases.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
+
+Mirror refresh, pagination, background polling and repair retain their own bounded origin and shared refresh identity. A coalesced source walk counts each actual page/retry once and is not multiplied by waiter count. Missing upstream instrumentation is unknown; zero is measured only under full seam coverage.
+
+Extend this brief's existing production-flow Verify cases with these boundary/false-count
+negative fixtures; all existing Tasks, exact selectors and Evidence remain obligations.
+No service activation or extra dependency on a live collector is introduced.
 
 ## Evidence
 

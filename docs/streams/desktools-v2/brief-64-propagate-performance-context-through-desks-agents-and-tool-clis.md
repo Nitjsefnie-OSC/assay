@@ -2,7 +2,7 @@
 brief: assay:assay:desktools-v2:64
 title: "Propagate performance context through desks, agents and tool CLIs"
 why: "Inheriting the desk role cannot identify a reviewer subagent, and reusing session work labels misattributes later tasks. Launchers and shared CLI adapters must pass explicit immutable context so every instrumented child reports its own invocation under the correct agent and work."
-wave: 2
+wave: 3
 depends: ["desktools-v2/63"]
 unblocks: ["desktools-v2/17", "desktools-v2/62", "statusgen/26", "performance-collection/02"]
 effort: M
@@ -12,7 +12,7 @@ gate-why: "Workflow attribution exposes local work linkage; review the implement
 decision-trigger: spec
 issues: []
 schema: brief-v3
-version: 1
+version: 2
 id: 18b43302-5947-4402-b4f9-c86e6400c616
 authored: 2026-10-19 by performance attribution authoring
 sources:
@@ -109,9 +109,9 @@ Use exactly the field/flag/env table and lifecycle in docs/performance-attributi
 
 ## Task
 
-1. Inventory all maintained desk, standalone and runner entrypoints against their actual launch/CLI owners. Add the shared allowlisted flag/env bindings and credential-free perfrec resolver; no second parser or AutomaticEnv. Flags override env, present empty clears, and a flag work-list replaces the env list. Invalid optional metadata is not echoed and cannot change the underlying exit/output. A perf-desk-role override changes attribution only, never DESK_LOOP's operational authority.
+1. Pass through only operator-selected telemetry/profile settings; launchers never synthesize ASSAY_TELEMETRY=1 or a tool/workflow profile. Inventory all maintained desk, standalone and runner entrypoints against their actual launch/CLI owners. Add the shared allowlisted flag/env bindings and credential-free perfrec resolver; no second parser or AutomaticEnv. Flags override env, present empty clears, and a flag work-list replaces the env list. Invalid optional metadata is not echoed and cannot change the underlying exit/output. A perf-desk-role override changes attribution only, never DESK_LOOP's operational authority.
 2. Integrate cellctl desk/session launch, deskdispatch agent handoff, supported runner start/resume, shared child process execution and desk skill guidance. Pass fresh child identities, assigned role and chosen work; ordinary tool children retain agent/session but generate fresh invocation IDs. The caller supplies its own invocation as the child's parent. Never overwrite shared global context between concurrent launches. Preserve existing custody, leases, claims and journal/accounting semantics.
-3. Record standalone integration gaps and route each to its existing CLI owner; this brief does not port all standalone tools. Implement native-harness-ID to opaque-ID mapping only where an existing harness exposes such identity; retain that private mapping at the launcher boundary. Unknown boundaries stay unknown and are listed in the inventory. No transcript scraping, recursive monitor or mandatory new service. Standalone adapters may bind the same flags directly to perfrec; statusgen's production phase integration remains /26.
+3. Record standalone integration gaps and route each to its existing CLI owner; this brief does not port all standalone tools. Implement native-harness-ID to opaque-ID mapping only where an existing harness exposes such identity; retain that private mapping at the launcher boundary, in memory or an existing private state directory owned by the launcher with 0700 directory / 0600 file modes and a maximum seven-UTC-day retention. Never commit, log or publish it. If a mapping needed for resume has expired or is lost, mint fresh opaque IDs and expose a continuity gap; do not infer identity. Unknown boundaries stay unknown and are listed in the inventory. No transcript scraping, recursive monitor or mandatory new service. Standalone adapters may bind the same flags directly to perfrec; statusgen's production phase integration remains /26.
 4. Exercise two subjects, brief plus issue, two different assigned roles under one desk, concurrency, retry, explicit resume, replacement, unset/empty/invalid overrides and unknown parent through real parsed binaries and child processes. Prove tool-only profile never emits correlation even when inherited context exists, and telemetry-off creates no measurement files. Document local rollout/opt-out and unavailable coverage. Update generated CLI help through each owner's existing reference workflow and sync generated skill guardrails only if their blocks change.
 
 ## Verify
@@ -122,7 +122,7 @@ cannot pass. Plant the stated defect through the production boundary, not a dupl
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3LauncherChildFlow$' ./internal/deskkit/ > "$out" && grep -F -- '--- PASS: TestPerfV3LauncherChildFlow ' "$out")` | exit 0; named PASS. Actual launch/parsed binary/child/writer/report flow distinguishes two subjects and child IDs/roles; planted inherited child invocation/agent ID, stale work and cross-task global context fail. |
-| 2 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3CLIContextPrecedence$' ./internal/clicontract/ > "$out" && grep -F -- '--- PASS: TestPerfV3CLIContextPrecedence ' "$out")` | exit 0; named PASS. All declared flags/envs reach the typed resolver; explicit-empty and work-list replacement, invalid metadata, no-profile legacy and tool-only filtering preserve operation exit/output and offline help. |
+| 2 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3CLIContextPrecedence$' ./internal/clicontract/ > "$out" && grep -F -- '--- PASS: TestPerfV3CLIContextPrecedence ' "$out")` | exit 0; named PASS. All declared flags/envs reach the typed resolver; explicit-empty and work-list replacement, invalid metadata, no-profile legacy and tool-only filtering and launcher refusal to create opt-in preserve operation exit/output and offline help. |
 | 3 | check:ci +flow +mutation | `(cd loopadmin && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3RunnerIdentityLifecycle$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3RunnerIdentityLifecycle ' "$out")` | exit 0; named PASS. Actual runner adapter carries fresh/resumed/replaced identities without changing authority/accounting; unknown native ID remains a gap and disabled sink cannot block launch. |
 | 4 | check +dereference | `statusgen --root . --consumers --brief desktools-v2/64` | exit 0; changed consumer routing corroborates the actual diff; unavailable is not pass. |
 
@@ -132,6 +132,18 @@ Rows 1–3 plant the counterexamples named in Expect: identity/consent or reques
 false-zero/compatibility bugs, and changed operational behavior. Row 4 checks shared consumer
 routing. Sufficiency of real-world coverage and local disclosure remains reviewer judgment;
 fixture success never asserts live adoption or permission.
+
+## Query/cache measurement amendment — 19 October 2026
+
+For service calls, retain immutable per-request context and propagate only bounded opaque
+links through a service-owner-admitted protocol/transport option with workflow consent at
+both ends. A performance profile alone cannot add headers/context or discover an endpoint.
+Do not forward raw work/session/agent locators, credentials or capability material as diagnostic
+metadata. Missing/disabled propagation leaves local observations with unavailable linkage.
+Extend TestPerfV3LauncherChildFlow with consent off and protocol option off separately,
+concurrent requests for two work items, and unknown service context. The service client/handler
+protocol and its authorization remain forge-neutral/39–41; this brief only reuses an admitted
+interface at existing launch/child seams.
 
 ## Evidence
 

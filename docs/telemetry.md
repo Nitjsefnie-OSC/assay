@@ -296,3 +296,10 @@ observations; parent inclusive time and child/request time are never summed into
 workflow time. Future perfdata import applies its own explicit workflow consent and
 source/epoch aliases before preview or upload; it never forwards raw local work locators or
 native harness IDs. Existing counts-only network telemetry and its two switches are unchanged.
+
+The planned v3 contract includes query/cache-service calls as a separate observation boundary:
+client logical/transport counts and latency, handler/cache/coalescing work, and actual upstream
+provider attempts/cost. Optional opaque diagnostic links can use only a separately admitted
+service protocol/transport with workflow consent at both ends; a selected profile alone never
+adds headers or forwards raw work/session/agent locators. Shared refresh cost is counted once,
+missing server measurements remain unknown, and process CPU cannot be duplicated per handler.

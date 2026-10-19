@@ -2,7 +2,7 @@
 brief: assay:assay:desktools-v2:63
 title: "Define perf-v3 attribution, profiles and compatible local readers"
 why: "Operators cannot associate current local measurements with a brief, issue or agent. One versioned local contract must add that attribution and forge-cost vocabulary without widening the old records or silently collecting identifiable workflow data."
-wave: 1
+wave: 2
 depends: ["desktools-v2/61"]
 unblocks: ["desktools-v2/64", "desktools-v2/65", "desktools-v2/62", "statusgen/26", "performance-collection/02"]
 effort: M
@@ -12,7 +12,7 @@ gate-why: "Workflow attribution exposes local work linkage; review the implement
 decision-trigger: spec
 issues: []
 schema: brief-v3
-version: 1
+version: 2
 id: 3c6c55aa-ddde-467a-8567-763d7072541f
 authored: 2026-10-19 by performance attribution authoring
 sources:
@@ -127,6 +127,20 @@ Rows 1–3 plant the counterexamples named in Expect: identity/consent or reques
 false-zero/compatibility bugs, and changed operational behavior. Row 4 checks shared consumer
 routing. Sufficiency of real-world coverage and local disclosure remains reviewer judgment;
 fixture success never asserts live adoption or permission.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Extend the schema/reducer fixtures in docs/performance-attribution-spec.md's query/cache
+section. Distinguish client logical calls/transport attempts, handler observations and actual
+provider attempts; include bounded direct/passthrough/refresh/poll/repair origin, cache source
+and coalescing coverage. Optional diagnostic links require the workflow profile and an
+explicitly admitted service-protocol option, never automatic raw work/identity forwarding.
+Use explicit observation kinds to avoid counting request detail plus a process summary.
+Handler-scoped CPU cannot be inferred from concurrent whole-process CPU. Extend
+TestPerfV3RecordToReportFlow with warm hit, 50-to-one shared three-page refresh, passthrough
+retry, background poll and missing server data; planted duplicate points, false zero and
+client-plus-server double logical query counts must fail. This is synthetic contract/reducer
+work; it adds no dependency on an unshipped service.
 
 ## Evidence
 

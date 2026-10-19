@@ -59,7 +59,7 @@ Operations admission remains a blocker for /25; the verifier runtime does not wa
 | 23 | [Product target binding and context drift assessment](brief-23-product-target-binding-and-context-drift-assessment.md) | 3 | M | todo | — | — |
 | 24 | [Portfolio allocation and capacity accounting](brief-24-portfolio-allocation-and-capacity-accounting.md) | 2 | M | todo | — | — |
 | 25 | [Read-only portfolio and drift projections](brief-25-read-only-portfolio-and-drift-projections.md) | 4 | M | todo | — | — |
-| 26 | [Extend statusgen phase measurements through the shared performance recorder](brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md) | 3 | M | todo | — | — |
+| 26 | [Extend statusgen phase measurements through the shared performance recorder](brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md) | 4 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path

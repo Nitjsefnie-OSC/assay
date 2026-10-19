@@ -2,7 +2,7 @@
 brief: assay:assay:performance-collection:08
 title: "Daily report generation and report-pack qualification"
 why: "A scheduled run and a manual invocation must produce the same charts from the same saved snapshot, with missing collection visible."
-wave: 5
+wave: 6
 depends: ["performance-collection/07"]
 unblocks: ["performance-collection/09"]
 effort: M
@@ -12,7 +12,7 @@ gate-why: "Report collection, exposure and recurring effect boundaries need acce
 decision-trigger: spec
 issues: []
 schema: brief-v2
-version: 3
+version: 4
 id: bcf69d42-62dd-4b7f-a609-af76d88ee19c
 authored: "2026-10-15 by reporting authoring session"
 sources:
@@ -111,6 +111,20 @@ on-demand generation at the same saved cutoff. Retain source/invocation deduplic
 aliased references; do not scrape a live forge or agent transcript to fill missing dimensions.
 Extend the existing daily/on-demand parity Verify fixture with mixed versions, two work items,
 child overlap and missing points; no average-of-percentiles or unknown-as-zero is permitted.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Preserve the query/cache boundary contract from docs/performance-attribution-spec.md:
+client logical service calls and transport attempts, handler timing/cache/coalescing outcomes,
+and actual direct/passthrough/refresh/poll/repair provider sends/cost remain different kinds.
+Import correlation only under the selected aliased workflow policy; never forward raw local
+locators or infer missing server coverage as zero. Shared refresh/background cost remains
+shared/unallocated and one provider observation cannot be copied to all waiting work items.
+Do not sum client wait, handler/provider spans or concurrent process CPU as elapsed savings.
+Extend the existing local/served/replay/report Verify flow for this owner with the shared
+50-query/three-page fixture, warm hit, passthrough retry, background poll and absent server
+data. Wrongly combining the two sides of one service call or multiplying upstream points
+must fail the independent expected result; existing selectors and all Evidence remain intact.
 
 ## Evidence
 

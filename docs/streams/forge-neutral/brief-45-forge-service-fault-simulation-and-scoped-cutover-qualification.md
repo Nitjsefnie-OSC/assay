@@ -13,10 +13,11 @@ decision-trigger: spec
 issues: []
 outcome: none
 schema: brief-v2
-version: 3
+version: 4
 id: 5306ce94-4e21-44af-82e4-d552eaca0ff5
 authored: 2026-10-14 by forge-service authoring
 sources:
+  - "assay:assay:desktools-v2:65 — reusable own-provider observation seam"
   - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - "2026-10-16 performance authoring amendment, inspected origin/main eba941721; docs/streams/desktools-v2/README.md performance priority"
   - https://github.com/medici-finance/assay/blob/b59a1dc90ce9f383ba350eca8398fe2f6d934152/docs/proposals/non-ci-architecture/21-forge-service-and-source-queries.md
@@ -198,6 +199,15 @@ metadata may join the same request. No copied descendant call total,
 and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
 service delivery; record unsupported boundaries until producer integration. /45's existing
 matched service qualification must include own-request and parent/child no-double-count cases.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
+
+Extend the existing named served workload Verify row with 50 same-scope queries, one three-page coalesced walk, subsequent warm hit, forced passthrough with retry, denied request, background poll and missing server diagnostics. Assert exact client logical count/transport attempts, handler count, three actual page sends and shared points charged once; no double process CPU or client+handler elapsed totals. Test propagation disabled at either profile/protocol boundary and concurrent work isolation through real client/server/executor/report seams.
+
+Extend TestServedPerformanceWorkloadAttribution and the existing corresponding Verify flow with these negative cases; require its exact PASS line.
+No service activation or extra dependency on a live collector is introduced.
 
 ## Evidence
 

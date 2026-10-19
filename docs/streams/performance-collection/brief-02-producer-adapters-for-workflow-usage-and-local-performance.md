@@ -2,7 +2,7 @@
 brief: assay:assay:performance-collection:02
 title: "Producer adapters for workflow, usage and local performance"
 why: "A logger with only synthetic input cannot explain desk delays or rework. Bounded adapters should turn existing performance, dispatch, historian and runner observations into locally useful measurements without waiting for the full cell runtime."
-wave: 3
+wave: 4
 depends: ["performance-collection/01", "desktools-v2/63", "desktools-v2/64", "desktools-v2/65"]
 unblocks: ["performance-collection/06", "performance-collection/07"]
 effort: L
@@ -12,7 +12,7 @@ gate-why: "Correlated operational measurements and their access/retention bounda
 decision-trigger: spec
 issues: []
 schema: brief-v2
-version: 4
+version: 5
 id: 20aa552e-a2cf-4e0d-959c-0b47c9091d0a
 authored: 2026-10-13 by performance collection authoring
 sources:
@@ -202,6 +202,20 @@ Extend TestOperatingReportSourceCoverage and TestPhaseProducerFlow (the existing
 adapter obligation) with two same-number issues in different scopes, two agent roles, child
 causal links, re-import duplicates, mixed versions, missing cost and an uninstrumented child.
 Require the existing exact PASS lines; all earlier Verify rows remain obligations.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Preserve the query/cache boundary contract from docs/performance-attribution-spec.md:
+client logical service calls and transport attempts, handler timing/cache/coalescing outcomes,
+and actual direct/passthrough/refresh/poll/repair provider sends/cost remain different kinds.
+Import correlation only under the selected aliased workflow policy; never forward raw local
+locators or infer missing server coverage as zero. Shared refresh/background cost remains
+shared/unallocated and one provider observation cannot be copied to all waiting work items.
+Do not sum client wait, handler/provider spans or concurrent process CPU as elapsed savings.
+Extend the existing local/served/replay/report Verify flow for this owner with the shared
+50-query/three-page fixture, warm hit, passthrough retry, background poll and absent server
+data. Wrongly combining the two sides of one service call or multiplying upstream points
+must fail the independent expected result; existing selectors and all Evidence remain intact.
 
 ## Evidence
 

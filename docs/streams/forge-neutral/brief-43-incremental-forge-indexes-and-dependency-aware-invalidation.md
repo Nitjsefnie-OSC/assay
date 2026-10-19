@@ -13,7 +13,7 @@ decision-trigger: spec
 issues: []
 outcome: none
 schema: brief-v2
-version: 3
+version: 4
 id: dd9e0da4-b348-4311-a31c-83605c8a6522
 authored: 2026-10-14 by forge-service authoring
 sources:
@@ -182,6 +182,16 @@ metadata may join the same request. No copied descendant call total,
 and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
 service delivery; record unsupported boundaries until producer integration. /45's existing
 matched service qualification must include own-request and parent/child no-double-count cases.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
+
+Derived-query/index recomputation, cache hit/miss/stale/bypass and coalesced leader/waiter outcomes are distinct from provider cost. One shared refresh/recompute has one cost observation with bounded causal linkage, not one copied charge per caller. Cross-scope cache activity is never exposed through public response metrics.
+
+Extend this brief's existing production-flow Verify cases with these boundary/false-count
+negative fixtures; all existing Tasks, exact selectors and Evidence remain obligations.
+No service activation or extra dependency on a live collector is introduced.
 
 ## Evidence
 

@@ -469,3 +469,8 @@ v1/v2 consent is not widened. The separate performance-collection owner imports/
 v3 data before any spool/export, without becoming operational coordination or acceptance state.
 Local v3 precedes DB/API deployment. New /63–65 and amended /62, statusgen/26 and collection
 briefs carry delivery; authored intent does not assert implementation, adoption or benefit.
+
+The perf-v3 service measurements also cover the planned query/cache layer: caller-facing
+logical requests and latency, per-handler/cache/coalescing work, and actual direct/passthrough
+or background provider requests/cost. Keep these observation kinds distinct and charge shared
+refreshes once; see the [boundary contract](../../performance-attribution-spec.md#querycache-service-and-passthrough-boundaries).

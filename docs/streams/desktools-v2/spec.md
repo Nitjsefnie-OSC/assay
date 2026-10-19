@@ -471,3 +471,14 @@ this shared seam through cli-contract.md rather than duplicating parsers or stop
 collection. Preserve completed /61's implementation/Evidence; collection stays parked. The
 new implementation briefs carry their own disclosure gates; this authoring revision does
 not claim those gates passed or activate deployment.
+
+### Query/cache service observations
+
+The [same v3 contract](../../performance-attribution-spec.md#querycache-service-and-passthrough-boundaries)
+also covers service/client latency and per-handler cache/coalescing work, separately from
+actual provider sends, timing and cost. Shared refreshes count actual pages once; direct,
+service-passthrough, refresh, poll and repair origins remain visible. /63 freezes bounded
+kinds/reducer fixtures; /65 supplies provider observations and existing forge-neutral/37–45
+owns service implementation/qualification. Local v3 requires no unshipped service or database.
+No implicit diagnostic propagation, raw work locator forwarding or per-handler process-CPU
+attribution is permitted; missing service coverage is unknown.

@@ -13,7 +13,7 @@ decision-trigger: spec
 issues: []
 outcome: none
 schema: brief-v2
-version: 3
+version: 4
 id: 2b089f0c-6ce5-4e2f-a5bf-d62842845b29
 authored: 2026-10-14 by forge-service authoring
 sources:
@@ -195,6 +195,16 @@ metadata may join the same request. No copied descendant call total,
 and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
 service delivery; record unsupported boundaries until producer integration. /45's existing
 matched service qualification must include own-request and parent/child no-double-count cases.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
+
+Instrument per-handler service latency and directly observed phases separately from executor-to-provider requests. Keep per-request immutable context and actual authenticated server role distinct from descriptive caller role. Do not attribute concurrent process-wide CPU to each handler. Denial/expiry/cache-hit paths retain result/coverage and make no extra provider calls for diagnostics.
+
+Extend this brief's existing production-flow Verify cases with these boundary/false-count
+negative fixtures; all existing Tasks, exact selectors and Evidence remain obligations.
+No service activation or extra dependency on a live collector is introduced.
 
 ## Evidence
 

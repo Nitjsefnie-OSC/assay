@@ -15,6 +15,7 @@ version: 2
 id: cd878998-fb23-4088-9204-0d66f539b24d
 authored: 2026-10-16 by performance brief authoring
 sources:
+  - "assay:assay:desktools-v2:65 — provider timer/cost seam; integrate the /58 credential provider after it exists"
   - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - docs/streams/desktools-v2/README.md — Performance delivery priority, 2026-10-16
   - "assay:assay:desktools-v2:61 — preserved implemented boundary/schema baseline"

@@ -12,7 +12,7 @@ gate-why: "sensitive-data is yes because inbound forge deliveries and the commen
 issues: []
 outcome: none
 schema: brief-v2
-version: 4
+version: 5
 id: 3542bd60-8abe-4927-ae46-fb3cd5d3e1f8
 authored: 2026-10-13 by statusgen newbrief (non-CI R6 authoring follow-up)
 sources:
@@ -276,6 +276,16 @@ metadata may join the same request. No copied descendant call total,
 and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
 service delivery; record unsupported boundaries until producer integration. /45's existing
 matched service qualification must include own-request and parent/child no-double-count cases.
+
+## Query/cache measurement amendment — 19 October 2026
+
+Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
+
+Event-triggered refresh/poll/repair diagnostics keep their trigger class and own operation identity, never event payload/capability text. Duplicate event hints or polling reconciliation cannot multiply observed provider charges; retain unallocated background work and incomplete coverage.
+
+Extend this brief's existing production-flow Verify cases with these boundary/false-count
+negative fixtures; all existing Tasks, exact selectors and Evidence remain obligations.
+No service activation or extra dependency on a live collector is introduced.
 
 ## Evidence
 

@@ -212,13 +212,13 @@ adapters and preservation tests; do not use missing quality evidence to justify 
 | # | Brief | Wave | Effort | Status | Verified | Reviewed |
 |---|-------|------|--------|--------|----------|----------|
 | 01 | [Local performance event contract, spool and offline report](brief-01-local-performance-event-contract-spool-and-offline-report.md) | 0 | L | todo | — | — |
-| 02 | [Producer adapters for workflow, usage and local performance](brief-02-producer-adapters-for-workflow-usage-and-local-performance.md) | 3 | L | todo | — | — |
+| 02 | [Producer adapters for workflow, usage and local performance](brief-02-producer-adapters-for-workflow-usage-and-local-performance.md) | 4 | L | todo | — | — |
 | 03 | [Separate TimescaleDB performance database and storage adapter](brief-03-separate-timescaledb-performance-database-and-storage-adapter.md) | 1 | L | todo | — | — |
 | 04 | [Authenticated performance ingestion API](brief-04-authenticated-performance-ingestion-api.md) | 2 | L | todo | — | — |
 | 05 | [Explicit resumable upload from the local spool](brief-05-explicit-resumable-upload-from-the-local-spool.md) | 1 | M | todo | — | — |
-| 06 | [Collection replay, retention, recovery and release qualification](brief-06-collection-replay-retention-recovery-and-release-qualification.md) | 4 | M | todo | — | — |
-| 07 | [On-demand three-report bundle and thin skill](brief-07-on-demand-operating-reports.md) | 4 | L | todo | — | — |
-| 08 | [Daily report generation and report-pack qualification](brief-08-daily-report-generation.md) | 5 | M | todo | — | — |
+| 06 | [Collection replay, retention, recovery and release qualification](brief-06-collection-replay-retention-recovery-and-release-qualification.md) | 5 | M | todo | — | — |
+| 07 | [On-demand three-report bundle and thin skill](brief-07-on-demand-operating-reports.md) | 5 | L | todo | — | — |
+| 08 | [Daily report generation and report-pack qualification](brief-08-daily-report-generation.md) | 6 | M | todo | — | — |
 | 09 | [Bounded performance issue and repair-PR loop](brief-09-bounded-performance-repair-loop.md) | 7 | L | todo | — | — |
 <!-- statusgen:briefs:end -->
 
@@ -230,11 +230,12 @@ checked before report integration. No database, hosted API, general journey sche
 full managed runtime is a prerequisite for local reporting.
 
 - Wave 0: 01 — local contract, bounded spool, coverage and offline reader.
-- Wave 1: desktools-v2/63 — v3 local contract (after implemented /61); 03 — separate database; 05 — explicit uploader.
-- Wave 2: desktools-v2/64 and /65 — propagation and cost observers; 04 — authenticated ingestion.
-- Wave 3: 02 — version-selected real source adapters after /01 and /63–65.
-- Wave 4: 07 — on-demand three-report bundle; 06 — remote-path qualification.
-- Wave 5: 08 — daily generation through the same report entrypoint.
+- Wave 1: implemented desktools-v2/61; 03 — separate database; 05 — explicit uploader.
+- Wave 2: desktools-v2/63 — v3 local contract; 04 — authenticated ingestion.
+- Wave 3: desktools-v2/64 and /65 — propagation and cost observers.
+- Wave 4: 02 — version-selected real source adapters after /01 and /63–65.
+- Wave 5: 07 — on-demand three-report bundle; 06 — remote-path qualification.
+- Wave 6: 08 — daily generation through the same report entrypoint.
 - Wave 7: 09 — bounded issue/repair proposal loop, held by its typed graph-execution
   prerequisites (graph-execution/14 and /26 are wave 6, /16 wave 5). Those external
   prerequisites can dominate delivery time.
@@ -356,5 +357,14 @@ bounded aliased contract through /03–06 storage/delivery and /07–09 reportin
 No historical work/agent/cost inference, recursive child charging or default-profile widening.
 
 Current local reporting path: `/01 + /63 → /64 and /65 → /02 → /07 → /08`.
-Waves 0,1,2,3,4,5 reflect that path; /09 remains wave 7 due to independent runtime inputs.
+Waves 0,2,3,4,5,6 reflect that path; /09 remains wave 7 due to independent runtime inputs.
 Separate DB/API work /03–05 still starts from /01 and does not block local v3 or reports.
+
+### Query/cache versus provider reporting
+
+Client service operations/attempts, server handler/cache/coalescing observations and actual
+upstream direct/passthrough/refresh/poll/repair cost retain separate kinds and coverage under
+the [v3 contract](../../performance-attribution-spec.md#querycache-service-and-passthrough-boundaries).
+Shared upstream work is counted once, and missing server data is not a cache hit or zero
+provider cost. /01–02 and /06–08 carry the same synthetic layered journey through local import,
+retention/replay and on-demand/daily reports; no source-specific replacement collector.
