@@ -301,7 +301,7 @@ Before selecting a projection, run `issueboard --version` locally and require it
 an older binary uses the legacy `issueboard issues` sweep with the same manual
 work-readiness checks below until the pin is deliberately upgraded. Do not retry a
 failed projected sweep through a broad read. Reverting the plugin and producer pins
-restores the old sweep. See [the compatibility matrix](../../../../docs/issue-projections.md).
+restores the old sweep. See [the compatibility matrix](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
 An empty work-ready observation covers only unrepresented issue candidates; intake,
 addressed inbox, representation/PR checks and watcher health still need their own reads.
 

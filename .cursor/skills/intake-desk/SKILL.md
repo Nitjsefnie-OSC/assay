@@ -184,7 +184,7 @@ Use the projected forms only with an `issueboard --version` producer advertising
 never as a retry after an incomplete projected read. The intake projection preserves
 the whole issue population, escalation/closure and quarantine; the inbox projection
 covers only the named addressee. Local raw intake remains `issueboard intake`.
-See [producer/plugin compatibility and rollback](../../../../docs/issue-projections.md).
+See [producer/plugin compatibility and rollback](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
 
 ## Scored triage — the impact/risk/effort triple at exit
 

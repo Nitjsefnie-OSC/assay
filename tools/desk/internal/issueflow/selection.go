@@ -38,11 +38,13 @@ func Select(p Projection, c Candidate, to string) bool {
 	}
 }
 
-// InboxRank preserves the human decision inbox's exact, case-sensitive label
-// union and ordering. This differs from an addressed desk-role inbox.
+// InboxRank uses the human decision inbox's label union and ordering. Labels
+// compare without case or surrounding space; their displayed spelling is kept.
+// This differs from an addressed desk-role inbox.
 func InboxRank(names []string) int {
 	best := 99
 	for _, n := range names {
+		n = strings.ToLower(strings.TrimSpace(n))
 		for i, l := range []string{"urgent", "needs-decision", "question", "help wanted"} {
 			if n == l && i < best {
 				best = i
