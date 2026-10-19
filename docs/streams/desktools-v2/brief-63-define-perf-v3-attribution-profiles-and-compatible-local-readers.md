@@ -10,6 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Workflow attribution exposes local work linkage; review the implemented field, consent and propagation boundary before acceptance."
 decision-trigger: spec
+decision-issue: 3536
 issues: []
 schema: brief-v3
 version: 2
