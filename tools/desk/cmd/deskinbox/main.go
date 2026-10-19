@@ -165,14 +165,14 @@ func executeMeasured(args []string, stdout, stderr io.Writer, now time.Time, pre
 		root.Args = cobra.ArbitraryArgs
 		rootSet := cli.Declare(root, queueBindings()...)
 		root.RunE = func(_ *cobra.Command, args []string) error {
-			return codeErr(queueCommand("table", "", args, rootSet, stdout, stderr, now, pre, observer))
+			return codeErr(queueCommand("table", "", args, rootSet, stdout, stderr, now, pre, session, observer))
 		}
 
 		walk := &cobra.Command{Use: "walk [--item K] [owner/repo ...]", Short: "print ONE item in the five-part decision format",
 			Args: cobra.ArbitraryArgs}
 		walkSet := cli.Declare(walk, queueBindings()...)
 		walk.RunE = func(_ *cobra.Command, args []string) error {
-			return codeErr(queueCommand("walk", "", args, walkSet, stdout, stderr, now, pre, observer))
+			return codeErr(queueCommand("walk", "", args, walkSet, stdout, stderr, now, pre, session, observer))
 		}
 
 		html := &cobra.Command{Use: "html OUT.html [owner/repo ...]", Short: "write the whole queue to OUT.html as decision cards plus the Flow section",
@@ -184,7 +184,7 @@ func executeMeasured(args []string, stdout, stderr io.Writer, now time.Time, pre
 			}}
 		htmlSet := cli.Declare(html, queueBindings()...)
 		html.RunE = func(_ *cobra.Command, args []string) error {
-			return codeErr(queueCommand("html", args[0], args[1:], htmlSet, stdout, stderr, now, pre, observer))
+			return codeErr(queueCommand("html", args[0], args[1:], htmlSet, stdout, stderr, now, pre, session, observer))
 		}
 
 		// A bare word under flow names no repo or cell (flow resolves cells from
@@ -255,7 +255,7 @@ func begin(stderr io.Writer, pre func(io.Writer) int) int {
 
 // queueCommand settles the table/walk/html mode from the parsed values: --item and --walk
 // select walk from any of the three forms, as the hand-rolled loop did.
-func queueCommand(mode, htmlOut string, repoArgs []string, set *cli.Set, stdout, stderr io.Writer, now time.Time, pre func(io.Writer) int, observers ...deskkit.RequestObserver) int {
+func queueCommand(mode, htmlOut string, repoArgs []string, set *cli.Set, stdout, stderr io.Writer, now time.Time, pre func(io.Writer) int, session *perfrec.Session, observers ...deskkit.RequestObserver) int {
 	v, err := set.Resolve(cli.Inputs{})
 	if err != nil {
 		fmt.Fprintln(stderr, "deskinbox:", err)
@@ -278,6 +278,11 @@ func queueCommand(mode, htmlOut string, repoArgs []string, set *cli.Set, stdout,
 		mode = "walk"
 	}
 	deskkit.PerfCommand(perfVerbs, mode)
+	// The resolved table mode only lists through the native observer. --walk and
+	// --item have already changed mode, so their raw detail path stays unknown.
+	if mode == "table" && session != nil {
+		session.ObserveRequests()
+	}
 	if code := begin(stderr, pre); code != deskkit.ExitOK {
 		return code
 	}

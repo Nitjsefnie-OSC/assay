@@ -97,6 +97,26 @@ func TestDiscoveryV3ActualRecorder(t *testing.T) {
 	if own != 2 || rec.V3.RequestCoverage == perfrec.CoverageMeasured || rec.V3.Attribution.Role != "implement" {
 		t.Fatalf("raw gap lost or invocation leaked: %+v", rec.V3)
 	}
+	// The table owns the same fully observed native enumeration as discovery.
+	out.Reset()
+	errs.Reset()
+	attempts = 0
+	if code := measured([]string{"example-org/tracker", "--perf-profile=workflow"}, &out, &errs, now, nil); code != 0 || attempts != 1 {
+		t.Fatal("native table traffic changed", code, attempts)
+	}
+	history, err = deskkit.LoadPerfHistory(1)
+	if err != nil || len(history.Records) != 3 {
+		t.Fatal("table record", err)
+	}
+	table := history.Records[2]
+	var tableSends int64
+	for _, r := range table.V3.Requests {
+		tableSends += r.Attempts
+	}
+	if tableSends != 1 || table.V3.RequestCoverage != perfrec.CoverageMeasured {
+		t.Fatal("native table completeness", table.V3)
+	}
+
 	// An empty discovery is still one measured enumeration send; it is not
 	// proof that the raw detail reader was inventoried or that other queues are idle.
 	empty = true
@@ -107,7 +127,7 @@ func TestDiscoveryV3ActualRecorder(t *testing.T) {
 		t.Fatal("empty discovery", code, attempts, out.String())
 	}
 	history, err = deskkit.LoadPerfHistory(1)
-	if err != nil || len(history.Records) != 3 || history.Records[2].V3.RequestCoverage != perfrec.CoverageMeasured {
+	if err != nil || len(history.Records) != 4 || history.Records[3].V3.RequestCoverage != perfrec.CoverageMeasured {
 		t.Fatal("empty enumeration lost completeness", err)
 	}
 	empty = false
@@ -120,7 +140,7 @@ func TestDiscoveryV3ActualRecorder(t *testing.T) {
 		t.Fatal("consent off parity", code, attempts)
 	}
 	history, err = deskkit.LoadPerfHistory(1)
-	if err != nil || len(history.Records) != 3 {
+	if err != nil || len(history.Records) != 4 {
 		t.Fatal("consent off wrote", err)
 	}
 	out.Reset()
