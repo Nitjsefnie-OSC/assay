@@ -77,7 +77,7 @@
       "name": "review B5 — a read verb's lines are dropped from the ledger (the access decision is lost)",
       "file": "cmd/deskrun/verbs.go",
       "old": "\tif readVerbs[verb] {\n\t\ttool = deskkit.DeskrunReadTool\n\t}",
-      "new": "\tif readVerbs[verb] {\n\t\treturn\n\t}"
+      "new": "\tif readVerbs[verb] {\n\t\treturn nil\n\t}"
     },
     {
       "name": "review B8 — the read bucket's key is unregistered, so it folds into deskrun's write bucket",
