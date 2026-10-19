@@ -25,7 +25,7 @@ func TestDiscoveryJourney(t *testing.T) {
 			}
 			return 200, `[{"number":1,"title":"question-one","state":"open","created_at":"2026-01-01T00:00:00Z","user":{"login":"external","id":99},"labels":[{"name":"Question"}]},{"number":2,"title":"urgent-two","state":"open","created_at":"2026-01-02T00:00:00Z","user":{"login":"external","id":99},"labels":[{"name":" Urgent "},{"name":"question"}]},{"number":3,"title":"unrelated-three","state":"open","user":{"login":"external","id":99},"labels":[]}]`
 		}}
-		forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
+		forgeFor = func(repo string, _ ...deskkit.RequestObserver) (deskkit.Forge, deskkit.ForgeRepo, error) {
 			return &deskkit.GitHubForge{Token: "local-fixture", BaseURL: "https://fixture.invalid", Client: &http.Client{Transport: transport}}, deskkit.ForgeRepo{Owner: "example-org", Name: "tracker"}, nil
 		}
 		var out, errb bytes.Buffer

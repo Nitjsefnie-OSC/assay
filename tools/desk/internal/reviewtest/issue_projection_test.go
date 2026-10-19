@@ -107,3 +107,31 @@ func TestIssuePerfIntegration(t *testing.T) {
 		}
 	}
 }
+
+// regression: class issue-projection-v3-composition
+func TestIssueV3Composition(t *testing.T) {
+	bin := build(t)
+	for _, c := range []struct{ tool, pattern string }{
+		{"issueboard", "TestProjectionV3ActualRecorder"},
+		{"deskinbox", "TestDiscoveryV3ActualRecorder"},
+	} {
+		if log, e := projectionTests(t, bin, c.tool, c.pattern); e != nil {
+			t.Fatalf("actual native->record/report %s: %v\n%s", c.tool, e, log)
+		}
+		for _, m := range []struct{ file, old, new string }{
+			{"forge.go", "deskkit.ForgeFor(fr, role, observers...)", "deskkit.ForgeFor(fr, role)"},
+			{"main.go", "session.SelectContext(c)", "_ = c"},
+		} {
+			mutant := buildMutant(t, c.tool, "cmd/"+c.tool+"/"+m.file, m.old, m.new)
+			if log, e := projectionTests(t, mutant, c.tool, c.pattern); e == nil || !strings.Contains(log, "--- FAIL: "+c.pattern) {
+				t.Fatalf("missing invocation composition survived %s/%s: %v\n%s", c.tool, m.file, e, log)
+			}
+		}
+	}
+	// Marking raw-detail modes complete would manufacture coverage across the
+	// unchanged unobserved comments reader, despite correctly observed GetIssue.
+	mutant := buildMutant(t, "deskinbox", "cmd/deskinbox/main.go", "session.SelectContext(c)", "session.SelectContext(c); session.ObserveRequests()")
+	if log, e := projectionTests(t, mutant, "deskinbox", "TestDiscoveryV3ActualRecorder"); e == nil || !strings.Contains(log, "raw gap lost") {
+		t.Fatalf("raw coverage mutation survived: %v\n%s", e, log)
+	}
+}

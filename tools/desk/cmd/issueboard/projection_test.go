@@ -117,7 +117,7 @@ func TestProjectionFailures(t *testing.T) {
 	t.Run("missing-open", func(t *testing.T) {
 		root, _ := projectionFixture(t)
 		previous := forgeFor
-		forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
+		forgeFor = func(repo string, _ ...deskkit.RequestObserver) (deskkit.Forge, deskkit.ForgeRepo, error) {
 			f, fr, e := previous(repo)
 			if repo == homeRepo {
 				f.(*fakeForge).data.openUnlisted = map[int]string{9: "still-open"}
