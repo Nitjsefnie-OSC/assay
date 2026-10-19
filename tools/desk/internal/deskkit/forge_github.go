@@ -273,7 +273,16 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 		}
 		bodyReader = bytes.NewReader(b)
 	}
-	resp, rerr := rc.Request(method, g.baseURL()+path, bodyReader)
+	ctx := context.Background()
+	var capture *pointCapture
+	if pointsSelected {
+		// go-gh sanitizes JSON through another response-body wrapper. Keep the
+		// observation handle on this operation rather than asserting the body's
+		// concrete type after library response processing.
+		capture = &pointCapture{}
+		ctx = context.WithValue(ctx, pointCaptureKey{}, capture)
+	}
+	resp, rerr := rc.RequestWithContext(ctx, method, g.baseURL()+path, bodyReader)
 	if rerr != nil {
 		var he *ghapi.HTTPError
 		if errors.As(rerr, &he) {
@@ -284,8 +293,8 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(resp.Body)
-	if pointsSelected {
-		attachRequestPoints(resp.Body, decodeRequestPoints(raw, "github-points"))
+	if capture != nil && capture.body != nil {
+		attachRequestPoints(capture.body, decodeRequestPoints(raw, "github-points"))
 	}
 	if readErr != nil {
 		return nil, Unverifiable(fmt.Sprintf("%s %s response body cut off mid-transfer (%d bytes arrived) — refusing to treat a partial answer as a complete one", method, path, len(raw)), readErr)
