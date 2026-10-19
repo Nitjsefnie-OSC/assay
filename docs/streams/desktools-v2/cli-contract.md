@@ -150,3 +150,21 @@ Follow [the component contract](../../library-first.md). Command handlers parse 
 application APIs; use typed clients at independent authority boundaries. Configuration
 resolution does not grant admission. SDK/package extraction is owned by its named brief,
 not silently included in a parser migration. Preserve direct-domain admission tests.
+
+## 5. Performance context — planned perf-v3 extension, 19 October 2026
+
+[The attribution specification](../../performance-attribution-spec.md#environment-cli-and-shared-library-seam)
+freezes the shared `--perf-*`/environment bindings, field lifecycle and measurement units.
+Desktools-v2/63 supplies the credential-free typed resolver; /64 binds it through this
+adapter and the maintained-entrypoint inventory. Flag > named env > unavailable; present
+empty clears inherited context, repeated work flags replace the entire env work list.
+Attribution never changes operational role/custody and invalid optional values are not
+echoed or allowed to fail the underlying operation. No config-file discovery/AutomaticEnv.
+
+Existing CLI migration owners adopt the shared binding when available or record an explicit
+uninstrumented boundary until /64 integrates it; they do not invent a second v2-only contract.
+Shared TestPerfV3CLIContextPrecedence and per-owner offline help/exit fixtures cover these
+bindings; /17's final suite qualification includes their flow. A standalone module uses
+perfrec directly, never an import of desk internals. No profile means the prior recorder
+behavior, and tool profile cannot carry inherited workflow identity. These are planned
+obligations, not a claim that current binaries accept the flags.

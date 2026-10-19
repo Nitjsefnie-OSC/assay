@@ -2,7 +2,7 @@
 brief: assay:assay:performance-collection:07
 title: "On-demand three-report bundle and thin skill"
 why: "Operators need one reproducible view of completions, stream movement and tool costs from collected data, without more provider calls."
-wave: 3
+wave: 4
 depends: ["performance-collection/02"]
 unblocks: ["performance-collection/08"]
 effort: L
@@ -12,10 +12,11 @@ gate-why: "Report collection, exposure and recurring effect boundaries need acce
 decision-trigger: spec
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 id: 29c71b10-6ca6-4594-bc10-1f294a5d1463
 authored: "2026-10-15 by reporting authoring session"
 sources:
+  - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - "2026-10-16 wave reconciliation at origin/main 9f9bb35de: performance-collection/02 consumes desktools-v2/61; reporting scope and historical Evidence unchanged"
   - docs/streams/performance-collection/README.md
   - docs/streams/continuing-operations/spec.md
@@ -122,6 +123,19 @@ Named commands below are implementation deliverables. Each must run the named te
 | 5 | check:ci +flow | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && go test -count=1 -v ./report/... -run '^TestOperatingReportRedaction$' > "$o" && grep -F -- '--- PASS: TestOperatingReportRedaction ' "$o")` | exit 0; named PASS; credential-, prompt-, title- and error-shaped strings seeded into fixture sources (including blocker reasons) are absent from the JSON, the HTML and the manifest |
 | 6 | check:ci +dereference | `statusgen --root . --consumers --brief performance-collection/07` | exit 0; routing claims corroborated against the implementation diff, including each changed consumer. |
 | 7 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPhaseReportFlow$' ./report/... > "$o" && grep -F -- '--- PASS: TestPhaseReportFlow ' "$o")` | exit 0; named PASS. Nested/failed/missing-child fixture produces correct component/cycle tables and unknowns; hidden downstream work or double-counted parent/child makes the expected report fail. |
+
+## Perf-v3 delivery amendment — 19 October 2026
+
+Apply the [perf-v3 contract](../../performance-attribution-spec.md). Existing Tasks/Verify/Evidence and consent/retention controls remain owed.
+
+The tool panel can filter/group selected aliased work, session, agent, originating desk and
+assigned role. Show each process's own forge attempts, request-duration samples and actual,
+estimated and unknown GraphQL points separately by unit/resource. Show missing agent/parent
+coverage and unattributed/shared overhead; do not manufacture historical attribution for
+v1/v2. Deduplicate source/invocation, never sum parent inclusive wall with child/phase/request
+wall, and do not sum rate gauges. Extend TestPhaseReportFlow (existing report Verify
+obligation) with these mixed-version/parent-child and false-zero negative fixtures; preserve
+all three reports and the offline/no-provider-read contract.
 
 ## Evidence
 

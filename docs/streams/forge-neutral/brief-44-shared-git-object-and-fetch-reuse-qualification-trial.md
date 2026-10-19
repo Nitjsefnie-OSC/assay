@@ -13,10 +13,11 @@ decision-trigger: spec
 issues: []
 outcome: none
 schema: brief-v2
-version: 2
+version: 3
 id: 1cb50a0e-129b-4009-a1e1-bf9fe498f765
 authored: 2026-10-14 by forge-service authoring
 sources:
+  - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - "2026-10-16 performance authoring amendment, inspected origin/main eba941721; docs/streams/desktools-v2/README.md performance priority"
   - https://github.com/medici-finance/assay/blob/b59a1dc90ce9f383ba350eca8398fe2f6d934152/docs/proposals/non-ci-architecture/21-forge-service-and-source-queries.md
   - docs/proposals/non-ci-architecture/14-storage-forge-graph.md
@@ -163,6 +164,19 @@ not invent a broker or pass credentials into statusgen. Existing deskwt prune an
 admission optimizations remain baseline features. A lower subprocess count alone does not
 establish reduced provider requests, disk work or end-to-end time.
 
+
+## Perf-v3 delivery amendment — 19 October 2026
+
+For this brief's existing performance observations, reuse the [perf-v3 contract](../../performance-attribution-spec.md) and /63–65's
+shared typed context and request-cost seam when those adapters are available. Each process
+records its own attempts, timing and observed GraphQL points with units/basis/coverage;
+client-to-service and service-to-provider work are distinct. Carry admitted parent invocation
+links when known, preserve missing context and never turn it into operational authority.
+No extra provider request or expanded business query for monitoring; qualified bounded cost
+metadata may join the same request. No copied descendant call total,
+and no v2-only replacement instrument. Keep this brief's scope/Verify/Evidence and independent
+service delivery; record unsupported boundaries until producer integration. /45's existing
+matched service qualification must include own-request and parent/child no-double-count cases.
 
 ## Evidence
 

@@ -454,3 +454,18 @@ from native-mode qualification. Runtime evidence is implemented against the curr
 PostgreSQL/role/attempt owners; no replacement store, scheduler or event lifecycle is added.
 Actual adopter trials, data and budgets are outside the public method. This is a new proposal,
 not an enlargement of the earlier revision-bound ratification or a deployed capability.
+
+## Attributed operational performance — requested amendment, 19 October 2026
+
+Use the [perf-v3 contract](../../performance-attribution-spec.md) for new local tool and
+runtime diagnostic observations: qualified local work references, distinct desk/assigned role,
+logical session/agent identity, per-process invocation/parent links, actual forge attempts,
+request durations and attributable GraphQL points with explicit unknown coverage. Desks and
+launchers supply bounded environment defaults, tools expose shared parsed overrides, and each
+subprocess measures its own work. No recursive parent charging or additional monitoring requests.
+
+perfrec remains the optional local instrument with explicit tool/workflow profiles; existing
+v1/v2 consent is not widened. The separate performance-collection owner imports/aliases selected
+v3 data before any spool/export, without becoming operational coordination or acceptance state.
+Local v3 precedes DB/API deployment. New /63–65 and amended /62, statusgen/26 and collection
+briefs carry delivery; authored intent does not assert implementation, adoption or benefit.

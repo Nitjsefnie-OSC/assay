@@ -449,3 +449,25 @@ malformed configuration on help, per-platform source semantics, stable non-help 
 independent domain admission and multiple invocations in one process. Negative controls
 must fail on an omitted tool, ignored Viper binding, effectful help, reintroduced custom
 parser or widened configuration source. A staged CI patch is not a live completion gate.
+
+## 10. Attributed performance — requested amendment, 19 October 2026
+
+The [perf-v3 contract](../../performance-attribution-spec.md) extends the future tool suite
+with qualified local brief/issue attribution, logical session and unique agent/invocation IDs,
+originating desk role and actual assigned role. Desks/launchers set explicit environment
+context; real CLI adapters accept validated overrides. Each subprocess records its own work
+and carries causal links. Measure actual forge attempts, request duration and attributable
+GraphQL points, preserving unknown/estimated coverage and preventing parent/child duplication.
+
+This is new versioned local workflow disclosure with an explicit additional profile. Preserve
+perf-v1/perf-v2, their defaults and tests; no existing opt-in authorizes new work linkage or
+remote transmission. perfrec stays the credential-free library and one local writer; future
+perfdata import owns aliased collection/export, storage and transport. No database/API is a
+prerequisite for local v3. Required audit, quota enforcement and custody are unaffected.
+
+Deliver through new /63 (schema/resolver/readers), /64 (launch and CLI/env context), /65
+(provider timing/cost), then unfinished /62 and statusgen/26. CLI migrations/new tools adopt
+this shared seam through cli-contract.md rather than duplicating parsers or stopping at v2
+collection. Preserve completed /61's implementation/Evidence; collection stays parked. The
+new implementation briefs carry their own disclosure gates; this authoring revision does
+not claim those gates passed or activate deployment.

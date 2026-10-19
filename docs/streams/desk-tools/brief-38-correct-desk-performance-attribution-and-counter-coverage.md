@@ -10,9 +10,10 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 3
+version: 4
 authored: 2026-10-17 by statusgen newbrief
 sources:
+  - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - docs/desk-workflow-efficiency-spec.md
   - docs/desk-workflow-efficiency-change-map.md
   - freshness-checked 2026-10-17 @ fb85924c039c27e7d2aa80e055bfce118e46125d (App-authenticated main fetch)
@@ -118,6 +119,17 @@ is asserted. Each test covers production flow plus the stated wrong-but-plausibl
 | Adapter produces plausible output while duplicating or omitting work | row 1, independent oracle and actual entrypoint/count instrumentation |
 | A partial/unsupported observation or hidden consumer creates a false success | row 2, planted invalid input and explicit refusal/coverage |
 | Operational activation or control deletion inferred from source qualification | review-only: review scope and separate existing adoption gates; no live effects in the test harness |
+
+## Perf-v3 consumer routing — 19 October 2026
+
+[The attributed performance contract](../../performance-attribution-spec.md) governs future
+local measurement. Preserve this brief's existing behavior, tests and legacy v1/v2 privacy;
+new qualified work/agent linkage requires the selected v3 workflow profile. /63 owns the
+schema/resolver/readers, /64 the shared CLI/env and launch propagation, /65 own-request
+cost/timing, /62 desk producer qualification and statusgen/26 standalone phase integration.
+Reuse those seams when available and record missing coverage otherwise; no duplicate
+writer/parser, speculative ID inference or additional measurement request. Existing credential,
+cache/discovery and CLI work remains independently deliverable and is not held for v3.
 
 ## Evidence
 

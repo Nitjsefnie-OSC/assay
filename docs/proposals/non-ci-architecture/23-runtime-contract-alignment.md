@@ -182,3 +182,15 @@ Continuing-operations owns assessment meaning; existing desks own investigation,
 review and verification. A merged repair remains awaiting measured outcome, and missing
 coverage cannot justify a repair. No second scheduler, runtime DB, forge writer or policy
 self-modification is introduced. Existing default gates and qualified legacy paths remain.
+
+## Attributed performance adapter obligation — requested amendment, 19 October 2026
+
+Future runner/supervisor/forge-service adapters preserve the
+[perf-v3 lifecycle and request contract](../../performance-attribution-spec.md): the launcher
+owns logical session/agent identity and assigned role; each process owns fresh invocation
+identity, own CPU and actual requests. Parent links do not authorize work and inclusive
+parent timings never add to child/provider time as elapsed time. Preserve unknown coverage
+at unmanaged boundaries. Use explicit profiles and typed context; optional sink failure
+cannot change required process receipts, custody, budget accounting or recovery. Collection
+import aliases local qualified work before its separate storage/export. The /63–65 library
+and adapters precede optional remote collection, not operational runtime availability.

@@ -190,3 +190,14 @@ the first workflow cutover. The [ci-tooling stream](../../streams/ci-tooling/REA
 owns this decomposition; it does not wait for the runtime controller. R8 retains the
 desk/operator/service relocation work routed by the layout inventory and must qualify
 module visibility, authority and lifecycle before retiring their old paths.
+
+## Perf-v3 delivery — requested amendment, 19 October 2026
+
+[Attributed performance](../../performance-attribution-spec.md) starts from implemented
+local perf-v2 (/61): /63 freezes schema/profiles/context/readers; /64 propagates desk/agent
+context through launchers and real CLI/env adapters; /65 independently adds actual request
+timing/GraphQL point observations. /62 and statusgen/26 qualify production records using
+these owners. Collection/01 defines aliased event meanings independently; /02 consumes
+v1/v2/v3 after /63–65; later storage/transport/reporting preserves their coverage and units.
+A local record/read/report path needs no server or database. Keep collection parked and
+credential work independent; do not reopen /61 or imply deployment/collection activation.
