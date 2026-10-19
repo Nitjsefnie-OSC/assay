@@ -1,0 +1,2 @@
+### Fixed
+- `muhar` builds a mutant from the Go module that owns the mutated file. A spec whose mutations target another module (for example a desk-tools spec mutating a file under `qualgen/`, `statusgen/`, `forgeread/` or `perfrec/`) was reporting `HARNESS BROKEN` because the derived build asked `go` for a package outside the main module of the run's directory; the build now runs in the target's own module root, and a same-module mutant builds exactly as before.

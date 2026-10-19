@@ -170,19 +170,60 @@ func buildMutation(root string, m Mutation, specBuild, specTest string, env []st
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(base, path)
 	}
-	rel, err := filepath.Rel(base, filepath.Dir(path))
+	// The build runs in the module that owns the mutant. For a file in the
+	// run's own module that is root, unchanged; for a file in another module
+	// (a spec at tools/desk mutating ../../qualgen) it is that module's root,
+	// since `go` refuses a package outside the main module of its directory.
+	dir, pkg, err := buildTarget(base, path)
 	if err != nil {
 		return CommandResult{Err: err}
-	}
-	pkg := "."
-	if rel != "." {
-		pkg = "./" + filepath.ToSlash(rel)
 	}
 	cmd, ok := goBuildFromTest(specTest, pkg)
 	if !ok {
 		cmd = "go test -vet=off -c -o " + shellQuote(os.DevNull) + " " + shellQuote(pkg)
 	}
+	if dir != base {
+		root = dir
+	}
 	return runShell(root, cmd, env, timeout)
+}
+
+// buildTarget returns the directory the build of the package holding file must
+// run in, and that package's pattern relative to it. base is the absolute
+// directory the build would otherwise run in. When the file's nearest go.mod is
+// the one base resolves to (or either is not found), the answer is base and a
+// pattern relative to it; when the file belongs to a different module, it is
+// that module's root and a pattern relative to the root.
+func buildTarget(base, file string) (dir, pkg string, err error) {
+	fileDir := filepath.Dir(file)
+	dir = base
+	if target := moduleRoot(fileDir); target != "" && target != moduleRoot(base) {
+		dir = target
+	}
+	rel, err := filepath.Rel(dir, fileDir)
+	if err != nil {
+		return "", "", err
+	}
+	pkg = "."
+	if rel != "." {
+		pkg = "./" + filepath.ToSlash(rel)
+	}
+	return dir, pkg, nil
+}
+
+// moduleRoot returns the nearest directory at or above dir that holds a go.mod,
+// or "" when there is none.
+func moduleRoot(dir string) string {
+	for {
+		if st, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && st.Mode().IsRegular() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
