@@ -216,7 +216,7 @@ signed verdict issue yet, and the lane's enactment gate cannot arm on this repo 
 | 35 | [Go security analysis with gosec and govulncheck](brief-35-go-security-analysis-with-gosec-and-govulncheck.md) | 2 | L | todo | — | — |
 | 36 | [The scheduled board reconcile's PR class becomes generated output — auto-approve lane (default) or direct-CI single-writer, per the driver's ruling on #2688](brief-36-reconcile-generated-class.md) | 1 | S | implemented | — | — |
 | 37 | [Review workflow semantic oracle and matched cost baseline](brief-37-review-workflow-semantic-oracle-and-matched-cost-baseline.md) | 1 | M | todo | — | — |
-| 38 | [Correct desk performance attribution and counter coverage](brief-38-correct-desk-performance-attribution-and-counter-coverage.md) | 2 | M | todo | — | — |
+| 38 | [Correct desk performance attribution and counter coverage](brief-38-correct-desk-performance-attribution-and-counter-coverage.md) | 2 | M | implemented | — | — |
 | 39 | [Extract shared review observation and pure planning contracts](brief-39-extract-shared-review-observation-and-pure-planning-contracts.md) | 2 | M | todo | — | — |
 | 40 | [Deliver one review queue observation and offline planning bridge](brief-40-deliver-one-review-queue-observation-and-offline-planning-bridge.md) | 3 | M | todo | — | — |
 | 41 | [Share exact-source review preparation context](brief-41-share-exact-source-review-preparation-context.md) | 3 | M | todo | — | — |
@@ -231,6 +231,7 @@ signed verdict issue yet, and the lane's enactment gate cannot arm on this repo 
 | 50 | [Bind verifier environment evidence to the run admission](brief-50-bind-verifier-environment-evidence-to-the-run-admission.md) | 1 | M | todo | — | — |
 | 51 | [Drive the verifier skill from the current queue and landing contract](brief-51-drive-the-verifier-skill-from-the-current-queue-and-landing-contract.md) | 4 | M | todo | — | — |
 | 52 | [Link decision and verification cards without conflating their authority](brief-52-link-decision-and-verification-cards-without-conflating-their-authority.md) | 1 | M | todo | — | — |
+| 53 | [Rename pr-review-desk to review-desk without breaking live windows or adopters](brief-53-rename-pr-review-desk-to-review-desk.md) | 1 | L | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -418,3 +419,14 @@ Old dispatch and stranded-card counts are historical measurements, not current
 acceptance evidence. Tests must demonstrate named PASS output so a zero-test match
 cannot satisfy a Verify row. Authoring supplies these contracts; implementers and
 independent verifiers supply their execution evidence later.
+
+## Review-desk rename — 2026-10-18
+
+Brief 53 renames the `pr-review-desk` role to `review-desk`, the same way the two earlier
+role renames went: register the successor first, and keep the old name as an accepted alias
+forever. The alias covers stop flags, `DESK_LOOP`, cellctl role arguments, the comms lane
+list, spec role sets, worktrees and claims. The issue label values (`to:reviewer`,
+`raised-by:reviewer`) do not change. Readers additionally accept the loop spellings. For at
+least one release, a thin deprecated `pr-review-desk` skill redirects to `review-desk`, and a
+skillslint gate fails on any new bare use of the old name. The matching change to the
+maintainers' house layer is a separate brief there.

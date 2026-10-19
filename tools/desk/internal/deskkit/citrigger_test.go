@@ -221,11 +221,25 @@ func ciCrossModuleRegistry() []ciEntry {
 
 	registry := []ciEntry{
 		{
+			test: "statusgen/verifykitblocked_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/desk/cmd/deskdispatch/references/verifier-prompt.md"},
+			runInvokes: []string{"cd statusgen && go test ./..."},
+			why:        "the unconditional statusgen suite feeds the actual verifier kit marker into the flip reader to prove blocked runs supersede and bound passing runs",
+		},
+		{
 			test: "statusgen/claimbridge_test.go", module: "statusgen",
 			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
 			reads:      []string{"statusgen", "tools/desk", "forgeread", "perfrec"},
 			runInvokes: []string{"bash statusgen/test-role-claims.sh"},
 			why:        "the statusgen consumer builds the desk heads child and exercises its custody and shared envelope through the same offline invocation used by PR CI",
+		},
+		{
+			test: "tools/desk/cmd/deskpushguard/hookentrypoints_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"Makefile", "scripts/build-windows.ps1", "tools/desk/hooks/pre-push"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the unconditional build-test floor checks both hook installer entrypoints (the Makefile recipe under /bin/sh, as the runner has no make) and the published anchored hook",
 		},
 		{
 			test: "tools/desk/internal/regression/mirrorimports_test.go", module: "tools/desk",
@@ -270,6 +284,8 @@ func ciCrossModuleRegistry() []ciEntry {
 		},
 		{test: "tools/desk/cmd/deskdispatch/verifierattestation_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/verifyrun.go", "statusgen/verifieradmission.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the verifier dispatch fixture builds the actual statusgen executor and proves that two Verify rows require the shared pre-work admission"},
 		{test: "tools/desk/cmd/deskdispatch/verifiercrossrepo_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/verifyrun.go", "statusgen/verifieradmission.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the cross-repository dispatch fixture builds the actual statusgen executor and checks isolated tracking Evidence and deliverable row execution"},
+		{test: "tools/desk/cmd/deskevidence/landed_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/briefinfo.go", "statusgen/evidenceactor.go", "statusgen/attribution.go", "statusgen/verifyclosure.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the landed outcome regression builds actual statusgen and checks attribution and closure against genuine committed verifier history"},
+		{test: "tools/desk/cmd/deskevidence/outcome_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/briefinfo.go", "statusgen/evidenceactor.go", "statusgen/attribution.go", "statusgen/verifyclosure.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the outcome command regression builds actual statusgen and checks attribution and closure against genuine committed verifier history"},
 		{
 			test:   "tools/desk/internal/deskkit/release_authorizer_api_test.go",
 			module: "tools/desk", workflow: ".github/workflows/ci.yml",
