@@ -1,5 +1,5 @@
 {
-  "test": "go test -timeout=120s -count=1 -run '^TestPerfV3LauncherChildFlow$|^TestPerfV3CLIContextPrecedence$' ./internal/deskkit ./internal/clicontract",
+  "test": "go test -timeout=120s -count=1 -run '^TestPerfV3LauncherChildFlow$|^TestPerfV3CLIContextPrecedence$|^TestPerfRunnerCI$' ./internal/deskkit ./internal/clicontract",
   "control": {
     "name": "do not propagate typed child context",
     "file": "internal/deskkit/runtool.go",
@@ -42,6 +42,12 @@
       "file": "internal/cli/performance.go",
       "old": "if cmd.Context() == nil {",
       "new": "if false {"
+    },
+    {
+      "name": "remove runner suite from CI execution",
+      "file": "../../.github/workflows/ci.yml",
+      "old": "*/loopadmin|loopadmin) extra=\"go test ./...\" ;;",
+      "new": "*/loopadmin|loopadmin) extra=true ;;"
     }
   ]
 }
