@@ -73,6 +73,9 @@ func PerformanceInput(cmd *cobra.Command) perfrec.ContextInput {
 
 // PerformanceContext returns a copy-safe context attached before this handler.
 func PerformanceContext(cmd *cobra.Command) (perfrec.Context, bool) {
+	if cmd.Context() == nil {
+		return perfrec.Context{}, false
+	}
 	c, ok := cmd.Context().Value(perfKey{}).(perfrec.Context)
 	return c, ok
 }
