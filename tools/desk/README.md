@@ -3106,6 +3106,15 @@ The table's one hazard is the reverse: an entry for a flag that takes NO value w
 scan skip the real verb, so a flag goes into it only when the CLI's own help shows it consumes an
 argument.
 
+An allowlist entry can also be **bare-form only**. `talosctl services` is read-only as a bare
+listing, but the subcommand also accepts positional arguments, and the entry does not vouch for
+what an argument selects. So the guard inspects what follows that verb: with no positional
+argument (listed value flags with their values, and `--flag=value`, are not positional) the call
+is read-only; with one, it is classified like an unlisted verb and refused at the read-only tier,
+exit `5`. Any other flag after the verb is taken to consume nothing, so the token after it counts
+as positional — the fail-closed guess on this side of the verb. A lone `-` is positional, as the
+flag parser reads it, and so is anything after a bare `--`.
+
 Exit `5` is a **refusal, not a fallback trigger**. The message says so explicitly: reaching the
 same CLI by absolute path, by a rebuilt `PATH`, or through another tool is not the sanctioned
 response to it.
@@ -5861,6 +5870,14 @@ over `deskkit.Acquire/Release` (Kind=`dispatch`), so the verifyloop/worker-desk 
 paths keep their exact behaviour on the shared primitive.
 
 ## The adapter layer — `deskboot`, `deskdispatch`, `deskflip`
+
+`deskdispatch` now generates help with Cobra. Use `deskdispatch --help`,
+`deskdispatch --stamp-only --help`, `deskdispatch --check-verifier --help` or
+`deskdispatch --attest-verifier --help`; `help --stamp-only` also selects mode help.
+Help and version do not read configuration or credentials. See the
+[compatibility matrix](../../docs/streams/desktools-v2/dispatch-cli-matrix.md) for
+flag precedence, preserved callers and the shared syntax-error exit 2. Domain
+refusals retain their existing exit codes.
 
 Three verbs sit between a desk loop and the tools it drives. Each corresponds to one seam
 in the drain engine's contract — the pre-loop **boot**, the per-item **Dispatch**, the

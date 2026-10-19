@@ -273,3 +273,33 @@ On/off does not change exit codes or stdout/stderr; a failed sink cannot fail an
 Coverage is terminal observations, not a running-process census: killed or still-running
 commands may have no record. Child and forge counters retain the documented lower bounds;
 adding wrappers does not make custom runners or HTTP clients counted transports.
+
+## Planned perf-v3 workflow profile — 19 October 2026
+
+The [attributed performance specification](performance-attribution-spec.md) is a future
+contract, delivered by desktools-v2/63–65. No perf-v3 producer is implemented by this
+amendment. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
+scopes their future exception to a new schema and explicit workflow profile only.
+
+Existing `ASSAY_TELEMETRY=1` without a selected new profile keeps prior producer behavior.
+Explicit tool profile adds bounded v3 measurements without work/session/agent correlation;
+workflow profile permits typed qualified **local** brief/issue references, random logical
+session/agent IDs, fresh tool invocation and parent IDs, desk role and assigned execution
+role. Local workflow data is identifiable, not anonymous. Unknown or invalid context remains
+coverage, never guessed identity. No raw argv/path/title/body/error/credential or arbitrary
+environment capture is permitted. File permissions and the seven-UTC-day diagnostic window
+remain; a writer failure cannot change the tool result. There is no new sender or listener.
+
+V3 also carries own-process forge attempt/timing observations and actual/estimated/unknown
+GraphQL points with explicit units and measured sample coverage. Children emit their own
+observations; parent inclusive time and child/request time are never summed into elapsed
+workflow time. Future perfdata import applies its own explicit workflow consent and
+source/epoch aliases before preview or upload; it never forwards raw local work locators or
+native harness IDs. Existing counts-only network telemetry and its two switches are unchanged.
+
+The planned v3 contract includes query/cache-service calls as a separate observation boundary:
+client logical/transport counts and latency, handler/cache/coalescing work, and actual upstream
+provider attempts/cost. Optional opaque diagnostic links can use only a separately admitted
+service protocol/transport with workflow consent at both ends; a selected profile alone never
+adds headers or forwards raw work/session/agent locators. Shared refresh cost is counted once,
+missing server measurements remain unknown, and process CPU cannot be duplicated per handler.
