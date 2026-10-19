@@ -131,10 +131,12 @@ func validWork(ws []WorkRef) bool {
 	primary := false
 	seen := map[WorkRef]bool{}
 	for _, w := range ws {
-		if !repoRE.MatchString(w.Repo) || strings.Contains(w.Repo, "..") || seen[w] {
+		key := w
+		key.Primary = false
+		if !repoRE.MatchString(w.Repo) || strings.Contains(w.Repo, "..") || seen[key] {
 			return false
 		}
-		seen[w] = true
+		seen[key] = true
 		if w.Primary {
 			if primary {
 				return false
@@ -247,6 +249,10 @@ func ResolveContext(in ContextInput) Context {
 	ok := true
 	present := false
 	if in.WorkPresent {
+		if len(in.Work) > MaxWork {
+			c.data.Coverage[FieldWork] = CoverageInvalid
+			return c
+		}
 		present = len(in.Work) > 0
 		total := 0
 		for _, raw := range in.Work {

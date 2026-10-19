@@ -15,6 +15,7 @@ import (
 
 // regression: class perf-v3-drop-coverage
 func TestV3DroppedCoverage(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	s := BeginSelected(Probe{}, Probe{}.Mark(), nil, v3Context("tool"))
 	if s.ObserveRequest(RequestObservation{}) {
 		t.Fatal("invalid request accepted")
@@ -32,6 +33,7 @@ func TestV3DroppedCoverage(t *testing.T) {
 
 // regression: class perf-v3-optional-isolation
 func TestPerfV3IsolationAndOverhead(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	self, e := filepath.Abs(".")
 	if e != nil {
 		t.Fatal(e)
@@ -91,7 +93,10 @@ func main(){c:=perfrec.ResolveContext(perfrec.ContextInput{});s:=perfrec.BeginSe
 	state := t.TempDir()
 	w := Writer{}
 	var offNS, onNS []int64
-	var payloadBytes int
+	sample := v3Record(v3Context("tool"))
+	sample.Install = string(bytes.Repeat([]byte("0"), 32))
+	encoded, _ := json.Marshal(sample)
+	payloadBytes := len(encoded) + 1
 	for i := 0; i < 100; i++ {
 		for _, armed := range []bool{false, true} {
 			start := time.Now()
@@ -107,8 +112,6 @@ func main(){c:=perfrec.ResolveContext(perfrec.ContextInput{});s:=perfrec.BeginSe
 				if e = w.Write(state, r); e != nil {
 					t.Fatal(e)
 				}
-				b, _ := json.Marshal(r)
-				payloadBytes = len(b)
 			}
 			elapsed := time.Since(start).Nanoseconds()
 			if armed {

@@ -3,6 +3,7 @@ package perfrec
 import (
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 const SchemaV3 = "perf-v3"
@@ -254,6 +255,12 @@ func validQuery(p Profile, k ObservationKind, q *QueryObservation) bool {
 	return (q.DiagnosticID == "" || IDValid(q.DiagnosticID)) && (q.ParentDiagnosticID == "" || IDValid(q.ParentDiagnosticID))
 }
 func validV3(r Record) error {
+	if Label(r.Tool) != r.Tool || Label(r.Verb) != r.Verb || SourceSHA(r.SourceSHA) != r.SourceSHA || r.Result != ResultForExit(r.Exit) {
+		return errors.New("perfrec: invalid v3 fixed metadata")
+	}
+	if _, err := time.Parse(time.RFC3339, r.TS); err != nil {
+		return errors.New("perfrec: invalid timestamp")
+	}
 	v := r.V3
 	if v == nil || !validAttribution(v.Profile, v.Attribution) || r.hasLegacyCounters() {
 		return ErrSchemaReuse

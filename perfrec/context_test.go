@@ -1,6 +1,7 @@
 package perfrec
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -79,21 +80,52 @@ func TestPerfV3ContextAndConsent(t *testing.T) {
 			}
 		}
 	}
+	bad := v3Record(v3Context("tool"))
+	bad.Tool = "raw/title must not pass"
+	if (&Writer{}).Write(t.TempDir(), bad) == nil {
+		t.Fatal("writer retained unbounded tool label")
+	}
 	t.Setenv("ASSAY_PERF_PROFILE", "")
 	if ResolveContext(ContextInput{}).Profile() != "" {
 		t.Fatal("profile inferred")
 	}
-	for _, name := range []string{"perf-v1.jsonl", "perf-v2.jsonl"} {
+	for _, name := range []string{"perf-v1.jsonl", "perf-v2.jsonl", "perf-v3.jsonl"} {
 		b, e := os.ReadFile(filepath.Join("testdata", name))
 		if e != nil {
 			t.Fatal(e)
 		}
-		_ = b
+		for _, line := range bytes.Split(bytes.TrimSpace(b), []byte("\n")) {
+			r, e := Decode(line)
+			if e != nil {
+				t.Fatal(e)
+			}
+			got, e := json.Marshal(r)
+			if e != nil {
+				t.Fatal(e)
+			}
+			var before, after any
+			_ = json.Unmarshal(line, &before)
+			_ = json.Unmarshal(got, &after)
+			bb, _ := json.Marshal(before)
+			aa, _ := json.Marshal(after)
+			if !bytes.Equal(bb, aa) {
+				t.Fatal("fixture meanings changed")
+			}
+		}
 	}
 	for _, profile := range []string{"", "off", "bogus"} {
 		if ResolveContext(ContextInput{Profile: Value{profile, true}}).Profile() != "" {
 			t.Fatal("invalid profile enabled")
 		}
+	}
+	t.Setenv(EnvVar, "0")
+	direct := v3Record(v3Context("tool"))
+	sink := t.TempDir()
+	if (&Writer{}).Write(sink, direct) == nil {
+		t.Fatal("direct v3 writer bypassed opt-out")
+	}
+	if _, e := os.Stat(Dir(sink)); !os.IsNotExist(e) {
+		t.Fatal("off direct writer created state")
 	}
 	t.Setenv(EnvVar, "0")
 	if ResolveContext(ContextInput{Profile: Value{"workflow", true}}).Profile() != "" {

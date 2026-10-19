@@ -274,11 +274,12 @@ Coverage is terminal observations, not a running-process census: killed or still
 commands may have no record. Child and forge counters retain the documented lower bounds;
 adding wrappers does not make custom runners or HTTP clients counted transports.
 
-## Planned perf-v3 workflow profile — 19 October 2026
+## Local perf-v3 profiles — 19 October 2026
 
-The [attributed performance specification](performance-attribution-spec.md) is a future
-contract, delivered by desktools-v2/63–65. No perf-v3 producer is implemented by this
-amendment. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
+The [attributed performance specification](performance-attribution-spec.md) is delivered incrementally by desktools-v2/63–65. The local schema, typed resolver,
+writer and mixed reader are implemented in perfrec; CLI/launcher and provider adoption are
+separate integrations. The [frozen API and wire contract](../perfrec/V3.md) describes exact
+fields, bounds, coverage and examples. Human acceptance remains separate. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
 scopes their future exception to a new schema and explicit workflow profile only.
 
 Existing `ASSAY_TELEMETRY=1` without a selected new profile keeps prior producer behavior.

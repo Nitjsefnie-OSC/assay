@@ -1,0 +1,1 @@
+- Add explicit local perf-v3 tool/workflow profiles, immutable typed attribution, bounded own-request observations and mixed-version reporting with coverage and replay conflict handling.
