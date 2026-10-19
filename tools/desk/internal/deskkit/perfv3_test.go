@@ -3,6 +3,8 @@ package deskkit
 import (
 	"encoding/json"
 	"github.com/medici-finance/assay/perfrec"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -136,6 +138,39 @@ func TestPerfV3RecordToReportFlow(t *testing.T) {
 	// Plant client-plus-server double logical counts at the real measurement boundary.
 	if flowSession(perfrec.ObservationHandler).SetQuery(perfrec.QueryObservation{Operation: "query", LogicalCalls: 1, Source: "hit", Coalescing: "none", Result: "ok", ProviderCoverage: perfrec.CoverageMissing}) {
 		t.Fatal("handler accepted duplicate logical call")
+	}
+	// Plant absent IDs into the actual day file: missing invocation is skipped,
+	// while an otherwise valid missing-install record remains an explicit invalid source.
+	raw, err := json.Marshal(refresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err = json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	delete(wire, "install")
+	missingInstall, _ := json.Marshal(wire)
+	wire["install"] = h.Records[0].Install
+	delete(wire["v3"].(map[string]any)["attribution"].(map[string]any), "invocationId")
+	missingInvocation, _ := json.Marshal(wire)
+	day, err := os.OpenFile(filepath.Join(perfrec.Dir(state), time.Now().UTC().Format("2006-01-02")+".jsonl"), os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = day.Write(append(append(append(missingInstall, '\n'), missingInvocation...), '\n')); err != nil {
+		t.Fatal(err)
+	}
+	if err = day.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h, err = LoadPerfHistory(1)
+	if err != nil || h.Skipped != 1 {
+		t.Fatalf("missing invocation not skipped: %v %d", err, h.Skipped)
+	}
+	withGaps, err := perfrec.ReduceV3(h.Records, perfrec.ProfileTool, "tool", perfrec.V3Filter{})
+	if err != nil || withGaps.Invalid != 1 || withGaps.Records != sum.Records {
+		t.Fatalf("missing source identity counted: %v %+v", err, withGaps)
 	}
 	// Decoder/writer must reject duplicate request groups and false measured-zero points.
 	bad := refresh

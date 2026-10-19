@@ -319,7 +319,7 @@ func TestPerfCoverageFlow(t *testing.T) {
 		})
 	}
 	t.Run("mutation_skips_ordinary_work", func(t *testing.T) {
-		mutated := mutationBinary(t, "issueboard", "internal/deskkit/perf.go", "code := run(args)", "code := 0")
+		mutated := mutationBinary(t, "issueboard", "internal/deskkit/perf.go", "code, ctx := run(args, sess)", "code, ctx := 0, perfrec.ResolveContext(perfrec.ContextInput{})")
 		if err := preservationCase(t, mutated, "issueboard"); err == nil || !strings.Contains(err.Error(), "ordinary intake work missing") {
 			t.Fatalf("skipped production work accepted: %v", err)
 		}

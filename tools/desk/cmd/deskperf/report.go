@@ -56,7 +56,7 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 		var w perfrec.WorkRef
 		dec := json.NewDecoder(strings.NewReader(*work))
 		dec.DisallowUnknownFields()
-		if dec.Decode(&w) != nil {
+		if dec.Decode(&w) != nil || dec.Decode(new(any)) != io.EOF {
 			return deskkit.Refused("invalid work filter")
 		}
 		filter.Work = &w
@@ -124,6 +124,9 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	if v3.Records > 0 || v3.Conflicts > 0 || v3.Invalid > 0 {
+		if sum.Records > 0 || v2.Records > 0 {
+			fmt.Fprintln(stdout)
+		}
 		fmt.Fprintf(stdout, "perf-v3 — %d records; %d duplicates; %d conflicting identities excluded; %d invalid\n", v3.Records, v3.Duplicates, v3.Conflicts, v3.Invalid)
 		fmt.Fprintf(stdout, "logical service queries %d; service transport attempts %d; handlers %d (separate boundaries)\n", v3.LogicalQueries, v3.ServiceTransports, v3.Handlers)
 		for _, g := range v3.Groups {
@@ -134,7 +137,7 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 			if r.Points.Value != nil {
 				points = fmt.Sprint(*r.Points.Value)
 			}
-			fmt.Fprintf(stdout, "%s %s %s/%s: %d own attempts; measured request work %d ms; points %s %s (%s, %d samples)\n", r.Class, r.Origin, r.Protocol, r.Resource, r.Attempts, r.DurationSumMs, points, r.Points.Unit, r.Points.Coverage, r.PointSamples)
+			fmt.Fprintf(stdout, "%s %s %s %s/%s: %d own attempts; measured request work %d ms; points %s %s (%s, %d samples)\n", r.Kind, r.Class, r.Origin, r.Protocol, r.Resource, r.Attempts, r.DurationSumMs, points, r.Points.Unit, r.Points.Coverage, r.PointSamples)
 		}
 		fmt.Fprintln(stdout, "Intervals overlap; request/child/handler time is never added to process elapsed time. Missing measurements remain coverage gaps.")
 	}
