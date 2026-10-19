@@ -28,7 +28,11 @@ and receive the spawning invocation as parent; they mint their own invocation.
 A standing desk carries no last-work subject. Dispatch work must be selected for
 that launch with explicit --perf-work flags; inherited desk work is cleared.
 Do not export child context into a shared shell or reuse a prior assignment's
-work labels for a different task.
+work labels for a different task. The dispatcher writes selected handoff values
+through its existing private packet cache and owner-only writer; assignment
+output contains only a fresh local sidecar path. Handoffs declare an expiration within seven
+UTC days; the launcher prunes expired handoff files on subsequent writes. A missing, unsafe or unwritable cache leaves an explicit runtime
+propagation gap and never fails dispatch.
 
 Originating desk attribution and operational authority can differ. The only
 environment source for deskRole is DESK_LOOP. When a new agent changes its
@@ -54,8 +58,8 @@ adoption and uninstrumented descendants remain unavailable coverage.
 
 Local workflow records contain identifiable work linkage and require the
 existing private local file permissions and retention. Do not publish local
-records, environment handoffs or native mappings. Opt out by clearing/off
-profile or by disabling ASSAY_TELEMETRY. A failed optional writer does not block
+records, environment handoffs or native mappings. Opt out of workflow attribution by clearing/off
+profile; disable ASSAY_TELEMETRY to stop recording. A failed optional writer does not block
 launch or change mandatory audit/accounting. No service protocol propagation
 is admitted here: client/server context remains unavailable until its service
 owner admits an explicit option with consent at both ends.

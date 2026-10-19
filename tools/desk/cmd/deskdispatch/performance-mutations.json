@@ -1,0 +1,29 @@
+{
+  "test": "go test -timeout=60s -count=1 -run '^TestPerfPrivateHandoff$' ./cmd/deskdispatch",
+  "control": {
+    "name": "drop private handoff path from assignment",
+    "file": "cmd/deskdispatch/prompt.go",
+    "old": "if plan.performancePath != \"\" {",
+    "new": "if false {"
+  },
+  "mutations": [
+    {
+      "name": "accept public handoff directory",
+      "file": "cmd/deskdispatch/performance_handoff.go",
+      "old": "info.Mode().Perm()&0077 != 0",
+      "new": "false"
+    },
+    {
+      "name": "retain handoff beyond seven UTC days",
+      "file": "cmd/deskdispatch/performance_handoff.go",
+      "old": "if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {",
+      "new": "if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) && false {"
+    },
+    {
+      "name": "extend declared handoff expiration",
+      "file": "cmd/deskdispatch/performance_handoff.go",
+      "old": "today.AddDate(0, 0, 7)",
+      "new": "today.AddDate(0, 0, 8)"
+    }
+  ]
+}
