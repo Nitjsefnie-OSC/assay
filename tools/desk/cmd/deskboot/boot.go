@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -94,8 +96,10 @@ type bootOpts struct {
 	dryRun bool
 }
 
-func cmdBoot(args []string) error {
+func cmdBoot(args []string, sinks ...func(perfrec.Context)) error {
 	fs := flag.NewFlagSet("deskboot", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	fs.SetOutput(new(strings.Builder))
 	root := fs.String("root", ".", "repo root this desk operates from (its own worktree)")
 	repo := fs.String("repo", "", "owner/name whose INSTALLATION the token mints against (default: derived from the root's origin)")

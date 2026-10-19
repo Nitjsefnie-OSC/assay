@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/packet"
 )
@@ -120,6 +121,7 @@ var worktreeNameRe = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9][A-Za-z0-9._-]{
 var branchNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 type dispatchOpts struct {
+	performance  perfrec.Context
 	stampReceipt string
 	stampOnly    bool
 	// attestWorker is --attest-worker: a fresh worker dispatch gets a pre-work attestation record

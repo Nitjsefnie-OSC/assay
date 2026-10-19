@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -659,7 +661,9 @@ func checkPrivateKeyMode(pemPath string, mode os.FileMode) error {
 // --- main entry point -----------------------------------------------------------
 
 // run is the CLI entry point. It returns an exit code.
-func run(args []string) int {
+func run(args []string) int { return runSelected(args, nil) }
+
+func runSelected(args []string, sink func(perfrec.Context)) int {
 	// The global diagnostic switch, taken BEFORE any flag parsing so `--trace` works
 	// alongside this verb's bare-role-name positional grammar (which would otherwise refuse
 	// it as an undefined flag) and is invisible to the FlagSets below.
@@ -712,7 +716,7 @@ func run(args []string) int {
 	// installations can see). No role is named "coverage", so the dispatch is
 	// unambiguous.
 	if args[0] == "coverage" {
-		cerr := cmdCoverage(args[1:])
+		cerr := cmdCoverage(args[1:], sink)
 		if deskkit.IsHelpRequest(cerr) {
 			fmt.Fprintln(os.Stderr, usage)
 			return deskkit.ExitOK
@@ -721,7 +725,7 @@ func run(args []string) int {
 		return deskkit.ExitCodeOf(cerr)
 	}
 
-	err := cmdToken(args)
+	err := cmdToken(args, sink)
 	if deskkit.IsHelpRequest(err) {
 		// TIER TWO terminus: print the help screen the operator asked for, exit 0.
 		fmt.Fprintln(os.Stderr, usage)
@@ -734,11 +738,13 @@ func run(args []string) int {
 }
 
 // cmdToken implements the mint-or-reuse logic.
-func cmdToken(args []string) (err error) {
+func cmdToken(args []string, sinks ...func(perfrec.Context)) (err error) {
 	ac := &auditCtx{verb: "mint", argsDigest: deskkit.ArgsDigest(os.Args[1:])}
 	defer func() { ac.finalize(err) }()
 
 	fs := flag.NewFlagSet("desktoken", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	fs.SetOutput(new(strings.Builder))
 	repo := fs.String("repo", "", "repo slug (owner/name) for install auto-pick")
 	forge := fs.String("forge", "", "forge backend: empty/github (default) mints a GitHub App installation token; gitlab rotates the role's PAT in place (rotate-on-mint custody)")

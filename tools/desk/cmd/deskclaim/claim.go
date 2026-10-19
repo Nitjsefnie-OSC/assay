@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -48,8 +50,10 @@ func resolveOwner(ownerFlag string) string {
 	return deskkit.SessionTag() // $CLAUDE_SESSION_ID or "unknown"
 }
 
-func cmdAcquire(args []string) error {
+func cmdAcquire(args []string, sinks ...func(perfrec.Context)) error {
 	fs := flag.NewFlagSet("acquire", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	var kind, item, branch, owner, repo string
 	fs.StringVar(&kind, "kind", "", "claim kind: dispatch|route|file|close|verify")
 	fs.StringVar(&item, "item", "", "item id to claim (the lock key)")
@@ -121,8 +125,10 @@ func cmdAcquire(args []string) error {
 //
 // Exit contract: 0 stale (reclaimable), 5 live (do not reclaim), 6 unreadable or missing
 // (a missing claim is not stale — there is nothing to reclaim).
-func cmdStale(args []string) error {
+func cmdStale(args []string, sinks ...func(perfrec.Context)) error {
 	fs := flag.NewFlagSet("stale", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	var item, repo string
 	fs.StringVar(&item, "item", "", "item id to probe")
 	fs.StringVar(&repo, "repo", "", "git repo whose worktrees prove a --branch is live (default: cwd if it is a git repo)")
@@ -226,8 +232,10 @@ func dashIfEmpty(s string) string {
 	return s
 }
 
-func cmdRelease(args []string) error {
+func cmdRelease(args []string, sinks ...func(perfrec.Context)) error {
 	fs := flag.NewFlagSet("release", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	var item string
 	fs.StringVar(&item, "item", "", "item id to release")
 	if err := fs.Parse(args); err != nil {
@@ -251,8 +259,10 @@ func cmdRelease(args []string) error {
 	return nil
 }
 
-func cmdList(args []string) error {
+func cmdList(args []string, sinks ...func(perfrec.Context)) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	if err := fs.Parse(args); err != nil {
 		return deskkit.Refused(fmt.Sprintf("list: %v", err))
 	}
