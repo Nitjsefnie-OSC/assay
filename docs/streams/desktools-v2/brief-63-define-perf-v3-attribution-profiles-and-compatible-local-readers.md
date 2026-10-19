@@ -89,7 +89,9 @@ Options:
 1. **Accept the bounded implementation** — accept the demonstrated local disclosure and isolation; retain separate remote activation controls.
 2. **Hold for correction** — identify the field, lifecycle or failure boundary that needs correction.
 
-Default if no answer: none — acceptance waits for concrete implementation evidence.
+Default if no answer: none — blocks until answered
+
+Acceptance waits for concrete implementation evidence.
 
 ## Ground rules
 

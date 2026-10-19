@@ -1,0 +1,24 @@
+{
+  "test": "go test -count=1 -timeout 60s -run 'TestPerfV3ContextAndConsent|TestV3DroppedCoverage' .",
+  "schemata": true,
+  "control": {
+    "name": "tool profile writer bypass admits linked identity",
+    "file": "context.go",
+    "old": "return d.SessionID == \"\"",
+    "new": "return true || d.SessionID == \"\""
+  },
+  "mutations": [
+    {
+      "name": "later request seam observation erases previous drops",
+      "file": "v3.go",
+      "old": "s.v3 != nil && s.v3.RequestDrops == 0",
+      "new": "s.v3 != nil"
+    },
+    {
+      "name": "writer accepts measured coverage after drops",
+      "file": "v3.go",
+      "old": "v.RequestDrops > 0 && v.RequestCoverage != CoverageFailed",
+      "new": "false && v.RequestDrops > 0 && v.RequestCoverage != CoverageFailed"
+    }
+  ]
+}
