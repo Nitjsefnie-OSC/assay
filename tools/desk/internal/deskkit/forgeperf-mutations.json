@@ -1,0 +1,11 @@
+{
+  "mutations": [
+    {"name":"leaf observation removed","file":"internal/deskkit/forgetransport.go","old":"return observeRoundTrip(c.next, req)","new":"return c.next.RoundTrip(req)","test":"TestPerfV3ForgeAttemptTimingFlow"},
+    {"name":"timer ends at headers","file":"internal/deskkit/forgeobserve.go","old":"b.body = resp.Body","new":"b.body = resp.Body; b.finish(nil)","test":"TestPerfV3ForgeObservationParity"},
+    {"name":"nested leaf counted twice","file":"internal/deskkit/forgetransport.go","old":"case countingTransport, countedTransport:","new":"case countedTransport:","test":"TestPerfV3ForgeAttemptTimingFlow"},
+    {"name":"unobserved cost becomes zero","file":"internal/deskkit/forgepoints.go","old":"p := perfrec.Points{Coverage: perfrec.CoverageUnknown, Unit: unit}","new":"zero:=int64(0);return perfrec.Points{Coverage:perfrec.CoverageMeasured,Unit:unit,Value:&zero};p := perfrec.Points{Coverage: perfrec.CoverageUnknown, Unit: unit}","test":"TestPerfV3GraphQLCostCoverage"},
+    {"name":"authentication observer omitted","file":"cmd/desktoken/observation.go","old":"return deskkit.ObserveAuthClient(httpClient, observer)","new":"return httpClient","test":"TestAuthInvocationRecord","package":"./cmd/desktoken"},
+    {"name":"board adapter counted above cache and refusal","file":"internal/deskkit/forgetransport.go","old":"case countingTransport, countedTransport:","new":"case countingTransport:","test":"TestPerfLeafV3Report","package":"./cmd/deskboard"},
+    {"name":"GitHub JSON-wrapper metadata capture removed","file":"internal/deskkit/forge_github.go","old":"ctx = context.WithValue(ctx, pointCaptureKey{}, capture)","new":"ctx = context.Background()","test":"TestPerfV3GraphQLCostCoverage"}
+  ]
+}

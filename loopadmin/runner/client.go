@@ -25,9 +25,10 @@ type Client struct {
 	caps    Capabilities
 	fence   Fence
 
-	mu   sync.Mutex
-	inv  map[string]*invocation
-	held map[string]string // authority key -> invocation key that still holds it
+	mu          sync.Mutex
+	inv         map[string]*invocation
+	performance map[string]performanceMap // private native-ID mapping, memory-only, seven UTC days
+	held        map[string]string         // authority key -> invocation key that still holds it
 }
 
 type invocation struct {
@@ -44,7 +45,7 @@ type invocation struct {
 func NewClient(a Adapter, f Fence) *Client {
 	return &Client{
 		adapter: a, caps: a.Capabilities().clone(), fence: f,
-		inv: map[string]*invocation{}, held: map[string]string{},
+		inv: map[string]*invocation{}, held: map[string]string{}, performance: map[string]performanceMap{},
 	}
 }
 
@@ -94,7 +95,8 @@ func (c *Client) Start(ctx context.Context, req LaunchRequest) (Ref, State, erro
 	in := &invocation{req: req, state: StateUnknown}
 	c.inv[ref.key()] = in
 	c.held[req.Authority.Key] = ref.key()
-	rec, aerr := c.adapter.Start(ctx, req.clone())
+	launchContext, identity := c.performanceStart(ctx, req)
+	rec, aerr := c.adapter.Start(launchContext, req.clone())
 	if aerr != nil {
 		if errors.Is(aerr, ErrDefiniteFailure) {
 			in.state = StateFailed
@@ -102,6 +104,7 @@ func (c *Client) Start(ctx context.Context, req LaunchRequest) (Ref, State, erro
 		}
 		return ref, in.state, &opaque{sentinel: ErrReconcileRequired, cause: aerr}
 	}
+	c.performanceRemember(rec, identity)
 	in.state = StateRunning
 	// A receipt that names no model is not yet a fallback: the model is
 	// unknown, and acceptance refuses a result whose model stays unreported.

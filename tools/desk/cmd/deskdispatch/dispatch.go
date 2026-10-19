@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/packet"
 )
@@ -120,8 +121,11 @@ var worktreeNameRe = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9][A-Za-z0-9._-]{
 var branchNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 type dispatchOpts struct {
-	stampReceipt string
-	stampOnly    bool
+	performanceWorkExplicit bool
+	measurement             *perfrec.Session
+	performance             perfrec.Context
+	stampReceipt            string
+	stampOnly               bool
 	// attestWorker is --attest-worker: a fresh worker dispatch gets a pre-work attestation record
 	// (workerattestation.go) stamped and read back before its prompt is emitted.
 	attestWorker bool
@@ -222,6 +226,19 @@ func dispatch(o dispatchOpts) error {
 	}
 	repo, branch, wtName := plan.repo, plan.branch, plan.wtName
 	plan.now, plan.entropy = dispatchClock, dispatchEntropy
+	role := "implement"
+	switch o.kit {
+	case "review":
+		role = "review"
+	case "verifier":
+		role = "verify"
+	}
+	// Work is selected explicitly per dispatch; never inherit a standing desk subject.
+	var work []perfrec.WorkRef
+	if o.performanceWorkExplicit {
+		work = o.performance.Data().Work
+	}
+	plan.childPerformance = perfrec.ChildContext(o.performance, role, work, nil)
 
 	if o.dryRun {
 		wtBanner := ""
@@ -523,6 +540,7 @@ func dispatch(o dispatchOpts) error {
 	var perr error
 	if o.kit != "verifier" {
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
 		}
@@ -604,6 +622,7 @@ func dispatch(o dispatchOpts) error {
 		}
 		// The verifier's read-ahead packet is built only after provenance is established.
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
 		}
@@ -646,6 +665,7 @@ func (o dispatchOpts) notLaunched(plan dispatchPlan, repo, home string) {
 // re-derives a value the validation was performed against. Re-deriving is how a check and
 // the thing it checked drift apart.
 type dispatchPlan struct {
+	childPerformance                         perfrec.Context
 	verifierBriefRoot, verifierBriefRevision string
 	resume                                   *resumeSource
 	repo                                     string
@@ -723,6 +743,8 @@ type dispatchPlan struct {
 	// "" when none was (no provider for the kit, --dry-run, or the build did not succeed).
 	// Set once, after the worktree exists; the prompt carries a `Packet:` line iff it is set.
 	packetPath string
+	// Optional attribution stays in an owner-only local sidecar, never prompt logs.
+	performancePath string
 	// workerAttestation is the read-back pre-work worker attestation (--attest-worker), set at
 	// step 5 before the prompt is emitted; nil otherwise, and on a dry run.
 	workerAttestation *deskkit.WorkerReceipt

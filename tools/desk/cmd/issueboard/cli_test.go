@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"io"
 	"io/fs"
 	"os"
@@ -140,7 +141,7 @@ func record(t *testing.T) *recorder {
 	t.Setenv("HOME", t.TempDir())
 	r := &recorder{}
 	prevD, prevG, prevO := dispatchFn, guard, onResolve
-	dispatchFn = func(sub, root string, _ time.Time, sla int, to string) (*Report, error) {
+	dispatchFn = func(sub, root string, _ time.Time, sla int, to string, _ ...deskkit.RequestObserver) (*Report, error) {
 		r.calls++
 		r.sub, r.root, r.sla, r.to = sub, root, sla, to
 		return &Report{render: func(w io.Writer) { fmt.Fprintln(w, "board") }, detail: "stub"}, nil

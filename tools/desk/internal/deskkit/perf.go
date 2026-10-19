@@ -137,15 +137,35 @@ func perfProbe() perfrec.Probe {
 // PerfCommand selection, and "other" for anything else. The record is appended best-effort
 // after the measurement ends, and run's exit code is returned UNCHANGED.
 func PerfRun(tool string, verbs []string, args []string, run func([]string) int) int {
+	ctx := perfrec.ResolveContext(perfrec.ContextInput{})
+	return PerfRunSelected(tool, verbs, args, ctx, run)
+}
+
+// PerfRunSelected measures one invocation using an already frozen parsed context.
+func PerfRunSelected(tool string, verbs []string, args []string, ctx perfrec.Context, run func([]string) int) int {
+	return PerfRunResolved(tool, verbs, args, func(a []string) (int, perfrec.Context) { return run(a), ctx })
+}
+
+// PerfRunResolved retains the process-init boundary while the real parser supplies context.
+// The callback owns a local selection value; no process-global attribution is mutated.
+func PerfRunResolved(tool string, verbs []string, args []string, run func([]string) (int, perfrec.Context)) int {
+	return PerfRunMeasured(tool, verbs, args, func(a []string, _ *perfrec.Session) (int, perfrec.Context) { return run(a) })
+}
+
+// PerfRunMeasured supplies the invocation's optional session to the actual parser callback.
+// Select its context before effects to admit typed provider observations. No ambient sink.
+func PerfRunMeasured(tool string, verbs []string, args []string, run func([]string, *perfrec.Session) (int, perfrec.Context)) int {
 	if !PerfEnabled() {
-		return run(args)
+		code, _ := run(args, nil)
+		return code
 	}
 	perfResetCounters()
 	perfSelectedVerb.Store(nil)
 	perfActive.Store(true)
 	defer perfActive.Store(false)
 	sess := perfrec.Begin(perfProbe(), perfEntry(), nil)
-	code := run(args)
+	code, ctx := run(args, sess)
+	sess.SelectContext(ctx)
 	children, childWall, forge := PerfCounters()
 	sess.Add(perfrec.CounterSubprocess, children)
 	sess.Add(perfrec.CounterSubprocessMs, childWall.Milliseconds())

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -23,6 +24,7 @@ type reportJSON struct {
 	Role    string                 `json:"role,omitempty"`
 	Skipped int                    `json:"skipped"`
 	Summary deskkit.PerfSummary    `json:"summary"`
+	PerfV3  *perfrec.V3Summary     `json:"perfV3,omitempty"`
 	PerfV2  *deskkit.PerfV2Summary `json:"perfV2,omitempty"`
 }
 
@@ -32,6 +34,13 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	tool := fs.String("tool", "", "only this tool (canonical key, e.g. deskpr)")
 	role := fs.String("role", "", "only this desk role ($DESK_LOOP canonical name)")
 	top := fs.Int("top", 10, "how many of the slowest invocations to list")
+	profile := fs.String("perf-profile", os.Getenv("ASSAY_PERF_PROFILE"), "workflow permits local attribution grouping and filtering")
+	group := fs.String("group-by", "tool", "v3 group: tool, work, session, agent, deskRole, role")
+	session := fs.String("session-id", "", "v3 workflow session filter")
+	agent := fs.String("agent-id", "", "v3 workflow agent filter")
+	deskRole := fs.String("desk-role", "", "v3 workflow originating desk filter")
+	assigned := fs.String("assigned-role", "", "v3 workflow execution role filter")
+	work := fs.String("work", "", "v3 workflow typed JSON-object locator filter")
 	asJSON := fs.Bool("json", false, "emit the aggregates as one JSON object")
 	if err := parse(fs, args); err != nil {
 		return err
@@ -41,6 +50,23 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	}
 	if *top < 0 {
 		return deskkit.Refused(fmt.Sprintf("--top %d: must be 0 or more", *top))
+	}
+	filter := perfrec.V3Filter{SessionID: *session, AgentID: *agent, DeskRole: *deskRole, Role: *assigned}
+	if *work != "" {
+		var w perfrec.WorkRef
+		dec := json.NewDecoder(strings.NewReader(*work))
+		dec.DisallowUnknownFields()
+		if dec.Decode(&w) != nil || dec.Decode(new(any)) != io.EOF {
+			return deskkit.Refused("invalid work filter")
+		}
+		filter.Work = &w
+	}
+	permission := perfrec.Profile(*profile)
+	if permission != "" && permission != perfrec.ProfileTool && permission != perfrec.ProfileWorkflow && permission != "off" {
+		return deskkit.Refused("invalid performance profile")
+	}
+	if _, err := perfrec.ReduceV3(nil, permission, *group, filter); err != nil {
+		return deskkit.Refused(err.Error())
 	}
 	h, err := load(*days)
 	if err != nil {
@@ -62,11 +88,21 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	}
 	sum := deskkit.SummarisePerf(recs, *top)
 	v2 := deskkit.SummarisePerfV2(recs, *top)
+	v3, err := perfrec.ReduceV3(recs, permission, *group, filter)
+	if err != nil {
+		return deskkit.Refused(err.Error())
+	}
+	if (*group != "tool" || *session != "" || *agent != "" || *deskRole != "" || *assigned != "" || *work != "") && v3.Records == 0 {
+		return deskkit.Refused("no v3 record matches the workflow filter")
+	}
 
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		rep := reportJSON{Days: *days, Tool: *tool, Role: *role, Skipped: h.Skipped, Summary: sum}
+		if v3.Records > 0 || v3.Conflicts > 0 || v3.Invalid > 0 {
+			rep.PerfV3 = &v3
+		}
 		if v2.Records > 0 {
 			rep.PerfV2 = &v2
 		}
@@ -83,7 +119,27 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 		if sum.Records > 0 {
 			fmt.Fprintln(stdout)
 		}
-		return v2Table(stdout, v2, *days, *tool, *role)
+		if err := v2Table(stdout, v2, *days, *tool, *role); err != nil {
+			return err
+		}
+	}
+	if v3.Records > 0 || v3.Conflicts > 0 || v3.Invalid > 0 {
+		if sum.Records > 0 || v2.Records > 0 {
+			fmt.Fprintln(stdout)
+		}
+		fmt.Fprintf(stdout, "perf-v3 — %d records; %d duplicates; %d conflicting identities excluded; %d invalid\n", v3.Records, v3.Duplicates, v3.Conflicts, v3.Invalid)
+		fmt.Fprintf(stdout, "logical service queries %d; service transport attempts %d; handlers %d (separate boundaries)\n", v3.LogicalQueries, v3.ServiceTransports, v3.Handlers)
+		for _, g := range v3.Groups {
+			fmt.Fprintf(stdout, "%s: %d records; summed own-process wall %d ms; measured own CPU %d ms (%d records)\n", g.Key, g.Records, g.SumOwnProcessWallMs, g.SumOwnCPUMs, g.CPURecords)
+		}
+		for _, r := range v3.Requests {
+			points := "unavailable"
+			if r.Points.Value != nil {
+				points = fmt.Sprint(*r.Points.Value)
+			}
+			fmt.Fprintf(stdout, "%s %s %s %s/%s: %d own attempts; measured request work %d ms; points %s %s (%s, %d samples)\n", r.Kind, r.Class, r.Origin, r.Protocol, r.Resource, r.Attempts, r.DurationSumMs, points, r.Points.Unit, r.Points.Coverage, r.PointSamples)
+		}
+		fmt.Fprintln(stdout, "Intervals overlap; request/child/handler time is never added to process elapsed time. Missing measurements remain coverage gaps.")
 	}
 	return nil
 }

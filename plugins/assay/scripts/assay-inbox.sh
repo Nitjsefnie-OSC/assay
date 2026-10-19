@@ -542,6 +542,12 @@ case "$INBOX_READER" in
   *) echo "assay-inbox: ASSAY_INBOX_READER must be auto, typed or legacy" >&2; exit 1 ;;
 esac
 use_typed=0
+# Presence is only a selection prerequisite, never an App-role grant: the typed
+# producer still performs its canonical role resolution and fails closed.
+reader_loop="${DESK_LOOP:-}"
+if [[ "$INBOX_READER" == auto && -z "${reader_loop//[[:space:]]/}" ]]; then
+  INBOX_READER=legacy
+fi
 if [[ "$INBOX_READER" != legacy ]]; then
   producer_version=""
   if command -v "$INBOX_PRODUCER" >/dev/null 2>&1; then
@@ -561,7 +567,14 @@ if [[ "$use_typed" -eq 1 ]]; then
     query_failures=$((query_failures + 1))
   fi
   cat "$TMP_ERR" >&2
-  if printf '%s' "$hits" | jq -e 'type == "array" and all(.[]; (.repo|type)=="string" and (.number|type)=="number" and (.labels|type)=="array")' >/dev/null; then
+  requested_repos=$(printf '%s\n' "${REPOS[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+  if printf '%s' "$hits" | jq -e --argjson repos "$requested_repos" '
+    type == "array" and all(.[];
+      . as $row | (.repo | type) == "string" and ($repos | index($row.repo)) != null
+      and (.number | type) == "number" and .number > 0 and (.number | floor) == .number
+      and (.title | type) == "string" and (.createdAt | type) == "string"
+      and (.url | type) == "string" and (.labels | type) == "array"
+      and all(.labels[]; (.name | type) == "string"))' >/dev/null; then
     printf '%s' "$hits" > "$TMP_JSON"
   else
     echo "assay-inbox: invalid typed discovery output; queue could-not-check" >&2
@@ -619,7 +632,7 @@ fi
 jq --argjson rankorder '["urgent","needs-decision","question","help wanted"]' '
   unique_by(.repo + "#" + (.number | tostring))
   | map(. + {
-      rank: ([ .labels[].name as $n | ($rankorder | index($n)) ] | map(select(. != null)) | min // 99)
+      rank: ([ .labels[].name | ascii_downcase | gsub("^\\s+|\\s+$"; "") | . as $n | ($rankorder | index($n)) ] | map(select(. != null)) | min // 99)
     })
   | sort_by([.rank, .createdAt])
 ' "$TMP_JSON" > "$TMP_SORTED"
