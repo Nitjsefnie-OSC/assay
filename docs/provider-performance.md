@@ -75,8 +75,9 @@ admission, default floor and ETag/cache behavior are unchanged.
 The three named `/65` regressions use real backend/transport/record/report paths;
 the auth fixture runs the actual parser and existing auth leaves. The committed
 `forgeperf-mutations.json` plants missing leaf observation, headers-only timing,
-nested double counting, fabricated zero cost and omitted auth observation.
-All five controls must fail their named test.
+nested double counting, fabricated zero cost, omitted auth observation and
+counting above the real board cache/admission adapter.
+All six controls must fail their named test.
 
 Matched fake-provider samples alternate recording on/off, 20 cycles each,
 100 requests/cycle, concurrency 1. REST uses a 17-byte JSON response; the
