@@ -106,7 +106,7 @@ _Held by per-stream caps: 38 brief(s) across 2 stream(s) — top: desktools-v2. 
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: 1d6fc627 2026-10-19T03:15:35Z_
+_last regen: ea2d935a 2026-10-19T03:22:35Z_
 
 **Progress:** 10/13 brief items done.
 
@@ -127,7 +127,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 1d6fc627 2026-10-19T03:15:35Z_
+_last regen: ea2d935a 2026-10-19T03:22:35Z_
 
 **Progress:** 16/79 brief items done.
 
@@ -197,7 +197,7 @@ _last regen: 1d6fc627 2026-10-19T03:15:35Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (18 for the desk · 31 for the driver · 31 for workers · 26 for an operator · 13 runner-pending — of 124 total; 5 could-not-check)
+## Awaiting verification / review (18 for the desk · 31 for the driver · 32 for workers · 26 for an operator · 13 runner-pending — of 124 total; 4 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
@@ -239,7 +239,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | statusgen | 05 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1785 | — | — |
 | statusgen | 09 | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (no recognised kind), no blocker ref recorded | — | — |
 
-### Awaiting implementer rework (31)
+### Awaiting implementer rework (32)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -250,7 +250,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | derived-board | 03 [exec:strong] | implemented | 4530 | 5 | — | worker | fix, cite medici-finance/assay#1909 | — | — |
 | apps-installer | 02 [exec:strong] | implemented | 4500 | 5 | — | worker | fix, cite medici-finance/assay#2810 | — | — |
 | desk-containers | 17 [exec:strong] | implemented | 4000 | 6 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
-| desk-supervision | 28 [exec:strong] | implemented | 3500 | 5 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
+| desk-supervision | 28 [exec:strong] | implemented | 3500 | 5 | — | worker | fix, cite medici-finance/assay#3386 | — | — |
 | forge-neutral | 04 [exec:strong] | implemented | 3500 | 3 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | measured-status | 03 [exec:strong] | implemented | 2200 | 0 | — | worker | fix, cite #1915 | — | — |
 | desk-containers | 10 [exec:strong] | implemented | 2000 | 2 | — | worker | fix, cite medici-finance/assay#2142 | — | — |
@@ -272,6 +272,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-tools | 26 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | desk-tools | 28 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1735 | — | — |
 | desk-tools | 31 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2684 | — | — |
+| desk-tools | 36 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2688 | — | — |
 | desktools-v2 | 12 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2325 | — | — |
 | harness-portability | 15 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
 
@@ -347,13 +348,12 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | harness-portability | 13 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 | statusgen | 16 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 
-### Could-not-check (5)
+### Could-not-check (4)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
 | desk-containers | 02 | implemented | 5000 | 8 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 | desktools-go-git | 05 | implemented | 1520 | 1 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
-| desk-tools | 36 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 | harness-portability | 07 | implemented | 1000 | 0 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 | statusgen | 06 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 
