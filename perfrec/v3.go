@@ -324,6 +324,17 @@ func validV3(r Record) error {
 			}
 			bins += x
 		}
+		measured := s.DurationCoverage[CoverageMeasured]
+		if s.DurationMaxMs > s.DurationSumMs || (measured == 0 || s.DurationMaxMs == 0) && s.DurationSumMs != 0 {
+			return errors.New("perfrec: inconsistent duration aggregate")
+		}
+		// Compare sum <= samples*max without overflowing the product.
+		if s.DurationMaxMs > 0 {
+			q, rem := s.DurationSumMs/s.DurationMaxMs, s.DurationSumMs%s.DurationMaxMs
+			if q > measured || q == measured && rem > 0 {
+				return errors.New("perfrec: inconsistent duration aggregate")
+			}
+		}
 		if n != s.Attempts || bins != s.DurationCoverage[CoverageMeasured] {
 			return errors.New("perfrec: incomplete duration coverage")
 		}

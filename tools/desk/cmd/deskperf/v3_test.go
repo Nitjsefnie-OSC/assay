@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/medici-finance/assay/perfrec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,12 @@ func TestV3ActualReport(t *testing.T) {
 	out.Reset()
 	if e := cmdReport([]string{"--json", "--group-by", "agent"}, &out, &diag); e == nil {
 		t.Fatal("group permitted without workflow consent")
+	}
+	for _, raw := range []string{`{"kind":"arbitrary"}`, `{"kind":"issue","forge":"github","instance":"github.com","repo":"example/one","issue":7} {}`} {
+		out.Reset()
+		if e := cmdReport([]string{"--json", "--perf-profile", "workflow", "--work", raw}, &out, &diag); e == nil || !strings.Contains(e.Error(), "invalid work filter") || out.Len() != 0 {
+			t.Fatalf("invalid work filter was not refused: %v", e)
+		}
 	}
 	out.Reset()
 	if e := cmdReport([]string{"--json", "--perf-profile", "workflow", "--group-by", "agent", "--agent-id", id}, &out, &diag); e != nil {

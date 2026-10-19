@@ -19,6 +19,12 @@ type V3Group struct {
 	SumOwnCPUMs         int64  `json:"sumOwnCpuMs"`
 }
 
+// V3RequestStats keeps each request aggregate in its originating observation kind.
+type V3RequestStats struct {
+	Kind ObservationKind `json:"observationKind"`
+	RequestStats
+}
+
 // V3Summary keeps observation kinds, point units, estimates and coverage separate.
 // Summed intervals are work, never elapsed time or savings. Conflicting IDs are excluded.
 type V3Summary struct {
@@ -28,7 +34,7 @@ type V3Summary struct {
 	Invalid                 int                                 `json:"invalid"`
 	Kinds                   map[ObservationKind]int             `json:"observationKinds"`
 	Groups                  []V3Group                           `json:"groups"`
-	Requests                []RequestStats                      `json:"requests"`
+	Requests                []V3RequestStats                    `json:"requests"`
 	RequestDrops            int64                               `json:"requestDrops"`
 	RequestCoverage         map[Coverage]int64                  `json:"requestCoverage"`
 	LogicalQueries          int64                               `json:"logicalQueries"`
@@ -65,6 +71,9 @@ func ReduceV3(records []Record, permission Profile, dimension string, f V3Filter
 	}
 	if (workflowDimension(dimension) || filterUsed(f)) && permission != ProfileWorkflow {
 		return s, errors.New("perfrec: workflow permission required")
+	}
+	if f.Work != nil && !validWork([]WorkRef{*f.Work}) {
+		return s, errors.New("perfrec: invalid work filter")
 	}
 	unique := map[string]Record{}
 	enc := map[string]string{}
@@ -169,7 +178,7 @@ func ReduceV3(records []Record, permission Profile, dimension string, f V3Filter
 			merged := false
 			for i := range s.Requests {
 				a := &s.Requests[i]
-				if sameRequest(*a, RequestObservation{Class: x.Class, Origin: x.Origin, Protocol: x.Protocol, Resource: x.Resource, Outcome: x.Outcome, Points: x.Points}) {
+				if a.Kind == v.Kind && sameRequest(a.RequestStats, RequestObservation{Class: x.Class, Origin: x.Origin, Protocol: x.Protocol, Resource: x.Resource, Outcome: x.Outcome, Points: x.Points}) {
 					a.Attempts += x.Attempts
 					a.PointSamples += x.PointSamples
 					a.DurationSumMs += x.DurationSumMs
@@ -193,7 +202,7 @@ func ReduceV3(records []Record, permission Profile, dimension string, f V3Filter
 			}
 			if !merged {
 				copy := cloneV3(&V3Data{Requests: []RequestStats{x}})
-				s.Requests = append(s.Requests, copy.Requests[0])
+				s.Requests = append(s.Requests, V3RequestStats{Kind: v.Kind, RequestStats: copy.Requests[0]})
 			}
 		}
 		if q := v.Query; q != nil {
