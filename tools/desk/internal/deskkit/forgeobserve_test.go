@@ -264,6 +264,25 @@ func TestPerfV3ForgeObservationParity(t *testing.T) {
 	if len(sink.items) != 2 || sink.items[1].Class != perfrec.RequestAuthentication {
 		t.Fatal("auth conflated")
 	}
+	// The deferred GraphQL decoder may close after repeated EOF reads. Its
+	// lifetime still ends at the first EOF, independently of metadata decoding.
+	gqlReq, _ := http.NewRequest("POST", "https://api.example.test/graphql", nil)
+	gqlRT := observedTransport(countRoundTrips(observeRT(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("x"))}, nil
+	})), RequestObserver{sink, perfrec.OriginDirect}, perfrec.RequestProvider, false)
+	gqlResponse, err := gqlRT.RoundTrip(gqlReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(gqlResponse.Body)
+	held := gqlResponse.Body.(*observedBody)
+	firstEOF := held.end
+	time.Sleep(time.Millisecond)
+	_, _ = gqlResponse.Body.Read(make([]byte, 1))
+	if !held.end.Equal(firstEOF) {
+		t.Fatal("first EOF lifetime cutoff moved on a repeated read")
+	}
+	_ = gqlResponse.Body.Close()
 	// Original read and cancellation errors remain the caller's exact errors.
 	cut := errors.New("body cut off")
 	for _, failure := range []error{cut, context.Canceled} {

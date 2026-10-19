@@ -169,7 +169,6 @@ type observedBody struct {
 	observation perfrec.RequestObservation
 	bytes       int64
 	end         time.Time
-	eof         bool
 	deferCost   bool
 }
 
@@ -177,9 +176,8 @@ func (b *observedBody) Read(p []byte) (int, error) {
 	n, err := b.body.Read(p)
 	b.mu.Lock()
 	b.bytes += int64(n)
-	if err != nil {
+	if err != nil && b.end.IsZero() {
 		b.end = time.Now()
-		b.eof = err == io.EOF
 	}
 	delay := b.deferCost && err == io.EOF
 	b.mu.Unlock()
