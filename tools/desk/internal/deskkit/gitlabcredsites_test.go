@@ -48,6 +48,9 @@ var gitlabCredSites = map[string]string{
 	"cmd/desktoken/gitlab.go|gitlabSelfCheck|header":   "TestGitLabSelfCheckRefusesRedirect",
 	// deskfleet: noRedirects wraps every client it builds.
 	"cmd/deskfleet/client.go|newGitLabClient|header": "TestFleetNeverFollowsRedirect",
+	// deskgitlab (the fleet provisioner): newAPIClient sets CheckRedirect to ErrUseLastResponse
+	// on every API client, so a 3xx comes back unfollowed as its own status.
+	"cmd/deskgitlab/client.go|send|header": "TestAPIClientDoesNotFollowRedirects",
 }
 
 // gitlabCredHeaders are the GitLab credential header names, compared case-insensitively

@@ -58,6 +58,8 @@ func TestForgeSurfaceUnchangedByDeskread(t *testing.T) {
 		"ListIssues", "IssueStateEvents", "ListChangeCommits", "RepoDefaultBranch",
 		// Ops 62-63, added under the freeze rule by forge-neutral brief 17 with deskrun log and retry as consumers.
 		"RunLog", "RetryRun",
+		// Op 64, added under the freeze rule by the label-removal hold brief with deskread's `label-events` kind as its consumer.
+		"IssueLabelHistory",
 	}
 	sort.Strings(want)
 

@@ -177,6 +177,16 @@ Historical Evidence is byte-preserved. /28 receives reciprocal unblocks only, no
 changes. The merged forge-neutral/39–45 and performance-collection/01–06 are reused unchanged.
 R3/R4 custody and R5/R7/R8 integration/migration remain their existing proof obligations.
 
+### Operating-report owner routing — 15 October 2026
+
+| Slice | Owner and delivery | Runtime boundary |
+|---|---|---|
+| Capture and retained coverage/distributions | performance-collection/01–02; preserve /03–06 separate database/transport qualification | Local-first optional observations, no operational authority |
+| On-demand command/skill and daily three-report bundle | performance-collection/07–08; existing flow/lifecycle meanings retained | R7 consumes the same projection; local report-pack host can precede R2–R8 |
+| Later issue/draft-repair proposal loop | performance-collection/09; continuing-operations assessment and existing desk consumers | Managed activation depends on R2/R3/R4 and the brief's typed graph prerequisites; no new scheduler or autonomous merge |
+
+This is a requested specification/brief amendment, not implementation or activation evidence. It supersedes the "reused unchanged" record above for performance-collection/01, 02 and 06 only: the 15 October operating-report amendment extends those briefs and adds 07–09, with their collection/storage boundaries and runtime authority unchanged.
+
 ## Operation-count brakes and pacing — 15 October 2026
 
 Controlling delta: [brake and pacing contract](11-target-architecture.md#pacing-counts-are-best-effort-brakes-fail-closed).
@@ -199,3 +209,27 @@ relaxing one is a separate human decision.
 Existing Task/Verify rows and historical Evidence remain intact; each brief adds rows and
 bumps `version:`. No installed limiter, default, credential, executor activation or hard
 resource limit changes in this documentation PR.
+
+## Desk-process improvement — proposed owner set, 17 October 2026
+
+[Amendment 22](22-desk-improvement.md) extends continuing operations/quality. It does not
+replace R1–R8 or their activation sequence. Source state: public main 2f56cf289; current
+open claims/PRs were not enumerated in this offline audit and must be reconciled at pickup.
+
+| Work | Owner briefs | Source owners / treatment |
+|---|---|---|
+| Definition and pure calculation | desk-improvement/01–02 | Extend qualgen assessment/projection, semantic-owner index; no new miner |
+| Diagnosis/experiment/follow-up validation and role procedure | desk-improvement/03–04 | Continuing-operations lineage; shared skill reference; concrete procedure activation remains reviewed |
+| Native source bindings | desk-improvement/05 | Consume graph-execution/06 + brief-quality/05, compatible associations only |
+| Runtime evidence | desk-improvement/06–08 | After graph-execution/26 + /22, /21, /27 respectively; /08 also consumes brief-quality/07; foundations receive consumer notes, no reverse dependency |
+| Read-only proposal context | desk-improvement/09 | Existing Improve human/cadence and internal-module boundary |
+| End-to-end native qualification | desk-improvement/10 | Actual producer→mapping→cards→assessment→view, recovery and unknown/private cases |
+
+The new stream is parked and proposal-scoped. Every new brief is M/strong and carries
+executable discriminating checks. Existing completed Evidence/approval is preserved.
+Offline assistance can precede native emission, while measured native-mode benefit requires
+its real producer closure. Public implementation has no private adopter dependency.
+
+Semantic prerequisites: desk-improvement/01 consumes continuing-operations/01 (after
+statusgen/22); /03 consumes continuing-operations/02. These are explicit build gates,
+so generic source contracts are implemented once, before their assessment consumers.
