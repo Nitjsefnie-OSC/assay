@@ -2,10 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
 // regression: class perf-v3-auth-invocation
@@ -40,6 +44,31 @@ func TestAuthInvocationRecord(t *testing.T) {
 			t.Fatal("auth content exposed")
 		}
 	}
+	// Execute the compiled command entrypoint in a disposable test subprocess,
+	// then use the production mixed reader and reducer on its actual day file.
+	cmd := exec.Command(os.Args[0], "-test.run=^TestAuthProcessHelper$")
+	cmd.Env = append(os.Environ(), "ASSAY_AUTH_TEST_HELPER=1", "ASSAY_AUTH_TEST_URL="+srv.URL)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("compiled command: %v %s", err, output)
+	}
+	history, err := deskkit.LoadPerfHistory(1)
+	if err != nil || history.Skipped != 0 {
+		t.Fatal("compiled record reader", err)
+	}
+	summary, err := perfrec.ReduceV3(history.Records, perfrec.ProfileTool, "tool", perfrec.V3Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attempts int64
+	for _, request := range summary.Requests {
+		attempts += request.Attempts
+		if request.Class != perfrec.RequestAuthentication {
+			t.Fatal("compiled auth class")
+		}
+	}
+	if summary.Records != 1 || attempts != 3 {
+		t.Fatalf("compiled command records=%d attempts=%d", summary.Records, attempts)
+	}
 	// The actual parser accepts a profile while process consent stays off, and
 	// no optional observation client or request inventory becomes active.
 	t.Setenv("ASSAY_TELEMETRY", "")
@@ -47,4 +76,13 @@ func TestAuthInvocationRecord(t *testing.T) {
 	if measuredAuth(ctx, s) != httpClient {
 		t.Fatal("consent-off client changed")
 	}
+}
+
+func TestAuthProcessHelper(t *testing.T) {
+	if os.Getenv("ASSAY_AUTH_TEST_HELPER") != "1" {
+		return
+	}
+	httpClient = &http.Client{Transport: &rewriteTransport{orig: os.Getenv("ASSAY_AUTH_TEST_URL")}}
+	os.Args = []string{"desktoken", "coverage", "reviewer", "--perf-profile=tool"}
+	main()
 }

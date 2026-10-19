@@ -64,8 +64,14 @@ func TestPerfV3GraphQLCostCoverage(t *testing.T) {
 	if !strings.Contains(queries[3], "_assayPerf:queryComplexity{score}") {
 		t.Fatal("complexity metadata missing")
 	}
+	for _, next := range []string{`{"data":{"_assayPerf":{"cost":5}}}`, `{"data":{}}`, `{"data":{"_assayPerf":{"cost":"bad"}}}`} {
+		response = next
+		if err := g.doJSON("POST", "/graphql", in, &out); err != nil {
+			t.Fatal("optional metadata changed business error", err)
+		}
+	}
 	sum := writeForgeRecord(t, s)
-	var ghZero, unknown, complexity int64
+	var ghZero, ghCost, unknown, failed, complexity int64
 	for _, r := range sum.Requests {
 		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitHubPoints && *r.Points.Value == 0 {
 			ghZero += r.PointSamples
@@ -73,11 +79,17 @@ func TestPerfV3GraphQLCostCoverage(t *testing.T) {
 		if r.Points.Coverage == perfrec.CoverageUnknown {
 			unknown += r.PointSamples
 		}
+		if r.Points.Coverage == perfrec.CoverageFailed {
+			failed += r.PointSamples
+		}
+		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitHubPoints {
+			ghCost += *r.Points.Value
+		}
 		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitLabComplexity {
 			complexity += *r.Points.Value
 		}
 	}
-	if len(queries) != 4 || ghZero != 1 || unknown != 2 || complexity != 7 {
+	if len(queries) != 7 || ghZero != 1 || ghCost != 5 || unknown != 3 || failed != 1 || complexity != 7 {
 		t.Fatalf("queries=%d zero=%d unknown=%d complexity=%d groups=%+v", len(queries), ghZero, unknown, complexity, sum.Requests)
 	}
 	for _, raw := range []string{`{}`, `{"data":{"_assayPerf":null}}`, `{"data":{"_assayPerf":{"cost":null}}}`} {
