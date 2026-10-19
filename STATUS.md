@@ -22,7 +22,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 7/35 | 2026-10-19 |  |
 | [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/52 | 2026-10-19 |  |
 | [desktools-go-git](docs/streams/desktools-go-git/README.md) | P2 | active | 5/8 | 2026-10-19 |  |
-| [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/46 | 2026-10-19 | 15 withdrawn |
+| [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/49 | 2026-10-19 | 15 withdrawn |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-19 |  |
 | [forge-neutral](docs/streams/forge-neutral/README.md) | P1 | active | 5/43 | 2026-10-19 |  |
 | [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-19 |  |
@@ -63,10 +63,10 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 | [auto-triage](docs/streams/auto-triage/README.md) | P2 | 0/4 | 2026-10-19 |
 | [brief-quality](docs/streams/brief-quality/README.md) | P1 | 0/9 | 2026-10-18 |
 | [ci-tooling](docs/streams/ci-tooling/README.md) | P2 | 0/7 | 2026-10-19 |
-| [continuing-operations](docs/streams/continuing-operations/README.md) | P2 | 0/2 | 2026-10-18 |
+| [continuing-operations](docs/streams/continuing-operations/README.md) | P2 | 0/2 | 2026-10-19 |
 | [desk-improvement](docs/streams/desk-improvement/README.md) | P2 | 0/10 | 2026-10-18 |
 | [fresh-views](docs/streams/fresh-views/README.md) | P2 | 0/6 | 2026-09-17 |
-| [performance-collection](docs/streams/performance-collection/README.md) | P2 | 0/9 | 2026-10-18 |
+| [performance-collection](docs/streams/performance-collection/README.md) | P2 | 0/9 | 2026-10-19 |
 | [server-controls](docs/streams/server-controls/README.md) | P2 | 0/5 | 2026-09-25 |
 
 ## Next up
@@ -108,7 +108,7 @@ _Held by per-stream caps: 16 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: ad38da93 2026-10-19T18:51:26Z_
+_last regen: 96a5cf22 2026-10-19T18:53:52Z_
 
 **Progress:** 10/13 brief items done.
 
@@ -129,9 +129,9 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: ad38da93 2026-10-19T18:51:26Z_
+_last regen: 96a5cf22 2026-10-19T18:53:52Z_
 
-**Progress:** 31/79 brief items done.
+**Progress:** 31/82 brief items done.
 
 **In-flight:**
 
@@ -185,7 +185,7 @@ _last regen: ad38da93 2026-10-19T18:51:26Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (14 for the desk · 32 for the driver · 34 for workers · 31 for an operator · 12 runner-pending — of 127 total; 4 could-not-check)
+## Awaiting verification / review (14 for the desk · 32 for the driver · 34 for workers · 32 for an operator · 12 runner-pending — of 128 total; 4 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
@@ -267,7 +267,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 12 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2325 | — | — |
 | harness-portability | 15 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
 
-### Environment-blocked (31)
+### Environment-blocked (32)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -275,10 +275,11 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | graph-execution | 20 [exec:strong] | implemented | 14000 | 24 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | statusgen | 15 [exec:strong] | implemented | 11500 | 21 | — | operator | environment blocker, cite #1800 | — | — |
 | graph-execution | 13 [exec:strong] | implemented | 10000 | 16 | — | operator | environment blocker, cite #1800 | — | — |
+| desktools-v2 | 61 [exec:strong] | implemented | 7000 | 12 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | forge-neutral | 33 [exec:strong] | implemented | 6000 | 8 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | cellctl-windows | 00 [exec:strong] | implemented | 5530 | 7 | — | operator | `$log = New-TemporaryFile; go test ./internal/celllaunch -run '^TestLaunchSpecRoundTrip$' -count=1 -v *> $log; if ($LASTEXITCODE -ne 0) { Get-Content $log; exit 1 }; if (-not (Select-String -Path $log -SimpleMatch '--- PASS: TestLaunchSpecRoundTrip ')) { exit 1 }; if (Select-String -Path $log -SimpleMatch '--- SKIP:') { exit 1 }` | — | — |
-| desktools-v2 | 61 [exec:strong] | implemented | 5000 | 8 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | build-less-brittle | 11 [exec:strong] | implemented | 4030 | 2 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
+| desk-tools | 38 [exec:strong] | implemented | 4000 | 6 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | statusgen | 22 [exec:strong] | implemented | 4000 | 6 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | iso-9001 | 03 [exec:strong] | implemented | 3030 | 4 | — | operator | environment blocker, cite medici-finance/assay#2175 | — | — |
 | statusgen | 19 [exec:strong] | implemented | 3000 | 4 | — | operator | environment blocker, cite #1800 | — | — |
@@ -593,7 +594,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 35 Go security analysis with gosec and govulncheck — todo (wave 2)
 - 36 The scheduled board reconcile's PR class becomes generated output — auto-approve lane (default) or direct-CI single-writer, per the driver's ruling on #2688 — implemented (wave 1)
 - 37 Review workflow semantic oracle and matched cost baseline — todo (wave 1)
-- 38 Correct desk performance attribution and counter coverage — todo (wave 2)
+- 38 Correct desk performance attribution and counter coverage — implemented (wave 2)
 - 39 Extract shared review observation and pure planning contracts — todo (wave 2)
 - 40 Deliver one review queue observation and offline planning bridge — todo (wave 3)
 - 41 Share exact-source review preparation context — todo (wave 3)
@@ -616,7 +617,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 06 migrate push + retire ambient-credential machinery + preflight transport probe — implemented (wave 4)
 - 08 flip the drop-the-binary CI gate to failing + assert CVE floor + file the follow-on — todo (wave 5)
 
-### desktools-v2 (43 open)
+### desktools-v2 (46 open)
 
 - 03 native read-path installation-token client — retire gh shell-out in the read path (#1223 pilot) — implemented (wave 3)
 - 05 the push guards judge the remote actually being pushed to — deskpushguard base ref (#1201) and insteadOf in the push-transport gate (#884) — verified (wave 2)
@@ -660,7 +661,10 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 59 Share concurrent credential lookups and bound reuse by credential expiry — todo (wave 2)
 - 60 Bound component activation discovery and reuse validated manifest snapshots — todo (wave 1)
 - 61 Version shared performance boundaries and keep legacy reports comparable — implemented (wave 1)
-- 62 Instrument desk hot paths and qualify credential and startup savings — todo (wave 3)
+- 62 Instrument desk hot paths and qualify credential and startup savings — todo (wave 4)
+- 63 Define perf-v3 attribution, profiles and compatible local readers — todo (wave 2)
+- 64 Propagate performance context through desks, agents and tool CLIs — todo (wave 3)
+- 65 Measure own forge request timing and GraphQL cost — todo (wave 3)
 
 ### forge-gitlab (6 open)
 
@@ -791,13 +795,13 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 ### performance-collection (9 open)
 
 - 01 Local performance event contract, spool and offline report — todo (wave 0)
-- 02 Producer adapters for workflow, usage and local performance — todo (wave 2)
+- 02 Producer adapters for workflow, usage and local performance — todo (wave 4)
 - 03 Separate TimescaleDB performance database and storage adapter — todo (wave 1)
 - 04 Authenticated performance ingestion API — todo (wave 2)
 - 05 Explicit resumable upload from the local spool — todo (wave 1)
-- 06 Collection replay, retention, recovery and release qualification — todo (wave 3)
-- 07 On-demand three-report bundle and thin skill — todo (wave 3)
-- 08 Daily report generation and report-pack qualification — todo (wave 4)
+- 06 Collection replay, retention, recovery and release qualification — todo (wave 5)
+- 07 On-demand three-report bundle and thin skill — todo (wave 5)
+- 08 Daily report generation and report-pack qualification — todo (wave 6)
 - 09 Bounded performance issue and repair-PR loop — todo (wave 7)
 
 ### quality (3 open)
@@ -830,7 +834,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 23 Product target binding and context drift assessment — todo (wave 3)
 - 24 Portfolio allocation and capacity accounting — todo (wave 2)
 - 25 Read-only portfolio and drift projections — todo (wave 4)
-- 26 Extend statusgen phase measurements through the shared performance recorder — todo (wave 2)
+- 26 Extend statusgen phase measurements through the shared performance recorder — todo (wave 4)
 - 27 Reject newly introduced actionable lint notices on changed briefs — todo (wave 1)
 - 28 Separate frozen historical notices from actionable lint findings — todo (wave 1)
 - 29 Run the existing structural row checks before writing a new brief — todo (wave 2)
@@ -1039,4 +1043,4 @@ _Terminal: retired by a later decision or merged into a successor. Not counted i
 
 ## Totals
 
-**31** streams (**21** active, **0** paused, **10** parked) · **106/486** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
+**31** streams (**21** active, **0** paused, **10** parked) · **106/489** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
