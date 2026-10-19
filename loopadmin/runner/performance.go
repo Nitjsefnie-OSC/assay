@@ -2,8 +2,9 @@ package runner
 
 import (
 	"context"
-	"github.com/medici-finance/assay/perfrec"
 	"time"
+
+	"github.com/medici-finance/assay/perfrec"
 )
 
 type performanceKey struct{}
