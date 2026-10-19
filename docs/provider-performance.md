@@ -76,19 +76,25 @@ The three named `/65` regressions use real backend/transport/record/report paths
 the auth fixture runs the actual parser and existing auth leaves. The committed
 `forgeperf-mutations.json` plants missing leaf observation, headers-only timing,
 nested double counting, fabricated zero cost, omitted auth observation and
-counting above the real board cache/admission adapter.
-All six controls must fail their named test.
+counting above the real board cache/admission adapter, and lost GitHub cost
+metadata behind the existing JSON response sanitizer. All seven controls must
+fail their named test. The sanitizer remains in place; a per-operation capture
+links the existing decode to the actual observed response without changing
+response headers or business bytes.
 
 Matched fake-provider samples alternate recording on/off, 20 cycles each,
 100 requests/cycle, concurrency 1. REST uses a 17-byte JSON response; the
 GraphQL variant also includes same-operation metadata selection/extraction and
 its larger response. Enabled samples include aggregation and local append.
-One REST qualification run measured wall ns
-p50/p95/max 123125/288834/300416 off and 456833/762916/787917 on; summed CPU was
-4 ms off and 12 ms on. Actual sends were 2000 in both modes. These are local
-instrumentation costs, with coarse CPU granularity and no real network latency,
-provider rate pressure, wide-concurrency or fleet overhead claim. Test output
-reports fresh samples; these historical figures are not acceptance thresholds.
+The final matched run measured REST wall ns p50/p95/max 267958/632125/642500
+off and 517542/866084/1117542 on; summed CPU was 17 ms off and 22 ms on.
+GraphQL measured 459292/807709/919250 off and 865292/1510625/1764750 on;
+summed CPU was 19 ms off and 31 ms on. Both modes made exactly 2000 sends
+per protocol. Both use actual JSON content types and preserve the GitHub SDK's
+response sanitizer. These are local instrumentation costs, with coarse CPU
+granularity and no real network latency, provider rate pressure,
+wide-concurrency or fleet overhead claim. Test output reports fresh samples;
+these historical figures are not acceptance thresholds.
 
 Removing the observer argument or deselecting the optional profile restores the
 prior measurement path. There is no migration of stored legacy records, pin
