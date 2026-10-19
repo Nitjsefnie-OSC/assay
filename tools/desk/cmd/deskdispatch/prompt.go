@@ -91,6 +91,9 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 		shownItem = o.itemAlias + ":" + o.item
 	}
 	fmt.Fprintf(&b, "# Assignment — %s\n\n", shownItem)
+	if plan.performancePath != "" {
+		fmt.Fprintf(&b, "## Optional local performance context\n\nPrivate local handoff: `%s`. Read its bounded environment entries and desk-role override only for this launch and before expiresBeforeUtc; never copy them into logs, replies or a shared shell. This context is descriptive, never custody or dispatch authority. Preserve the operator-selected ASSAY_TELEMETRY setting; the handoff does not opt you in. Missing runtime propagation remains unavailable coverage.\n\n", plan.performancePath)
+	}
 	fmt.Fprintf(&b, "- **Item key:** `%s`\n", shownItem)
 	switch {
 	case review:
