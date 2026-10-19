@@ -116,7 +116,10 @@ is the one contract; /15–/17 own its foundation, rollout and completion.
 | 59 | [Share concurrent credential lookups and bound reuse by credential expiry](brief-59-share-concurrent-credential-lookups-and-bound-reuse-by-credential-expiry.md) | 2 | M | todo | — | — |
 | 60 | [Bound component activation discovery and reuse validated manifest snapshots](brief-60-bound-component-activation-discovery-and-reuse-validated-manifest-snapshots.md) | 1 | M | todo | — | — |
 | 61 | [Version shared performance boundaries and keep legacy reports comparable](brief-61-version-shared-performance-boundaries-and-keep-legacy-reports-comparable.md) | 1 | M | implemented | — | — |
-| 62 | [Instrument desk hot paths and qualify credential and startup savings](brief-62-instrument-desk-hot-paths-and-qualify-credential-and-startup-savings.md) | 3 | M | todo | — | — |
+| 62 | [Instrument desk hot paths and qualify credential and startup savings](brief-62-instrument-desk-hot-paths-and-qualify-credential-and-startup-savings.md) | 4 | M | todo | — | — |
+| 63 | [Define perf-v3 attribution, profiles and compatible local readers](brief-63-define-perf-v3-attribution-profiles-and-compatible-local-readers.md) | 2 | M | todo | — | — |
+| 64 | [Propagate performance context through desks, agents and tool CLIs](brief-64-propagate-performance-context-through-desks-agents-and-tool-clis.md) | 3 | M | todo | — | — |
+| 65 | [Measure own forge request timing and GraphQL cost](brief-65-measure-own-forge-request-timing-and-graphql-cost.md) | 3 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -261,6 +264,9 @@ therefore need no additional edge for /12.
 
 ## Performance delivery priority — 2026-10-16
 
+**Historical schedule:** the wave bullets and direct instrumentation edges below describe
+the 16 October plan. Use the 19 October attributed-performance table for current pickup.
+
 This authoring amendment prioritizes credential extraction and concurrency, startup discovery
 and trustworthy instrumentation. It grants no credential, deployment or collection authority.
 Existing delivered performance work and its Evidence are preserved. CLI migration, future
@@ -271,20 +277,20 @@ mirror/service work and the local recorder each keep their current semantic owne
 | 1 | desktools-v2/58 | Internal credential provider; CLI and shared Go resolver share one implementation. New, todo; human acceptance of implemented custody parity. |
 | 2 | desktools-v2/59 | Per-identity in-flight sharing and original-expiry reuse. New, todo; follows 58. |
 | 3 | desktools-v2/60 | Source-validated activation discovery reuse. New, todo; independent local fixtures. |
-| 3 | desktools-v2/61 | Shared perfrec boundary/schema/readers. New, todo; independent, no perfdata/DB prerequisite. |
-| 4 | desktools-v2/62 | Actual desk hotpath attribution and matched before/after workload. New, todo; follows 58, 59, 60 and 61. |
-| 4 | statusgen/26 | Shared-recorder phase attribution and invocation-local parse reuse. New, todo; follows 61; remains credential-free. |
+| 3 | desktools-v2/61 | Implemented perf-v2 boundary/schema/readers (PR #3431); preserve independent verification/Evidence. |
+| 4 | desktools-v2/62 | Actual desk hotpath attribution and matched before/after workload. Todo; now follows 58, 59, 60, 63, 64 and 65. |
+| 4 | statusgen/26 | Shared-recorder phase attribution and invocation-local parse reuse. Todo; now follows 63/64; remains credential-free. |
 
-Critical path for the credential outcome: `58 → 59 → 62`. Instrumentation starts independently:
+Historical 16 October critical path for the credential outcome: `58 → 59 → 62`. Instrumentation starts independently:
 `61 → 62` and `61 → statusgen/26`. Discovery 60 starts beside them and feeds 62's matched startup workload.
 The smallest unblocking move is 58's internal extraction with synthetic custody/CLI parity;
 it does not wait on Cobra, repo-scope policy changes, a service, a database or the mirror.
 Review its concrete custody evidence under its own human gate. Do not export deskkit or move
 a credential into statusgen to remove a process boundary.
 
-- Wave 1: 58, 60 and 61 — separate owners; coordinate entrypoint integration on current main.
-- Wave 2: 59 and statusgen/26 — consume the provider and shared recorder respectively.
-- Wave 3: 62 — qualify the combined desk path after all four local inputs; no new remote activation dependency.
+- Historical wave 1: 58, 60 and 61 — separate owners; coordinate entrypoint integration on current main.
+- Historical wave 2: 59 and statusgen/26 — consume the provider and shared recorder respectively.
+- Historical wave 3: 62 — qualify the combined desk path after all four local inputs; no new remote activation dependency.
 
 Freshness: inspected origin/main eba941721 on 2026-10-16. Open-PR and dispatch-claim reads
 were collected at authoring. The reporting plan merged during authoring was reconciled at
@@ -298,3 +304,24 @@ Consumer routing: /06 keeps repository/role scoping; /20, /21, /33 and /56 keep 
 performance-collection/01–02 keep correlated collection/import; forge-neutral/37–45 keep
 shared online ingestion, serving and qualification; statusgen/20 keeps complete offline
 context discovery. Amend those unfinished owners; do not reopen delivered /09 or desk-tools/24–25.
+
+## Attributed performance delivery — 19 October 2026
+
+[The v3 contract](../../performance-attribution-spec.md) supersedes v2-only future intent;
+completed /61 remains implemented, with existing Evidence untouched. No collection is activated.
+
+| Owner | Wave | Deliverable |
+|---|---|---|
+| /63 | 2 | New perf-v3 contract/context/profile/readers after implemented /61; no DB or perfdata dependency. |
+| /64 | 3 | Launchers, agent lifecycle and shared real CLI/env attribution after /63. |
+| /65 | 3 | Own-request timing and attributable GraphQL cost after /63; unknown is not zero. |
+| statusgen/26 | 4 | Credential-free v3 producer after /63 and /64. |
+| /62 | 4 | Matched desk workload after /58, /59, /60, /63, /64 and /65. |
+
+Attribution critical path: `61 (implemented) → 63 → 64`; observation proceeds `63 → 65`.
+Combined desk qualification has both that path and `58 → 59 → 62`; /60 remains independent.
+The next unblocking move for attribution is /63's schema/profile/resolver, verified absent
+at 2e02111ed. /64 and /65 consume its fixtures independently. Final CLI qualification /17
+includes /64; existing CLI migrations adopt shared bindings without duplicating them.
+Collection/02 follows /01 and /63–65 in wave 4; it remains parked and never blocks local v3.
+The earlier 16 October schedule is historical; these amended dependencies control pickup.

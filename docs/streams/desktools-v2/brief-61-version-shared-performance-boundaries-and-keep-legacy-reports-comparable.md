@@ -4,14 +4,14 @@ title: "Version shared performance boundaries and keep legacy reports comparable
 why: "Current desk wall time excludes entrypoint setup while CPU includes process lifetime, and readers cannot distinguish several command modes. A shared versioned measurement boundary makes the local records usable for comparing optimizations across desk tools and statusgen without treating missing measurements as zero."
 wave: 1
 depends: []
-unblocks: ["desktools-v2/62", "statusgen/26", "performance-collection/02"]
+unblocks: ["desktools-v2/63", "desktools-v2/62", "statusgen/26", "performance-collection/02"]
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
 outcome: none
-version: 1
+version: 2
 id: c01a7fef-514d-47ac-b39e-ede3f4e9d63a
 authored: 2026-10-16 by performance brief authoring
 sources:
