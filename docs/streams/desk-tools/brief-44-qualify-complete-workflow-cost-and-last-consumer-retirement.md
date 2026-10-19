@@ -76,7 +76,7 @@ design-fit:
    hashes, correctness, coverage and CPU/wall/request/points vector. Compare full dispatcher-plus-
    agent work. Unknown children/quota and overlapping wall cannot be scored as savings.
 2. Publish a local, reproducible qualification and limitations record. Reuse performance-
-   collection/07 exports when available without depending on the parked collection stream, its
+   collection/07 exports when available without depending on the performance-collection stream, its
    DB/API or new consent. Pending #3305 owns reusable scorecard/experiment mechanisms; consume them
    when qualified rather than creating a second system. A failed/no-go result is valid and blocks an
    improvement claim.

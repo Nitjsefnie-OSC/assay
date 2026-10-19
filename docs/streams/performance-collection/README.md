@@ -12,14 +12,17 @@ spec: docs/streams/performance-collection/README.md
 
 # Optional performance collection
 
-**Status:** active for implementation — admission updated 18 October 2026.
+**Status:** draft — activation requested 18 October 2026; the approval ruling that activation needs is not yet recorded.
 Collection can start locally before any database, API or managed cell exists. This stream
 owns delivery of optional collection/storage plumbing; it does not replace the semantic
 owners of work, runner accounting, measurement definitions or continuing outcomes.
-The driver has unparked this stream. The existing local-first delivery path is admitted
-for implementation: /01 → /02 → /07 → /08. Brief dependencies, verification and human
-gates remain in force; all existing todo states remain todo. This admission does not
-enable collection, transmission, deployment or a new permission.
+The driver asked on 18 October 2026 for this stream to be unparked. Activation applies to the
+whole stream on the board: once it is active, any brief whose `depends:` are met can appear in
+Next-up and be dispatched. That includes the remote-path briefs: /03 and /05 depend only on /01.
+The delivery priority is the local-first path /01 → /02 → /07 → /08. The remote path keeps its
+separate scope and gates. Brief dependencies, verification and human gates stay in force. All
+existing todo states stay todo. Activation does not enable collection, transmission, deployment
+or a new permission.
 
 ## Direction and source boundary
 
@@ -244,7 +247,7 @@ The remote path remains `01 → 03 → 04 → 06`, with 02 and 05 also required 
 Remote qualification does not hold local 07/08 hostage. The real local head is qualifying
 source coverage/retention, not deploying PostgreSQL. Existing perf-v1 import can start
 now, but absent historical CPU/call samples cannot be backfilled from delivery activity.
-Stream admission is active; implementation acceptance and runtime/collection activation remain separate.
+Stream admission covers the whole stream; implementation acceptance and runtime/collection activation remain separate.
 
 ## Three operating reports — requested 15 October 2026
 

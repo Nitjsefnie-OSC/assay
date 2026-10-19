@@ -1,1 +1,1 @@
-- Unpark performance-collection for its existing local-first delivery path, preserving consent, verification, deployment gates and brief completion states.
+- Unpark the performance-collection stream. Activation covers the whole stream on the board, with the local-first path /01 → /02 → /07 → /08 as the delivery priority. Consent, verification, deployment gates and brief completion states are unchanged.
