@@ -540,6 +540,7 @@ func dispatch(o dispatchOpts) error {
 	var perr error
 	if o.kit != "verifier" {
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
 		}
@@ -621,6 +622,7 @@ func dispatch(o dispatchOpts) error {
 		}
 		// The verifier's read-ahead packet is built only after provenance is established.
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
 		}
@@ -741,6 +743,8 @@ type dispatchPlan struct {
 	// "" when none was (no provider for the kit, --dry-run, or the build did not succeed).
 	// Set once, after the worktree exists; the prompt carries a `Packet:` line iff it is set.
 	packetPath string
+	// Optional attribution stays in an owner-only local sidecar, never prompt logs.
+	performancePath string
 	// workerAttestation is the read-back pre-work worker attestation (--attest-worker), set at
 	// step 5 before the prompt is emitted; nil otherwise, and on a dry run.
 	workerAttestation *deskkit.WorkerReceipt

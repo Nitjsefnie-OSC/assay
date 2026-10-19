@@ -17,6 +17,9 @@ import (
 
 // regression: desktools-v2/64
 func TestPerfV3CLIContextPrecedence(t *testing.T) {
+	if _, ok := cli.PerformanceContext(cli.NewRoot("fresh", "unselected fixture")); ok {
+		t.Fatal("unselected command has context")
+	}
 	t.Setenv("ASSAY_TELEMETRY", "1")
 	t.Setenv("ASSAY_PERF_PROFILE", "workflow")
 	t.Setenv("ASSAY_PERF_ROLE", "implement")

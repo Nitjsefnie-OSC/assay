@@ -36,6 +36,12 @@
       "file": "internal/cli/performance.go",
       "old": "if f == nil || !f.Changed {",
       "new": "if f == nil || !f.Changed || f.Value.String()==\"\" {"
+    },
+    {
+      "name": "read nil parser context before selection",
+      "file": "internal/cli/performance.go",
+      "old": "if cmd.Context() == nil {",
+      "new": "if false {"
     }
   ]
 }
