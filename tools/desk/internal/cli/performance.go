@@ -87,7 +87,11 @@ func performanceSelection(root *cobra.Command, sink func(perfrec.Context)) func(
 				sink(selected)
 			}
 		})
-		cmd.SetContext(context.WithValue(cmd.Context(), perfKey{}, selected))
+		parent := cmd.Context()
+		if parent == nil {
+			parent = context.Background()
+		}
+		cmd.SetContext(context.WithValue(parent, perfKey{}, selected))
 	}
 }
 

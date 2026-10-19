@@ -1,10 +1,10 @@
 {
-  "test": "go test -timeout=60s -count=1 -run '^TestPerfV3RunnerIdentityLifecycle$' ./runner",
+  "test": "go test -timeout=60s -count=1 -run '^TestPerfV3RunnerIdentityLifecycle$|^TestNoGraphDependency$' ./runner",
   "control": {
     "name": "skip actual runner context boundary",
     "file": "runner/client.go",
-    "old": "c.adapter.Start(launchContext, req.clone())",
-    "new": "c.adapter.Start(ctx, req.clone())"
+    "old": "c.performanceStart(ctx, req)",
+    "new": "c.performanceStart(context.Background(), req)"
   },
   "mutations": [
     {
@@ -24,6 +24,12 @@
       "file": "runner/performance.go",
       "old": "gap = true",
       "new": "gap = false"
+    },
+    {
+      "name": "permit planted second module",
+      "file": "runner/request_test.go",
+      "old": "return fmt.Errorf(\"runner module closure includes an unadmitted dependency\")",
+      "new": "return nil"
     }
   ]
 }

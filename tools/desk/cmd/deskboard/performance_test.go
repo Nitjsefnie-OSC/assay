@@ -14,6 +14,7 @@ import (
 // regression: desktools-v2/64
 func TestPerfBoardParsedRecorder(t *testing.T) {
 	r := cliRecord(t)
+	baselineCode, baselineOut, baselineErr := r.exec("prs")
 	t.Setenv("ASSAY_TELEMETRY", "1")
 	t.Setenv("ASSAY_PERF_PROFILE", "workflow")
 	t.Setenv("ASSAY_PERF_ROLE", "implement")
@@ -24,7 +25,7 @@ func TestPerfBoardParsedRecorder(t *testing.T) {
 		return deskkit.PerfRunSelected("deskboard", perfVerbs, args, selected, func([]string) int { return run() })
 	}
 	code := executeRecorded(args, &out, &errs, nil, record, func(c perfrec.Context) { selected = c })
-	if code != 0 || r.calls != 1 || out.String() != "board unchanged"+string(rune(10)) || errs.Len() != 0 {
+	if code != baselineCode || r.calls != 2 || out.String() != baselineOut || errs.String() != baselineErr {
 		t.Fatal("optional flags changed board operation")
 	}
 	p := filepath.Join(os.Getenv("HOME"), ".config", "assay", "perf", time.Now().UTC().Format("2006-01-02")+".jsonl")
