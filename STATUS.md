@@ -70,7 +70,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 ## Next up
 
-> **COULD-NOT-CHECK — dead-claim decay did not run.** branch pull-request state through `gh api graphql` could not be read: gh api graphql (branch pull requests): exec: "gh": executable file not found in $PATH
+> **COULD-NOT-CHECK — dead-claim decay did not run.** branch pull-request state through the GitHub GraphQL API could not be read: no GitHub API token: set GH_TOKEN or GITHUB_TOKEN (in a workflow, the job's token with pull-requests read), or log in with `gh`; the GitHub GraphQL API does not answer unauthenticated reads
 > Open branches whose PR/merge request has already **merged or closed** are still counted as claims, so they keep consuming their stream's dispatch cap. The rows below are a **subset**: briefs held behind those dead claims are missing from this board, not absent from the backlog.
 
 > **ACTIVE DRIVE — the Next-up score below carries an operator-declared steer.** `build-less-brittle` (push, +1500, 2026-10-16→2026-10-30); `desktools-v2` (push, +1500, 2026-10-16→2026-10-30). Each boosted pick shows its score DECOMPOSED as `base + term (drive:<slug>)` — the term is a temporal, attributed steer, ADDITIVE and walled off from every measured metric, never a value claim.
@@ -107,7 +107,7 @@ _Held by per-stream caps: 40 brief(s) across 2 stream(s) — top: desktools-v2. 
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: 6de70c43 2026-10-18T22:24:21Z_
+_last regen: 83cd2d8c 2026-10-19T01:10:18Z_
 
 **Progress:** 10/13 brief items done.
 
@@ -128,7 +128,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 6de70c43 2026-10-18T22:24:21Z_
+_last regen: 83cd2d8c 2026-10-19T01:10:18Z_
 
 **Progress:** 16/79 brief items done.
 
