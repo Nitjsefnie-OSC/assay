@@ -154,14 +154,15 @@ func IsPerfLegacyInvocation(r PerfRecord) bool {
 // reads.
 func IsPerfV2(r PerfRecord) bool { return r.Schema == PerfSchemaV2 }
 
-// FilterPerf keeps the records whose tool and role match (an empty filter matches all).
+// FilterPerf keeps matching tools and legacy roles. A legacy role filter excludes v3,
+// whose assigned role has different meaning and requires the workflow-aware ReduceV3 filter.
 func FilterPerf(recs []PerfRecord, tool, role string) []PerfRecord {
 	var out []PerfRecord
 	for _, r := range recs {
 		if tool != "" && r.Tool != tool {
 			continue
 		}
-		if role != "" && r.Role != role {
+		if role != "" && (r.Schema == perfrec.SchemaV3 || r.Role != role) {
 			continue
 		}
 		out = append(out, r)

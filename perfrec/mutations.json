@@ -19,6 +19,12 @@
       "file": "v3.go",
       "old": "v.RequestDrops > 0 && v.RequestCoverage != CoverageFailed",
       "new": "false && v.RequestDrops > 0 && v.RequestCoverage != CoverageFailed"
+    },
+    {
+      "name": "direct v3 writer bypasses the exact telemetry opt-in",
+      "file": "perfrec.go",
+      "old": "if !Enabled() {\n\t\t\treturn errors.New(\"perfrec: v3 recording is disabled\")",
+      "new": "if false && !Enabled() {\n\t\t\treturn errors.New(\"perfrec: v3 recording is disabled\")"
     }
   ]
 }

@@ -36,6 +36,7 @@ func flowQuery(k perfrec.ObservationKind, source, coal string, upstream *int64) 
 
 // regression: class perf-v3-accounting
 func TestPerfV3RecordToReportFlow(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

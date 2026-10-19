@@ -247,6 +247,14 @@ print the release tag this copy ships at
 
 ```
   --cells-root               string   absolute path of the cell registry to use for this run (overrides CELLS_ROOT)
+  --perf-agent-id            string   optional local performance context (never operational authority)
+  --perf-desk-role           string   optional local performance context (never operational authority)
+  --perf-parent-agent-id     string   optional local performance context (never operational authority)
+  --perf-parent-invocation-id string   optional local performance context (never operational authority)
+  --perf-profile             string   optional local performance context (never operational authority)
+  --perf-role                string   optional local performance context (never operational authority)
+  --perf-session-id          string   optional local performance context (never operational authority)
+  --perf-work                stringArray local performance work reference (bounded JSON object; repeats replace inherited work)
 ```
 
 ## Internal entrypoints

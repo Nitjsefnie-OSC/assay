@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -92,17 +94,20 @@ func accountTypeShort(t string) string {
 }
 
 // cmdCoverage implements `desktoken coverage <role> [--repo <slug>] [--json]`.
-func cmdCoverage(args []string) (err error) {
+func cmdCoverage(args []string, sinks ...func(perfrec.Context)) (err error) {
 	ac := &auditCtx{verb: "coverage", argsDigest: deskkit.ArgsDigest(os.Args[1:])}
 	defer func() { ac.finalize(err) }()
 
 	fs := flag.NewFlagSet("desktoken coverage", flag.ContinueOnError)
+	selected := cli.GoPerformanceSink(fs, sinks...)
+	defer selected()
 	fs.SetOutput(new(strings.Builder))
 	repo := fs.String("repo", "", "repo slug (owner/name): print only the installation that sees it; exit 0 if one does, 5 if none")
 	forge := fs.String("forge", "", "forge backend: empty/github (default); gitlab is refused (a PAT has no installation to enumerate)")
 	asJSON := fs.Bool("json", false, "emit the enumeration as one JSON object")
 
 	positionals, perr := parseInterspersed(fs, args)
+	selected()
 	if perr != nil {
 		// TIER TWO: see cmdToken — a help request writes no audit row.
 		if deskkit.IsHelpRequest(perr) {

@@ -1,0 +1,29 @@
+{
+  "test": "go test -timeout=60s -count=1 -run '^TestPerfV3RunnerIdentityLifecycle$' ./runner",
+  "control": {
+    "name": "skip actual runner context boundary",
+    "file": "runner/client.go",
+    "old": "c.adapter.Start(launchContext, req.clone())",
+    "new": "c.adapter.Start(ctx, req.clone())"
+  },
+  "mutations": [
+    {
+      "name": "never preserve explicit resume",
+      "file": "runner/performance.go",
+      "old": "resume = &d",
+      "new": "_ = d"
+    },
+    {
+      "name": "retain native mapping beyond seven UTC days",
+      "file": "runner/performance.go",
+      "old": "today.AddDate(0, 0, -6)",
+      "new": "today.AddDate(0, 0, -7)"
+    },
+    {
+      "name": "conceal unknown mapping continuity gap",
+      "file": "runner/performance.go",
+      "old": "gap = true",
+      "new": "gap = false"
+    }
+  ]
+}

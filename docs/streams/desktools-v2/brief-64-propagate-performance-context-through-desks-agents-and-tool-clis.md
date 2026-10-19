@@ -29,6 +29,7 @@ consumers:
   - "tools/desk/cmd/cellctl and deskdispatch: fixed-here"
   - "tools/desk/internal/deskkit/runtool.go: fixed-here"
   - "tools/desk/internal/cli/ and clicontract/: fixed-here"
+  - "tools/desk/cmd/deskboard/, deskread/ and deskgitlab/: fixed-here (existing shared-parser callback plumbing; production qualification stays with existing owners)"
   - "tools/desk/cmd/deskclaim-ref/, deskclaim/, deskboot/ and desktoken/: fixed-here (current-parser context bindings and custody-preserving inventory; production credential observations remain /62)"
   - "graph-execution/19 and /16; forge-neutral/40: out-of-scope (future claim/token-custody replacements inherit this common binding when implemented; no prerequisite parser migration)"
   - "loopadmin/runner/: fixed-here"
@@ -49,6 +50,9 @@ files:
 - `tools/desk/internal/deskkit/runtool.go`
 - `tools/desk/internal/deskkit/dispatchrecord.go`
 - `tools/desk/internal/cli/`
+- `tools/desk/cmd/deskboard/main.go`
+- `tools/desk/cmd/deskread/main.go`
+- `tools/desk/cmd/deskgitlab/main.go`
 - `tools/desk/internal/clicontract/`
 - `tools/desk/cmd/deskclaim-ref/`
 - `tools/desk/cmd/deskclaim/`
@@ -101,7 +105,9 @@ Options:
 1. **Accept the bounded implementation** — accept the demonstrated local disclosure and isolation; retain separate remote activation controls.
 2. **Hold for correction** — identify the field, lifecycle or failure boundary that needs correction.
 
-Default if no answer: none — acceptance waits for concrete implementation evidence.
+Default if no answer: none — blocks until answered
+
+Acceptance waits for concrete implementation evidence.
 
 ## Ground rules
 

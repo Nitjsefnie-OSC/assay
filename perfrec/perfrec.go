@@ -340,6 +340,9 @@ func (w *Writer) Append(stateDir string, rec Record) { _ = w.Write(stateDir, rec
 // not land. Production callers go through Append, which discards it.
 func (w *Writer) Write(stateDir string, rec Record) error {
 	if rec.Schema == SchemaV3 {
+		if !Enabled() {
+			return errors.New("perfrec: v3 recording is disabled")
+		}
 		if err := validV3(rec); err != nil {
 			return err
 		}

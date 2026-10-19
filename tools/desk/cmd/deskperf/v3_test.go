@@ -10,12 +10,13 @@ import (
 
 // regression: class perf-v3-report-profile
 func TestV3ActualReport(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("ASSAY_PERF_PROFILE", "")
 	id, _ := perfrec.NewID()
-	c := perfrec.ResolveContext(perfrec.ContextInput{Profile: perfrec.Value{Value: "workflow", Present: true}, AgentID: perfrec.Value{Value: id, Present: true}, LookupEnv: func(k string) (string, bool) {
+	c := perfrec.ResolveContext(perfrec.ContextInput{Profile: perfrec.Value{Value: "workflow", Present: true}, AgentID: perfrec.Value{Value: id, Present: true}, Role: perfrec.Value{Value: "implement", Present: true}, LookupEnv: func(k string) (string, bool) {
 		if k == perfrec.EnvVar {
 			return "1", true
 		}
@@ -36,6 +37,10 @@ func TestV3ActualReport(t *testing.T) {
 	var report reportJSON
 	if e := json.Unmarshal(out.Bytes(), &report); e != nil || report.PerfV3 == nil || report.PerfV3.Records != 1 {
 		t.Fatal("v3 report missing", e)
+	}
+	out.Reset()
+	if e := cmdReport([]string{"--json", "--role", "implement"}, &out, &diag); e == nil {
+		t.Fatal("legacy role filter bypassed workflow permission")
 	}
 	out.Reset()
 	if e := cmdReport([]string{"--json", "--group-by", "agent"}, &out, &diag); e == nil {
