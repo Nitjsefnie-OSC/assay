@@ -59,14 +59,15 @@ Operations admission remains a blocker for /25; the verifier runtime does not wa
 | 23 | [Product target binding and context drift assessment](brief-23-product-target-binding-and-context-drift-assessment.md) | 3 | M | todo | — | — |
 | 24 | [Portfolio allocation and capacity accounting](brief-24-portfolio-allocation-and-capacity-accounting.md) | 2 | M | todo | — | — |
 | 25 | [Read-only portfolio and drift projections](brief-25-read-only-portfolio-and-drift-projections.md) | 4 | M | todo | — | — |
-| 26 | [Reject newly introduced actionable lint notices on changed briefs](brief-26-reject-newly-introduced-actionable-lint-notices-on-changed-briefs.md) | 1 | M | todo | — | — |
-| 27 | [Separate frozen historical notices from actionable lint findings](brief-27-separate-frozen-historical-notices-from-actionable-lint-findings.md) | 1 | M | todo | — | — |
-| 28 | [Run the existing structural row checks before writing a new brief](brief-28-run-the-existing-structural-row-checks-before-writing-a-new-brief.md) | 2 | M | todo | — | — |
-| 29 | [Repair deterministic defects in active Verify rows with a reviewed dry run](brief-29-repair-deterministic-defects-in-active-verify-rows-with-a-reviewed-dry-run.md) | 2 | M | todo | — | — |
-| 30 | [Backfill derivable active brief metadata without fabricating evidence](brief-30-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 | M | todo | — | — |
-| 31 | [Connect board drift notices to the existing reconciliation owners](brief-31-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 | M | todo | — | — |
-| 32 | [Drive active notice severity from the existing registry after cleanup](brief-32-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 | M | todo | — | — |
-| 33 | [Drain actionable notice debt in this repository without rewriting closed records](brief-33-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 | M | todo | — | — |
+| 26 | [Extend statusgen phase measurements through the shared performance recorder](brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md) | 2 | M | todo | — | — |
+| 27 | [Reject newly introduced actionable lint notices on changed briefs](brief-27-reject-newly-introduced-actionable-lint-notices-on-changed-briefs.md) | 1 | M | todo | — | — |
+| 28 | [Separate frozen historical notices from actionable lint findings](brief-28-separate-frozen-historical-notices-from-actionable-lint-findings.md) | 1 | M | todo | — | — |
+| 29 | [Run the existing structural row checks before writing a new brief](brief-29-run-the-existing-structural-row-checks-before-writing-a-new-brief.md) | 2 | M | todo | — | — |
+| 30 | [Repair deterministic defects in active Verify rows with a reviewed dry run](brief-30-repair-deterministic-defects-in-active-verify-rows-with-a-reviewed-dry-run.md) | 2 | M | todo | — | — |
+| 31 | [Backfill derivable active brief metadata without fabricating evidence](brief-31-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 | M | todo | — | — |
+| 32 | [Connect board drift notices to the existing reconciliation owners](brief-32-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 | M | todo | — | — |
+| 33 | [Drive active notice severity from the existing registry after cleanup](brief-33-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 | M | todo | — | — |
+| 34 | [Drain actionable notice debt in this repository without rewriting closed records](brief-34-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -127,13 +128,22 @@ documented path. Owner rows for every package: the
 [amendment manifest](../../proposals/non-ci-architecture/20-amendment-manifest.md).
 Existing completed history is unchanged.
 
+## Performance reuse — 2026-10-16
+
+Statusgen/26 extends the already-shared perfrec recorder after desktools-v2/61 (wave 2).
+It measures discovery, parsing, evaluation, rendering and the existing deskread child;
+invocation-local snapshot reuse must match fresh evaluation. It has no dependency on
+the online mirror, perfdata storage or a database and acquires no credential. Context
+resolver /20 retains independent membership enumeration and exact receipt semantics.
+The desktools-v2 README holds the cross-stream performance priority and critical path.
+
 ## Lint debt delivery — 2026-10-17
 
-The [notice-debt contract](#lint-notice-debt) maps source briefs /26–/33.
-Wave 1: /26, /27, /31. Wave 2: /28 after /26; /29 and /30 after /27.
-Wave 3: /33 after /26, /27, /28, /29, /30 and /31. Wave 4: /32 after /33 and
-participating-consumer cleanup receipts. The longest source chain is /27 → /29
-and /30 → /33 → /32. /26 prevents replenishment before cleanup is accepted.
+The [notice-debt contract](#lint-notice-debt) maps source briefs /27–/34.
+Wave 1: /27, /28, /32. Wave 2: /29 after /27; /30 and /31 after /28.
+Wave 3: /34 after /27, /28, /29, /30, /31 and /32. Wave 4: /33 after /34 and
+participating-consumer cleanup receipts. The longest source chain is /28 → /30
+and /31 → /34 → /33. /27 prevents replenishment before cleanup is accepted.
 Consumers separately verify a released artifact, adopt the pin and complete their
 own cleanup. An Authors PR delivers planning only; it does not satisfy these briefs.
 
@@ -160,7 +170,7 @@ consumer CI and pinned adoption are separate delivery boundaries.
 
 ### Public rule-family inventory
 
-This inventory defines the acceptance sets used by /26–/33 at the source revision
+This inventory defines the acceptance sets used by /27–/34 at the source revision
 above. It describes existing checks, not a new runtime registry or a severity
 change. Rule identities below come from the existing lintRuleRegistry or emitter
 constants, retaining their exact spelling; not every registered identity is
@@ -171,22 +181,22 @@ account for every included finding.
 
 | Family | Included current identifiers and source owner | Repair disposition |
 |---|---|---|
-| A — structural Verify rows | `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`, `rE2-literal-pipe`, `unsubstituted-metavar`, `gorun-exit`, `bre-alternation`, `shredded-cell`, `moving-ref`, `gnu-only`, `gotest-run-vacuous`, `prose-led-command`, `cmd-marker-ambiguous`, `cmd-marker-overrides-command`, `cmd-marker-not-honoured`, `cmd-marker-vacuous`, `grep-pipe-zero-count` in `statusgen/verifyrows.go`; the older `verify-row-portability` check in `statusgen/verifyportability.go` | /29 may repair only a unique, semantics-preserving rewrite supported by the original command, Expect and immutable source. Missing metavariable values, ambiguous cells/markers, intended test names or output assertions require author evidence. Every active A finding must be resolved before /33 acceptance; automation is not required to invent a repair. |
+| A — structural Verify rows | `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`, `rE2-literal-pipe`, `unsubstituted-metavar`, `gorun-exit`, `bre-alternation`, `shredded-cell`, `moving-ref`, `gnu-only`, `gotest-run-vacuous`, `prose-led-command`, `cmd-marker-ambiguous`, `cmd-marker-overrides-command`, `cmd-marker-not-honoured`, `cmd-marker-vacuous`, `grep-pipe-zero-count` in `statusgen/verifyrows.go`; the older `verify-row-portability` check in `statusgen/verifyportability.go` | /30 may repair only a unique, semantics-preserving rewrite supported by the original command, Expect and immutable source. Missing metavariable values, ambiguous cells/markers, intended test names or output assertions require author evidence. Every active A finding must be resolved before /34 acceptance; automation is not required to invent a repair. |
 | B — row strength and source dereference | `trivially-green`, `no-output-assertion`, `table-touches-no-files` in `statusgen/strength.go`; `id-dereference` in `statusgen/linkcheck.go` | Author-owed unless the existing contract and source uniquely establish the intended assertion or identifier. A nonexistent identifier is never repaired by inventing a test; explicitly planned names retain the existing planned-name handling. |
-| B — risk, rationale and declared paths | `risk-files-crossread` in `statusgen/riskfilescrossread.go`; `checkBriefFiles` in `statusgen/brieffile.go`, specifically absent/substance-invalid `why` and absent `exec-tier-why` | /30 may derive a truthful file list only from an unambiguous immutable carrying-PR record. Risk answers, rationale and a missing/ambiguous carrying record are author-owed. An unreadable file list is could-not-check, never a zero finding count. |
-| B — consumer routing | `consumers-unrouted`, `consumers-followup-no-target`, `consumers-followup-one-way`, `consumers-prose`, `consumers-no-verify-row`, `consumers-missing-list`, `consumers-out-of-scope-no-reason`, and the already-fatal `consumers-followup-missing-brief` in `statusgen/consumers.go` | /30 may add a back-reference only at the uniquely named, existing active follow-up target with corroborated source provenance. Selecting a target, inventing a consumer/reason or editing a closed target is author-owed. Existing fatal checks remain fatal. |
+| B — risk, rationale and declared paths | `risk-files-crossread` in `statusgen/riskfilescrossread.go`; `checkBriefFiles` in `statusgen/brieffile.go`, specifically absent/substance-invalid `why` and absent `exec-tier-why` | /31 may derive a truthful file list only from an unambiguous immutable carrying-PR record. Risk answers, rationale and a missing/ambiguous carrying record are author-owed. An unreadable file list is could-not-check, never a zero finding count. |
+| B — consumer routing | `consumers-unrouted`, `consumers-followup-no-target`, `consumers-followup-one-way`, `consumers-prose`, `consumers-no-verify-row`, `consumers-missing-list`, `consumers-out-of-scope-no-reason`, and the already-fatal `consumers-followup-missing-brief` in `statusgen/consumers.go` | /31 may add a back-reference only at the uniquely named, existing active follow-up target with corroborated source provenance. Selecting a target, inventing a consumer/reason or editing a closed target is author-owed. Existing fatal checks remain fatal. |
 | B — ordering and legacy review metadata | `orderingGateNotices` in `statusgen/orderinggate.go`, for gate-shaped prose with no corroborating typed edge; `checkBriefFiles` in `statusgen/brieffile.go`, for a risk-classed done record with no security-review claim | Ordering suggestions require author review, never automatic dependency choices. Never manufacture a review claim. Corroborated pre-2026-08-15 closure dates retain the stated grandfather boundary; unknown dates remain could-not-check. Closed records are reporting inputs, not repair targets. |
-| C — board ownership and merged delivery | `already-merged-unflipped`, `out-of-repo-deliverable`, `dehoused`, `re-homed`, `statusgen-source-elsewhere`, `deferred-by-gate` in `statusgen/boardhonesty.go`; `sibling-merge-unreconciled` in `statusgen/siblingmerge.go`; `mergedPRStatusNotices` in `statusgen/mergedstatus.go`, for a merged implementation whose row remains todo/in-progress | /31 routes each observed class to existing eligibility/reconciliation owners. A heuristic mention is not an ownership declaration; unavailable forge/sibling evidence stays unknown. An Authors trailer never proves delivery. |
-| C — accepted-run attribution and register links | `verified-runner-attribution` in `statusgen/verifiedrunneragree.go`; `registerRefProblems` in `statusgen/registerrefs.go`, specifically references to a generated register view rather than a durable entry | /31 derives new attribution from the accepted run; historical Evidence stays frozen. The existing register backfill may rewrite a uniquely identified durable entry. Missing/ambiguous targets remain author-owed and no target is invented. |
+| C — board ownership and merged delivery | `already-merged-unflipped`, `out-of-repo-deliverable`, `dehoused`, `re-homed`, `statusgen-source-elsewhere`, `deferred-by-gate` in `statusgen/boardhonesty.go`; `sibling-merge-unreconciled` in `statusgen/siblingmerge.go`; `mergedPRStatusNotices` in `statusgen/mergedstatus.go`, for a merged implementation whose row remains todo/in-progress | /32 routes each observed class to existing eligibility/reconciliation owners. A heuristic mention is not an ownership declaration; unavailable forge/sibling evidence stays unknown. An Authors trailer never proves delivery. |
+| C — accepted-run attribution and register links | `verified-runner-attribution` in `statusgen/verifiedrunneragree.go`; `registerRefProblems` in `statusgen/registerrefs.go`, specifically references to a generated register view rather than a durable entry | /32 derives new attribution from the accepted run; historical Evidence stays frozen. The existing register backfill may rewrite a uniquely identified durable entry. Missing/ambiguous targets remain author-owed and no target is invented. |
 
 “Derivable Family B” is an instance-level disposition, not every rule in a B row:
 the report must name the immutable source and unique derivation for each repair.
 All other B instances are author-owed, with a named owner and tracked disposition.
-The /33 zero count covers all active A findings and exactly that corroborated B
-subset; historical A/B counts are separate. /32's proposed promotion set is A plus
+The /34 zero count covers all active A findings and exactly that corroborated B
+subset; historical A/B counts are separate. /33's proposed promotion set is A plus
 `risk-files-crossread`, subject to its human gate and cleanup/adoption receipts;
-other B and C rules are not implicitly promoted. /26 includes actionable A/B
-findings on changed briefs; /28 uses A and the existing identifier check. C remains
+other B and C rules are not implicitly promoted. /27 includes actionable A/B
+findings on changed briefs; /29 uses A and the existing identifier check. C remains
 with the existing loop owners rather than becoming an authoring-notice failure.
 Heuristic prompts such as `consumers-missing-list` do not by themselves prove an
 actionable defect: record the author's disposition, and retain that existing
@@ -231,38 +241,38 @@ amendment and its source owner, never an implicit expansion or silent suppressio
 
 | Brief | Deliverable | Wave |
 |---|---|---|
-| statusgen/26 | [Reject newly introduced actionable lint notices on changed briefs](brief-26-reject-newly-introduced-actionable-lint-notices-on-changed-briefs.md) | 1 |
-| statusgen/27 | [Separate frozen historical notices from actionable lint findings](brief-27-separate-frozen-historical-notices-from-actionable-lint-findings.md) | 1 |
-| statusgen/28 | [Run the existing structural row checks before writing a new brief](brief-28-run-the-existing-structural-row-checks-before-writing-a-new-brief.md) | 2 |
-| statusgen/29 | [Repair deterministic defects in active Verify rows with a reviewed dry run](brief-29-repair-deterministic-defects-in-active-verify-rows-with-a-reviewed-dry-run.md) | 2 |
-| statusgen/30 | [Backfill derivable active brief metadata without fabricating evidence](brief-30-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 |
-| statusgen/31 | [Connect board drift notices to the existing reconciliation owners](brief-31-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 |
-| statusgen/33 | [Drain actionable notice debt in this repository without rewriting closed records](brief-33-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 |
-| statusgen/32 | [Drive active notice severity from the existing registry after cleanup](brief-32-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 |
+| statusgen/27 | [Reject newly introduced actionable lint notices on changed briefs](brief-27-reject-newly-introduced-actionable-lint-notices-on-changed-briefs.md) | 1 |
+| statusgen/28 | [Separate frozen historical notices from actionable lint findings](brief-28-separate-frozen-historical-notices-from-actionable-lint-findings.md) | 1 |
+| statusgen/29 | [Run the existing structural row checks before writing a new brief](brief-29-run-the-existing-structural-row-checks-before-writing-a-new-brief.md) | 2 |
+| statusgen/30 | [Repair deterministic defects in active Verify rows with a reviewed dry run](brief-30-repair-deterministic-defects-in-active-verify-rows-with-a-reviewed-dry-run.md) | 2 |
+| statusgen/31 | [Backfill derivable active brief metadata without fabricating evidence](brief-31-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 |
+| statusgen/32 | [Connect board drift notices to the existing reconciliation owners](brief-32-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 |
+| statusgen/34 | [Drain actionable notice debt in this repository without rewriting closed records](brief-34-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 |
+| statusgen/33 | [Drive active notice severity from the existing registry after cleanup](brief-33-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 |
 
 ### Critical path and dependency waves
 
-The real value head is statusgen/26: runDiffLintOne and its comparison seam already
+The real value head is statusgen/27: runDiffLintOne and its comparison seam already
 exist, and the missing step is comparing actionable notices as well as PROBLEMs.
-Historical classification in /27 is independently authorable; integrate its shared
-reporting owner rather than forking classification in /26. Tool code exists in this
+Historical classification in /28 is independently authorable; integrate its shared
+reporting owner rather than forking classification in /27. Tool code exists in this
 repository, so none of these source briefs is marked homed elsewhere.
 
-Wave 1: /26 ratchet, /27 reporting, /31 remaining drift owners.
-Wave 2: /28 generator after /26; /29 and /30 repairs after /27.
-Wave 3: /33 source-corpus cleanup after /26, /27, /28, /29, /30 and /31.
-Wave 4: /32 registry promotion after /33 and participating-consumer cleanup receipts.
+Wave 1: /27 ratchet, /28 reporting, /32 remaining drift owners.
+Wave 2: /29 generator after /27; /30 and /31 repairs after /28.
+Wave 3: /34 source-corpus cleanup after /27, /28, /29, /30, /31 and /32.
+Wave 4: /33 registry promotion after /34 and participating-consumer cleanup receipts.
 
-The critical dependency chain is /27 → /29 and /30 → /33 → /32;
-/26 prevents replenishment and must be available before cleanup is accepted.
+The critical dependency chain is /28 → /30 and /31 → /34 → /33;
+/27 prevents replenishment and must be available before cleanup is accepted.
 Cleaning first without the ratchet is not a lasting result.
 
 ### Consumer boundary and acceptance
 
-Publish the first reviewed release containing /26 through /31 through the existing
+Publish the first reviewed release containing /27 through /32 through the existing
 release procedure. Consumers verify published digests, adopt the pin and wire the
 differential into PR checks. Each consumer gets its own bounded cleanup PR and an
-independent verification receipt. Final /32 promotion and subsequent pin adoption
+independent verification receipt. Final /33 promotion and subsequent pin adoption
 are a second step. Neither a local build nor an unreleased source commit is a
 substitute for the consumer's pinned artifact.
 

@@ -1597,6 +1597,13 @@ the gate consume the same distinction is the natural follow-up, not this PR.
 
 ## deskboard stalled — the stalled-draft detector
 
+A PR whose owning brief is `withdrawn` receives advisory disposition `reconcile`,
+before the behind-main close-candidate heuristic. Inspect surviving code, evidence
+and current claims before retargeting it or proposing closure through the ordinary
+independent confirmation gates. Retirement alone is neither completed work nor a
+stopped worker. Use `statusgen withdrawal-audit` against a candidate board to find
+these overlaps before rollout, including PRs that are fresh and thus not stalled.
+
 The review loop assumes a persistent worker: the reviewer requests changes, the worker
 fixes and replies. Sessions die, so sometimes nobody replies — and nothing noticed. The
 measurement that motivated this verb: **all 80 open PRs across at+tracker were drafts, 74 of
@@ -1674,7 +1681,8 @@ absent, so "we enumerated everything" is a positive statement.
 
 **Disposition is advisory.** `shepherd` is the default; `close-candidate` requires
 positive evidence — the branch is more than 200 commits behind main, or its owning brief
-is `done`/`superseded`. A signal that could not be read never produces a
+is `done`/`superseded`. A withdrawn owner takes precedence and reports `reconcile`,
+including when the behind-main threshold is exceeded. A signal that could not be read never produces a
 `close-candidate` (an unreadable compare reports `behindMain: -1`, not `0`). PR ownership
 is invisible: the desk or the human decides whether to adopt, and no loop auto-adopts.
 
@@ -4720,6 +4728,27 @@ different bytes is refused (exit 5) — a correction is a NEW record (a fresh `t
 digest and path), never an edit of an existing one. The verified-outcome closure gates
 (`guardVerifiedOutcomes`, `gateVerifiedSidecarLanding`) apply to a `verified` record exactly as
 they applied to an added log line; `verify-fail` is never gated.
+
+**Committed closure history.** A new `verified` outcome (including a direct per-file
+Evidence write) runs full lint, identity attribution, the pending-record lint diff
+and closure acceptance in a disposable checkout of the exact target commit.
+The existing `statusgen brief --check-verified` call also requests
+`--check-attribution`, checking this closure through statusgen's canonical actor
+policy and judge. This requires a paired statusgen release with that capability;
+an older binary's unknown-flag error is could-not-check, with no fallback.
+The admitted home keeps its original detached HEAD; its refreshed brief and stream
+README must match the landed commit byte for byte. Fetch the target branch and
+`origin/main` before publication: missing local commit history or baseline is
+could-not-check, never a fallback to the admission history.
+
+GitHub commits the record with an atomic `expectedHeadOid` condition on that
+same inspected parent, retaining destination revision and append-only checks.
+A moved branch, unreadable receipt or mismatched parent requires reconciliation;
+there is no retry with a newer mutable head. The current GitLab writer supports
+only file revisions, so it refuses these pinned verified outcomes before writing.
+Non-verified outcomes and ordinary Evidence retain their existing publication paths.
+Shared appended JSONL publication remains refused; its retained closure parser
+is tested against the same pinned-history contract.
 
 **Receipt validation.** For a record carrying `wake_schema: "verify-wake-v1"`, the writer
 additionally refuses (exit 5, naming the field) the three recurring defects reviewers kept
