@@ -33,7 +33,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/35 | 2026-10-19 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-19 |  |
 
-### Stuck auto-flips (22)
+### Stuck auto-flips (23)
 
 _gate:model briefs at `verified` that the model auto-flip has not moved to `done`. See docs/board-stuck-autoflips.md._
 
@@ -58,6 +58,7 @@ _gate:model briefs at `verified` that the model auto-flip has not moved to `done
 | [harness-portability/06](docs/streams/harness-portability/README.md) | Codex packaging — generated manifest, coverage rule, install path | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [quality/19](docs/streams/quality/README.md) | qualgen re-fix metric — SZZ-traced fixes that repeat a defect an earlier fix already addressed | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [statusgen/15](docs/streams/statusgen/README.md) | Extract canonical eligibility and coverage evaluation API | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
+| [statusgen/17](docs/streams/statusgen/README.md) | `--scan-issues`: a `risk:high` label derives `gate: human` on the issue's placeholder (`risk:med` does not) | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [statusgen/19](docs/streams/statusgen/README.md) | Context handoff contracts and synthetic fixtures | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [statusgen/22](docs/streams/statusgen/README.md) | Product target records and compatible requirement parsing | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [windows-port/00](docs/streams/windows-port/README.md) | Build-tag split for the unix-only syscall sites in statusgen and desk-tools | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
@@ -85,7 +86,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **COULD NOT CHECK — main-red arm could not check — no `--main-health` input was supplied, so whether main is red is unknown here (statusgen does not read live CI). A main-red fix cannot be lifted into the critical tier on this run; this is not a reading that main is green.**
 
-_Next-up: 20 of 51 eligible — 31 held back (17 by per-stream caps, 14 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 20 of 52 eligible — 32 held back (17 by per-stream caps, 15 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
 _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. By stream: desktools-v2 (17). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
@@ -116,7 +117,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: a16337de 2026-10-19T22:37:55Z_
+_last regen: 3d29dd92 2026-10-19T22:40:39Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -137,7 +138,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: a16337de 2026-10-19T22:37:55Z_
+_last regen: 3d29dd92 2026-10-19T22:40:39Z_
 
 **Progress:** 33/82 brief items done.
 
@@ -300,7 +301,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-tools | 21 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | desktools-v2 | 19 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | harness-portability | 17 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite #1800 | — | — |
-| statusgen | 17 | implemented | 1500 | 1 | — | operator | environment blocker, cite #1800 | — | — |
+| statusgen | 17 | verified | 1500 | 1 | — | operator | environment blocker, cite #1800 | 2026-10-19 assay-verifier-app[bot] @ 54c024fca36e (claude-opus-5-5) | — |
 | windows-port | 12 | implemented | 1500 | 1 | — | operator | environment blocker, cite #1942 | — | — |
 | windows-port | 15 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite #1800 | — | — |
 | desk-supervision | 27 [exec:strong] | implemented | 1000 | 0 | — | operator | environment blocker, cite #1800 | — | — |
@@ -832,7 +833,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 09 Opt-in statusgen telemetry — anonymized fleet-drift corpus (off by default) — implemented (wave 1)
 - 15 Extract canonical eligibility and coverage evaluation API — verified (wave 1)
 - 16 Hold an issue out of dispatch when a non-human removed its excluded label: both scanners hold the placeholder, the issue board holds the un-briefed row — implemented (wave 1)
-- 17 `--scan-issues`: a `risk:high` label derives `gate: human` on the issue's placeholder (`risk:med` does not) — implemented (wave 1)
+- 17 `--scan-issues`: a `risk:high` label derives `gate: human` on the issue's placeholder (`risk:med` does not) — verified (wave 1)
 - 18 `--scan-issues`: print a notice when an open issue derives `gate: human` and its placeholder reads `gate: model` (detect only, no write) — todo (wave 2)
 - 19 Context handoff contracts and synthetic fixtures — verified (wave 1)
 - 20 Offline future-state resolver with receipt and amendment validation — todo (wave 2)
