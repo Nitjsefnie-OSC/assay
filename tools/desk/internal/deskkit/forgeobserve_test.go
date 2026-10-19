@@ -41,6 +41,10 @@ func TestPerfV3GraphQLCostCoverage(t *testing.T) {
 	if in["query"] != ghListIssuesQuery || !strings.Contains(queries[0], "_assayPerf:rateLimit{cost}") {
 		t.Fatal("input mutation or missing same-operation metadata")
 	}
+	first := s.Finish("consumer", "query", "", 0, "")
+	if len(first.V3.Requests) != 1 || first.V3.Requests[0].Points.Coverage != perfrec.CoverageMeasured || *first.V3.Requests[0].Points.Value != 0 {
+		t.Fatal("returned zero was not measured")
+	}
 	// An unsupported custom operation must keep its exact query and unknown cost.
 	custom := `mutation { performAction }`
 	if err := g.doJSON("POST", "/graphql", map[string]any{"query": custom}, &out); err != nil {
@@ -71,10 +75,10 @@ func TestPerfV3GraphQLCostCoverage(t *testing.T) {
 		}
 	}
 	sum := writeForgeRecord(t, s)
-	var ghZero, ghCost, unknown, failed, complexity int64
+	var ghSamples, ghCost, unknown, failed, complexity int64
 	for _, r := range sum.Requests {
-		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitHubPoints && *r.Points.Value == 0 {
-			ghZero += r.PointSamples
+		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitHubPoints {
+			ghSamples += r.PointSamples
 		}
 		if r.Points.Coverage == perfrec.CoverageUnknown {
 			unknown += r.PointSamples
@@ -89,8 +93,8 @@ func TestPerfV3GraphQLCostCoverage(t *testing.T) {
 			complexity += *r.Points.Value
 		}
 	}
-	if len(queries) != 7 || ghZero != 1 || ghCost != 5 || unknown != 3 || failed != 1 || complexity != 7 {
-		t.Fatalf("queries=%d zero=%d unknown=%d complexity=%d groups=%+v", len(queries), ghZero, unknown, complexity, sum.Requests)
+	if len(queries) != 7 || ghSamples != 2 || ghCost != 5 || unknown != 3 || failed != 1 || complexity != 7 {
+		t.Fatalf("queries=%d ghSamples=%d ghCost=%d unknown=%d failed=%d complexity=%d", len(queries), ghSamples, ghCost, unknown, failed, complexity)
 	}
 	for _, raw := range []string{`{}`, `{"data":{"_assayPerf":null}}`, `{"data":{"_assayPerf":{"cost":null}}}`} {
 		if p := decodeRequestPoints([]byte(raw), perfrec.UnitGitHubPoints); p.Coverage != perfrec.CoverageUnknown || p.Value != nil {
