@@ -145,7 +145,7 @@ func IsPerfStep(r PerfRecord) bool {
 
 // IsPerfLegacyInvocation reports whether a record belongs to the legacy perf-v1 invocation
 // group SummarisePerf reads: anything that is neither perf-v2 nor a step. (LoadPerfDays only
-// ever returns the two named schemas; a hand-built record without one reads as legacy.)
+// ever returns the three named schemas; a hand-built record without one reads as legacy.)
 func IsPerfLegacyInvocation(r PerfRecord) bool {
 	return r.Schema != PerfSchemaV2 && r.Schema != perfrec.SchemaV3 && !IsPerfStep(r)
 }

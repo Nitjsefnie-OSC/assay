@@ -273,7 +273,10 @@ func ResolveContext(in ContextInput) Context {
 		}
 	} else if raw, _ := lookup("ASSAY_PERF_WORK"); raw != "" {
 		present = true
-		ok = len(raw) <= MaxWorkBytes && strictJSON([]byte(raw), &ws)
+		ok = len(raw) <= MaxWorkBytes && strictJSON([]byte(raw), &ws) && ws != nil
+		if ok && len(ws) == 0 {
+			present = false
+		}
 	}
 	if present {
 		if ok && validWork(ws) {
@@ -325,5 +328,5 @@ func validAttribution(p Profile, d Attribution) bool {
 			return false
 		}
 	}
-	return validWork(d.Work) && (len(d.Work) == 0 || d.Coverage[FieldWork] == CoverageMeasured)
+	return validWork(d.Work) && ((len(d.Work) > 0) == (d.Coverage[FieldWork] == CoverageMeasured))
 }
