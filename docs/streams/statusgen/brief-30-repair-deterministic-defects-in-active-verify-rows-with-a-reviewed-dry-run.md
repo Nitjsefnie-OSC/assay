@@ -4,7 +4,7 @@ title: "Repair deterministic defects in active Verify rows with a reviewed dry r
 why: "Repeated mechanical command defects are repairable, but manual edits across the corpus are slow and can change the claimed test. A conservative repair tool should remove only the defects it can prove it understands."
 wave: 2
 depends: ["statusgen/28"]
-unblocks: ["statusgen/34"]
+unblocks: ["statusgen/35"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}

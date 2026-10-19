@@ -4,7 +4,7 @@ title: "Separate frozen historical notices from actionable lint findings"
 why: "Thousands of repeated notices include closed evidence records that must not be rewritten. A short default report and inspectable detail let operators see work they can act on."
 wave: 1
 depends: []
-unblocks: ["statusgen/30", "statusgen/31", "statusgen/34"]
+unblocks: ["statusgen/30", "statusgen/31", "statusgen/35"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}

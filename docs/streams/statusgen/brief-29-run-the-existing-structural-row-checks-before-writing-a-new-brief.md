@@ -4,7 +4,7 @@ title: "Run the existing structural row checks before writing a new brief"
 why: "The authoring generator can still write rows that the linter later calls broken. Refusing these rows before any file is written prevents repair work at its cheapest point."
 wave: 2
 depends: ["statusgen/27"]
-unblocks: ["statusgen/34"]
+unblocks: ["statusgen/35"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}

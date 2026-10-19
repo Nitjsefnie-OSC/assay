@@ -4,7 +4,7 @@ title: "Connect board drift notices to the existing reconciliation owners"
 why: "A notice about a non-dispatchable or already-delivered row should lead to the existing state transition. Printing the same diagnostic forever wastes dispatch and verification capacity."
 wave: 1
 depends: []
-unblocks: ["statusgen/34"]
+unblocks: ["statusgen/35"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}

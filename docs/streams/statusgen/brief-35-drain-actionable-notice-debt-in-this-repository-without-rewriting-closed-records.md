@@ -1,5 +1,5 @@
 ---
-brief: assay:assay:statusgen:34
+brief: assay:assay:statusgen:35
 title: "Drain actionable notice debt in this repository without rewriting closed records"
 why: "Repair tools do not remove the existing backlog until someone applies and reviews their output. One bounded corpus cleanup proves that the tools reduce real debt without changing old evidence."
 wave: 3
@@ -21,12 +21,12 @@ outcome: none
 version: 1
 id: 3f2aaf9c-d1b0-4d3e-9771-92bc874aed2a
 consumers:
-  - "docs/streams/*/brief-*.md: follow-up statusgen/34 (this brief; change is owed at implementation)"
-  - "docs/streams/statusgen/active-notice-cleanup.md: follow-up statusgen/34 (this brief; change is owed at implementation)"
-  - "changelog/active-notice-cleanup.md: follow-up statusgen/34 (this brief; change is owed at implementation)"
+  - "docs/streams/*/brief-*.md: follow-up statusgen/35 (this brief; change is owed at implementation)"
+  - "docs/streams/statusgen/active-notice-cleanup.md: follow-up statusgen/35 (this brief; change is owed at implementation)"
+  - "changelog/active-notice-cleanup.md: follow-up statusgen/35 (this brief; change is owed at implementation)"
 ---
 
-# Brief 34 — Drain actionable notice debt in this repository without rewriting closed records
+# Brief 35 — Drain actionable notice debt in this repository without rewriting closed records
 
 ## Context
 
@@ -67,7 +67,7 @@ Commands run from this repository root. Named new test contracts below are plann
 
 | # | Command | Expect | Class |
 |---|---------|--------|-------|
-| 1 | `cd statusgen && go test ./... -run "^TestNoticeRatchet$" -count=1 -v > "${TMPDIR:-/tmp}/notice-34.log" 2>&1 && grep -F -e "--- PASS: TestNoticeRatchet " "${TMPDIR:-/tmp}/notice-34.log"` | exit 0; output contains the named PASS line. Matrix: the installed ratchet still rejects a second newly introduced bad row after cleanup | check:ci +mutation +flow +dereference |
+| 1 | `cd statusgen && go test ./... -run "^TestNoticeRatchet$" -count=1 -v > "${TMPDIR:-/tmp}/notice-35.log" 2>&1 && grep -F -e "--- PASS: TestNoticeRatchet " "${TMPDIR:-/tmp}/notice-35.log"` | exit 0; output contains the named PASS line. Matrix: the installed ratchet still rejects a second newly introduced bad row after cleanup | check:ci +mutation +flow +dereference |
 | 2 | `cd statusgen && go test ./... -count=1` | exit 0; existing closure, witness and differential tests still pass | check:ci +neighbour |
 | 3 | `statusgen --root . --lint --json > "${TMPDIR:-/tmp}/active-notices.json"` | exit 0; JSON report proves zero active Family A and derivable Family B findings; residuals match the reviewed report | check +dereference |
 | 4 | `git diff --check` | exit 0; output is empty | check:ci |

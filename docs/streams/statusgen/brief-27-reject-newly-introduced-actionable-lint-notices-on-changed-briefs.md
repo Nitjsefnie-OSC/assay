@@ -4,7 +4,7 @@ title: "Reject newly introduced actionable lint notices on changed briefs"
 why: "New verification defects currently merge with a successful lint result and replenish every cleanup. A differential gate must stop new debt without failing unrelated changes on legacy debt."
 wave: 1
 depends: []
-unblocks: ["statusgen/29", "statusgen/34"]
+unblocks: ["statusgen/29", "statusgen/35"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}

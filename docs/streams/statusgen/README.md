@@ -67,7 +67,7 @@ Operations admission remains a blocker for /25; the verifier runtime does not wa
 | 31 | [Backfill derivable active brief metadata without fabricating evidence](brief-31-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 | M | todo | — | — |
 | 32 | [Connect board drift notices to the existing reconciliation owners](brief-32-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 | M | todo | — | — |
 | 33 | [Drive active notice severity from the existing registry after cleanup](brief-33-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 | M | todo | — | — |
-| 34 | [Drain actionable notice debt in this repository without rewriting closed records](brief-34-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 | M | todo | — | — |
+| 35 | [Drain actionable notice debt in this repository without rewriting closed records](brief-35-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -139,11 +139,11 @@ The desktools-v2 README holds the cross-stream performance priority and critical
 
 ## Lint debt delivery — 2026-10-17
 
-The [notice-debt contract](#lint-notice-debt) maps source briefs /27–/34.
+The [notice-debt contract](#lint-notice-debt) maps source briefs /27–/33 and /35.
 Wave 1: /27, /28, /32. Wave 2: /29 after /27; /30 and /31 after /28.
-Wave 3: /34 after /27, /28, /29, /30, /31 and /32. Wave 4: /33 after /34 and
+Wave 3: /35 after /27, /28, /29, /30, /31 and /32. Wave 4: /33 after /35 and
 participating-consumer cleanup receipts. The longest source chain is /28 → /30
-and /31 → /34 → /33. /27 prevents replenishment before cleanup is accepted.
+and /31 → /35 → /33. /27 prevents replenishment before cleanup is accepted.
 Consumers separately verify a released artifact, adopt the pin and complete their
 own cleanup. An Authors PR delivers planning only; it does not satisfy these briefs.
 
@@ -170,7 +170,7 @@ consumer CI and pinned adoption are separate delivery boundaries.
 
 ### Public rule-family inventory
 
-This inventory defines the acceptance sets used by /27–/34 at the source revision
+This inventory defines the acceptance sets used by /27–/33 and /35 at the source revision
 above. It describes existing checks, not a new runtime registry or a severity
 change. Rule identities below come from the existing lintRuleRegistry or emitter
 constants, retaining their exact spelling; not every registered identity is
@@ -181,7 +181,7 @@ account for every included finding.
 
 | Family | Included current identifiers and source owner | Repair disposition |
 |---|---|---|
-| A — structural Verify rows | `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`, `rE2-literal-pipe`, `unsubstituted-metavar`, `gorun-exit`, `bre-alternation`, `shredded-cell`, `moving-ref`, `gnu-only`, `gotest-run-vacuous`, `prose-led-command`, `cmd-marker-ambiguous`, `cmd-marker-overrides-command`, `cmd-marker-not-honoured`, `cmd-marker-vacuous`, `grep-pipe-zero-count` in `statusgen/verifyrows.go`; the older `verify-row-portability` check in `statusgen/verifyportability.go` | /30 may repair only a unique, semantics-preserving rewrite supported by the original command, Expect and immutable source. Missing metavariable values, ambiguous cells/markers, intended test names or output assertions require author evidence. Every active A finding must be resolved before /34 acceptance; automation is not required to invent a repair. |
+| A — structural Verify rows | `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`, `rE2-literal-pipe`, `unsubstituted-metavar`, `gorun-exit`, `bre-alternation`, `shredded-cell`, `moving-ref`, `gnu-only`, `gotest-run-vacuous`, `prose-led-command`, `cmd-marker-ambiguous`, `cmd-marker-overrides-command`, `cmd-marker-not-honoured`, `cmd-marker-vacuous`, `grep-pipe-zero-count` in `statusgen/verifyrows.go`; the older `verify-row-portability` check in `statusgen/verifyportability.go` | /30 may repair only a unique, semantics-preserving rewrite supported by the original command, Expect and immutable source. Missing metavariable values, ambiguous cells/markers, intended test names or output assertions require author evidence. Every active A finding must be resolved before /35 acceptance; automation is not required to invent a repair. |
 | B — row strength and source dereference | `trivially-green`, `no-output-assertion`, `table-touches-no-files` in `statusgen/strength.go`; `id-dereference` in `statusgen/linkcheck.go` | Author-owed unless the existing contract and source uniquely establish the intended assertion or identifier. A nonexistent identifier is never repaired by inventing a test; explicitly planned names retain the existing planned-name handling. |
 | B — risk, rationale and declared paths | `risk-files-crossread` in `statusgen/riskfilescrossread.go`; `checkBriefFiles` in `statusgen/brieffile.go`, specifically absent/substance-invalid `why` and absent `exec-tier-why` | /31 may derive a truthful file list only from an unambiguous immutable carrying-PR record. Risk answers, rationale and a missing/ambiguous carrying record are author-owed. An unreadable file list is could-not-check, never a zero finding count. |
 | B — consumer routing | `consumers-unrouted`, `consumers-followup-no-target`, `consumers-followup-one-way`, `consumers-prose`, `consumers-no-verify-row`, `consumers-missing-list`, `consumers-out-of-scope-no-reason`, and the already-fatal `consumers-followup-missing-brief` in `statusgen/consumers.go` | /31 may add a back-reference only at the uniquely named, existing active follow-up target with corroborated source provenance. Selecting a target, inventing a consumer/reason or editing a closed target is author-owed. Existing fatal checks remain fatal. |
@@ -192,7 +192,7 @@ account for every included finding.
 “Derivable Family B” is an instance-level disposition, not every rule in a B row:
 the report must name the immutable source and unique derivation for each repair.
 All other B instances are author-owed, with a named owner and tracked disposition.
-The /34 zero count covers all active A findings and exactly that corroborated B
+The /35 zero count covers all active A findings and exactly that corroborated B
 subset; historical A/B counts are separate. /33's proposed promotion set is A plus
 `risk-files-crossread`, subject to its human gate and cleanup/adoption receipts;
 other B and C rules are not implicitly promoted. /27 includes actionable A/B
@@ -247,7 +247,7 @@ amendment and its source owner, never an implicit expansion or silent suppressio
 | statusgen/30 | [Repair deterministic defects in active Verify rows with a reviewed dry run](brief-30-repair-deterministic-defects-in-active-verify-rows-with-a-reviewed-dry-run.md) | 2 |
 | statusgen/31 | [Backfill derivable active brief metadata without fabricating evidence](brief-31-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 |
 | statusgen/32 | [Connect board drift notices to the existing reconciliation owners](brief-32-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 |
-| statusgen/34 | [Drain actionable notice debt in this repository without rewriting closed records](brief-34-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 |
+| statusgen/35 | [Drain actionable notice debt in this repository without rewriting closed records](brief-35-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 |
 | statusgen/33 | [Drive active notice severity from the existing registry after cleanup](brief-33-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 |
 
 ### Critical path and dependency waves
@@ -260,10 +260,10 @@ repository, so none of these source briefs is marked homed elsewhere.
 
 Wave 1: /27 ratchet, /28 reporting, /32 remaining drift owners.
 Wave 2: /29 generator after /27; /30 and /31 repairs after /28.
-Wave 3: /34 source-corpus cleanup after /27, /28, /29, /30, /31 and /32.
-Wave 4: /33 registry promotion after /34 and participating-consumer cleanup receipts.
+Wave 3: /35 source-corpus cleanup after /27, /28, /29, /30, /31 and /32.
+Wave 4: /33 registry promotion after /35 and participating-consumer cleanup receipts.
 
-The critical dependency chain is /28 → /30 and /31 → /34 → /33;
+The critical dependency chain is /28 → /30 and /31 → /35 → /33;
 /27 prevents replenishment and must be available before cleanup is accepted.
 Cleaning first without the ratchet is not a lasting result.
 

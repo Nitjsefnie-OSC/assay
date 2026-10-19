@@ -4,7 +4,7 @@ title: "Backfill derivable active brief metadata without fabricating evidence"
 why: "Missing file declarations and one-way routing claims produce persistent debt. Historical provenance can supply some answers; uncertain answers must remain owned work rather than plausible invented metadata."
 wave: 2
 depends: ["statusgen/28"]
-unblocks: ["statusgen/34"]
+unblocks: ["statusgen/35"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: yes, irreversible: no, sensitive-data: no}
