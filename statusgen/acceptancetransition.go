@@ -79,7 +79,7 @@ func acceptanceTransition(path, verify, full, run, delivery, base, original, bas
 	for _, r := range briefVerifyRows(baseline) {
 		originals[r.ID] = r
 	}
-	changes := map[string]string{}
+	changes := map[string]verifyRow{}
 	var ids []string
 	for i, old := range oldRows {
 		next := newRows[i]
@@ -95,19 +95,22 @@ func acceptanceTransition(path, verify, full, run, delivery, base, original, bas
 		}
 		// Only a command changes. All acceptance assertions, classes, shell and
 		// obligations survive; delivered edits to other rows remain untrusted.
-		if old.RiskText != codeSpanOf(old.Command)+" "+strings.TrimSpace(old.Expect) || next.RiskText != codeSpanOf(next.Command)+" "+strings.TrimSpace(next.Expect) {
-			return fail("changed commands must be single code spans without surrounding prose")
+		oldContext, oldOK := transitionContext(old)
+		nextContext, nextOK := transitionContext(next)
+		if !oldOK || !nextOK || oldContext != nextContext {
+			return fail("changed commands require one unambiguous code span and identical surrounding context")
 		}
 		comparable := next
 		comparable.Command = old.Command
+		comparable.CommandCell = old.CommandCell
 		comparable.RiskText = old.RiskText
 		if next.Command == old.Command || !reflect.DeepEqual(old, comparable) {
 			return fail("only command changes with identical assertions and obligations are supported")
 		}
-		if source.Command != old.Command || source.Expect != old.Expect {
-			return fail("a changed row must still carry its original delivered command and Expect")
+		if !reflect.DeepEqual(source, old) {
+			return fail("a changed row must still carry its complete original delivered definition")
 		}
-		changes[old.ID] = next.Command
+		changes[old.ID] = next
 		ids = append(ids, old.ID)
 	}
 	if len(ids) == 0 {
@@ -217,7 +220,7 @@ func acceptanceTransition(path, verify, full, run, delivery, base, original, bas
 	if strings.TrimSpace(strings.ReplaceAll(out.Body, "\r\n", "\n")) != payload {
 		return fail("human approval does not name the exact transition payload")
 	}
-	// Rewrite only the command cell in the original table. Unchanged commands,
+	// Replace only the unique command span in the original table. Unchanged commands,
 	// Expect, row classes and all extra columns retain the original text.
 	lines := strings.Split(baseline, "\n")
 	commandCol := -1
@@ -238,14 +241,18 @@ func acceptanceTransition(path, verify, full, run, delivery, base, original, bas
 			}
 			continue
 		}
-		command, ok := changes[cells[0]]
+		changed, ok := changes[cells[0]]
 		if !ok {
 			continue
 		}
 		if commandCol < 0 || commandCol >= len(cells) {
 			return fail("cannot locate the original command cell")
 		}
-		cells[commandCol] = codeSpanOf(command)
+		originalCell := originals[cells[0]].CommandCell
+		if cells[commandCol] != originalCell {
+			return fail("original command cell does not match its parsed definition")
+		}
+		cells[commandCol] = strings.Replace(originalCell, codeSpanOf(originals[cells[0]].Command), codeSpanOf(changed.Command), 1)
 		rewritten[cells[0]] = true
 		lines[i] = "| " + strings.Join(cells, " | ") + " |"
 	}
@@ -262,12 +269,12 @@ func acceptanceTransition(path, verify, full, run, delivery, base, original, bas
 		if !ok {
 			return fail("effective table added an obligation")
 		}
-		want := old.Command
-		if c, ok := changes[row.ID]; ok {
-			want = c
+		want := old
+		if changed, ok := changes[row.ID]; ok {
+			want = changed
 		}
-		if row.Command != want || row.Expect != old.Expect || row.Class != old.Class || row.Shell != old.Shell || !reflect.DeepEqual(row.Obligations, old.Obligations) {
-			return fail("effective table changed an unchanged obligation")
+		if !reflect.DeepEqual(row, want) {
+			return fail("effective table changed an unchanged obligation or command context")
 		}
 	}
 	revisions := map[string]string{}
@@ -275,4 +282,19 @@ func acceptanceTransition(path, verify, full, run, delivery, base, original, bas
 		revisions[id] = amendment
 	}
 	return effective, revisions, ""
+}
+
+// transitionContext binds both sides of the unique executable span separately:
+// concatenating them would let context move across the command. Reuse the
+// renderer and execution parser; do not infer a command from surrounding prose.
+func transitionContext(row verifyRow) ([2]string, bool) {
+	spans, plain := renderedCodeSpans(row.CommandCell)
+	if !plain || len(spans) != 1 || !spans[0].cleanEnd || spans[0].text != row.Command || row.ProseLed != "" {
+		return [2]string{}, false
+	}
+	before, after, found := strings.Cut(row.CommandCell, codeSpanOf(row.Command))
+	if !found || strings.ContainsAny(before+after, "`") {
+		return [2]string{}, false
+	}
+	return [2]string{before, after}, true
 }

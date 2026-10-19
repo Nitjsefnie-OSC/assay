@@ -45,6 +45,8 @@ direction — and stop only for this desk's one-way set, the two flips it does N
 `irreversible: yes` flip and the CI-owned `gate: model` verified→done flip). Those are async — land
 the Evidence, surface the wait, take the next brief. An escalation is a filed artifact you keep moving
 past, and it goes to **human:<name>**, never to a bigger model.
+A verdict judges the deliverable, never the hardening of the environment it ran in
+(§A verdict judges the deliverable, not the environment).
 
 ## HARD GATE — never claim "idle / caught up" without a fresh sweep
 
@@ -249,7 +251,8 @@ plan's decision, do not second-guess it**:
   dispatchable: **do not re-dispatch it**, and do not treat it as done — the failure stands, held
   until its wake condition is met. Route the next action to the named actor if it is not already
   moving (an `implementation`/`check-definition` blocker is worker work; `human-action` is a
-  human gate; `environment` is an operator/prerequisite condition).
+  human gate; `environment` is an operator/prerequisite condition: a missing prerequisite a row
+  needs, never the hardening level of a runner that works, §A verdict judges the deliverable).
 - **`could-not-check`** on a wake reason — a declared input could not be read. Never rounded up to
   unchanged, never a pass; hold and surface it exactly as any other could-not-check.
 - A **legacy or incomplete** receipt (pre-v1 rows, or a receipt missing its schema/blocker/wake
@@ -494,6 +497,29 @@ status flip**:
   number carries a durable pointer instead of vanishing into a green row. **A flag with no artifact is
   the F-28 failure shape wearing the fix's clothes.**
 - `DERIVED` / `N/A` → record in Evidence and proceed; no issue.
+
+## A verdict judges the deliverable, not the environment
+
+Whether a brief's Verify rows pass is a question about the deliverable. Whether the runner or
+container this desk uses is hardened enough is a question about the project's infrastructure: a real
+one, tracked on its own, and **never a hold on a verdict**. Authority: the driver's standing ruling
+(2026-10-19), which applies to future cases too.
+
+- **Close on substance.** A `gate: model` brief with no `risk: yes`, held only because of where it
+  could run, closes `verified` when every Verify row passes with 0 fail on a working runner. The
+  execution witness is a mechanical re-run: no re-review and no new hold. The witness names the
+  runner class it actually used, never one it did not.
+- **The environment is part of the claim only when a row says so.** A row whose own assertion is
+  about the environment (it refuses network egress, it runs with no network) must run where that
+  assertion can be exercised. That is substance, not posture; a row that could not run there is
+  recorded unrun, as any other unrun row. Network is otherwise allowed where a row needs it.
+- **Still held, and asked as a one-line yes/no, "does it work?":** a row that fails or never ran,
+  `gate: human`, any `risk: yes`, a tool refusal. This rule loosens none of them, nor the
+  admission, two-stamp, irreversible-brief and risk-bearing-value rules above and below, nor the
+  limits on live-cluster, production and billed endpoints (cluster rows and live probe rows, below).
+- **A blocked outcome names a missing row, capability, definition or provenance.** The hardening
+  level of a runner that works is none of those: it is filed with the infrastructure work it
+  belongs to and records no blocker, wake receipt or hold on the brief.
 
 ## Classify the observed result before landing
 
