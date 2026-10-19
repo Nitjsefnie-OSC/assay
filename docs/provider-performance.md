@@ -79,8 +79,10 @@ nested double counting, fabricated zero cost and omitted auth observation.
 All five controls must fail their named test.
 
 Matched fake-provider samples alternate recording on/off, 20 cycles each,
-100 requests/cycle, concurrency 1, 17-byte JSON response. Enabled samples include
-aggregation and local append. One qualification run measured wall ns
+100 requests/cycle, concurrency 1. REST uses a 17-byte JSON response; the
+GraphQL variant also includes same-operation metadata selection/extraction and
+its larger response. Enabled samples include aggregation and local append.
+One REST qualification run measured wall ns
 p50/p95/max 123125/288834/300416 off and 456833/762916/787917 on; summed CPU was
 4 ms off and 12 ms on. Actual sends were 2000 in both modes. These are local
 instrumentation costs, with coarse CPU granularity and no real network latency,

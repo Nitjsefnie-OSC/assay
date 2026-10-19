@@ -319,6 +319,11 @@ func (b *errorBody) Read(p []byte) (int, error) {
 func (b *errorBody) Close() error { return b.closeErr }
 
 func testForgeOverhead(t *testing.T) {
+	testForgeSample(t, false)
+	testForgeSample(t, true)
+}
+
+func testForgeSample(t *testing.T, graphql bool) {
 	t.Helper()
 	// Matched CPU/wall samples include real backend decoding, aggregation and
 	// local record append. The fake provider removes network variability; these
@@ -341,11 +346,20 @@ func testForgeOverhead(t *testing.T) {
 			}
 			g := &GitHubForge{Token: "fixture", Observer: observer, Client: &http.Client{Transport: observeRT(func(*http.Request) (*http.Response, error) {
 				sends[mode]++
-				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"result":"same"}`))}, nil
+				payload := `{"result":"same"}`
+				if graphql && mode == 1 {
+					payload = `{"result":"same","data":{"_assayPerf":{"cost":2}}}`
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(payload))}, nil
 			})}}
 			for request := 0; request < 100; request++ {
 				var out struct{ Result string }
-				if err := g.doJSON("GET", "/repos/example/project", nil, &out); err != nil || out.Result != "same" {
+				method, path := "GET", "/repos/example/project"
+				var in any
+				if graphql {
+					method, path, in = "POST", "/graphql", map[string]any{"query": ghListIssuesQuery}
+				}
+				if err := g.doJSON(method, path, in, &out); err != nil || out.Result != "same" {
 					t.Fatal("on/off business parity", err)
 				}
 			}
@@ -365,5 +379,5 @@ func testForgeOverhead(t *testing.T) {
 	if sends[0] != 2000 || sends[1] != 2000 {
 		t.Fatal("measurement changed provider sends", sends)
 	}
-	t.Logf("matched fake-provider cycles n=20, requests/cycle=100, concurrency=1, body=17 bytes; off wall ns p50=%d p95=%d max=%d CPUtotalms=%d; on incl append wall ns p50=%d p95=%d max=%d CPUtotalms=%d; actual sends off=%d on=%d", samples[0][9], samples[0][18], samples[0][19], cpu[0], samples[1][9], samples[1][18], samples[1][19], cpu[1], sends[0], sends[1])
+	t.Logf("matched fake-provider graphql=%v cycles n=20, requests/cycle=100, concurrency=1; off wall ns p50=%d p95=%d max=%d CPUtotalms=%d; on incl metadata/append wall ns p50=%d p95=%d max=%d CPUtotalms=%d; actual sends off=%d on=%d", graphql, samples[0][9], samples[0][18], samples[0][19], cpu[0], samples[1][9], samples[1][18], samples[1][19], cpu[1], sends[0], sends[1])
 }
