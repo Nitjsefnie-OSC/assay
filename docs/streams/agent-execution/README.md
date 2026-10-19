@@ -33,9 +33,10 @@ activation gates stay separate, and existing human and deployment gates still bi
 | 05 | [Expose preparation, execution, recovery and acceptance separately](brief-05-lifecycle-projection.md) | 13 | M | todo | — | — |
 | 06 | [Investigate AX compatibility through offline contract fixtures](brief-06-ax-offline-compatibility.md) | 3 | M | todo | — | — |
 | 07 | [Evaluate governed harness refinement with isolated offline fixtures](brief-07-harness-refinement-evaluation.md) | 3 | M | todo | — | — |
+| 08 | [Qualify a Kubernetes verification runner through the existing supervisor](brief-08-qualify-a-kubernetes-verification-runner-through-the-existing-supervisor.md) | 12 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
-The generator owns the table. All seven briefs are M-sized, strong-tier work. New tests and
+The generator owns the table. All eight briefs are M-sized, strong-tier work. New tests and
 paths named by their Verify tables are future deliverables, not authoring-time evidence.
 
 ## Critical path and checked head
@@ -59,6 +60,7 @@ graph-execution/20 -> 01 -> 02 ---------> 06 AX offline feasibility (independent
 graph-execution/26 -> 22 + 02 -> 03 local readiness/capability enforcement
 graph-execution/21 + 25 + 03 -> 04 integrated recovery -> 05 truthful lifecycle
 graph-execution/27 -------------------------------> 05
+graph-execution/21 + 25 + 03 -> 08 Kubernetes profile (parked, separately gated)
 ```
 
 The inherited integration head still includes graph-execution/02 independent verification
@@ -77,7 +79,7 @@ Global waves include the existing graph-execution prerequisites:
 | 2 | 02 prepared-environment receipt and workspace port | 01 |
 | 3 | 06 AX compatibility and 07 Harness² refinement investigations | 01–02; independent of core integration |
 | 8 | 03 local supervisor/adapter readiness enforcement | 02 and graph-execution/22 (7), /26 (6) |
-| 12 | 04 recovery and external-effect qualification | 03 and graph-execution/21 (7), /25 (11) |
+| 12 | 04 recovery and external-effect qualification; 08 Kubernetes executor profile | 03 and graph-execution/21 (7), /25 (11) |
 | 13 | 05 lifecycle projection and operator status | 03–04 and graph-execution/27 (8) |
 
 ## Existing owners and completion boundary
@@ -114,3 +116,11 @@ It qualifies immutable bundle identity, independent holdouts, grading-data isola
 whole-experiment accounting through deterministic fixtures. Existing improvement-proposal,
 review and profile-adoption owners retain promotion; no installed guardrail or live attempt
 can be modified by a generated composition. Core /01–05 remain independent of /06–07.
+
+## Kubernetes verifier follow-on — 19 October 2026
+
+[Brief 08](brief-08-qualify-a-kubernetes-verification-runner-through-the-existing-supervisor.md)
+adds one executor profile through the existing supervisor after /03 and graph-execution/21,
+/25 (wave 12). It does not block the interim local evidence pilot. Offline adapter proof
+and later disposable-cluster qualification are distinct. The stream remains parked; neither
+the new brief nor the user's implementation-planning request activates a cluster profile.
