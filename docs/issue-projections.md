@@ -57,12 +57,30 @@ dispatch/stalled/health remain their own board populations and are not switched 
 a narrow worker result. Independent watcher health, all trust/edit checks, audit,
 budget/breaker/admission controls and consequential rechecks remain required.
 
-Both tools use the canonical `deskkit.PerfRun` / perfrec recorder. Deskinbox now
-selects compiled operation names after parsing, including discovery; private argv
-never becomes a label. At this source revision that shared recorder emits perf-v2.
-Shared perf-v3 schema/context and provider timing/points are still owned by
-desktools-v2/63–65; this draft holds completion until those canonical producers
-are delivered and both issue callers are integrated and qualified against them.
-No local perf-v3 schema, writer or fabricated point value is introduced. The
-separate desk-tools/38 verification prerequisite is also retained; source tests
-here do not certify it or authorize activation.
+Both actual mains use the shared `PerfRunMeasured` recorder. The real parser
+selects immutable context before effects; compiled operation names keep private
+argv out of measurement labels. Explicit invocation-owned observers reach the
+existing native forge constructors. No ambient measurement setter is added.
+
+With local telemetry consent and a selected profile, these callers emit the
+canonical perf-v3 schema from desktools-v2/63–65. An unselected profile keeps the
+legacy recorder path; consent off creates no record or optional cost selection.
+Qualified GraphQL cost uses the same provider operation and its actual scalar
+metadata, never a shared quota gauge or an extra request. Provider/child intervals
+are not added to process wall time.
+
+Issueboard's own native request inventory is covered. Inbox discovery and table
+are native list-only modes with complete own-request coverage. Walk and HTML
+observe native list/body reads but retain the legacy raw comment reader: its
+pagination differs from the typed comment API, so changing it here would change
+the existing bound. Those modes explicitly retain missing request coverage rather
+than reporting raw comment traffic as measured zero. Credential-minter and other
+subprocess work remains separately owned; parent measurements cannot prove full
+child coverage or fleet cost.
+
+Local caller flows exercise the actual native transport, writer, mixed history
+reader and reducer, including consent off, per-invocation context isolation,
+metadata failure, response parity and the raw-comment gap. Shared dependencies
+remain subject to their own review and human acceptance. The separate
+desk-tools/38 verification prerequisite is retained: source tests here do not
+certify it or authorize runtime activation, releases, installations or pin changes.
