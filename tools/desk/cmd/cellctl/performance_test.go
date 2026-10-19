@@ -27,8 +27,9 @@ func TestPerfV3RealDeskLaunch(t *testing.T) {
 			f := newPolicyFixture(t, "2.1.278")
 			f.prepareLocalLaunch(t)
 			home := filepath.Join(f.cellDir, "home")
+			authority := filepath.Join(f.cellDir, "authority.role")
 			nl := string(rune(10))
-			script := strings.Join([]string{"#!/bin/sh", "case $1 in", "--version) echo '2.1.278 (stub)'; exit 0;;", "plugin) exit 0;;", "esac", "export HOME=" + bashQuote(home) + " USERPROFILE=" + bashQuote(home), "exec " + bashQuote(child) + " list --perf-desk-role=worker-desk", ""}, nl)
+			script := strings.Join([]string{"#!/bin/sh", "case $1 in", "--version) echo '2.1.278 (stub)'; exit 0;;", "plugin) exit 0;;", "esac", "export HOME=" + bashQuote(home) + " USERPROFILE=" + bashQuote(home), "printf '%s' \"$DESK_LOOP\" > " + bashQuote(authority), "exec " + bashQuote(child) + " list --perf-desk-role=worker-desk", ""}, nl)
 			must(t, os.WriteFile(filepath.Join(f.binDir, harness), []byte(script), 0700))
 			path := filepath.Join(f.cellDir, "cell.env")
 			base, err := os.ReadFile(path)
@@ -54,8 +55,13 @@ func TestPerfV3RealDeskLaunch(t *testing.T) {
 			if len(records) != 1 {
 				t.Fatalf("real %s launch records=%d code=%d stderr=%s", harness, len(records), result.code, result.stderr)
 			}
+			operational, err := os.ReadFile(authority)
+			must(t, err)
+			if string(operational) != "pr-review-desk" {
+				t.Fatal("performance attribution changed operational desk authority")
+			}
 			r := records[0]
-			if r.Schema != perfrec.SchemaV3 || r.V3.Attribution.AgentID == parent || r.V3.Attribution.AgentID == "" || r.V3.Attribution.Role != "review" || r.V3.Attribution.ParentAgentID != parent || len(r.V3.Attribution.Work) != 0 {
+			if r.Schema != perfrec.SchemaV3 || r.V3.Attribution.AgentID == parent || r.V3.Attribution.AgentID == "" || r.V3.Attribution.SessionID == "" || r.V3.Attribution.SessionID == strings.Repeat("b", 32) || r.V3.Attribution.DeskRole != "worker-desk" || r.V3.Attribution.Role != "review" || r.V3.Attribution.ParentAgentID != parent || len(r.V3.Attribution.Work) != 0 {
 				t.Fatal("real launch lost identity, role or shared-work boundary")
 			}
 			if strings.Contains(result.stdout+result.stderr, parent) {
