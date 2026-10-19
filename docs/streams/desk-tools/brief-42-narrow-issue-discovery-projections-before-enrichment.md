@@ -23,6 +23,7 @@ exec-tier-why: Semantic extraction, cost coverage and cross-caller failure behav
 domain: complicated
 gate-why: Review/issue observations can expose scoped operational facts; implemented coverage and authority boundaries require the existing human acceptance.
 decision-trigger: spec
+design: DR-issue-projections
 consumers:
   - "plugins/assay/skills/worker-desk/SKILL.md: fixed-here"
   - "plugins/assay/skills/worker-desk/references/dispatch-runbook.md: fixed-here"

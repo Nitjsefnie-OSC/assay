@@ -31,6 +31,10 @@ func TestIssueProjectionFlow(t *testing.T) {
 			}
 		}
 	}
+	inboxMutant := buildMutant(t, "deskinbox", "internal/issueflow/selection.go", "return best", "_ = best; return 99")
+	if log, e := projectionTests(t, inboxMutant, "deskinbox", "TestDiscoveryJourney"); e == nil || !strings.Contains(log, "human inbox selection") {
+		t.Fatalf("human inbox mutation survived: %v %s", e, log)
+	}
 	// Mutate the actual selector, not an expected-value comparator. The production
 	// journey must reject extra histories/unrelated rows when narrowing is removed.
 	mutant := buildMutant(t, "issueboard", "internal/issueflow/selection.go", "return !c.HasPlaceholder && !c.Excluded && !c.DecisionOwed && !c.Addressed && !c.HelpWanted", "return true")
@@ -54,8 +58,8 @@ func TestIssueProjectionFaults(t *testing.T) {
 	}
 	for _, m := range []struct{ old, new, pattern, diagnostic string }{
 		{"return deskkit.Blessed(bodyEdited, events), nil", "_ = bodyEdited; _ = events; return true, nil", "TestTrustGate_BlessThenEdit|TestTrustGate_AdaWrongID", "FAIL"},
-		{`if state == "open" {`, "if false {", "TestProjectionFailures", "partial listing became empty"},
-		{"if !complete {\n\t\t\t\t\t// The escalation read", "if false {\n\t\t\t\t\t// The escalation read", "TestEscalate_LongThread_BoardRenders", "FAIL"},
+		{`if state == "open" {`, "_ = state; if false {", "TestProjectionFailures", "partial listing became empty"},
+		{"if !complete {\n\t\t\t\t\t// The escalation read", "_ = complete; if false {\n\t\t\t\t\t// The escalation read", "TestEscalate_LongThread_BoardRenders", "FAIL"},
 	} {
 		mutant := buildMutant(t, "issueboard", "cmd/issueboard/board.go", m.old, m.new)
 		if log, e := projectionTests(t, mutant, "issueboard", m.pattern); e == nil || !strings.Contains(log, m.diagnostic) {
@@ -67,6 +71,11 @@ func TestIssueProjectionFaults(t *testing.T) {
 // regression: class issue-projection
 func TestIssuePerfIntegration(t *testing.T) {
 	bin := build(t)
+	mutant := buildMutant(t, "deskinbox", "cmd/deskinbox/main.go", "deskkit.PerfCommand(perfVerbs, mode)", "")
+	wrong, _, _, _ := perfEntry(t, mutant, "deskinbox", t.TempDir(), "1", []string{"example-org/tracker"}, "ASSAY_PERF_TEST_WORK=1")
+	if wrong.Verb == "table" {
+		t.Fatal("removed parser attribution survived")
+	}
 	for _, c := range []struct {
 		tool, verb string
 		args       []string
