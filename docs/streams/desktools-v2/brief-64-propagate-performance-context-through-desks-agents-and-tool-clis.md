@@ -29,9 +29,11 @@ consumers:
   - "tools/desk/cmd/cellctl and deskdispatch: fixed-here"
   - "tools/desk/internal/deskkit/runtool.go: fixed-here"
   - "tools/desk/internal/cli/ and clicontract/: fixed-here"
+  - "tools/desk/cmd/deskclaim-ref/, deskclaim/, deskboot/ and desktoken/: fixed-here (current-parser context bindings and custody-preserving inventory; production credential observations remain /62)"
+  - "graph-execution/19 and /16; forge-neutral/40: out-of-scope (future claim/token-custody replacements inherit this common binding when implemented; no prerequisite parser migration)"
   - "loopadmin/runner/: fixed-here"
   - "plugins/assay/skills/ and references/desk-shell.md: fixed-here"
-  - "tools/desk/cmd/deskboard and desktoken: follow-up desktools-v2/62"
+  - "tools/desk/cmd/deskboard and desktoken: follow-up desktools-v2/62 (production observations and workload qualification, not the current-parser context binding owned here)"
   - "statusgen/: follow-up statusgen/26"
   - "qualgen/ and other standalone maintained entrypoints: out-of-scope (inventory their integration gaps here; future CLI owners adopt the public perfrec API, with statusgen/26 the qualified standalone producer)"
   - "perfdata/adapters/: follow-up performance-collection/02"
@@ -48,6 +50,11 @@ files:
 - `tools/desk/internal/deskkit/dispatchrecord.go`
 - `tools/desk/internal/cli/`
 - `tools/desk/internal/clicontract/`
+- `tools/desk/cmd/deskclaim-ref/`
+- `tools/desk/cmd/deskclaim/`
+- `tools/desk/cmd/deskboot/`
+- `tools/desk/cmd/desktoken/`
+- `docs/streams/desktools-v2/cli-migration.json` (inventory source; parser exemptions stay in force)
 - `loopadmin/runner/`
 - `plugins/assay/references/desk-shell.md`
 - `plugins/assay/skills/worker-desk/SKILL.md`
@@ -114,6 +121,18 @@ Use exactly the field/flag/env table and lifecycle in docs/performance-attributi
 3. Record standalone integration gaps and route each to its existing CLI owner; this brief does not port all standalone tools. Implement native-harness-ID to opaque-ID mapping only where an existing harness exposes such identity; retain that private mapping at the launcher boundary, in memory or an existing private state directory owned by the launcher with 0700 directory / 0600 file modes and a maximum seven-UTC-day retention. Never commit, log or publish it. If a mapping needed for resume has expired or is lost, mint fresh opaque IDs and expose a continuity gap; do not infer identity. Unknown boundaries stay unknown and are listed in the inventory. No transcript scraping, recursive monitor or mandatory new service. Standalone adapters may bind the same flags directly to perfrec; statusgen's production phase integration remains /26.
 4. Exercise two subjects, brief plus issue, two different assigned roles under one desk, concurrency, retry, explicit resume, replacement, unset/empty/invalid overrides and unknown parent through real parsed binaries and child processes. Prove tool-only profile never emits correlation even when inherited context exists, and telemetry-off creates no measurement files. Document local rollout/opt-out and unavailable coverage. Update generated CLI help through each owner's existing reference workflow and sync generated skill guardrails only if their blocks change.
 
+### Current claim and token-custody adapters
+
+/33 was withdrawn by PR #3409. Its proposed perf-v3 amendment is historical only; this
+brief owns the live binding obligation. Explicitly inventory `deskclaim-ref`, `deskclaim`,
+`deskboot` and `desktoken` while they remain on their current parsers, as exempted in
+cli-migration.json. Bind the common typed resolver through those existing adapters without
+porting their parsers, changing custody or reviving /33. Retain help/version, output and
+exit behavior; credential observations and workload qualification remain /62 and /65.
+The future claim owners graph-execution/19 and /16 and token-custody owner forge-neutral/40
+inherit the same binding at replacement pickup; their independent delivery is not a new
+prerequisite of this local integration. Record each actual owner in the inventory.
+
 ## Verify
 
 Named tests below are planned. Each command requires its exact PASS line; a missing test
@@ -122,7 +141,7 @@ cannot pass. Plant the stated defect through the production boundary, not a dupl
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3LauncherChildFlow$' ./internal/deskkit/ > "$out" && grep -F -- '--- PASS: TestPerfV3LauncherChildFlow ' "$out")` | exit 0; named PASS. Actual launch/parsed binary/child/writer/report flow distinguishes two subjects and child IDs/roles; planted inherited child invocation/agent ID, stale work and cross-task global context fail. |
-| 2 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3CLIContextPrecedence$' ./internal/clicontract/ > "$out" && grep -F -- '--- PASS: TestPerfV3CLIContextPrecedence ' "$out")` | exit 0; named PASS. All declared flags/envs reach the typed resolver; explicit-empty and work-list replacement, invalid metadata, no-profile legacy and tool-only filtering and launcher refusal to create opt-in preserve operation exit/output and offline help. |
+| 2 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3CLIContextPrecedence$' ./internal/clicontract/ > "$out" && grep -F -- '--- PASS: TestPerfV3CLIContextPrecedence ' "$out")` | exit 0; named PASS. All declared flags/envs reach the typed resolver; explicit-empty and work-list replacement, invalid metadata, no-profile legacy and tool-only filtering and launcher refusal to create opt-in preserve operation exit/output and offline help. Exercise the actual current-parser claim/token-custody entrypoints named in the inventory; changing claim identity, token custody or their parser exemptions is a failing control. |
 | 3 | check:ci +flow +mutation | `(cd loopadmin && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3RunnerIdentityLifecycle$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3RunnerIdentityLifecycle ' "$out")` | exit 0; named PASS. Actual runner adapter carries fresh/resumed/replaced identities without changing authority/accounting; unknown native ID remains a gap and disabled sink cannot block launch. |
 | 4 | check +dereference | `statusgen --root . --consumers --brief desktools-v2/64` | exit 0; changed consumer routing corroborates the actual diff; unavailable is not pass. |
 

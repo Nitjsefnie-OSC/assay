@@ -157,7 +157,7 @@ boundary and independent expectation, not another implementation of the same che
 
 | # | Class | Command | Expect |
 |---|---|---|---|
-| 7 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestServedPerformanceWorkloadAttribution$' ./internal/forgeservice/integration/... > "$out" && grep -F -- '--- PASS: TestServedPerformanceWorkloadAttribution ' "$out")` | exit 0; named PASS; matched CLI/service bursts retain decisions and authority, share scoped inventory and report versioned coverage without double-counting; stale fast answers and hidden minter children fail |
+| 7 | check:ci +flow +mutation | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestServedPerformanceWorkloadAttribution$' ./internal/forgeservice/integration/... > "$out" && grep -F -- '--- PASS: TestServedPerformanceWorkloadAttribution ' "$out")` | exit 0; named PASS; matched CLI/service bursts retain decisions and authority, share scoped inventory and report versioned coverage without double-counting; stale fast answers and hidden minter children fail; same-scope coalesced waiters must not receive another caller's diagnostic link or work label in responses or metrics |
 
 ## Pre-mortem and detection
 
@@ -204,7 +204,7 @@ matched service qualification must include own-request and parent/child no-doubl
 
 Apply docs/performance-attribution-spec.md, including its query/cache boundary contract.
 
-Extend the existing named served workload Verify row with 50 same-scope queries, one three-page coalesced walk, subsequent warm hit, forced passthrough with retry, denied request, background poll and missing server diagnostics. Assert exact client logical count/transport attempts, handler count, three actual page sends and shared points charged once; no double process CPU or client+handler elapsed totals. Test propagation disabled at either profile/protocol boundary and concurrent work isolation through real client/server/executor/report seams.
+Extend the existing named served workload Verify row with 50 same-scope queries, one three-page coalesced walk, subsequent warm hit, forced passthrough with retry, denied request, background poll and missing server diagnostics. Assert exact client logical count/transport attempts, handler count, three actual page sends and shared points charged once; no double process CPU or client+handler elapsed totals. Test propagation disabled at either profile/protocol boundary and concurrent work isolation through real client/server/executor/report seams. Give same-scope coalesced waiters distinct diagnostic links and work labels; assert responses and metrics expose none of another caller's context, with a planted context-copy defect rejected by the fixture.
 
 Extend TestServedPerformanceWorkloadAttribution and the existing corresponding Verify flow with these negative cases; require its exact PASS line.
 No service activation or extra dependency on a live collector is introduced.

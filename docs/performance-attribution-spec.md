@@ -132,7 +132,7 @@ GraphQL points and independent quota pools are never added as interchangeable un
   Record attempt count, outcome/status class and monotonic request duration; state the boundary
   as dispatch through response-body EOF/close or terminal error. Include body handling in that
   interval without reading it twice, buffering it, altering close/cancellation or blocking on
-telemetry. Incomplete bodies/timers remain incomplete coverage. Report request count, summed
+  telemetry. Incomplete bodies/timers remain incomplete coverage. Report request count, summed
   request work and mergeable duration distributions; concurrent durations overlap wall time.
 - Record actual per-operation GraphQL points only when the backend's existing response path
   observes an attributable cost. Preserve `measured`, `estimated`, `unknown`, `unsupported`

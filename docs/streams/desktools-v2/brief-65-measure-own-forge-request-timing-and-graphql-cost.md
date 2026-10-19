@@ -26,7 +26,7 @@ exec-tier-why: "Cross-process identity, compatibility and negative-path coverage
 domain: complicated
 outcome: none
 consumers:
-  - "tools/desk/cmd/desktoken/: fixed-here (observe the existing direct authentication HTTP leaf without reading secret material)"
+  - "tools/desk/cmd/desktoken/: fixed-here (observe the authentication HTTP leaf at its current owner at pickup, including relocation by /58; never read secret material)"
   - "tools/desk/internal/deskkit/forgetransport.go and forge backends: fixed-here"
   - "tools/desk/cmd/deskboard/readcost.go: fixed-here"
   - "tools/desk/internal/credential/: follow-up desktools-v2/62 (planned provider from /58; observe its authentication HTTP at integration)"
@@ -82,6 +82,13 @@ Read docs/performance-attribution-spec.md, the Context sources and the implement
 Refresh current source and active work before pickup; all new paths and named tests below are
 deliverables, not existing implementation or acceptance evidence.
 
+At pickup, resolve the actual authentication HTTP leaf: `desktoken` owns it at the source
+pin, but /58 may relocate it into the credential provider before this work lands. Observe
+that existing leaf at its current owner, using its supported seam; do not recreate the old
+leaf, revive withdrawn /33 or require a parser migration. /62 owns production credential
+integration and qualification. Update the consumer inventory to the resolved path while
+retaining the same secret-negative fixture and no-extra-request contract.
+
 ## Ground rules
 
 Feature branch and draft PR only; no merge, release, workflow dispatch or live infrastructure.
@@ -131,7 +138,7 @@ TestPerfV3ForgeObservationParity with direct versus mediated synthetic origins, 
 covered hit versus unknown server coverage, shared refresh charged once, and unchanged
 business output/call count when diagnostics are off. The planned credential provider belongs
 to /58 and its authentication HTTP integration to /62; this brief uses only the existing
-desktoken HTTP leaf and provider transports, so its dependency remains /63.
+authentication HTTP leaf at its current owner and provider transports, so its dependency remains /63.
 
 ## Evidence
 

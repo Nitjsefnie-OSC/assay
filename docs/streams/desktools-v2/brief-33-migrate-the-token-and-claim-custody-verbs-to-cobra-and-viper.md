@@ -7,12 +7,17 @@ why: >-
   migration must prove identical custody while gaining real help.
 wave: 3
 depends: ["desktools-v2/16", "desktools-v2/58"]
-unblocks: ["desktools-v2/17"]
+unblocks: []
+withdrawn-date: "2026-10-18"
+superseded-by: ["graph-execution/19", "graph-execution/16", "forge-neutral/40"]
+withdrawn-reason: "The ratified target (docs/proposals/non-ci-architecture/11-target-architecture.md §\"What happens to today's tools\": thin adapters, do not port the entire command matrix; 13-migration-and-decisions.md: no parser migration is a prerequisite) retires or re-homes this domain: claims move to PostgreSQL coordination (R2: graph-execution/19, /16) and token custody to role executors (forge-neutral/40). The owned entrypoints keep their current parser, routed exempt in cli-migration.json, until retired."
+decision-issue: 3420
+ruling: "https://github.com/medici-finance/assay/issues/3420#issuecomment-6257901942"
 effort: "L"
 gate: "human"
 risk: {"regulatory": "no", "customer": "no", "irreversible": "no", "sensitive-data": "yes"}
 issues: [2111]
-schema: "brief-v2"
+schema: "brief-v3"
 outcome: none
 version: 3
 id: "147d5b80-d8b8-459e-8698-ff5b0c7bd9eb"
@@ -59,6 +64,8 @@ decision-trigger: "spec"
 ---
 
 # Brief 33 — Migrate the token and claim custody verbs to Cobra and Viper
+
+> **Withdrawn 2026-10-18 — superseded by `graph-execution/19`, `graph-execution/16`, `forge-neutral/40`.** The ratified target (docs/proposals/non-ci-architecture/11-target-architecture.md §"What happens to today's tools": thin adapters, do not port the entire command matrix; 13-migration-and-decisions.md: no parser migration is a prerequisite) retires or re-homes this domain: claims move to PostgreSQL coordination (R2: graph-execution/19, /16) and token custody to role executors (forge-neutral/40). The owned entrypoints keep their current parser, routed exempt in cli-migration.json, until retired. The Cobra/Viper requirement now binds new tools instead (`docs/streams/desktools-v2/cli-contract.md` §7). Not executable.
 
 ## Context
 
@@ -156,7 +163,15 @@ Retain the one measurement finalizer when moving to Cobra. Do not reset the time
 parsing, add a second writer or reintroduce a minter callout in an adapter.
 
 
-## Perf-v3 delivery amendment — 19 October 2026
+## Perf-v3 delivery amendment — 19 October 2026 (non-executable history)
+
+This amendment was drafted before the withdrawal was reconciled. /33 was withdrawn by
+PR #3409; the text below is retained as dated, non-executable history. The live performance
+binding and inventory obligation is owned by desktools-v2/64, including the current
+claim/token-custody entrypoints and their eventual successors. It does not revive this
+parser migration or add an executable dependency on /33.
+
+Historical amendment:
 
 The [perf-v3 contract](../../performance-attribution-spec.md) defines future shared performance flags/envs and selected profiles.
 /63 owns schema/resolution; /64 owns common adapter/launcher integration and inventory;
