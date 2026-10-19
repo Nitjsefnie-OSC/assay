@@ -262,6 +262,10 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 		return nil, err
 	}
 	var bodyReader io.Reader
+	pointsSelected := false
+	if path == "/graphql" && g.Observer.Sink != nil && g.baseURL() == GitHubAPIBase {
+		in, pointsSelected = ghPointInput(in)
+	}
 	if in != nil {
 		b, merr := json.Marshal(in)
 		if merr != nil {
@@ -280,6 +284,9 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(resp.Body)
+	if pointsSelected {
+		attachRequestPoints(resp.Body, decodeRequestPoints(raw, "github-points"))
+	}
 	if readErr != nil {
 		return nil, Unverifiable(fmt.Sprintf("%s %s response body cut off mid-transfer (%d bytes arrived) — refusing to treat a partial answer as a complete one", method, path, len(raw)), readErr)
 	}

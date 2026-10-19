@@ -1,15 +1,96 @@
 package deskkit
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/medici-finance/assay/perfrec"
 )
+
+// regression: class perf-v3-graphql-cost
+func TestPerfV3GraphQLCostCoverage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ASSAY_TELEMETRY", "1")
+	s := flowSession(perfrec.ObservationProvider)
+	o := RequestObserver{Sink: s, Origin: perfrec.OriginDirect}
+	queries := []string{}
+	response := `{"data":{"_assayPerf":{"cost":0,"score":7},"project":{"issue":{"comments":{"nodes":[]},"activity":{"nodes":[]}}}}}`
+	leaf := observeRT(func(r *http.Request) (*http.Response, error) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		queries = append(queries, body.Query)
+		return &http.Response{StatusCode: 200, Header: http.Header{"X-RateLimit-Used": []string{"900"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
+	})
+	g := &GitHubForge{Token: "fixture", Observer: o, Client: &http.Client{Transport: leaf}}
+	in := map[string]any{"query": ghListIssuesQuery}
+	var out map[string]any
+	if err := g.doJSON("POST", "/graphql", in, &out); err != nil {
+		t.Fatal(err)
+	}
+	if in["query"] != ghListIssuesQuery || !strings.Contains(queries[0], "_assayPerf:rateLimit{cost}") {
+		t.Fatal("input mutation or missing same-operation metadata")
+	}
+	// An unsupported custom operation must keep its exact query and unknown cost.
+	custom := `mutation { performAction }`
+	if err := g.doJSON("POST", "/graphql", map[string]any{"query": custom}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if queries[1] != custom {
+		t.Fatal("custom operation expanded")
+	}
+	// An unknown schema must keep its exact business selection even for a known read.
+	other := &GitHubForge{Token: "fixture", BaseURL: "https://enterprise.example.test", Observer: o, Client: &http.Client{Transport: leaf}}
+	if err := other.doJSON("POST", "/graphql", in, &out); err != nil {
+		t.Fatal(err)
+	}
+	if queries[2] != ghListIssuesQuery {
+		t.Fatal("unsupported schema expanded")
+	}
+	gl := &GitLabForge{Token: "fixture", Observer: o, Client: &http.Client{Transport: leaf}}
+	if _, err := gl.IssueTrustEvents(ForgeRepo{Owner: "example", Name: "project"}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queries[3], "_assayPerf:queryComplexity{score}") {
+		t.Fatal("complexity metadata missing")
+	}
+	sum := writeForgeRecord(t, s)
+	var ghZero, unknown, complexity int64
+	for _, r := range sum.Requests {
+		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitHubPoints && *r.Points.Value == 0 {
+			ghZero += r.PointSamples
+		}
+		if r.Points.Coverage == perfrec.CoverageUnknown {
+			unknown += r.PointSamples
+		}
+		if r.Points.Coverage == perfrec.CoverageMeasured && r.Points.Unit == perfrec.UnitGitLabComplexity {
+			complexity += *r.Points.Value
+		}
+	}
+	if len(queries) != 4 || ghZero != 1 || unknown != 2 || complexity != 7 {
+		t.Fatalf("queries=%d zero=%d unknown=%d complexity=%d groups=%+v", len(queries), ghZero, unknown, complexity, sum.Requests)
+	}
+	for _, raw := range []string{`{}`, `{"data":{"_assayPerf":null}}`, `{"data":{"_assayPerf":{"cost":null}}}`} {
+		if p := decodeRequestPoints([]byte(raw), perfrec.UnitGitHubPoints); p.Coverage != perfrec.CoverageUnknown || p.Value != nil {
+			t.Fatal("missing became zero", p)
+		}
+	}
+	for _, raw := range []string{`broken`, `{"data":{"_assayPerf":{"cost":-1}}}`, `{"data":{"_assayPerf":{"cost":"1"}}}`} {
+		if p := decodeRequestPoints([]byte(raw), perfrec.UnitGitHubPoints); p.Coverage != perfrec.CoverageFailed || p.Value != nil {
+			t.Fatal("malformed became measured", p)
+		}
+	}
+}
 
 type observeRT func(*http.Request) (*http.Response, error)
 
@@ -21,7 +102,14 @@ func writeForgeRecord(t *testing.T, s *perfrec.Session) perfrec.V3Summary {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := (&perfrec.Writer{}).Write(state, s.Finish("deskboard", "query", "", 0, "")); err != nil {
+	record := s.Finish("deskboard", "query", "", 0, "")
+	raw, _ := json.Marshal(record)
+	for _, secret := range []string{"secret=value", "Bearer fixture", "token-body-secret", "private/path"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatal("record exposed provider input")
+		}
+	}
+	if err := (&perfrec.Writer{}).Write(state, record); err != nil {
 		t.Fatal(err)
 	}
 	h, err := LoadPerfHistory(1)
@@ -62,6 +150,27 @@ func TestPerfV3ForgeAttemptTimingFlow(t *testing.T) {
 	if _, err := refused.RoundTrip(req); err == nil {
 		t.Fatal("refusal vanished")
 	}
+
+	terminal := observeRT(func(r *http.Request) (*http.Response, error) {
+		sends++
+		switch r.URL.Path {
+		case "/cancel":
+			return nil, context.Canceled
+		case "/error":
+			return nil, errors.New("token-body-secret")
+		}
+		return &http.Response{StatusCode: 304, Header: http.Header{}, Body: &slowBody{}}, nil
+	})
+	rt := observedTransport(countRoundTrips(terminal), observer, perfrec.RequestProvider, false)
+	for _, path := range []string{"/cancel", "/error", "/304"} {
+		r, _ := http.NewRequest("GET", "https://api.example.test"+path, nil)
+		r.Header.Set("Authorization", "Bearer fixture")
+		response, _ := rt.RoundTrip(r)
+		if response != nil {
+			_, _ = io.ReadAll(response.Body)
+			_ = response.Body.Close()
+		}
+	}
 	s.ObserveRequests()
 	sum := writeForgeRecord(t, s)
 	var attempts int64
@@ -71,11 +180,11 @@ func TestPerfV3ForgeAttemptTimingFlow(t *testing.T) {
 			t.Fatal("lifetime coverage", r)
 		}
 	}
-	if sends != 2 || attempts != 2 {
+	if sends != 5 || attempts != 5 {
 		t.Fatalf("actual=%d reported=%d", sends, attempts)
 	}
-	if len(sum.Requests) != 1 {
-		t.Fatal("unbounded URL labels", sum.Requests)
+	if len(sum.Requests) != 4 {
+		t.Fatal("missing bounded outcomes", sum.Requests)
 	}
 }
 
@@ -139,4 +248,106 @@ func TestPerfV3ForgeObservationParity(t *testing.T) {
 	if len(sink.items) != 2 || sink.items[1].Class != perfrec.RequestAuthentication {
 		t.Fatal("auth conflated")
 	}
+	// Original read and cancellation errors remain the caller's exact errors.
+	cut := errors.New("body cut off")
+	for _, failure := range []error{cut, context.Canceled} {
+		body := &errorBody{err: failure, closeErr: cut}
+		rt := observedTransport(countRoundTrips(observeRT(func(*http.Request) (*http.Response, error) { return &http.Response{StatusCode: 200, Body: body}, nil })), RequestObserver{sink, perfrec.OriginDirect}, perfrec.RequestProvider, false)
+		response, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(response.Body)
+		if err != failure || string(data) != "partial" {
+			t.Fatal("original read failure changed", err, string(data))
+		}
+		if response.Body.Close() != cut {
+			t.Fatal("close failure changed")
+		}
+	}
+	// Parent and child own separate sessions. An uninstrumented child remains
+	// a coverage gap; parent observations cannot manufacture its sends.
+	parent, child := flowSession(perfrec.ObservationProcess), flowSession(perfrec.ObservationProcess)
+	for _, session := range []*perfrec.Session{parent, child} {
+		rt := observedTransport(countRoundTrips(base), RequestObserver{session, perfrec.OriginDirect}, perfrec.RequestProvider, false)
+		response, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		r := session.Finish("consumer", "query", "", 0, "")
+		if len(r.V3.Requests) != 1 || r.V3.Requests[0].Attempts != 1 {
+			t.Fatal("parent-child double count")
+		}
+	}
+	unknown := flowSession(perfrec.ObservationProcess).Finish("consumer", "query", "", 0, "")
+	if unknown.V3.RequestCoverage == perfrec.CoverageMeasured || len(unknown.V3.Requests) != 0 {
+		t.Fatal("unobserved child manufactured zero")
+	}
+	testForgeOverhead(t)
+}
+
+type errorBody struct {
+	err      error
+	closeErr error
+	read     bool
+}
+
+func (b *errorBody) Read(p []byte) (int, error) {
+	if b.read {
+		return 0, b.err
+	}
+	b.read = true
+	return copy(p, "partial"), b.err
+}
+func (b *errorBody) Close() error { return b.closeErr }
+
+func testForgeOverhead(t *testing.T) {
+	t.Helper()
+	// Matched CPU/wall samples include real backend decoding, aggregation and
+	// local record append. The fake provider removes network variability; these
+	// numbers establish instrumentation cost, not a production latency claim.
+	t.Setenv("ASSAY_TELEMETRY", "1")
+	state := t.TempDir()
+	writer := perfrec.Writer{}
+	var samples [2][]int64
+	var cpu [2]int64
+	sends := [2]int{}
+	for sample := 0; sample < 20; sample++ {
+		for _, mode := range []int{sample % 2, 1 - sample%2} {
+			probe := perfrec.SystemProbe()
+			start := probe.Now()
+			before, _ := probe.CPU()
+			session := flowSession(perfrec.ObservationProvider)
+			observer := RequestObserver{}
+			if mode == 1 {
+				observer = RequestObserver{session, perfrec.OriginDirect}
+			}
+			g := &GitHubForge{Token: "fixture", Observer: observer, Client: &http.Client{Transport: observeRT(func(*http.Request) (*http.Response, error) {
+				sends[mode]++
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"result":"same"}`))}, nil
+			})}}
+			for request := 0; request < 100; request++ {
+				var out struct{ Result string }
+				if err := g.doJSON("GET", "/repos/example/project", nil, &out); err != nil || out.Result != "same" {
+					t.Fatal("on/off business parity", err)
+				}
+			}
+			if mode == 1 {
+				if err := writer.Write(state, session.Finish("consumer", "query", "", 0, "")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			after, _ := probe.CPU()
+			cpu[mode] += after - before
+			samples[mode] = append(samples[mode], time.Since(start).Nanoseconds())
+		}
+	}
+	for mode := range samples {
+		sort.Slice(samples[mode], func(i, j int) bool { return samples[mode][i] < samples[mode][j] })
+	}
+	if sends[0] != 2000 || sends[1] != 2000 {
+		t.Fatal("measurement changed provider sends", sends)
+	}
+	t.Logf("matched fake-provider cycles n=20, requests/cycle=100, concurrency=1, body=17 bytes; off wall ns p50=%d p95=%d max=%d CPUtotalms=%d; on incl append wall ns p50=%d p95=%d max=%d CPUtotalms=%d; actual sends off=%d on=%d", samples[0][9], samples[0][18], samples[0][19], cpu[0], samples[1][9], samples[1][18], samples[1][19], cpu[1], sends[0], sends[1])
 }

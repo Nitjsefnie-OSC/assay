@@ -21,6 +21,18 @@ type RequestObserver struct {
 	Origin perfrec.Origin
 }
 
+// RequestObserverFor admits observation only after the actual parser selected
+// an opt-in profile. An unselected invocation does no optional provider work.
+func RequestObserverFor(ctx perfrec.Context, sink perfrec.RequestSink, origin perfrec.Origin) RequestObserver {
+	if ctx.Profile() == "" || sink == nil {
+		return RequestObserver{}
+	}
+	if session, ok := sink.(*perfrec.Session); ok && session == nil {
+		return RequestObserver{}
+	}
+	return RequestObserver{Sink: sink, Origin: origin}
+}
+
 type requestScope struct {
 	observer RequestObserver
 	class    perfrec.RequestClass
@@ -76,7 +88,7 @@ func requestLabels(r *http.Request, s requestScope) perfrec.RequestObservation {
 		Protocol: "rest", Resource: "core", Points: perfrec.Points{Coverage: perfrec.CoverageUnsupported, Unit: perfrec.UnitNone}}
 	if s.class == perfrec.RequestAuthentication {
 		o.Protocol, o.Resource = "http", "authentication"
-	} else if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/graphql") {
+	} else if !s.gitlab && r.URL.Path == "/graphql" || s.gitlab && r.URL.Path == "/api/graphql" {
 		o.Protocol, o.Resource = "graphql", "graphql"
 		o.Points = perfrec.Points{Coverage: perfrec.CoverageUnknown, Unit: perfrec.UnitGitHubPoints}
 		if s.gitlab {
@@ -137,6 +149,9 @@ func observeRoundTrip(next http.RoundTripper, r *http.Request) (*http.Response, 
 		return resp, err
 	}
 	b.body = resp.Body
+	if capture, ok := r.Context().Value(pointCaptureKey{}).(*pointCapture); ok {
+		capture.body = b
+	}
 	// Qualified decoders attach metadata from bytes they already consume. Delay
 	// their successful GraphQL observation until Close, retaining only scalars.
 	b.deferCost = o.Protocol == "graphql" && status/100 == 2

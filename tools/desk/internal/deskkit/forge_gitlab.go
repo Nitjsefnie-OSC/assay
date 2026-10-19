@@ -1358,10 +1358,20 @@ func (g *GitLabForge) trustEvents(repo ForgeRepo, number int, noteable, op strin
 		return nil, err
 	}
 	var env glGQLTrustEnvelope
+	query := fmt.Sprintf(gitlabTrustQuery, noteable)
+	var target any = &env
+	var options []gitlab.RequestOptionFunc
+	if g.Observer.Sink != nil && g.baseURL() == GitLabAPIBase {
+		end := strings.LastIndex(query, "}")
+		query = query[:end] + ` _assayPerf:queryComplexity{score}` + query[end:]
+		capture := &pointCapture{}
+		target = &pointDecoder{target: &env, capture: capture}
+		options = append(options, gitlab.WithContext(context.WithValue(context.Background(), pointCaptureKey{}, capture)))
+	}
 	_, qerr := cl.GraphQL.Do(gitlab.GraphQLQuery{
-		Query:     fmt.Sprintf(gitlabTrustQuery, noteable),
+		Query:     query,
 		Variables: map[string]any{"path": repo.Slug(), "iid": strconv.Itoa(number)},
-	}, &env)
+	}, target, options...)
 	if qerr != nil {
 		return nil, g.mapErr(http.MethodPost, gitlab.GraphQLAPIEndpoint, gitlabUnwrapGraphQLErr(qerr))
 	}

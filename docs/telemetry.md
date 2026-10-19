@@ -298,6 +298,12 @@ workflow time. Future perfdata import applies its own explicit workflow consent 
 source/epoch aliases before preview or upload; it never forwards raw local work locators or
 native harness IDs. Existing counts-only network telemetry and its two switches are unchanged.
 
+The current [provider adapter coverage](provider-performance.md) records actual sends at
+the counted leaf, forwards response bodies without an additional read, and separates
+desktoken authentication HTTP. Qualified public-provider queries may select bounded cost
+metadata in the same operation. Other schemas retain unknown cost without a probe or
+fallback request. Hot-path composition remains explicit; this is not fleet-wide coverage.
+
 The planned v3 contract includes query/cache-service calls as a separate observation boundary:
 client logical/transport counts and latency, handler/cache/coalescing work, and actual upstream
 provider attempts/cost. Optional opaque diagnostic links can use only a separately admitted
