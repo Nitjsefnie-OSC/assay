@@ -1996,7 +1996,7 @@
       "parser": "bash manual flag loop",
       "complexity": "simple",
       "basis": "123 lines at 176847f81475",
-      "owner": "desktools-v2/30",
+      "owner": "desktools-v2/57",
       "state": "pending"
     },
     {
@@ -2013,7 +2013,7 @@
       "parser": "Python sys.argv (one subcommand, selftest; password on stdin)",
       "complexity": "simple",
       "basis": "85 lines at 176847f81475",
-      "owner": "desktools-v2/30",
+      "owner": "desktools-v2/57",
       "state": "pending"
     },
     {
