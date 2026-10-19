@@ -30,7 +30,7 @@ func TestPerfV3GraphQLCostCoverage(t *testing.T) {
 			t.Fatal(err)
 		}
 		queries = append(queries, body.Query)
-		return &http.Response{StatusCode: 200, Header: http.Header{"X-RateLimit-Used": []string{"900"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}, "X-RateLimit-Used": []string{"900"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
 	})
 	g := &GitHubForge{Token: "fixture", Observer: o, Client: &http.Client{Transport: leaf}}
 	in := map[string]any{"query": ghListIssuesQuery}
@@ -369,7 +369,7 @@ func testForgeSample(t *testing.T, graphql bool) {
 				if graphql && mode == 1 {
 					payload = `{"result":"same","data":{"_assayPerf":{"cost":2}}}`
 				}
-				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(payload))}, nil
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(payload))}, nil
 			})}}
 			for request := 0; request < 100; request++ {
 				var out struct{ Result string }
