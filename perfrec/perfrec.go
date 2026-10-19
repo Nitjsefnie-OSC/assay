@@ -103,7 +103,10 @@ type Record struct {
 	SourceSHA   string `json:"sourceSHA"`
 	Install     string `json:"install"`
 
-	// perf-v2 only.
+	// perf-v3 only; legacy wire shapes never include it.
+	V3 *V3Data `json:"v3,omitempty"`
+
+	// perf-v2 and perf-v3 interval fields.
 	Boundary     string            `json:"boundary,omitempty"`
 	CPU          string            `json:"cpu,omitempty"`
 	Phases       []PhaseStat       `json:"phases,omitempty"`
@@ -336,6 +339,11 @@ func (w *Writer) Append(stateDir string, rec Record) { _ = w.Write(stateDir, rec
 // Write is Append's body with the error kept, for the tests that need to see WHY a write did
 // not land. Production callers go through Append, which discards it.
 func (w *Writer) Write(stateDir string, rec Record) error {
+	if rec.Schema == SchemaV3 {
+		if err := validV3(rec); err != nil {
+			return err
+		}
+	}
 	dir := Dir(stateDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
