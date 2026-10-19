@@ -15,6 +15,7 @@ import (
 
 // regression: class perf-v3-drop-coverage
 func TestV3DroppedCoverage(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	s := BeginSelected(Probe{}, Probe{}.Mark(), nil, v3Context("tool"))
 	if s.ObserveRequest(RequestObservation{}) {
 		t.Fatal("invalid request accepted")
@@ -32,6 +33,7 @@ func TestV3DroppedCoverage(t *testing.T) {
 
 // regression: class perf-v3-optional-isolation
 func TestPerfV3IsolationAndOverhead(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	self, e := filepath.Abs(".")
 	if e != nil {
 		t.Fatal(e)

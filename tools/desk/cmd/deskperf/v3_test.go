@@ -10,6 +10,7 @@ import (
 
 // regression: class perf-v3-report-profile
 func TestV3ActualReport(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

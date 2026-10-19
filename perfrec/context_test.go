@@ -119,6 +119,15 @@ func TestPerfV3ContextAndConsent(t *testing.T) {
 		}
 	}
 	t.Setenv(EnvVar, "0")
+	direct := v3Record(v3Context("tool"))
+	sink := t.TempDir()
+	if (&Writer{}).Write(sink, direct) == nil {
+		t.Fatal("direct v3 writer bypassed opt-out")
+	}
+	if _, e := os.Stat(Dir(sink)); !os.IsNotExist(e) {
+		t.Fatal("off direct writer created state")
+	}
+	t.Setenv(EnvVar, "0")
 	if ResolveContext(ContextInput{Profile: Value{"workflow", true}}).Profile() != "" {
 		t.Fatal("profile bypassed opt-in")
 	}
