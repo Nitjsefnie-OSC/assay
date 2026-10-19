@@ -15,6 +15,17 @@ type transitionFixture struct {
 
 func transitionFixtureAt(t *testing.T, merge ...bool) transitionFixture {
 	t.Helper()
+	return contextFixture(t, merge, nil)
+}
+
+func contextFixture(t *testing.T, merge []bool, edit func(string, string) string) transitionFixture {
+	t.Helper()
+	change := func(stage, body string) string {
+		if edit != nil {
+			return edit(stage, body)
+		}
+		return body
+	}
 	o := vfDefaults()
 	o.evidence = ""
 	o.verify = strings.Replace(vfVerify, "`false`", "`sh check.sh`", 1)
@@ -31,7 +42,7 @@ func transitionFixtureAt(t *testing.T, merge ...bool) transitionFixture {
 	if e != nil {
 		t.Fatal(e)
 	}
-	body := strings.Replace(string(raw), "schema: brief-v1", "schema: brief-v2\nversion: 1", 1)
+	body := change("original", strings.Replace(string(raw), "schema: brief-v1", "schema: brief-v2\nversion: 1", 1))
 	if e = os.WriteFile(path, []byte(body), 0644); e != nil {
 		t.Fatal(e)
 	}
@@ -44,6 +55,7 @@ func transitionFixtureAt(t *testing.T, merge ...bool) transitionFixture {
 	// An unrelated delivery edit MUST NOT become accepted by this transition.
 	body = strings.Replace(body, "| 1 | `true` | exit 0 |", "| 1 | `false` | exit 9 |", 1)
 	body = strings.Replace(body, "\n\n## Evidence", "\n| 3 | `printf supplemental` | exit 0 |\n\n## Evidence", 1)
+	body = change("delivery", body)
 	if e = os.WriteFile(path, []byte(body), 0644); e != nil {
 		t.Fatal(e)
 	}
@@ -59,7 +71,7 @@ func transitionFixtureAt(t *testing.T, merge ...bool) transitionFixture {
 		vfGit(t, root, vfMailHuman, "checkout", "-q", "-b", "amendment")
 	}
 	body = strings.Replace(body, "`sh check.sh`", "`sh check.sh --no-pull`", 1)
-	body = strings.Replace(body, "version: 1", "version: 2", 1)
+	body = change("amendment", strings.Replace(body, "version: 1", "version: 2", 1))
 	if e = os.WriteFile(path, []byte(body), 0644); e != nil {
 		t.Fatal(e)
 	}
@@ -246,7 +258,11 @@ func TestAcceptanceTransition(t *testing.T) {
 
 // regression: #3467
 func TestTransitionExecution(t *testing.T) {
-	f := transitionFixtureAt(t)
+	runTransitionExecution(t, transitionFixtureAt(t))
+}
+
+func runTransitionExecution(t *testing.T, f transitionFixture) {
+	t.Helper()
 	vfGit(t, f.root, vfMailVerifier, "config", "user.name", vfRunner)
 	vfGit(t, f.root, vfMailVerifier, "config", "user.email", vfMailVerifier)
 	descriptor := filepath.Join(t.TempDir(), "transition.txt")

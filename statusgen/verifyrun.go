@@ -1198,9 +1198,10 @@ func treeSHA(root string) string {
 // briefVerifyRows lifts a brief file's Verify rows (id + authored command cell +
 // Expect cell), reusing the shared table parser rather than adding a second one.
 type verifyRow struct {
-	ID      string
-	Command string // as authored: `\|`-escaped, code span lifted
-	Expect  string
+	ID          string
+	Command     string // as authored: `\|`-escaped, code span lifted
+	CommandCell string // complete authored cell, including non-command context
+	Expect      string
 	// Class is the resolved Verify row class (verdict-lane/02): check:ci, check,
 	// gate:model, gate:human. A legacy table with no Class column resolves every
 	// row to `check` (legacyRowClass). Classed records whether the table opted
@@ -1246,7 +1247,7 @@ func briefVerifyRows(verifySection string) []verifyRow {
 		if v := normalizeRowID(r.Num); v != "" {
 			id = v
 		}
-		row := verifyRow{ID: id, Command: cmd, Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect)}
+		row := verifyRow{ID: id, Command: cmd, CommandCell: strings.TrimSpace(r.Command), Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect)}
 		if first, why := proseLedCommandWhy(r.Command); why != "" {
 			what := "first span "
 			if why == shellCommentMarkedWhy {

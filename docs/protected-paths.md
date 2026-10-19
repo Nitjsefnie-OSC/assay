@@ -166,8 +166,10 @@ label, a local record, an APPROVED review, or a bot relaying a person's words.
 
 The bounded first implementation supports changing commands of existing original
 rows while retaining their exact Expect, class, shell, order and obligations.
-Changed commands must be single code spans without surrounding prose. Tables
-must have explicit row IDs under a first-column `#` header. Original rows cannot
+Each changed command must occupy exactly one unambiguous code span, with
+byte-identical surrounding context in the original, delivered and amended
+Command cells. The delivered row must match the entire original row definition.
+Tables must have explicit row IDs under a first-column `#` header. Original rows cannot
 be added, dropped or renumbered. Supplemental rows cannot change or gain credit.
 An unchanged row still owes its original command and Expect even if the delivering
 worker edited it. Coverage records acceptance sources per row: original revision
