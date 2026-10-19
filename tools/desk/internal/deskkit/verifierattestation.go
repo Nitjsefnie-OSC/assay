@@ -16,6 +16,11 @@ import (
 const VerifierAttestationTitle = "[verification-attestation] "
 const verifierRecordName = "assay-verifier-attestation.json"
 
+// VerifierAttestationRecord is the file name of a verifier home's local admission
+// record, kept in the home's worktree admin dir. deskwt prune reads it, by this one
+// name, to hold an admitted home until its Evidence can land.
+const VerifierAttestationRecord = verifierRecordName
+
 // VerifierBinding identifies one selected runner against one immutable source.
 // This is dispatch provenance, NEVER a Verify result or evidence of execution.
 // Checkout pins the line-ending conversion the home was checked out with, so
@@ -82,7 +87,7 @@ func VerifierReadEnv() []string { return verifierEnv() }
 func verifierGitBytes(root string, args ...string) ([]byte, error) {
 	cmd := exec.Command("git", append([]string{"--no-replace-objects", "-C", root}, args...)...)
 	cmd.Env = verifierEnv()
-	return cmd.Output()
+	return OutputProcess(cmd)
 }
 func verifierGit(root string, args ...string) (string, error) {
 	out, err := verifierGitBytes(root, args...)

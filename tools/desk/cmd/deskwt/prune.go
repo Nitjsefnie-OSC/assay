@@ -184,9 +184,12 @@ type pruneOpts struct {
 //	  (cachepressure.go). A cell's managed Go cache (tools/desk/internal/cellcache) is
 //	  otherwise pressure-checked only at launch admission and dispatch, so a long-lived
 //	  cell can sit over its byte budget — or the filesystem under its free-space floor —
-//	  indefinitely. Every sweep runs cellcache.Check over each marked cache root under
-//	  the cells root (--cells-root, then $CELLS_ROOT, then the compiled default), with
-//	  the package's own semantics: never a warm purge; whole roots go only under
+//	  indefinitely. Every sweep pressure-checks each marked cache root under the cells
+//	  root (--cells-root, then $CELLS_ROOT, then the compiled default) through
+//	  cellcache.AdmitRecorded: a lock-free pre-check admits a root whose last clean
+//	  measurement is fresh and well inside its thresholds, so a boot-time sweep neither
+//	  takes the cache lock nor walks a large cache; any root it cannot prove falls
+//	  through to the locked cellcache.CheckRecorded, with the package's own semantics: never a warm purge; whole roots go only under
 //	  pressure with no consumer record; otherwise, under pressure or above the
 //	  high-water mark, build/ entries are trimmed oldest first to the low-water mark,
 //	  never below the policy's safety floor, while active records protect mod/ and
@@ -660,8 +663,7 @@ func singletonKey(guard *pathGuard, cwd string) string {
 	return cwd
 }
 
-// sweepCtx is the per-sweep state that used to be rebuilt per candidate. Three things live
-// here, and each replaces N copies of itself:
+// sweepCtx owns reads shared across candidates and discarded after each sweep:
 //
 //   - objects: ONE go-git object cache for the whole sweep. gitcore.Open builds a fresh
 //     one per call and prune called it 3-4 times per worktree, so one 5,779-commit history
@@ -674,9 +676,15 @@ func singletonKey(guard *pathGuard, cwd string) string {
 //
 // This is the same fix internal/gitcore/contains.go documents at length for a different
 // caller: one shared walk instead of N.
+// sweepread.go extends that reuse to the reap arm and admin registration discovery.
 type sweepCtx struct {
-	objects gitcore.ObjectCache
-	repos   map[string]*gitcore.Repo
+	objects    gitcore.ObjectCache
+	repos      map[string]*gitcore.Repo
+	commonDir  string
+	historyDir string
+	mainTip    string
+	ancestry   map[ancestryQuery]bool
+	admins     *worktreeAdminIndex
 
 	// mainAncestors is nil when the set could not be built; ancestorErr then says why.
 	mainAncestors map[string]struct{}
@@ -699,9 +707,17 @@ type sweepCtx struct {
 // establish the mainline holds everything and removes nothing.
 func newSweepCtx(dir string) *sweepCtx {
 	sc := &sweepCtx{
-		objects: gitcore.NewObjectCache(),
-		repos:   map[string]*gitcore.Repo{},
+		objects:    gitcore.NewObjectCache(),
+		repos:      map[string]*gitcore.Repo{},
+		historyDir: dir,
+		ancestry:   map[ancestryQuery]bool{},
 	}
+	common, err := gitcore.CommonDir(dir)
+	if err != nil {
+		sc.ancestorErr = err
+		return sc
+	}
+	sc.commonDir = resolvePath(common)
 	hashes, lerr := logOriginMain(sc, dir)
 	if lerr != nil {
 		sc.ancestorErr = lerr
@@ -727,12 +743,24 @@ var logOriginMain = func(sc *sweepCtx, dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return repo.Log("refs/remotes/origin/main")
+	tip, err := repo.Resolve("refs/remotes/origin/main")
+	if err != nil {
+		return nil, err
+	}
+	sc.mainTip = tip.String()
+	return repo.Log(sc.mainTip)
 }
 
 // open returns the sweep's handle on the worktree rooted at rt, opening it at most once
 // and routing every object read through the sweep's single shared cache.
 func (sc *sweepCtx) open(rt string) (*gitcore.Repo, error) {
+	common, err := gitcore.CommonDir(rt)
+	if err != nil {
+		return nil, err
+	}
+	if resolvePath(common) != sc.commonDir {
+		return nil, deskkit.Unverifiable("worktree no longer belongs to this sweep's common Git store", nil)
+	}
 	if r, ok := sc.repos[rt]; ok {
 		return r, nil
 	}
@@ -920,6 +948,12 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 	// activity gate's.
 	sweepNow := time.Now()
 
+	// Verifier admissions, read once per sweep (#2830). An admitted verifier home is
+	// clean and, once main moves on, merged — so the ordinary gates would remove it while
+	// its Evidence still has to land from it. A registry that cannot be read holds every
+	// candidate this sweep.
+	admissions, admErr := guard.verifierAdmissions()
+
 	// The activity gate's admin map, read once per sweep (after the reclaim pass's
 	// bookkeeping prune, so it maps the registration as it stands). A failed read is kept,
 	// not returned: every candidate is then HELD as unverifiable, never judged idle.
@@ -980,11 +1014,26 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 		// asked moved, and the reported reason for each is unchanged.
 		protected := rt == guard.sharedCheckout || rt == cwd || !guard.allowed(rt)
 
-		// The activity gate binds BOTH removal arms, so it is decided once, here. A
-		// protected tree is never a candidate, so it is never asked.
+		// The admission hold binds BOTH arms: the dead-session arm removes unlocked, clean,
+		// pushed trees and locked trees of dead sessions, and an admitted home is either.
+		// The activity gate binds BOTH removal arms too, so both holds are decided once,
+		// here. A protected tree is never a candidate, so it is never asked.
+		admHold := ""
 		idleHold := ""
 		if !protected {
 			idleHold = activityHold(admins, adminsErr, rt, opts.minIdle, sweepNow)
+			if admErr != nil {
+				admHold = "could-not-check: verifier admissions: " + errText(admErr)
+			} else {
+				admHold = admissionHoldReason(admissions, rt, sweepNow)
+			}
+		}
+		if opts.reapDeadSessions && admHold != "" {
+			v := reapVerdict{path: rt, reason: admHold}
+			if isLocked {
+				v.session = sessionFromLockReason(reason)
+			}
+			res.plan = append(res.plan, v)
 		}
 
 		if opts.reapDeadSessions && protected {
@@ -994,14 +1043,14 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 			res.plan = append(res.plan, reapVerdict{path: rt, reason: "protected: " + protectedReason(guard, cwd, rt)})
 		}
 
-		if opts.reapDeadSessions && !protected && idleHold != "" {
+		if opts.reapDeadSessions && !protected && admHold == "" && idleHold != "" {
 			// Recent activity is a live session whatever its lock (or the lack of one)
 			// says: KEEP, named in the plan, before ownership is even asked. It falls
 			// through to the ordinary arm, which holds it on the same gate.
 			res.plan = append(res.plan, reapVerdict{path: rt, reason: "held: " + idleHold})
 		}
 
-		if opts.reapDeadSessions && !protected && idleHold == "" {
+		if opts.reapDeadSessions && !protected && admHold == "" && idleHold == "" {
 			mt, haveMtime := reapMtimes[rt]
 			v := judgeReap(sc, rt, reason, isLocked, mt, haveMtime, opts.lockTTL, reapRoster, reapNow)
 			if v.reap {
@@ -1045,6 +1094,10 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 		}
 		if protected {
 			res.skips = append(res.skips, skipEntry{rt, protectedReason(guard, cwd, rt)})
+			continue
+		}
+		if admHold != "" {
+			res.skips = append(res.skips, skipEntry{rt, admHold})
 			continue
 		}
 		// Activity gate: ahead of every content gate. It is a handful of stats, and a tree
@@ -1103,7 +1156,7 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 			continue
 		}
 		if atTip {
-			age, ageErr := guard.adminEntryAge(rt, sweepNow)
+			age, ageErr := sc.adminEntryAge(guard, rt, sweepNow)
 			if ageErr != nil {
 				res.skips = append(res.skips, skipEntry{rt, "unverifiable worktree age: " + errText(ageErr)})
 				continue
