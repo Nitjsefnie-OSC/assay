@@ -95,12 +95,13 @@ type QueryObservation struct {
 
 // V3Data adds selected disclosure and bounded observations to the existing interval.
 type V3Data struct {
-	Profile      Profile           `json:"profile"`
-	Attribution  Attribution       `json:"attribution"`
-	Kind         ObservationKind   `json:"observationKind"`
-	Requests     []RequestStats    `json:"requests"`
-	RequestDrops int64             `json:"requestDrops"`
-	Query        *QueryObservation `json:"query,omitempty"`
+	Profile         Profile           `json:"profile"`
+	Attribution     Attribution       `json:"attribution"`
+	Kind            ObservationKind   `json:"observationKind"`
+	Requests        []RequestStats    `json:"requests"`
+	RequestDrops    int64             `json:"requestDrops"`
+	RequestCoverage Coverage          `json:"requestCoverage"`
+	Query           *QueryObservation `json:"query,omitempty"`
 }
 
 func validPoints(p Points) bool {
@@ -268,10 +269,31 @@ func validV3(r Record) error {
 	if v.Kind != ObservationProcess && (r.CPU != CPUUnsupported || r.CPUMs != nil || r.Boundary != BoundaryCaller) {
 		return errors.New("perfrec: unqualified per-request CPU")
 	}
+	switch v.RequestCoverage {
+	case CoverageMeasured, CoverageMissing, CoverageUnsupported, CoverageFailed:
+	default:
+		return errors.New("perfrec: invalid request coverage")
+	}
 	if len(v.Requests) > MaxRequestGroups || v.RequestDrops < 0 || !validQuery(v.Profile, v.Kind, v.Query) {
 		return errors.New("perfrec: invalid observations")
 	}
+	if v.RequestDrops > 0 && v.RequestCoverage != CoverageFailed {
+		return errors.New("perfrec: dropped request coverage must stay failed")
+	}
+	seenGroups := map[string]bool{}
 	for _, s := range v.Requests {
+		groupKey, _ := json.Marshal(struct {
+			Class                       RequestClass
+			Origin                      Origin
+			Protocol, Resource, Outcome string
+			Coverage                    Coverage
+			Unit                        PointUnit
+			Method, Version             string
+		}{s.Class, s.Origin, s.Protocol, s.Resource, s.Outcome, s.Points.Coverage, s.Points.Unit, s.Points.Method, s.Points.Version})
+		if seenGroups[string(groupKey)] {
+			return errors.New("perfrec: duplicate request group")
+		}
+		seenGroups[string(groupKey)] = true
 		zero := int64(0)
 		o := RequestObservation{Class: s.Class, Origin: s.Origin, Protocol: s.Protocol, Resource: s.Resource, Outcome: s.Outcome, DurationCoverage: CoverageMeasured, DurationMs: &zero, Points: s.Points}
 		if !validRequest(o) || s.Attempts < 1 || s.PointSamples != s.Attempts || s.DurationSumMs < 0 || s.DurationMaxMs < 0 || s.Bytes < 0 || s.BytesSamples < 0 || s.BytesSamples > s.Attempts {
@@ -331,7 +353,7 @@ func (s *Session) SelectContext(c Context) bool {
 	if c.Profile() == "" {
 		return true
 	}
-	s.v3 = &V3Data{Profile: c.Profile(), Attribution: c.Data(), Kind: ObservationProcess, Requests: []RequestStats{}}
+	s.v3 = &V3Data{Profile: c.Profile(), Attribution: c.Data(), Kind: ObservationProcess, Requests: []RequestStats{}, RequestCoverage: CoverageMissing}
 	return true
 }
 
@@ -347,6 +369,7 @@ func (s *Session) ObserveRequest(r RequestObservation) bool {
 	}
 	if !validRequest(r) {
 		s.v3.RequestDrops++
+		s.v3.RequestCoverage = CoverageFailed
 		return false
 	}
 	i := 0
@@ -358,6 +381,7 @@ func (s *Session) ObserveRequest(r RequestObservation) bool {
 	if i == len(s.v3.Requests) {
 		if i == MaxRequestGroups {
 			s.v3.RequestDrops++
+			s.v3.RequestCoverage = CoverageFailed
 			return false
 		}
 		p := r.Points
@@ -402,3 +426,16 @@ func (s *Session) SetQuery(q QueryObservation) bool {
 
 // RequestSink is the credential-free provider adapter seam.
 type RequestSink interface{ ObserveRequest(RequestObservation) bool }
+
+// ObserveRequests marks the own transport seams covered, including measured zero sends.
+// Call only when every relevant own seam is observed; partial callers leave coverage missing.
+func (s *Session) ObserveRequests() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.v3 != nil && s.v3.RequestDrops == 0 {
+		s.v3.RequestCoverage = CoverageMeasured
+	}
+}
