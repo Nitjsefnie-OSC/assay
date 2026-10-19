@@ -439,12 +439,38 @@ func checkBriefInfoVerified(root string, info *briefInfo) error {
 	return nil
 }
 
+// briefAttributionSchemas is the explicit set of brief schemas whose strict
+// attribution check is defined. Every member keeps the `## Evidence` section the
+// check blames, so the judgement is the same across them; brief-v2 and brief-v3
+// moved the lifecycle cell to a derived board and reserved graph keys but left the
+// Evidence section and its commit history untouched. A schema outside the set
+// ("legacy", a non-brief document kind, a future brief-vN) is NOT assumed to keep
+// that shape: it fails closed with exit 2 until it is added here deliberately
+// (TestBriefAttributionSchemasCoverRecognized forces that decision whenever
+// recognizedBriefSchemas grows).
+var briefAttributionSchemas = map[string]bool{
+	briefSchemaCurrent: true, // brief-v1
+	briefSchemaV2:      true, // brief-v2
+	briefSchemaV3:      true, // brief-v3
+}
+
+// briefAttributionSchemaList is the sorted, comma-joined supported set, for the
+// refusal message.
+func briefAttributionSchemaList() string {
+	names := make([]string, 0, len(briefAttributionSchemas))
+	for k := range briefAttributionSchemas {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
 // checkBriefInfoAttribution is the strict selected-closure adapter over the same
 // roster policy and blame judge as corpus lint. Lint's historical notices remain
 // unchanged; a new publication requires a current accepted actor verdict.
 func checkBriefInfoAttribution(root string, info *briefInfo) (int, error) {
-	if info.Schema != "brief-v1" {
-		return briefInfoExitResolve, fmt.Errorf("cannot check attribution without brief-v1 schema")
+	if !briefAttributionSchemas[info.Schema] {
+		return briefInfoExitResolve, fmt.Errorf("cannot check attribution for schema %q: supported schemas are %s", info.Schema, briefAttributionSchemaList())
 	}
 	policy := evidenceActorPolicyFromRoster()
 	if policy.Unavailable != "" {
