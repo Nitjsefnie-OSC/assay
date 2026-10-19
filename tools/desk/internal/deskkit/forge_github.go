@@ -57,9 +57,10 @@ import (
 // defaults to go-gh's own transport, so a test points BaseURL at an httptest server (and may
 // supply a Client whose Transport reaches it).
 type GitHubForge struct {
-	Token   string
-	BaseURL string
-	Client  *http.Client
+	Token    string
+	BaseURL  string
+	Client   *http.Client
+	Observer RequestObserver
 
 	// rc caches the go-gh REST client built from Token/BaseURL. Lazily constructed by
 	// restClient so a bare struct literal (the golden test's construction shape) still works.
@@ -114,7 +115,7 @@ func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {
 	rc, err := ghapi.NewRESTClient(ghapi.ClientOptions{
 		Host:      host,
 		AuthToken: g.Token,
-		Transport: countRoundTrips(transport), // perf forgeCalls; counts and delegates
+		Transport: observedTransport(countRoundTrips(transport), g.Observer, "provider", false),
 	})
 	if err != nil {
 		return nil, Unverifiable("cannot build go-gh REST client", err)

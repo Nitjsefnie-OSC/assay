@@ -59,7 +59,7 @@ type countingTransport struct{ next http.RoundTripper }
 
 func (c countingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	perfCountForgeCall()
-	return c.next.RoundTrip(req)
+	return observeRoundTrip(c.next, req)
 }
 
 // countRoundTrips wraps rt (http.DefaultTransport when nil) in the counting transport. A
