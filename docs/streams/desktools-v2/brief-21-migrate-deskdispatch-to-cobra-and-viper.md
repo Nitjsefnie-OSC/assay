@@ -15,10 +15,11 @@ risk: {"regulatory": "no", "customer": "no", "irreversible": "no", "sensitive-da
 issues: [2111]
 schema: "brief-v2"
 outcome: none
-version: 2
+version: 3
 id: "2969ba49-706d-4544-b46b-e8b87b133bde"
 authored: "2026-10-04 by desktools-v2/15"
 sources:
+  - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - "assay:assay:desktools-v2:60 — consumer routing for the 2026-10-16 performance amendment"
   - "2026-10-16 performance authoring amendment, inspected origin/main eba941721; docs/streams/desktools-v2/README.md performance priority"
   - "https://github.com/medici-finance/assay/issues/2111"
@@ -118,6 +119,17 @@ existing explicit consent; help must not read operational configuration to class
 Retain the one measurement finalizer when moving to Cobra. Do not reset the timer after
 parsing, add a second writer or reintroduce a minter callout in an adapter.
 
+
+## Perf-v3 delivery amendment — 19 October 2026
+
+The [perf-v3 contract](../../performance-attribution-spec.md) defines future shared performance flags/envs and selected profiles.
+/63 owns schema/resolution; /64 owns common adapter/launcher integration and inventory;
+/65 owns forge observations. Preserve this brief's existing migration/qualification scope,
+help/version, exit and parser rules. Do not implement a competing v2-only collector or copy
+work identity into old schemas. Adopt /64's common binding when present; otherwise record
+the explicit integration gap for /64, retaining prior behavior until that owner lands.
+Final suite conformance /17 must exercise the common precedence/profile fixtures and show
+that attribution cannot change operational identity or fail a valid operation.
 
 ## Evidence
 <!-- Independent verifier records actual command, exit, output, date and runner. -->
@@ -221,6 +233,50 @@ RISK-VALUE: DERIVED — ExitUsage = 2 @ tools/desk/internal/cli/cli.go:18 — th
 RISK-VALUE: DERIVED — tier default = "any" @ tools/desk/cmd/deskdispatch/cli.go:70 — identical to the pre-migration default (old dispatch.go:196). The brief requires the same worktree, branch and claim per invocation, and this default is part of that.
 
 **VERIFY: PASS** — rows 1-9 pass in the witness, and row 8 now passes with CELLCTL_GH_AMBIENT inherited. Row 10 is check:ci: it could not run in the witness on darwin and passes by hand network-off. Its network-off rerun belongs to the CI lane.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLIHelpOffline$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIHelpOffline " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 2 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLIConfigFlow$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIConfigFlow " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 3 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLILegacyForms$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLILegacyForms " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go run ./cmd/muhar -j 1 -spec internal/clicontract/testdata/mutations/desktools-v2-21.json` | pass exit=0 sandbox=container-netns | sha256:eac64beff788 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test -count=1 ./cmd/deskdispatch/...` | pass exit=0 sandbox=container-netns | sha256:4ea9bfb7394a | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && GOOS=windows go vet ./cmd/deskdispatch` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 7 | `f=$(mktemp) && cd tools/desk && CLI_OWNER=desktools-v2/21 go test -count=1 -v ./internal/clicontract -run '^TestCLIOwnerMigrated$' > "$f" 2>&1 && grep -F -e "--- PASS: TestCLIOwnerMigrated " "$f"` | pass exit=0 sandbox=container-netns | sha256:079e29e7466b | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 8 | `bash tools/desk/internal/regression/check-floor.sh` | pass exit=0 sandbox=container-netns | sha256:f88f81ddef3d | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --consumers` | pass exit=0 sandbox=container-netns | sha256:40df24304ba3 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 10 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestCLIHelpDoesNotDiscoverManifests$' ./cmd/deskdispatch/ > "$out" && grep -F -- '--- PASS: TestCLIHelpDoesNotDiscoverManifests ' "$out")` | pass exit=0 sandbox=container-netns | sha256:ec8e26753941 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#3521 run=2df8a7e4a1a23bb45933a1e6effcb0d1514af48e1800dd85641a87351896dc29 source=0e661b6e15de107efcf05ed7d8d0d21983eb3afa brief=docs/streams/desktools-v2/brief-21-migrate-deskdispatch-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+
+### Verifier pass — 2026-10-19 (merged main 0e661b6e15de, re-wake re-verify)
+
+The execution witness above ran at source 0e661b6e15de107efcf05ed7d8d0d21983eb3afa in a local docker container, image assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie, git 2.47), started with `--network none`, verifyrun sandbox=container-netns with the engine's default seccomp profile, GOPROXY=off and GOTOOLCHAIN=local. Admission is the Verification-Attestation line above (medici-finance/assay#3521); the dispatcher admission check returned 0 on the pre-witness run and on the post-witness run. This runner follows the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). The prior Evidence verdict was PASS on 2026-10-19 at 8bc28e8edf84, landed with an environment hold, since the darwin host could not execute row 10. Since then the brief gained the perf-v3 delivery amendment (version 3, Verify table unchanged), and the deskdispatch package changed only in the verifier prompt text and its test (840e269e0, medici-finance/assay#3464). The by-hand runs below were made on the darwin host in this home with network allowed, one at a time, with row 4 run alone; they are separate from the witness.
+
+| # | Command | Expected | Observed | Date / runner |
+|---|---|---|---|---|
+| 1 | Verify row 1 command as written | exit 0, one top-level PASS | witness: pass exit=0; by hand: exit 0, `--- PASS: TestCLIHelpOffline` once, 126 subtests PASS, 0 FAIL | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 2 | Verify row 2 command as written | exit 0, one top-level PASS | witness: pass exit=0; by hand: exit 0, `--- PASS: TestCLIConfigFlow` once, 31 subtests PASS, 0 FAIL | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 3 | Verify row 3 command as written | exit 0, one top-level PASS | witness: pass exit=0; by hand: exit 0, `--- PASS: TestCLILegacyForms` once, 856 subtests PASS, 0 FAIL | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 4 | Verify row 4 command as written | exit 0, `Totals: N caught, 0 NOT CAUGHT, 0 could-not-mutate.` with N equal to the spec's mutation count | witness: pass exit=0; by hand: exit 0, last line `Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate.`; the spec has 10 mutations plus 1 control | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 5 | Verify row 5 command as written | exit 0 | witness: pass exit=0; by hand: exit 0, `ok` for the deskdispatch package | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 6 | Verify row 6 command as written | exit 0 | witness: pass exit=0; by hand: exit 0, no output | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 7 | Verify row 7 command as written | exit 0, named PASS | witness: pass exit=0; by hand: exit 0, `--- PASS: TestCLIOwnerMigrated` printed | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 8 | Verify row 8 command as written | exit 0, every floor seed passes | witness: pass exit=0 network-off; by hand: exit 0, `seed passes=26`, `--- PASS: TestReg1145ShimCredential` | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 9 | Verify row 9 command as written | exit 0 | witness: pass exit=0; by hand: exit 0, summary `0 corroborated, 0 disproved, 8 unchecked` | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 10 | Verify row 10 command as written | exit 0, named PASS | witness: pass exit=0 under container-netns with `--network none`, the network-off execution this check:ci row requires; by hand with network allowed: exit 0, `--- PASS: TestCLIHelpDoesNotDiscoverManifests` | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+
+No row failed in the witness or by hand, so no failure classification applies.
+
+Risk-bearing values: frontmatter risk metadata is present with all four fields "no", and the gate is model. Enumerated over the delivering diff for the deskdispatch package and the mutation spec, plus the change since the prior pass (8bc28e8edf84..0e661b6e15de, which adds no literal constant to the package; prompt.go:512 only adds the BLOCKED marker to the verifier assignment text):
+- ExitUsage = 2 @ tools/desk/internal/cli/cli.go:18. Syntax errors exit 2; domain refusals keep 5. Reversible.
+- tier default = "any" @ tools/desk/cmd/deskdispatch/cli.go:70. Same as the pre-migration default.
+- kit default = "worker" @ tools/desk/cmd/deskdispatch/cli.go:70. Same as the pre-migration default.
+Each can be reversed with an edit and a redeploy.
+
+RISK-VALUE: DERIVED — ExitUsage = 2 @ tools/desk/internal/cli/cli.go:18 — the shared CLI contract fixes exit 2 for unknown input before any handler runs (cli-contract.md:23), and it is the code Go's flag package already used; domain refusals keep 5 and unavailable reads keep 6, so callers keyed on custody outcomes see no change.
+RISK-VALUE: DERIVED — tier default = "any" @ tools/desk/cmd/deskdispatch/cli.go:70 — identical to the pre-migration default; the brief requires the same worktree, branch and claim per invocation, and this default is part of that.
+
+**VERIFY: PASS** — all 10 Verify rows pass with 0 fail in the network-off container witness at 0e661b6e15de, row 10 included, and every row also passes by hand.
 
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.

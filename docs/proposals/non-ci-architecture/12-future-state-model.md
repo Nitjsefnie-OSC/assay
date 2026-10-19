@@ -221,3 +221,14 @@ completed experiment cannot assert adoption or subsequent exposure. The proposed
 implemented by public desk-improvement/01–10; an adopter qualifies its own permitted inputs
 and scope. Missing bindings/labels stay unresolved and cannot silently invalidate unrelated
 approved work or satisfy a mandatory acceptance claim.
+
+## Performance attribution in target handoff — requested amendment, 19 October 2026
+
+Bind future tool/runtime measurement to the [perf-v3 contract](../../performance-attribution-spec.md):
+local qualified work, session/agent/invocation identity and causal parent links, originating
+desk and assigned execution role, request timing and nullable measured/estimated GraphQL
+cost. Desired support, implemented instrument version, released version, selected collection
+profile and actual covered observations remain separate facts. A source schema never proves
+that a live subagent is attributed. Work changes per invocation; shared session overhead is
+not assigned to the last brief. Export consumes aliased profile-selected observations through
+the existing performance-collection owner; target bindings confer no collection authority.
