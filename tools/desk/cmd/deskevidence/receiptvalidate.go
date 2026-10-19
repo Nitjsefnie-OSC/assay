@@ -79,7 +79,7 @@ func localBriefPath(root, stream, num string) (string, error) {
 // record's own sha is necessarily already in the past, so the local checkout (which every
 // verify-desk invocation of deskevidence runs from) already carries it.
 func gitShowAt(root, sha, relPath string) ([]byte, error) {
-	cmd := exec.Command("git", "-C", root, "show", sha+":"+relPath)
+	cmd := outcomeGit(root, "show", sha+":"+relPath)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -96,7 +96,7 @@ func gitShowAt(root, sha, relPath string) ([]byte, error) {
 // the same sha), so any failure here is attributable to relPath simply being absent at that sha —
 // exactly the "(planned) file not yet written" case the brief's rule exempts.
 func gitPathKindAt(root, sha, relPath string) (kind string, exists bool) {
-	cmd := exec.Command("git", "-C", root, "cat-file", "-t", sha+":"+relPath)
+	cmd := outcomeGit(root, "cat-file", "-t", sha+":"+relPath)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -225,6 +225,9 @@ func validateReceiptBriefHashAsLanded(fg deskkit.Forge, fr deskkit.ForgeRepo, br
 	if rerr != nil {
 		return deskkit.Unverifiable("cannot read "+briefPath+" on "+branch+" to check the receipt's brief revision", rerr)
 	}
+	if kerr := plainFileRead(cur, fr, briefPath, branch, "the receipt's brief revision", true); kerr != nil {
+		return kerr
+	}
 	gotHash := deskkit.Sha256Hex(cur.Content)
 	if !strings.EqualFold(strings.TrimSpace(wantHash), gotHash) {
 		return deskkit.Refused(fmt.Sprintf(
@@ -233,4 +236,10 @@ func validateReceiptBriefHashAsLanded(fg deskkit.Forge, fr deskkit.ForgeRepo, br
 			key, briefPath, branch, wantHash, gotHash))
 	}
 	return nil
+}
+
+func outcomeGit(root string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", append([]string{"--no-replace-objects", "-C", root}, args...)...)
+	cmd.Env = deskkit.VerifierReadEnv()
+	return cmd
 }

@@ -235,6 +235,28 @@ else
     "no-repo path reports clearly" "stderr: ${ERR:-<empty>}"
 fi
 
+# ---------------------------------------------------------------- origin ----
+# regression: #2724
+echo "origin — the origin fallback resolves every github.com URL form"
+w="$TMPROOT/origin"
+make_gh "$w" 0 '[]' ""
+n=0
+for url in "https://github.com/o/r.git" "https://github.com:443/o/r.git" "https://u:pw@github.com:443/o/r" \
+           "ssh://git@github.com/o/r.git" "ssh://git@github.com:22/o/r" "git@github.com:o/r.git"; do
+  n=$((n + 1)); rd="$w/repo-$n"; mkdir -p "$rd"; git -C "$rd" init -q 2>/dev/null
+  git -C "$rd" remote add origin "$url"; rm -f "$w/argv.log"
+  (cd "$rd" && PATH="$w:$PATH" bash "$SCRIPT" >"$w/out" 2>"$w/err"); rc=$?
+  check "$([[ "$rc" -eq 0 ]] && grep -q -- 'o/r' "$w/argv.log" 2>/dev/null && echo 0 || echo 1)" \
+    "origin '$url' resolves to o/r and is queried" "rc=$rc argv=$(cat "$w/argv.log" 2>/dev/null) stderr=$(cat "$w/err")"
+done
+
+# regression: #2724
+w="$TMPROOT/origin-display"
+make_gh "$w" 0 '[]' ""
+run_case "$w" 'https://user:pw@example.com/o/r'
+check "$([[ "$RC" -eq 1 && "$ERR" == "assay-inbox: invalid repo 'https://example.com/o/r' (expected owner/name)" && ! -s "$w/argv.log" ]] && echo 0 || echo 1)" \
+  "invalid repo display strips userinfo before refusal without a forge read" "rc=$RC stderr=$ERR"
+
 # ---------------------------------------------------------------- F4 --------
 echo "F4 — the fetched url must actually be emitted"
 
@@ -1334,6 +1356,43 @@ check "$(contains "$OUT" "Blind is not idle" && echo 0 || echo 1)" \
 check "$(contains "$(flow_row "$OUT" intake)" " intake 4 " && echo 0 || echo 1)" \
   "a healthy reader still reports beside a failed one" "row: $(flow_row "$OUT" intake)"
 
+# --------------------------------------------------------------- FL9 -------
+echo "FL9 — a reader with no useful stderr gets a fallback diagnostic under errexit"
+
+# Regression: #3049. The reader's exit status is captured before diagnostic filtering;
+# empty output from the filter must not let pipefail/errexit skip the fallback or the render.
+for diagnostic in empty banner; do
+  w="$TMPROOT/fl9-$diagnostic"
+  make_flow_tools "$w"
+  mkdir -p "$w/alpha"
+  board_fixture "$w" alpha 7 3 11 2 40
+  flow_cell_fixtures "$w" alpha
+  throughput_fixture "$w" review
+  mv "$w/statusgen" "$w/statusgen-base"
+  cat > "$w/statusgen" <<EOF
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [[ "\$arg" == --bottleneck ]]; then
+    if [[ "$diagnostic" == banner ]]; then printf 'assay-config: fixture banner only\\n' >&2; fi
+    exit 17
+  fi
+done
+exec "$w/statusgen-base" "\$@"
+EOF
+  chmod +x "$w/statusgen"
+  run_case "$w" --flow --root "$w/alpha"
+  check "$([[ "$RC" -eq 2 ]] && echo 0 || echo 1)" \
+    "$diagnostic-only reader failure completes an incomplete render" "got $RC; stderr: ${ERR:-<empty>}"
+  check "$(contains "$ERR" 'FLOW READER FAILED statusgen --bottleneck (alpha) (exit 17): exit 17, no diagnostic' && echo 0 || echo 1)" \
+    "$diagnostic-only reader failure emits the exit-code fallback" "stderr: ${ERR:-<empty>}"
+  check "$(contains "$(flow_row "$OUT" todo)" could-not-check && [[ "$(flow_row "$OUT" todo)" != ' todo 0 '* ]] && echo 0 || echo 1)" \
+    "$diagnostic-only failure remains could-not-check, never zero" "row: $(flow_row "$OUT" todo)"
+  check "$(contains "$(flow_row "$OUT" intake)" ' intake 4 ' && echo 0 || echo 1)" \
+    "healthy intake reader still renders beside diagnostic-only failure" "row: $(flow_row "$OUT" intake)"
+  check "$(contains "$(flow_row "$OUT" review)" ' review * 9 ' && echo 0 || echo 1)" \
+    "healthy throughput reader still renders beside diagnostic-only failure" "row: $(flow_row "$OUT" review)"
+done
+
 # ---------------------------------------------------------------- FL4 -------
 echo "FL4 — --flow --html is a self-contained page with an inline SVG diagram"
 
@@ -1452,6 +1511,13 @@ check "$(contains "$OUT" "== cell alpha" && contains "$OUT" "== cell beta" && ec
 blocks=$(grep -c '^== ' <<<"$OUT" || true)
 check "$([[ "$blocks" -eq 3 ]] && echo 0 || echo 1)" \
   "one fleet block plus one block per cell (got $blocks, want 3)" "blocks: $blocks"
+# regression: #2724 — second display consumer, outside repo validation.
+git -C "$w/alpha" init -q
+git -C "$w/alpha" remote add origin 'https://user:pw@example.com/o/r.git'
+run_case "$w" --flow --root "$w/alpha" --root "$w/beta"
+check "$([[ "$RC" -eq 0 ]] && contains "$OUT" "== cell https://example.com/o/r" && ! contains "$OUT$ERR" "user:pw" && echo 0 || echo 1)" \
+  "cell name uses the same stripped display for a non-GitHub origin" "rc=$RC stdout=$OUT stderr=$ERR"
+
 # A single cell needs no per-cell repetition of the fleet row.
 run_case "$TMPROOT/fl1" --flow --root "$TMPROOT/fl1/alpha"
 blocks=$(grep -c '^== ' <<<"$OUT" || true)
