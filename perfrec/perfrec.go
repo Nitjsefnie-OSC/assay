@@ -348,6 +348,27 @@ func (w *Writer) Write(stateDir string, rec Record) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	if rec.Schema == SchemaV3 {
+		if info, err := os.Lstat(dir); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("perfrec: unsafe v3 directory")
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+		for _, name := range []string{"install-id", w.now().UTC().Format("2006-01-02") + ".jsonl"} {
+			p := filepath.Join(dir, name)
+			if info, err := os.Lstat(p); err == nil {
+				if !info.Mode().IsRegular() {
+					return errors.New("perfrec: unsafe v3 file")
+				}
+				if err = os.Chmod(p, 0o600); err != nil {
+					return err
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
 	w.pruneOnce(dir)
 	id, err := InstallID(dir)
 	if err != nil {

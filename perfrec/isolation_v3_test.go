@@ -91,7 +91,10 @@ func main(){c:=perfrec.ResolveContext(perfrec.ContextInput{});s:=perfrec.BeginSe
 	state := t.TempDir()
 	w := Writer{}
 	var offNS, onNS []int64
-	var payloadBytes int
+	sample := v3Record(v3Context("tool"))
+	sample.Install = string(bytes.Repeat([]byte("0"), 32))
+	encoded, _ := json.Marshal(sample)
+	payloadBytes := len(encoded) + 1
 	for i := 0; i < 100; i++ {
 		for _, armed := range []bool{false, true} {
 			start := time.Now()
@@ -107,8 +110,6 @@ func main(){c:=perfrec.ResolveContext(perfrec.ContextInput{});s:=perfrec.BeginSe
 				if e = w.Write(state, r); e != nil {
 					t.Fatal(e)
 				}
-				b, _ := json.Marshal(r)
-				payloadBytes = len(b)
 			}
 			elapsed := time.Since(start).Nanoseconds()
 			if armed {
