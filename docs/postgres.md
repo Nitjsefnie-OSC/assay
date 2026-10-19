@@ -173,7 +173,7 @@ absolute paths):
 ```
 
 ```xml
-<!-- launchd: ~/Library/LaunchAgents/com.example.assay-postgres-backup.plist -->
+<!-- launchd: $HOME/Library/LaunchAgents/com.example.assay-postgres-backup.plist -->
 <plist version="1.0"><dict>
   <key>Label</key><string>com.example.assay-postgres-backup</string>
   <key>ProgramArguments</key><array>
@@ -289,7 +289,9 @@ again (same passfiles), `restore.sh` each cell, run each consumer's reconcile pr
 **What holds: the database layer isolates cell roles from each other.** One cell's role, used as
 that role, cannot open another cell's database or act outside its own: PUBLIC holds no `CONNECT`
 on any cell database (the single control), and a role that did connect owns nothing there and is
-granted nothing (the second layer). `check-isolation.sh` detects drift in the first.
+granted nothing beyond PostgreSQL's default PUBLIC privileges (`USAGE` on schema `public`,
+`EXECUTE` on functions whose owner has not revoked it) — the second layer. `check-isolation.sh`
+detects drift in the first.
 
 **The administrator is trusted.** This profile does not isolate cells from the database
 superuser. A profile that needs that gets a separate server.
