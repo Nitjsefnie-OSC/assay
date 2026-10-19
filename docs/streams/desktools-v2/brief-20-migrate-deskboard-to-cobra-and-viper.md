@@ -197,6 +197,34 @@ Verification-Attestation: medici-finance/assay#3413 run=101d9fb421a83b8631166f19
 
 **VERIFY: FAIL** — row 10: TestCLIHelpDoesNotDiscoverManifests does not exist in ./cmd/deskboard at a724e99dcd89 (exit=1, no PASS line); rows 1-9 pass. The amendment's help-before-discovery test is undelivered.
 
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskboard -run '^TestCLIHelpOffline$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIHelpOffline " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 2 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskboard -run '^TestCLIConfigFlow$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIConfigFlow " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 3 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskboard -run '^TestCLILegacyForms$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLILegacyForms " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go run ./cmd/muhar -j 1 -spec internal/clicontract/testdata/mutations/desktools-v2-20.json` | pass exit=0 sandbox=container-netns | sha256:47c29ff10c70 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test -count=1 ./cmd/deskboard/...` | pass exit=0 sandbox=container-netns | sha256:2008d98f7c97 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && GOOS=windows go vet ./cmd/deskboard` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 7 | `f=$(mktemp) && cd tools/desk && CLI_OWNER=desktools-v2/20 go test -count=1 -v ./internal/clicontract -run '^TestCLIOwnerMigrated$' > "$f" 2>&1 && grep -F -e "--- PASS: TestCLIOwnerMigrated " "$f"` | pass exit=0 sandbox=container-netns | sha256:3b45f7b14f13 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 8 | `bash tools/desk/internal/regression/check-floor.sh` | pass exit=0 sandbox=container-netns | sha256:b4f6f81c5f90 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --consumers` | pass exit=0 sandbox=container-netns | sha256:40df24304ba3 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 10 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestCLIHelpDoesNotDiscoverManifests$' ./cmd/deskboard/ > "$out" && grep -F -- '--- PASS: TestCLIHelpDoesNotDiscoverManifests ' "$out")` | fail exit=1 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+
+### Re-wake verification — 2026-10-19
+
+Runner: local docker container, image assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e, git 2.47), `--network none`, sandbox=container-netns, default seccomp, per the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). Source 0e661b6e15de107efcf05ed7d8d0d21983eb3afa; independent verifier claude-opus-5-5 / strong.
+
+Verification-Attestation: medici-finance/assay#3518 run=4964d0f10c282156d5b5d38e3bb86366b3ee4649607af09ac2c3fc48aab92790 source=0e661b6e15de107efcf05ed7d8d0d21983eb3afa brief=docs/streams/desktools-v2/brief-20-migrate-deskboard-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+
+The prior Evidence verdict (2026-10-18 at a724e99dcd89) was FAIL on row 10 alone; since then the only change under tools/desk/cmd/deskboard is f4f2a9209 (a withdrawn-brief reconcile disposition in the stalled report), which adds no test.
+
+Row 10 — real deliverable defect. The witness records exit=1, and a by-hand run on darwin agrees: go test exits 0 with "testing: warning: no tests to run" and "ok .../cmd/deskboard [no tests to run]", so the grep finds no PASS line. No function named TestCLIHelpDoesNotDiscoverManifests exists in tools/desk/cmd/deskboard at the source or at origin/main 9f0cd4a5f79f; the only one is in tools/desk/cmd/deskdispatch (brief desktools-v2/21's matching row, which passes there). The row is not stale: the test name was never renamed or removed from this package, because it was never delivered here. The 2026-10-16 performance amendment requires a compiled-command help-before-discovery effect count, and that test has not been written for deskboard. Rows 1-9 pass in the witness and by hand.
+
+RISK-VALUE: DERIVED — UsageExit = deskkit.ExitRefused (5) @ tools/desk/cmd/deskboard/main.go:219, constant at tools/desk/internal/deskkit/exitcodes.go:51 — unchanged since the prior derivation; the shared refused exit is what callers branch on.
+RISK-VALUE: DERIVED — min-age-hours "48", merge-now-threshold "20m", unreviewed-threshold "30m" @ tools/desk/cmd/deskboard/main.go:108-110 — unchanged, equal to the pre-migration constants; reversible operational knobs.
+
+**VERIFY: FAIL** — row 10: TestCLIHelpDoesNotDiscoverManifests is still absent from ./cmd/deskboard at 0e661b6e15de (exit=1, no PASS line); rows 1-9 pass.
+
 
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.
