@@ -3,12 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/medici-finance/assay/perfrec"
-	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
 // regression: desktools-v2/64

@@ -32,6 +32,23 @@ func TestPerfV3LauncherChildFlow(t *testing.T) {
 	brief := perfrec.WorkRef{Kind: "brief", Repo: "example/project", Brief: "example:project:work:1", Primary: true}
 	issue := perfrec.WorkRef{Kind: "issue", Forge: "github", Instance: "github.com", Repo: "example/project", Issue: 2, Primary: true}
 	contexts := []perfrec.Context{PerfAgentContext(parent, "implement", []perfrec.WorkRef{brief}, nil), PerfAgentContext(parent, "review", []perfrec.WorkRef{issue}, nil)}
+	// The existing native fixture observes role after its own launch composition.
+	// Also exercise the shared executor directly: diagnostic desk attribution must
+	// preserve the caller-selected operational loop before a child handler starts.
+	probeHome := t.TempDir()
+	probeSource := filepath.Join(probeHome, "role.go")
+	if err := os.WriteFile(probeSource, []byte("package main\nimport (\"fmt\"; \"os\")\nfunc main(){fmt.Print(os.Getenv(\"DESK_LOOP\"))}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	probe := filepath.Join(probeHome, "role-probe")
+	if out, err := exec.Command("go", "build", "-o", probe, probeSource).CombinedOutput(); err != nil {
+		t.Fatalf("probe build: %v %s", err, out)
+	}
+	authority := Run(ToolCall{Name: probe, Env: env, Context: WithPerfContext(context.Background(), contexts[0])})
+	if authority.Stdout != "pr-review-desk" || authority.ExitCode != 0 {
+		t.Fatal("shared executor changed operational desk authority")
+	}
+
 	var wg sync.WaitGroup
 	results := make([]ToolRun, 2)
 	for i, c := range contexts {

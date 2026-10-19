@@ -27,6 +27,9 @@ exec-tier-why: "Cross-process identity, compatibility and negative-path coverage
 domain: complicated
 outcome: none
 consumers:
+  - "perfrec/lifecycle.go: fixed-here (public immutable child composition; schema and resolver remain /63)"
+  - ".github/workflows/ci.yml: fixed-here (execute the admitted runner module's lifecycle and isolation qualification)"
+  - "tools/desk/internal/deskkit/citrigger_test.go: fixed-here (register and qualify that cross-module execution boundary)"
   - "tools/desk/cmd/cellctl and deskdispatch: fixed-here"
   - "tools/desk/internal/deskkit/runtool.go: fixed-here"
   - "tools/desk/internal/cli/ and clicontract/: fixed-here"
@@ -46,6 +49,9 @@ consumers:
 ## Context
 
 files:
+- `perfrec/lifecycle.go`
+- `.github/workflows/ci.yml`
+- `tools/desk/internal/deskkit/citrigger_test.go`
 - `tools/desk/cmd/cellctl/`
 - `tools/desk/cmd/deskdispatch/`
 - `tools/desk/internal/deskkit/runtool.go`

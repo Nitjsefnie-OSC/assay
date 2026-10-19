@@ -1,5 +1,5 @@
 {
-  "test": "go test -timeout=120s -count=1 -run '^TestPerfV3LauncherChildFlow$|^TestPerfV3CLIContextPrecedence$' ./internal/deskkit ./internal/clicontract",
+  "test": "go test -timeout=120s -count=1 -run '^TestPerfV3LauncherChildFlow$|^TestPerfV3CLIContextPrecedence$|^TestPerfRunnerCI$|^TestPerfV3RealDeskLaunch$' ./internal/deskkit ./internal/clicontract ./cmd/cellctl",
   "control": {
     "name": "do not propagate typed child context",
     "file": "internal/deskkit/runtool.go",
@@ -42,6 +42,18 @@
       "file": "internal/cli/performance.go",
       "old": "if cmd.Context() == nil {",
       "new": "if false {"
+    },
+    {
+      "name": "remove runner suite from CI execution",
+      "file": "../../.github/workflows/ci.yml",
+      "old": "*/loopadmin|loopadmin) extra=\"GOWORK=off go test ./...\" ;;",
+      "new": "*/loopadmin|loopadmin) extra=true ;;"
+    },
+    {
+      "name": "let attribution override operational desk authority",
+      "file": "../../perfrec/lifecycle.go",
+      "old": "d := c.Data()",
+      "new": "d := c.Data(); out = append(out, \"DESK_LOOP=\"+d.DeskRole)"
     }
   ]
 }

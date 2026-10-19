@@ -2,11 +2,12 @@ package runner
 
 import (
 	"context"
-	"github.com/medici-finance/assay/perfrec"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/medici-finance/assay/perfrec"
 )
 
 type perfAdapter struct {

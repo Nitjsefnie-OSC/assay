@@ -96,7 +96,7 @@ func checkCurrentParser(t *testing.T, name, work string) {
 		t.Fatalf("build: %v %s", err, out)
 	}
 	home := t.TempDir()
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "USERPROFILE=" + home, "KUBECONFIG=/dev/null", "DESK_LOOP=worker-desk", "ASSAY_TELEMETRY=1", "ASSAY_PERF_PROFILE=workflow", "ASSAY_PERF_ROLE=implement", "ASSAY_PERF_WORK=[]"}
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "USERPROFILE=" + home, "KUBECONFIG=/dev/null", "DESK_LOOP=worker-desk", "ASSAY_TELEMETRY=1", "ASSAY_PERF_PROFILE=workflow", "ASSAY_PERF_ROLE=implement", "ASSAY_PERF_SESSION_ID=" + strings.Repeat("a", 32), "ASSAY_PERF_AGENT_ID=" + strings.Repeat("b", 32), "ASSAY_PERF_PARENT_AGENT_ID=" + strings.Repeat("c", 32), "ASSAY_PERF_PARENT_INVOCATION_ID=" + strings.Repeat("d", 32), `ASSAY_PERF_WORK=[{"kind":"brief","repo":"example/project","brief":"example:project:work:1","primary":true}]`}
 	args := map[string][]string{"deskclaim": {"list"}, "deskclaim-ref": {"list"}, "deskboot": {"worker-desk", "--dry-run"}, "desktoken": {"coverage", "invalid-role"}, "deskread": {"issues", "--repo", "example/project"}, "deskgitlab": {"create"}}[name]
 	run := func(extra ...string) ([]byte, int) {
 		cmd := exec.Command(bin, append(append([]string(nil), args...), extra...)...)
@@ -130,7 +130,7 @@ func checkCurrentParser(t *testing.T, name, work string) {
 		t.Fatalf("records=%d", len(records))
 	}
 	r := records[1]
-	if r.Schema != perfrec.SchemaV3 || r.V3.Attribution.Role != "review" || r.V3.Attribution.DeskRole != "pr-review-desk" || len(r.V3.Attribution.Work) != 1 || r.V3.Attribution.Work[0].Issue != 2 {
+	if r.Schema != perfrec.SchemaV3 || r.V3.Attribution.Role != "review" || r.V3.Attribution.DeskRole != "pr-review-desk" || r.V3.Attribution.SessionID != "" || r.V3.Attribution.AgentID != strings.Repeat("b", 32) || len(r.V3.Attribution.Work) != 1 || r.V3.Attribution.Work[0].Issue != 2 {
 		t.Fatal("current parser did not reach typed recorder")
 	}
 	invalid, invalidCode := run("--perf-role=private invalid metadata", "--perf-work=not JSON")
@@ -159,7 +159,7 @@ func checkCurrentParser(t *testing.T, name, work string) {
 	if err := json.Unmarshal(lines[len(lines)-1], &toolRecord); err != nil {
 		t.Fatal(err)
 	}
-	if toolRecord.V3.Profile != perfrec.ProfileTool || toolRecord.V3.Attribution.Role != "" || len(toolRecord.V3.Attribution.Work) != 0 {
+	if toolRecord.V3.Profile != perfrec.ProfileTool || toolRecord.V3.Attribution.Role != "" || toolRecord.V3.Attribution.SessionID != "" || toolRecord.V3.Attribution.AgentID != "" || toolRecord.V3.Attribution.ParentAgentID != "" || toolRecord.V3.Attribution.ParentInvocationID != "" || toolRecord.V3.Attribution.DeskRole != "" || len(toolRecord.V3.Attribution.Work) != 0 {
 		t.Fatal("tool profile persisted inherited linkage")
 	}
 
