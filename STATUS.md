@@ -28,7 +28,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-20 |  |
 | [harness-portability](docs/streams/harness-portability/README.md) | P2 | active | 5/17 | 2026-10-19 |  |
 | [iso-9001](docs/streams/iso-9001/README.md) | P2 | active | 4/11 | 2026-10-19 |  |
-| [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-19 |  |
+| [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-20 |  |
 | [quality](docs/streams/quality/README.md) | P2 | active | 16/19 | 2026-10-19 |  |
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/35 | 2026-10-20 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-19 |  |
@@ -125,7 +125,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 8cf362d0 2026-10-20T12:13:00Z_
+_last regen: 0e9b8aad 2026-10-20T12:16:31Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -146,7 +146,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 8cf362d0 2026-10-20T12:13:00Z_
+_last regen: 0e9b8aad 2026-10-20T12:16:31Z_
 
 **Progress:** 34/83 brief items done.
 
