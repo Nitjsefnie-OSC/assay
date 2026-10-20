@@ -19,6 +19,9 @@ sources:
   - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - "assay:assay:desktools-v2:62 — consumer routing for the 2026-10-16 performance amendment"
   - "2026-10-16 performance authoring amendment, inspected origin/main eba941721; docs/streams/desktools-v2/README.md performance priority"
+  - "medici-finance/assay#3353 — cell startup scratch scan; measurements on v1.0.48"
+  - "medici-finance/assay#3099 — remaining parent launch telemetry coverage"
+  - "freshness-checked 2026-10-20 @ eb82d5b62 (merged main, installed v1.0.51); the 2026-10-18 v1.0.49 install recorded source 3cb57291e"
   - docs/streams/performance-collection/README.md
   - docs/telemetry.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md
@@ -58,7 +61,7 @@ consumers:
 
 ## Context
 
-files: `perfdata/adapters/` (planned), `perfdata/cmd/perfdata/` (planned), `perfdata/testdata/sources/` (planned), `loopadmin/runner/client.go` (existing), `loopadmin/runner/telemetry.go` (planned), `loopadmin/runner/telemetry_test.go` (planned), `loopadmin/go.mod` (existing), `loopadmin/go.sum` (planned), `tools/desk/internal/deskkit/dispatchrecord.go` (existing), `tools/desk/internal/deskkit/perfexport.go` (planned), `tools/desk/internal/deskkit/perfexport_test.go` (planned), `tools/desk/go.mod` (existing), `tools/desk/go.sum` (existing), `docs/performance-collection.md` (planned), `docs/contracts.md` (existing), `docs/streams/graph-execution/brief-26-shared-loop-admin.md` (existing), `changelog/performance-collection-02.md` (planned), `perfdata/adapters/phasecost_test.go` (planned)
+files: `perfdata/adapters/` (planned), `perfdata/cmd/perfdata/` (planned), `perfdata/testdata/sources/` (planned), `loopadmin/runner/client.go` (existing), `loopadmin/runner/telemetry.go` (planned), `loopadmin/runner/telemetry_test.go` (planned), `loopadmin/go.mod` (existing), `loopadmin/go.sum` (planned), `tools/desk/internal/deskkit/dispatchrecord.go` (existing), `tools/desk/internal/deskkit/perfexport.go` (planned), `tools/desk/internal/deskkit/perfexport_test.go` (planned), `tools/desk/go.mod` (existing), `tools/desk/go.sum` (existing), `docs/performance-collection.md` (planned), `docs/contracts.md` (existing), `docs/streams/graph-execution/brief-26-shared-loop-admin.md` (existing), `changelog/performance-collection-02.md` (planned), `perfdata/adapters/phasecost_test.go` (planned); additional startup scope: `perfdata/adapters/cellstart_test.go` (planned).
 
 facts (source pin in frontmatter; planned paths/tests are deliverables, not implemented claims):
 - DispatchRecordSchema in tools/desk/internal/deskkit/dispatchrecord.go is dispatch-record-v1. dispatch_ref already distinguishes attempts; its raw value and repo/item fields are private local data, never an upload-safe ID.
@@ -147,6 +150,23 @@ collector policy owns admission scope; the store owns committed receipts. Perfor
 observations confer no work, acceptance or effect authority. Unsupported mandatory schema
 or unavailable measurements must remain visible through every downstream reader.
 
+### Cell startup source coverage — 2026-10-18
+
+Extend the existing phase importer/observer fixtures to cover /26's optional launch observations:
+cell preparation, lock wait, scratch admission, final cache enrollment and confirmed child start,
+with parent cell invocation and role-attempt correlation only through the permitted alias profile.
+Treat `up` request, printed launch line, process-start receipt and later deskboot as different facts.
+Reuse the /01 phase contract; source version/coverage identifies absent fields. Importing old rows
+cannot manufacture a launch timestamp. Shared preparation is a parent cost, not one cost per desk;
+concurrent role intervals overlap. Refused/failed/unknown starts stay in cohort accounting.
+
+The producer repair (effective parent opt-in and complete phases) belongs to graph-execution/26
+and source issue #3099. This L brief consumes its saved records at the existing seams only: no
+cellctl policy edit, new collector, journal or reverse dependency. Fixtures work without that
+repair, and label missing coverage explicitly. Record installed version separately from measured
+version: #3353's 173.16-second sample is v1.0.48; later installed v1.0.49 is not a new sample.
+The existing privacy, consent, loss and no-blocking-under-lock rules apply unchanged.
+
 ## Verify
 
 All named tests below are **implementation deliverables**, not tests already executed.
@@ -164,6 +184,7 @@ below, exercising production code rather than an independently reimplemented che
 | 6 | check:ci +flow | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && go test -count=1 -v -run '^TestOperatingReportSourceCoverage$' ./... > "$o" && grep -F -- '--- PASS: TestOperatingReportSourceCoverage ' "$o")` | exit 0; named test runs and passes, including the negative cases in Task 8. Imported totals and coverage reach the local report output unchanged, with unknown and unsupported fields kept distinct from zero. |
 | 7 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPhaseProducerFlow$' ./... > "$o" && grep -F -- '--- PASS: TestPhaseProducerFlow ' "$o")` | exit 0; named PASS. Real adapter fixtures reconstruct nested work without double count; old perf-v1 yields unknown fields. Consent-off, drop/slow sink and missing children preserve domain results and expose coverage. Required CI evidence and operational budget accounting are identical with the optional sink on, off, dropped or slow. |
 | 8 | check:ci +flow +mutation | `(cd perfdata && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerformanceInstrumentVersionImport$' ./adapters/... > "$out" && grep -F -- '--- PASS: TestPerformanceInstrumentVersionImport ' "$out")` | exit 0; named PASS; legacy and successor desk/statusgen fixtures preserve boundary, nullable coverage and stable import identity; mixed-version naive totals and absent-to-zero plants fail |
+| 9 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestCellStartSourceCoverage$' ./... > "$o" && grep -F -- '--- PASS: TestCellStartSourceCoverage ' "$o")` | exit 0; named PASS. Versioned up/role/start fixtures preserve one shared cost, overlapping intervals, failure/unknown coverage and distinct measured/installed versions. Mutation: use launch-request time as confirmed start or fill missing phases with zero; test fails. |
 
 ## Pre-mortem and detection
 
