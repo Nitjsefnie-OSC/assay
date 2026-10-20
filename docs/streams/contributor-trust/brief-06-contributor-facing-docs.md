@@ -47,13 +47,8 @@ version: 1
 ## Context
 
 files:
-- `CONTRIBUTING.md` — a new section stating the trust bar: that automation acts only on
-  maintainer-admitted items, that submissions from unrecognised accounts carry a mechanically
-  derived provenance comment and what it measures, that trust levels exist and what each
-  unlocks, and that who holds which level is not published.
-- `.github/PULL_REQUEST_TEMPLATE.md` (planned) (new) — the claims checklist, the how-I-verified prompt,
-  and the automated-assistance disclosure field (whose tiering consequence is stated in
-  `contributor-trust/07`, not here).
+- `CONTRIBUTING.md` — a new section stating the trust bar: that automation acts only on maintainer-admitted items, that submissions from unrecognised accounts carry a mechanically derived provenance comment and what it measures, that trust levels exist and what each unlocks, and that who holds which level is not published.
+- `.github/PULL_REQUEST_TEMPLATE.md` (planned) (new) — the claims checklist, the how-I-verified prompt, and the automated-assistance disclosure field (whose tiering consequence is stated in `contributor-trust/07`, not here).
 - `docs/contributor-trust.md` (planned) — the contributor-facing entry point into the published model.
 - `changelog/contributor-trust-docs.md` (new).
 

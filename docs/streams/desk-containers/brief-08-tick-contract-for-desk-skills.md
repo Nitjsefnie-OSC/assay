@@ -91,14 +91,10 @@ not because anything in wave 1 or 2 blocks it.
 files:
 - `plugins/assay/references/tick-contract.md` (planned) (new) — the single statement of the contract.
 - `.claude/guardrails/GUARDRAILS.md` — a sixth declared block, `tick-mode`, with five sites.
-- `plugins/assay/skills/the-desk/SKILL.md`, `plugins/assay/skills/intake-desk/SKILL.md`,
-  `plugins/assay/skills/worker-desk/SKILL.md`, `plugins/assay/skills/pr-review-desk/SKILL.md`,
-  `plugins/assay/skills/verify-desk/SKILL.md` — one added `## Tick mode` section each, derived
-  from the declared block; no other line of any of the five changes.
-- `plugins/assay/scripts/tick-summary.sh` (planned), `plugins/assay/scripts/tick-summary.test.sh` (planned) (both
-  new) — the summary-line grammar as one executable, and its hermetic case suite.
+- `plugins/assay/skills/the-desk/SKILL.md`, `plugins/assay/skills/intake-desk/SKILL.md`, `plugins/assay/skills/worker-desk/SKILL.md`, `plugins/assay/skills/pr-review-desk/SKILL.md`, `plugins/assay/skills/verify-desk/SKILL.md` — one added `## Tick mode` section each, derived from the declared block; no other line of any of the five changes.
+- `plugins/assay/scripts/tick-summary.sh` (planned), `plugins/assay/scripts/tick-summary.test.sh` (planned) (both new) — the summary-line grammar as one executable, and its hermetic case suite.
 - `docs/streams/desk-containers/README.md` — the board row, the narrative and the wave entry.
-- `changelog/<slug>.md` — the fragment.
+- `changelog/tick-contract-dc08-09141911.md`, `changelog/tick-mode-slice1-dc08-09141911.md` — the fragment (the names the delivering change used).
 
 Nothing under `.github/workflows/`, `containers/`, `tools/` or any manifest is touched: the new
 suite is picked up by the existing shell-suite CI job through its `*.test.sh` glob, so the change

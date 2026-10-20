@@ -11,7 +11,7 @@
     ".cursor/references/tick-contract.md": "65e6ac141091a31120f5eefd126891409ed1a92c376d6ef3f99fd8ea52e86ee7",
     ".cursor/rules/assay.mdc": "e03a0e2bdee840b3f216cd10f15d292e4f688ebf71efde878a023306621c6f74",
     ".cursor/skills/adopt/SKILL.md": "8a2fda684f224efd2a35c1ccfbe5d842d2f91d168d342f70d5b027b16adfd3f8",
-    ".cursor/skills/ask-decision/SKILL.md": "bbf7721dc0147706b1c05657f93c5860302c14f8ddc0c41b3b3efbad5a2fddfb",
+    ".cursor/skills/ask-decision/SKILL.md": "d51f84897dd83f2b8d472b0b66e5ade2ff2045d251add1e2b8387880b72726d4",
     ".cursor/skills/author-brief/SKILL.md": "e00b6ba6759a741aadc65215dfbbacd5bb1ca9a91afbcca2bf0f4cd5bd1e7ad2",
     ".cursor/skills/author-spec/SKILL.md": "894ba89c27e661b43347ad08edf4fa133386c7fd407bf2d228d16a70a3364f8e",
     ".cursor/skills/author-spec/references/quality-requirements.md": "b89b1d814fa8737f73273c964cf94a772321e4006161a8e0422f54c1acb2901b",
@@ -19,7 +19,7 @@
     ".cursor/skills/cut-release/SKILL.md": "2df521c7f987b39290e0ac005dcc80137b644aed8e03b42ff3c681b99bfe46fb",
     ".cursor/skills/human-runsheet/SKILL.md": "49a1be45544edab6acc05230edbfbe51563f7f3cfab4a7926ad526364adc144e",
     ".cursor/skills/install/SKILL.md": "4bdb8a56f9e24c39986ce7a8963c86b9ba172a8e47ee040891a33203db01996d",
-    ".cursor/skills/intake-desk/SKILL.md": "61ce60444353329d484d56311947a312f2a94bea499efa3ecb883b2826358137",
+    ".cursor/skills/intake-desk/SKILL.md": "5daabea1b99fec85c5747afe3d57174f51c60694dff8071c8bdcf937a9d6f0d8",
     ".cursor/skills/pdfingest/SETUP.md": "ff2c52f24528164712ae951caa729f90318b16dbe5d604f2b8e24aa955773f23",
     ".cursor/skills/pdfingest/SKILL.md": "18d69fb22a5d6ccbb9cb8a174f9d8f5ef5a9154d9cb305a89f630f12991feea9",
     ".cursor/skills/pr-review-desk/SKILL.md": "1f263f84b8064e8558b59ac1c893df7e2cc3c2c8e08c9d94ce3ec6d8eea3165d",
@@ -36,8 +36,8 @@
     ".cursor/skills/the-desk/SKILL.md": "a4ea60e056c6cf96a58b20dc696e57681f826c79e35c9573ebc47203aa6a0d62",
     ".cursor/skills/upgrade-assay/SKILL.md": "50b924bd9561444210f6c6bc141fffe14de90583b346e2fd7b58553dec80c2ac",
     ".cursor/skills/verify-desk/SKILL.md": "358e1fd4dc80e19b53604630fdc36b3666b9fa95a7b65142e09652cf13427d6e",
-    ".cursor/skills/worker-desk/SKILL.md": "7f5228fec73fd3673d86b3ee4fbe75f9410870d4fb2488892ac736f0f0dc0d47",
-    ".cursor/skills/worker-desk/references/dispatch-runbook.md": "40663c1769e33eedca3ace94eabd18f4d1801cd64b80f2b000345ed9004f1d18"
+    ".cursor/skills/worker-desk/SKILL.md": "9b3f374bd76f6750875a023c497c41e40a0a47b9b3e318a8a3223be7290932f8",
+    ".cursor/skills/worker-desk/references/dispatch-runbook.md": "61f6196d7830a57b9ef84c2cf4b2d4862a62207625893fc74e91f0e878b8672b"
   },
   "bindingsSha256": "0ba43e7f693ce2dc2a7b78de6a8e6f417da5cfe08659094062deaae91f34810b"
 }
