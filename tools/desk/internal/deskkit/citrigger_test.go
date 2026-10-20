@@ -183,6 +183,48 @@ func TestCrossModuleTestsAreTriggeredByWhatTheyRead(t *testing.T) {
 	}
 }
 
+// TestPerfRunnerCI keeps the newly admitted local recorder edge's qualification
+// active in the public source layout, where the historical house registry sweep
+// above deliberately skips its unavailable tools.yml fixture. Reuse its event,
+// job and read-coverage parser rather than adding a second workflow checker.
+// regression: desktools-v2/64
+func TestPerfRunnerCI(t *testing.T) {
+	const root = "../../../.."
+	for _, e := range ciCrossModuleRegistry() {
+		if e.test != "loopadmin/runner/request_test.go" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(root, e.workflow))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range []string{"pull_request", "push"} {
+			job := e.prJob
+			if event == "push" {
+				job = e.pushJob
+			}
+			ciAssertEventReachesJob(t, string(raw), e.workflow, e.module, event, job, e.runInvokes, e.test, e.why)
+			content := string(raw)
+			// The source workflow deliberately has unfiltered event headers.
+			// The legacy path helper refuses that shape; recognize it explicitly
+			// without relaxing its fail-closed behavior for other registry rows.
+			if !regexp.MustCompile(`(?m)^  ` + event + `:[ \t]*$`).MatchString(content) {
+				t.Fatal("runner workflow event is absent or has an unqualified shape")
+			}
+			if _, filtered := ciOnEventKey(t, content, e.workflow, event, "paths"); filtered {
+				for _, fault := range ciReadCoverage(t, root, workflowEventPaths(t, content, e.workflow, event), e.reads) {
+					t.Error(fault)
+				}
+			}
+			if _, ignored := ciOnEventKey(t, content, e.workflow, event, "paths-ignore"); ignored {
+				t.Fatal("runner dependency reads must not be hidden by an unqualified paths-ignore filter")
+			}
+		}
+		return
+	}
+	t.Fatal("runner dependency guard is absent from the cross-module registry")
+}
+
 // ciCrossModuleRegistry is the hand-maintained roster of tests that deliberately
 // read outside their own Go module. Both tests in this file consume it: the
 // trigger/reachability guard above, and the staleness scanner below.
@@ -220,6 +262,13 @@ func ciCrossModuleRegistry() []ciEntry {
 	}
 
 	registry := []ciEntry{
+		{
+			test: "loopadmin/runner/request_test.go", module: "loopadmin",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"perfrec/"},
+			runInvokes: []string{`*/loopadmin|loopadmin) extra="GOWORK=off go test ./..." ;;`},
+			why:        "Runner dependency isolation observes the exact local perfrec module closure through go list; the unfiltered source workflow executes its suite after any producer or dependency edit.",
+		},
 		{
 			test: "tools/desk/cmd/deskboard/flow_45_test.go", module: "tools/desk",
 			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
