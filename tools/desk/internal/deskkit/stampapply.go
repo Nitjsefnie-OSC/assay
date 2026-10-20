@@ -36,11 +36,13 @@ func stampTimelineForIssue(f Forge, repo ForgeRepo, number int, issue *Issue) (S
 	if issue == nil {
 		return StampTimeline{}, Unverifiable("cannot read model stamp provenance", fmt.Errorf("missing issue"))
 	}
-	events, err := f.ListIssueLabelEvents(repo, number)
+	tl := StampTimeline{Present: issue.Labels}
+	var err error
+	tl.Events, err = f.ListIssueLabelEvents(repo, number)
 	if err != nil {
-		return StampTimeline{}, Unverifiable("cannot read model stamp provenance", err)
+		return tl, Unverifiable("cannot read model stamp provenance", err)
 	}
-	return StampTimeline{Present: issue.Labels, Events: events}, nil
+	return tl, nil
 }
 
 // ApplyVerifiedModelStamp is the shared issue/change applier. Success means the

@@ -12,6 +12,7 @@ type verifierObservationForge struct {
 	afterHistory                func()
 	finalReadError              bool
 	timelineError               bool
+	incompleteHistory           bool
 }
 
 func (f *verifierObservationForge) GetIssueTyped(repo ForgeRepo, n int, kind TargetKind) (*Issue, error) {
@@ -30,6 +31,9 @@ func (f *verifierObservationForge) GetIssueTyped(repo ForgeRepo, n int, kind Tar
 func (f *verifierObservationForge) IssueTrustEvents(repo ForgeRepo, n int) (*TrustPayload, error) {
 	f.histories++
 	got, err := f.verifierForge.IssueTrustEvents(repo, n)
+	if got != nil && f.incompleteHistory {
+		got.Complete = false
+	}
 	if f.afterHistory != nil {
 		f.afterHistory()
 	}
@@ -51,6 +55,7 @@ func TestVerifierObservationPreservesProvenanceAndCurrentState(t *testing.T) {
 		{"valid", nil},
 		{"edited-history", func(f *verifierObservationForge) { f.edited = true }},
 		{"unknown-history", func(f *verifierObservationForge) { f.missingHistory = true }},
+		{"incomplete-history", func(f *verifierObservationForge) { f.incompleteHistory = true }},
 		{"incomplete-labels", func(f *verifierObservationForge) { f.timelineError = true }},
 		{"current-read-unavailable", func(f *verifierObservationForge) { f.finalReadError = true }},
 		{"body-moves-after-history", func(f *verifierObservationForge) {
