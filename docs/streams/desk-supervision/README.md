@@ -130,7 +130,7 @@ suppress a reclaim on the other. The full framing is at the top of `desk-supervi
 | 19 | [Persist review findings and apply the existing round cap across sessions](brief-19-review-finding-continuity.md) | 0 | M | verified | 2026-10-04 assay-verifier-app[bot] @ 70deba75a577 (claude-opus-5-5) | — |
 | 20 | [Review scope and first-pass completeness](brief-20-review-scope-and-first-pass.md) | 0 | M | implemented | — | — |
 | 21 | [Reverify changed external prerequisites without a synthetic push](brief-21-external-prerequisite-reverification.md) | 1 | M | implemented | — | — |
-| 22 | [Configure provider, model and effort per cell role](brief-22-cell-model-policy.md) | 0 | M | verified | 2026-10-20 assay-verifier-app[bot] @ b73d90d774fc (claude-opus-5-5) | — |
+| 22 | [Configure provider, model and effort per cell role](brief-22-cell-model-policy.md) | 0 | M | done | 2026-10-20 assay-verifier-app[bot] @ b73d90d774fc (claude-opus-5-5) | 2026-10-20 assay-reviewer-app[bot] (approved PR #1388 @ 81e625c97dfdee520b4ee2e2cbc2cb4d2398461e) |
 | 23 | [Evidence lands on main behind a file-scoped gatekeeper — validator workflow + lander App](brief-23-evidence-lander-gatekeeper.md) | 2 | L | todo | — | — |
 | 24 | [One file per verify outcome — retire the shared appended outcomes log](brief-24-per-file-verify-outcomes.md) | 0 | L | implemented | — | — |
 | 25 | [Carry a correctness approval across a merge of main that leaves the PR's diff byte-identical](brief-25-approval-carry-across-no-diff-merge.md) | 1 | L | todo | — | — |
