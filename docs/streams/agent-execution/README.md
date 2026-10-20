@@ -34,6 +34,7 @@ activation gates stay separate, and existing human and deployment gates still bi
 | 06 | [Investigate AX compatibility through offline contract fixtures](brief-06-ax-offline-compatibility.md) | 3 | M | todo | — | — |
 | 07 | [Evaluate governed harness refinement with isolated offline fixtures](brief-07-harness-refinement-evaluation.md) | 3 | M | todo | — | — |
 | 08 | [Qualify a Kubernetes verification runner through the existing supervisor](brief-08-qualify-a-kubernetes-verification-runner-through-the-existing-supervisor.md) | 12 | M | todo | — | — |
+| 09 | [Qualify interactive Kubernetes standing desks through the shared runner](brief-09-qualify-interactive-kubernetes-standing-desks-through-the-shared-runner.md) | 9 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 The generator owns the table. All eight briefs are M-sized, strong-tier work. New tests and
@@ -124,3 +125,14 @@ adds one executor profile through the existing supervisor after /03 and graph-ex
 /25 (wave 12). It does not block the interim local evidence pilot. Offline adapter proof
 and later disposable-cluster qualification are distinct. The stream remains parked; neither
 the new brief nor the user's implementation-planning request activates a cluster profile.
+
+## Interactive Kubernetes standing profile — 20 October 2026
+
+[Amendment 28](../../proposals/non-ci-architecture/28-interactive-kubernetes-desks.md)
+routes new /09 after /03 and graph-execution/27 (wave 9), without graph-execution/21 or /25.
+Existing /08 additionally follows /09 for shared transport, retaining its distinct bounded
+verifier Job restrictions and controller/publication prerequisites. /09 -> desk-containers/28
+-> /29 supplies the in-cluster operator and complete five-role qualification. No native
+Windows dependency or second runtime owner. Current optimization, custody and unknown-stop
+contracts remain. The stream stays parked pending its controlling amendment's admission;
+authoring /09 does not activate a profile.

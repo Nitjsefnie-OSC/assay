@@ -3,7 +3,7 @@ brief: assay:assay:desk-containers:04
 title: interactive desktop launch script (desk-run.sh)
 wave: 3
 depends: ["desk-containers/02", "desk-containers/03"]
-unblocks: ["desk-containers/07"]
+unblocks: []
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}

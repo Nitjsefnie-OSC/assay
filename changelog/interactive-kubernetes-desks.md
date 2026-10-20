@@ -1,0 +1,2 @@
+- Plan separately interactive Kubernetes desk Pods with an in-cluster Linux cellctl operator, removing native Windows from the required delivery path.
+- Reconcile container packaging, shared runtime, credential isolation, optimization and end-to-end recovery qualification under the existing public Assay owners.
