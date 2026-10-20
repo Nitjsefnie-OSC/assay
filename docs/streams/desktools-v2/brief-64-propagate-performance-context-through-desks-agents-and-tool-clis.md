@@ -186,6 +186,71 @@ interface at existing launch/child seams.
 
 <!-- Independent verifier records subject revision, environment, command, exit and named result. -->
 
+### Independent verification — 2026-10-20 (dispatched verifier, claude-opus-5-5, tier strong)
+
+Subject: merged source f3724a2d07a8ee8e3ac42f4e87300637e4e3153b (detached home, clean before
+and after every run). Delivery is the two-parent merge 4b7f4847f7f3 (PR #3582); the Verify
+section is byte-identical at the original, base, delivery and source revisions.
+`deskpathguard rederive` re-derived 4 original rows, 0 author-added, all from base; every
+original row ID, Command, Expect and class below is the original one.
+Admission: `deskdispatch --check-verifier` exit 0 before the first row and exit 0 again
+after the last, same binding.
+
+Verification-Attestation: medici-finance/assay#3771 run=4c27a0692c0233e6e2079a4cac3c3046200a59e6f670cee0ec68e8751a2de458 source=f3724a2d07a8ee8e3ac42f4e87300637e4e3153b brief=docs/streams/desktools-v2/brief-64-propagate-performance-context-through-desks-agents-and-tool-clis.md model=claude-opus-5-5 tier=strong
+
+Verification-Table: delivery=4b7f4847f7f3531185fdfb23fbf978ae9551a242 base=b73d90d774fca8aec8974ef410da63ebcb10eece original=3d737b4871bf604e698c6c96427bb89c5e794db7
+
+Environment: macOS host, Go toolchain from the home, pinned desk shims v1.0.52, offline,
+KUBECONFIG=/dev/null. Each row was also run by hand inside a local docker container
+(image assay-verify:go1.27, `--network none`, only loopback present, home mounted read-only),
+with the same exit and named result as on the host.
+
+| # | Command | Expected | Observed | Date / runner |
+|---|---|---|---|---|
+| 1 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3LauncherChildFlow$' ./internal/deskkit/ > "$out" && grep -F -- '--- PASS: TestPerfV3LauncherChildFlow ' "$out")` | exit 0; named PASS; planted inherited child invocation/agent ID, stale work and cross-task global context fail | exit 0 — `--- PASS: TestPerfV3LauncherChildFlow (1.13s)` (container: exit 0, 3.90s). Fail-first at base b73d90d7: exit 1 (named test absent). Mutation: all 7 named plants red (inherited agent ID, inherited invocation ID, grandparent parent invocation, stale work, cross-task global context 3 of 3 reps, manufactured child opt-in, attribution overriding the desk loop). Discriminating. | 2026-10-20 assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+| 2 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3CLIContextPrecedence$' ./internal/clicontract/ > "$out" && grep -F -- '--- PASS: TestPerfV3CLIContextPrecedence ' "$out")` | exit 0; named PASS; changing claim identity, token custody or their parser exemptions is a failing control | exit 0 — `--- PASS: TestPerfV3CLIContextPrecedence (6.56s)` (container: exit 0, 6.21s). Fail-first at base: exit 1. Mutation: claim identity (claim target repo from attribution work) and token custody (custody role from attribution role) plants are red. **Parser-exemption control does not discriminate:** flipping the registry state exempt to migrated in docs/streams/desktools-v2/cli-migration.json for deskclaim (line 598), deskclaim-ref (619), desktoken (1387) and deskboot (564), one at a time, leaves this exact command at exit 0 with `--- PASS: TestPerfV3CLIContextPrecedence` every time. The same desktoken flip turns TestCLIInventory, TestCLIResearchReplay and TestCLIRoutingMutations red in the same package, which this row's run filter excludes. Row FAILS its mutation obligation. | 2026-10-20 assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+| 3 | `(cd loopadmin && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3RunnerIdentityLifecycle$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3RunnerIdentityLifecycle ' "$out")` | exit 0; named PASS; fresh/resumed/replaced identities, unknown native ID stays a gap, disabled sink cannot block launch | exit 0 — `--- PASS: TestPerfV3RunnerIdentityLifecycle (0.00s)` (container: exit 0). Fail-first at base: exit 1. Mutation: 7 of 7 plants red (no explicit resume, retention past seven UTC days, concealed unknown-mapping gap, replacement inheriting the previous agent, disabled sink blocking launch, diagnostics mutating the launch request, resume keeping stale work). Discriminating. | 2026-10-20 assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+| 4 | `statusgen --root . --consumers --brief desktools-v2/64` | exit 0; changed consumer routing corroborates the actual diff; unavailable is not pass | exit 2 — `statusgen: --consumers: COULD-NOT-CHECK: assay:assay:desktools-v2:64 is not in the diff against f3724a2d…, and the brief's delivery could not be derived: the committed Evidence has no Verification-Table marker naming the delivery. No routing claim was corroborated and none was disproved.` Same in the container. Could-not-check, counted as unpassed. The cause is ordering: the marker in this Evidence run is not on main yet. Supplemental probes with no acceptance credit: `--delivery 4b7f4847… --base 9d4ae27f…` gave exit 0, 13 corroborated, 0 disproved, 2 unchecked (both out-of-scope entries). The exact row command in a local-only scratch clone with this marker committed (never pushed) gave exit 0 with the same 13/0/2 summary. | 2026-10-20 assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+
+Totals: 4 required rows. Rows 1 and 3 pass and discriminate. Row 2 has an exit 0 named PASS
+but fails its mutation obligation (parser-exemption control). Row 4 is could-not-check
+(could-not-run accounting: 1 row). The supplemental row 4 probes give it no acceptance credit.
+
+Container witness (`statusgen verifyrun --dry-run --sandbox container-netns`, same image,
+`--network none`, no credentials mounted): could not run, and the cause is the environment.
+The output was `pre-work verifier admission failed; no Verify rows executed: exit status 5 …
+cannot mint the verifier App installation token … ("desktoken": executable file not found in
+$PATH) … ForgeFor never falls back to an ambient gh-CLI identity`, verifyrun exit 2.
+verifyrun's in-process admission has to mint a forge credential over the network. The
+credential-free, network-less container cannot do that by design. No workaround was tried.
+This is not a code result. The hand runs above are the evidence.
+
+Advisory (no verdict weight):
+- An R2 plant that removes the telemetry gate inside the resolver survives row 2. The write
+  path has its own `Enabled()` gate, which masks it.
+- An R1 plant that makes the tool profile forward workflow linkage inside ContextEnv survives
+  row 1. The tool-profile resolver filters it later. Row 1 does not name this plant.
+- Row 2's "offline help" clause could not be mutated in any way that can be observed: deskclaim-ref
+  handles help before the performance binding, and desktoken, deskclaim and deskboot exit the
+  same way before and after a help-shadow plant.
+- The named test hardcodes its entrypoint list. No Go code reads docs/performance-entrypoints.json
+  (123 rows, consistent with the registry, 0 mismatches).
+- The 19 October amendment is outside the protected table. TestPerfV3LauncherChildFlow covers
+  consent off and absent protocol admission together. It has no separate protocol-off case,
+  no concurrent two-work-item case and no unknown-service-context case.
+- Shipped mutation specs: the deskdispatch performance mutations are 18 of 18 caught and the
+  runner performance mutations 4 of 4 caught. Supplemental only.
+
+Raw outputs that print the role-context flag by name, roster echo lines and the full test logs
+are kept in the verifier's local scratch and not copied here.
+
+RISK-VALUE: DERIVED — mapping retention cutoff = today.AddDate(0, 0, -6) @ loopadmin/runner/performance.go:54 — keeps mappings dated today−6 through today, which is exactly seven UTC days and matches the brief's "maximum seven-UTC-day retention" for memory-only native-ID mappings. A plant extending it to −7 is red under row 3.
+RISK-VALUE: DERIVED — handoff dir mode = 0700 @ tools/desk/cmd/deskdispatch/performance_handoff.go:28, group/other refusal mask = 0077 @ performance_handoff.go:32, handoff file mode = 0o600 @ tools/desk/internal/packet/packet.go:747 — owner-only directory and file, refused if any group/other bit is set, as the brief's 0700/0600 private handoff requires. Shipped deskdispatch mutations are red. These values are not covered by a Verify-row command.
+RISK-VALUE: DERIVED — handoff expiry = today.AddDate(0, 0, 7) as expiresBeforeUtc @ tools/desk/cmd/deskdispatch/performance_handoff.go:49, and handoff prune cutoff = today.AddDate(0, 0, -6) @ performance_handoff.go:56 — valid for today through today+6 and pruned once older than today−6, so both bounds are seven UTC days as the brief states.
+Ranked lower, reversible: perfrec NewID = 16 random bytes (32 hex) @ tools/desk/internal/perfrec/context.go:113. The MaxWork = 8 and MaxWorkBytes = 4096 bounds @ context.go:76-77 come from desktools-v2/63, not this diff.
+
+**VERIFY: FAIL** — row 2: TestPerfV3CLIContextPrecedence does not fail when any claim or token-custody entrypoint's parser exemption is flipped in the CLI migration registry. The row's Expect names that as a failing control, so this risk-bearing row does not discriminate. Row 4 is separately could-not-check until this marker lands.
+
 ## Review
 
 Gate: human. Reject changed legacy meanings, guessed identity/cost, lost coverage or optional measurement that changes an operation.
