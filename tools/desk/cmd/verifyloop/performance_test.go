@@ -13,6 +13,7 @@ import (
 
 	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/regression"
 )
 
 // Capture the production factory before TestMain installs its offline default.
@@ -403,5 +404,26 @@ func TestVerifyPerformanceUnsignedRowsPhase(t *testing.T) {
 	r := p.session.Finish("verifyloop", "verdict", "none", 0, "")
 	if phaseCount(r, "queue-scan") != 1 || phaseCount(r, "rows") == 0 || phaseCount(r, "sign") != 0 {
 		t.Fatalf("unsigned phases %+v", r.Phases)
+	}
+}
+
+// A hook may export GIT_DIR and related variables while running this suite.
+// Fixture setup must write only its own repository, including config and index.
+func TestVerifyPerformanceGitFixtureIsolation(t *testing.T) {
+	victim := regression.HostileGitDir(t)
+	before := regression.SnapshotTree(t, victim)
+	fixture := t.TempDir()
+	gitT(t, fixture, "init", "-q")
+	gitT(t, fixture, "remote", "add", "origin", "https://github.com/example-org/tracker.git")
+	if err := os.WriteFile(filepath.Join(fixture, "fixture.txt"), []byte("fixture\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitT(t, fixture, "add", ".")
+	gitT(t, fixture, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
+	if changes := before.Changes(regression.SnapshotTree(t, victim)); changes != "" {
+		t.Fatalf("fixture modified caller repository:\n%s", changes)
+	}
+	if _, err := os.Stat(filepath.Join(fixture, ".git", "HEAD")); err != nil {
+		t.Fatalf("fixture repository missing: %v", err)
 	}
 }

@@ -84,6 +84,12 @@
       "file": "cmd/verifyloop/verdictrun.go",
       "old": "for _, it := range items {\n\t\tstop := cfg.performance.phase(\"rows\")",
       "new": "for _, it := range items {\n\t\tstop := cfg.performance.phase(\"other\")"
+    },
+    {
+      "name": "SA1: fixture git inherits caller repository redirects",
+      "file": "cmd/verifyloop/durablepush_test.go",
+      "old": "cmd.Env = regression.FixtureEnv(\"GIT_TEMPLATE_DIR=\"+gitquiet.TemplateDir(t), \"GIT_CONFIG_NOSYSTEM=1\", \"GIT_CONFIG_GLOBAL=\"+os.DevNull)",
+      "new": "cmd.Env = append(os.Environ(), \"GIT_TEMPLATE_DIR=\"+gitquiet.TemplateDir(t))\n\t_ = regression.FixtureEnv"
     }
   ]
 }
