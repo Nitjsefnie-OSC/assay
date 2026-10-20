@@ -3,7 +3,7 @@ brief: assay:assay:desk-containers:06
 title: Kubernetes manifests for the five desks
 wave: 3
 depends: ["desk-containers/02", "desk-containers/03"]
-unblocks: ["desk-containers/12", "desk-containers/13", "desk-containers/14", "desk-containers/27"]
+unblocks: ["desk-containers/12", "desk-containers/13", "desk-containers/14", "desk-containers/27", "desk-containers/28"]
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
@@ -19,80 +19,115 @@ why: >-
   The second half of the request's secondary aim: run the same desk images on a
   cluster, with per-desk persistent volumes and credentials from k8s Secrets, so a desk
   can live on shared infrastructure instead of one person's desktop.
-version: 1
+version: 4
 id: 9ff1192a-c441-4dd3-b574-85b8cf85954e
+exec-tier: strong
+exec-tier-why: Per-role persistence, credential profiles and offline validation cross artifacts.
+consumers:
+  - "containers/k8s/: follow-up desk-containers/06"
+  - "docs/docker.md: follow-up desk-containers/06"
+outcome: none
+
 ---
 
-# Brief 06 — Kubernetes manifests
+# Brief 06 — Kubernetes manifests for separately interactive desks
 
 ## Context
 
-files:
-- `containers/k8s/` (new): `namespace.yaml`, one `<desk-name>.yaml` per desk
-  (StatefulSet, replicas: 1, + its PVC via volumeClaimTemplates),
-  `secret.example.yaml` (placeholder values only), `kustomization.yaml`.
-- `docs/docker.md` — add the k8s section.
+files: `containers/k8s/` (planned namespace, five StatefulSets/PVCs, Kustomize base, placeholder-only secret example and `check.sh`), `docs/docker.md`, `changelog/kubernetes-desk-manifests.md` (planned).
 
-facts:
-- One StatefulSet per desk, named exactly by desk name, image
-  `ghcr.io/medici-finance/assay/<desk-name>:<pinned tag>` (kustomize `images:` is the
-  version knob); `stdin: true` + `tty: true` so `kubectl attach -it` gives the
-  interactive session the desks run as today.
-- PVC per desk mounted at `/work` (volumeClaimTemplates; storage class left to the
-  overlay).
-- Credentials per `containers/secrets.md` (planned): PEM from a k8s Secret mounted read-only at
-  `/run/secrets/assay/app.pem` (defaultMode 0400); model credentials via `envFrom:
-  secretRef`. `secret.example.yaml` documents the shape with obviously-fake values;
-  real Secrets are created out-of-band by the operator, never committed.
-  `secret.example.yaml` is documentation only: it is NOT listed in `kustomization.yaml`'s
-  `resources:`, so `kubectl apply -k` never creates a placeholder Secret over an operator's
-  real one, and a build of the base (or of an overlay on it) contains no `kind: Secret`.
-- Baseline pod hardening: runAsNonRoot, no privilege escalation, resources
-  requests/limits set; the desks need outbound network only (GitHub + model
-  endpoints) — no Service/Ingress.
-- These manifests are a deployment TEMPLATE shipped in a public repo — cluster-specific
-  values (storage class, real secret names, node placement) belong in a downstream
-  kustomize overlay, not here.
+facts: Assay main d8687cab6 inspected 20 October 2026; the five desk images exist but
+containers/k8s does not. Each configured desk gets its own Pod/container and PVC at /work,
+replicas 1, stdin/tty enabled, pinned image digest and explicit namespace/container name.
+Storage class and deployment values belong to an adopter overlay. A Running Pod is not an
+admitted role owner; the managed launch owner is graph-execution/26–27 plus agent-execution/09.
+
+layering: Kustomize packages existing role images; offline structured render/schema checks
+validate packaging. Runtime ownership and credential policy remain in their existing owners.
+No controller or process supervisor is introduced by a manifest.
+
+design-fit:
+  owner: existing image/profile owners; Kustomize is packaging
+  contract: containers/secrets.md compatibility contract; managed profile follows agent-execution/09
+  retires: []
+  weight: verbs +0, flags +0 runtime, refusals +0 runtime policy, packaging files +7 plus check fixtures
+  why-add: Kubernetes needs declarative workload packaging; one shared base and opt-in profile overlays avoid separate launch engines.
+
+## Read first
+
+- [Current target and migration routing](../../proposals/non-ci-architecture/28-interactive-kubernetes-desks.md).
+- [Credential contract](../../../containers/secrets.md) and [historical spec](spec.md).
 
 ## Ground rules
-- NEVER git push to main / trigger workflows / run mutating infra commands (no kubectl
-  against any live cluster — validation is client-side only). Feature branch + draft
-  PR only.
-- Stop at `implemented` — you do not set verified/done.
-- NEVER commit `STATUS.md` on a branch (single writer = main's CI).
-- Placeholder values only in `secret.example.yaml` — never a real credential.
-- If anything is unclear or contradicts repo state: report NEEDS_CONTEXT, don't guess.
+
+Branch/draft PR only; no workflow, deployment or live API contact. Render with pinned local
+Kustomize and kubeconform plus cached schemas. Never run kubectl apply, including a claimed
+client-only dry run, as offline validation. Stop at implemented; independent verifier owns
+Evidence. No credential value in manifests, layers or examples.
 
 ## Task
-1. Write the manifests per the facts: namespace, five StatefulSets + PVCs, example
-   Secret, kustomization tying them together with the image-pin knob.
-2. Document the k8s flow in `docs/docker.md`: create the real Secrets out-of-band,
-   `kubectl apply -k`, then `kubectl attach -it <desk-name>-0` to work interactively;
-   note the template/overlay boundary.
 
-## Verify (executable — no prose-only DoD items)
-| # | Command | Expect |
-|---|---------|--------|
-| 1 | `kubectl kustomize containers/k8s/ > /dev/null` | exit 0 — the set builds |
-| 2 | `kubectl kustomize containers/k8s/ \| grep -c 'kind: StatefulSet'` | 5 |
-| 3 | `kubectl kustomize containers/k8s/ \| grep -c '/run/secrets/assay'` | count ≥ 5 — every desk mounts the PEM Secret |
-| 4 | `kubectl kustomize containers/k8s/ \| grep -c 'volumeClaimTemplates'` | count ≥ 5 — persistent /work per desk |
-| 5 | `kubectl kustomize containers/k8s/ \| grep -c 'runAsNonRoot: true'` | count ≥ 5 |
-| 6 | `kubectl apply --dry-run=client -k containers/k8s/` | exit 0 — client-side validation passes (no live cluster is touched) |
-| 7 | `grep -c -e 'ghs_' -e 'ghp_' -e 'github_pat_' -e 'sk-ant-' -e 'PRIVATE KEY' $(find containers/k8s -name '*.yaml'); test $? -eq 1` | exit 0 — no credential-shaped value in any committed manifest |
+1. Package namespace and one StatefulSet/PVC per configured current desk, stdin/tty true,
+   pinned digest, declared resources, non-root, no privilege escalation, dropped capabilities
+   and explicit service-account token automount disabled for agent workloads. Require
+   default-deny ingress and no Service/Ingress exposing desk terminals. Compatibility
+   egress is explicitly allowed only to its qualified forge/model endpoints and DNS;
+   managed /09 owns its stricter API/metadata/CNPG/direct-forge denial. Preserve role
+   names/image compatibility and independently retained work volumes. No hostPath, privileged
+   container, Docker socket or hidden dependency on a desktop multiplexer.
+2. Document the **compatibility** profile's runtime Secret references and model configuration
+   under the existing human-gated /02 contract. Secret examples contain placeholders only and
+   are excluded from Kustomize resources; a build produces no credential Secret. Explicitly
+   disclose that App-PEM-bearing legacy images do not satisfy the managed target's isolation.
+   /09 and /28 own managed boot/overlay changes; do not pretend a manifest removes that custody.
+   Keep each independent role's App-PEM and model credential Secret references distinct;
+   the checker rejects a shared credential Secret between role workloads. Compatibility
+   terminal access is transitive key custody and cannot use the /28 managed operator.
+3. Supply offline render/schema and structured checks plus hostile manifest fixtures. Reject
+   one workload hosting all roles, absent/duplicate role, missing PVC/tty, mutable image,
+   privileged/host mounts, agent service-account credential or example Secret in the build.
+   Checks must fail on each planted defect and make zero API/discovery requests. Extend
+   the same checker with `--source-secrets` to scan every committed manifest/example,
+   including unrendered Secret examples, using the existing pinned credential scanner.
+   Keep a synthetic positive control that is excluded from rendering yet still rejected.
+   Reject terminal Service/Ingress exposure, absent ingress deny and shared per-role
+   credential Secret references. The repository-wide credential scan remains independent.
+4. Update docs/docker.md with the operator-installed apply/attach workflow, explicit Pod and
+   container selection, storage/Secret/profile limits and disconnect behavior. Distinguish
+   attaching a retained session from creating a process. Link the future in-cluster operator
+   /28; no Windows, compose, CronJob or workflow-controller prerequisite for this package.
+
+## Verify
+
+The script and fixtures below are implementation deliverables; checks are entirely offline.
+
+For the consumer row, the independent verifier obtains the actual implementation delivery
+from the merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or this authoring PR. Both commits must be available in the verification
+checkout; absent/unknown provenance fails closed. Retain exact consumer result counts and
+resolve unchecked required consumers separately; zero disproofs alone is not complete flow
+coverage. These inputs are future implementation-verification evidence, not claims made here.
+
+| # | Class | Command | Expect |
+|---|---|---|---|
+| 1 | check +flow +dereference | `sh containers/k8s/check.sh --base` | exit 0; pinned render/cached-schema validation and structured assertions prove five distinct interactive role workloads/PVCs, image pins and explicit identity; no API calls or credential Secret in rendered output |
+| 2 | check +mutation | `sh containers/k8s/check.sh --base --self-test` | exit 0; checker reports every hostile fixture rejected; removing a role, tty, PVC, image digest or token isolation fails; fixture containing an example Secret fails |
+| 3 | check +neighbour | `sh containers/scripts/layer-secret-scan.test.sh` | exit 0; current image credential-layer protections remain; coordinate any merged scan replacement rather than restoring a retired scanner |
+| 4 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief desk-containers/06 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
+| 5 | check +mutation | `sh containers/k8s/check.sh --source-secrets --self-test` | exit 0; all committed manifests and unrendered examples are scanned; excluded-example synthetic credential is rejected independently of rendering |
 
 ## Definition of Done
-- Verify rows green, recorded in Evidence by a non-implementer.
-- Credentials arrive only from k8s Secrets at runtime per the brief-02 contract;
-  **no secret in any image layer** and none in any committed manifest (row 7 — the
-  example Secret is placeholder-only).
-- A cluster operator can deploy from `docs/docker.md` alone: Secrets out-of-band,
-  apply, attach; cluster-specific values stay in a downstream overlay.
+
+The package and docs implement the declared compatibility scope, all offline rows are
+independently witnessed and managed isolation remains explicitly unqualified until /09,/28,/29.
+Human acceptance of /02 is not replaced by this model-gated packaging review.
 
 ## Evidence
-<!-- appended at implementation time by a NON-implementer: one row per Verify item. -->
+
+<!-- Independent verifier records commands, exact versions, profile and observations. -->
 
 ## Review
-Gate: model (all four risk answers no — a deployment template with placeholder
-secrets, implementing the human-gated brief-02 contract; no live cluster is touched).
-Reviewer confirms rows 3/5/7 and the template/overlay boundary.
+
+Gate: model, unchanged risk answers: generic offline templates only, no custody redesign.
+Review all structured negative controls and the honest compatibility/managed distinction.
