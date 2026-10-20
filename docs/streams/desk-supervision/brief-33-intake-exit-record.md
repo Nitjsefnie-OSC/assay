@@ -54,15 +54,24 @@ consumers:
 
 ## Context
 files:
-- **edit** `spec/registers-v1.md` — §5.2: three OPTIONAL frontmatter keys on an intake entry (`triaged`, `triaged-by`, `triager-tier`); new §5.4 "Exit record": the disposition → exit mapping table and a pointer to the record schema doc.
-- **add** `spec/intake-exit-v1.md` (first planned in this stream's directory; moved because `tools/desk` ships and its schema test must not name a withheld stream path) — the record schema: fields table, closed vocabularies, the never-recorded list, where each writer puts records.
-- **edit** `statusgen/registerentries.go` (+ test) — `intakeEntry` gains `Triaged`, `TriagedBy`, `TriagerTier`; value checks when present.
-- **add** `statusgen/intakeexits.go` (planned) + `statusgen/intakeexits_test.go` (planned) — the disposition → exit mapping and the `--intake-exits --json` export.
+- **edit** `spec/registers-v1.md` — §5.2: three OPTIONAL frontmatter keys on an intake entry
+  (`triaged`, `triaged-by`, `triager-tier`); new §5.4 "Exit record": the disposition → exit
+  mapping table and a pointer to the record schema doc.
+- **add** `spec/intake-exit-v1.md` (first planned in this stream's directory; moved because `tools/desk` ships and its schema test must not name a withheld stream path) — the record schema: fields
+  table, closed vocabularies, the never-recorded list, where each writer puts records.
+- **edit** `statusgen/registerentries.go` (+ test) — `intakeEntry` gains `Triaged`, `TriagedBy`,
+  `TriagerTier`; value checks when present.
+- **add** `statusgen/intakeexits.go` (planned) + `statusgen/intakeexits_test.go` (planned) — the
+  disposition → exit mapping and the `--intake-exits --json` export.
 - **edit** `statusgen/main.go` — register the `--intake-exits` flag.
-- **edit** `tools/desk/cmd/scanloop/land.go`, `adapter.go` (+ tests) — build and append an `intake-exit-v1` record in `Land`, beside the existing `auditExit` line.
-- **add** `tools/desk/cmd/scanloop/exitrecord.go` (planned) + `exitrecord_test.go` (planned) — the record type, validation and append; `landverb.go` (planned) + `landverb_test.go` (planned) — the `scanloop land` verb for judgment exits.
+- **edit** `tools/desk/cmd/scanloop/land.go`, `adapter.go` (+ tests) — build and append an
+  `intake-exit-v1` record in `Land`, beside the existing `auditExit` line.
+- **add** `tools/desk/cmd/scanloop/exitrecord.go` (planned) + `exitrecord_test.go` (planned) — the
+  record type, validation and append; `landverb.go` (planned) + `landverb_test.go` (planned) — the
+  `scanloop land` verb for judgment exits.
 - **edit** `tools/desk/cmd/scanloop/main.go` — dispatch and usage for `land`.
-- **edit** `plugins/assay/skills/intake-desk/SKILL.md` — the triage steps (lines 31-42 table, 408-433 intake lane): stamp the intake entry; run `scanloop land` after routing a judgment item.
+- **edit** `plugins/assay/skills/intake-desk/SKILL.md` — the triage steps (lines 31-42 table,
+  408-433 intake lane): stamp the intake entry; run `scanloop land` after routing a judgment item.
 - **edit** `tools/desk/README.md` — scanloop section: the `land` verb and the record file.
 - **add** `changelog/desk-supervision-33.md` (planned).
 
