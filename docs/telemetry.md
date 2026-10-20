@@ -250,8 +250,10 @@ the budget whichever schema recorded it. Its rules:
 
 - A perf-v2 record whose `http` counter is `unavailable` is an unavailable run: it adds no
   calls and sits in no distribution, and a row with no measured run prints `-`, never `0`.
-- `statusgen`'s perf-v1 `forgeCalls` is documented as "not counted" (below), so its records
-  are unavailable runs too; perf-v1 has no unavailable state of its own.
+- Older `statusgen` builds wrote perf-v1 with `forgeCalls` always `0`, meaning "not
+  counted", so a `statusgen` perf-v1 record is an unavailable run too; perf-v1 has no
+  unavailable state of its own. Current `statusgen` writes perf-v2, whose `http` counter is
+  read like any other perf-v2 record.
 - Steps are never read (their calls belong to the invocation), and perf-v3 records stay in
   their own section.
 - The figures are HTTP attempts, not GraphQL quota points. 5000 requests per hour is the floor

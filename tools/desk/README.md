@@ -543,8 +543,10 @@ code or its output. Per-invocation agent usage (tokens, cost) is the agent runne
   calls, and the rate-limit cost — the busiest UTC hour's calls, and that hour and the p90 run
   as a percentage of the 5000/hour App budget floor (pooled over every tool and installation:
   a gauge, not a bound). It pools perf-v1 `forgeCalls` and the perf-v2
-  `http` counter (one seam, one budget); a run whose counter is unavailable — or a
-  `statusgen` record, whose 0 means "not counted" — prints as unavailable, never as zero.
+  `http` counter (one seam, one budget); a run whose counter is unavailable — or a perf-v1
+  `statusgen` record from an older build, whose 0 means "not counted" — prints as
+  unavailable, never as zero. Current `statusgen` writes perf-v2, whose `http` count is
+  measured like any other.
   Rules: `docs/telemetry.md`.
 - `deskperf boot [--days N] [--role R] [--json]` — `deskboot`'s per-step p50 / p90 / max, in
   boot order, and the summed boot cost per role.
