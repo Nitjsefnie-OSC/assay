@@ -17,9 +17,13 @@ From a human-owned isolated checkout, set `REVIEWED_HEAD` to the exact full
 follow-up SHA reviewed on `codex/k8s-write-policy-ci-followup`, `PR_NUMBER` to
 that open follow-up PR, and `AUTHORIZED_ACCOUNT` to the human's authorized
 GitHub account. The original merged PR is never a landing target. These commands
-must run under the human's own authorized Git identity:
+must run under the human's own authorized Git identity. Run this entire block
+together: its subshell keeps the guard, checkout and failure handling in one
+session, and a failed check exits that subshell without closing your terminal.
+Inspect the displayed diff and type `push` only when the two additions are correct:
 
 ```sh
+(
 set -eu
 : "${REVIEWED_HEAD:?Set the full follow-up SHA you reviewed}"
 : "${PR_NUMBER:?Set the open follow-up PR number}"
@@ -44,16 +48,15 @@ git apply --check docs/runsheets/write-policy-ci.diff
 git apply docs/runsheets/write-policy-ci.diff
 git diff --check
 git diff -- .github/workflows/ci.yml .github/workflows/release.yml
-```
-
-Inspect the two additive test invocations, then commit and push only those files:
-
-```sh
+printf 'Review the two workflow additions above. Type push to commit and push: '
+IFS= read -r CI_CONFIRM </dev/tty
+test "$CI_CONFIRM" = push
 test "$(git diff --name-only)" = "$(printf '%s\n' .github/workflows/ci.yml .github/workflows/release.yml)"
 git add .github/workflows/ci.yml .github/workflows/release.yml
 git commit -m 'ci: qualify shared write policy in source and release tests'
 check_current_pr
 git push origin HEAD:refs/heads/codex/k8s-write-policy-ci-followup
+)
 ```
 
 Do not dispatch a workflow. The implementation worker must fetch and merge the
