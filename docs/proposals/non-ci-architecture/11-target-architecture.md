@@ -518,3 +518,18 @@ The perf-v3 service measurements also cover the planned query/cache layer: calle
 logical requests and latency, per-handler/cache/coalescing work, and actual direct/passthrough
 or background provider requests/cost. Keep these observation kinds distinct and charge shared
 refreshes once; see the [boundary contract](../../performance-attribution-spec.md#querycache-service-and-passthrough-boundaries).
+
+## Local write policy — amendment, 18 October 2026
+
+The proposed [shared write-policy contract](../../write-policy.md) places deterministic
+write-isolation evaluation in `deskcore/writepolicy`, with writeguard retained as the
+command-hook adapter. Managed workspace owners supply validated allocation context;
+the harness/container still confines actual filesystem access. This adds no generic
+security service and merges no push, credential, process or cleanup authority.
+Delivery: desktools-v2/66, then managed consumer integration/qualification. This amendment is proposed, not part of an earlier ratification.
+
+Target-consumer clarification, 19 October 2026: graph-execution/22 directly consumes
+/66 for the local harness boundary and independent sandbox proof. desktools-v2/31's
+parser port is withdrawn (medici-finance/assay#3409 merged, ruled at
+medici-finance/assay#3420), so /66 has no parser-port edge: writeguard keeps its current
+parser, routed exempt, and /66 owns the hook adapter. The guard controls are not retired.
