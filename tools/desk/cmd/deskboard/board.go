@@ -1132,7 +1132,7 @@ func buildClassifyInput(p prBase, rs reviewState, ciRequired bool, zeroCI string
 	for _, c := range deskkit.LatestRunPerName(p.StatusCheckRollup, check.groupKey, check.recencyKey) {
 		checks = append(checks, reviewflow.CheckFact{Status: c.Status, Conclusion: c.Conclusion, State: c.State})
 	}
-	in := reviewflow.BuildClassifyInput(reviewflow.ChangeFact{Title: p.Title, Body: p.Body, MergeStateStatus: p.MergeStateStatus, IsDraft: p.IsDraft, Labels: p.labelNames(), Checks: checks}, reviewflow.ReviewState{
+	in := (reviewflow.ClassificationFacts{Change: reviewflow.ChangeFact{Title: p.Title, Body: p.Body, MergeStateStatus: p.MergeStateStatus, IsDraft: p.IsDraft, Labels: p.labelNames(), Checks: checks}, Reviews: reviewflow.ReviewState{
 		BodyEditReverified:     rs.bodyEditReverified,
 		Ever:                   rs.ever,
 		AtHead:                 rs.atHead,
@@ -1144,7 +1144,7 @@ func buildClassifyInput(p prBase, rs reviewState, ciRequired bool, zeroCI string
 		LastReviewAt:           rs.lastReviewAt,
 		SuspectNoOp:            rs.suspectNoOp,
 		ExternalPrereqDeclared: rs.externalPrereqDeclared,
-	}, ciRequired, zeroCI)
+	}, CIRequired: ciRequired, ZeroCI: zeroCI}).ClassifyInput()
 	return classifyInput{
 		ever:                    in.Ever,
 		atHead:                  in.AtHead,
@@ -1965,10 +1965,7 @@ func classifyPRFrom(repo string, p prBase, snapReviews []review, haveReviews boo
 
 	action, note := classify(in)
 	note += staleGrantNote
-	if rs.bodyEditReverified {
-		note += " — same-head APPROVE accepted under the documented body-edit re-verification class " +
-			"(deskflip re-verifies it at the gate)"
-	}
+	note += reviewflow.BodyEditReverificationNote(rs.bodyEditReverified)
 	if len(degradeReasons) > 0 {
 		// The row's RENDERED text carries the could-not-check reason(s) that produced the
 		// degrade, whether or not the classify() arm it landed on would otherwise have

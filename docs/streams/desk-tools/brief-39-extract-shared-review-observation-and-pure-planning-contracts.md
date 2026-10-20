@@ -25,9 +25,9 @@ gate-why: Review/issue observations can expose scoped operational facts; impleme
 decision-trigger: spec
 consumers:
   - "tools/desk/internal/deskclient/: follow-up graph-execution/27"
-  - "tools/desk/cmd/deskboard/: follow-up desk-tools/39"
-  - "tools/desk/cmd/reviewloop/: follow-up desk-tools/39"
-  - "tools/desk/cmd/deskdispatch/: follow-up desk-tools/39"
+  - "tools/desk/cmd/deskboard/: fixed-here (shared classification facts; observation collection follows in desk-tools/40)"
+  - "tools/desk/cmd/reviewloop/: fixed-here (shared plan assembly; observation CLI handoff follows in desk-tools/40)"
+  - "tools/desk/cmd/deskdispatch/: follow-up desk-tools/41 (consume the qualified observation during candidate admission)"
 ---
 
 # Brief 39 — Extract shared review observation and pure planning contracts

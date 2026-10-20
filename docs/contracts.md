@@ -424,6 +424,35 @@ deskkit retains provider reads, custody and identity. Deskinbox and the shell
 adapter consume the same human-inbox ordering without moving the ruling screen.
 See [projection and compatibility contracts](issue-projections.md).
 
+## Review observation and planning
+
+`tools/desk/internal/reviewflow` owns the pure advisory classifier, action table,
+coalescing, plan assembly and [review-observation-v1](../spec/review-observation-v1.md)
+contract. `BuildObservation`, `DecodeObservation` and `PlanObservation` operate on
+values. `ClassificationFacts.ClassifyInput` and `PlanBoard` also serve the existing
+`deskboard` and `reviewloop plan` adapters; neither command imports another command.
+`statusgen/evaluation` retains eligibility and coverage semantics.
+
+The operational adapter owns trust admission, reviewer identity, stale-grant
+filtering, latest-check selection, body-edit verification and rank inputs. Independent
+lane conclusions stay distinct from the legacy board's aggregate review signal.
+Envelope validation checks their applicability and contradictions, never authenticates
+their provenance or authorizes a ready write. Existing consequential rechecks,
+claims, budgets, audit and ready gates remain at their effect boundaries.
+
+The observation contains a complete admitted population over a stated collection
+interval, with a caller-selected freshness cutoff for every input. A partial, stale,
+unsupported or contradictory value produces a typed error, never an empty success.
+Qualified provider/host/repository identities survive coalescing. Depths cover all
+rows, including WAIT, SURFACE and NO-OP, before any caller display cap. The internal
+package is unavailable to other Go modules; public extraction is forge-neutral/39.
+
+Qualification: `TestReviewContractFlow` exercises the production classifier and
+planner plus the existing command oracle; `TestReviewBoundary` checks closed wire
+shape, refused partial/stale input, pure imports and an external-module compiler
+probe. Both include production-source mutation controls. Collection and CLI handoff
+remain desk-tools/40; dispatch admission remains desk-tools/41.
+
 ## Proposed write-policy semantic extraction — 18 October 2026
 
 The [write-policy contract](write-policy.md) proposes `S-write-policy`, currently
