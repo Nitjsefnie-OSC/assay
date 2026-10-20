@@ -427,3 +427,69 @@ func TestVerifyPerformanceGitFixtureIsolation(t *testing.T) {
 		t.Fatalf("fixture repository missing: %v", err)
 	}
 }
+
+// One provider observation serves repeated logical blocker references in a pass.
+// Production factory, custody and counted transport are intact; only the leaf is
+// an offline fixture. A new pass must observe a changed provider state.
+func TestVerifyPerformanceBlockerFanIn(t *testing.T) {
+	plantAllowedRoster(t, "example-org/tracker")
+	t.Setenv("ASSAY_TELEMETRY", "1")
+	t.Setenv("ASSAY_PERF_PROFILE", "tool")
+	roster := filepath.Join(os.Getenv("HOME"), ".config", "assay", "roster.env")
+	raw, err := os.ReadFile(roster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(roster, append(raw, []byte("ASSAY_REPO_FORGES=example-org/tracker=github\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	deskkit.ReloadConfig()
+	deskkit.SetGitHubCustodyMinter(func(role string, r deskkit.ForgeRepo) (string, string, error) {
+		if role != verifyloopRole || r.Slug() != "example-org/tracker" {
+			t.Fatal("wrong role/repository")
+		}
+		return "fixture", "", nil
+	})
+	oldTransport := http.DefaultTransport
+	sends := 0
+	http.DefaultTransport = verifyRoundTripper(func(r *http.Request) (*http.Response, error) {
+		sends++
+		if r.URL.Path != "/repos/example-org/tracker/issues/7" {
+			t.Fatalf("unexpected provider path %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"number":7,"state":"open"}`))}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = oldTransport; deskkit.SetGitHubCustodyMinter(nil) })
+	ctx := perfrec.ResolveContext(perfrec.ContextInput{})
+	code := deskkit.PerfRunMeasured("verifyloop", verifyPerfVerbs, []string{"plan"}, func(_ []string, session *perfrec.Session) (int, perfrec.Context) {
+		session.SelectContext(ctx)
+		source := performanceIssueSource().(*forgeIssueSource)
+		source.performance = verifyPerformance{session: session, context: ctx}
+		source.observer = deskkit.RequestObserverFor(ctx, session, perfrec.OriginDirect)
+		for i := 0; i < 100; i++ {
+			ref, _ := deskkit.ParseBlockerRef("example-org/tracker#7", "", "")
+			if state, why := source.IssueState(ref); state != deskkit.BlockerOpen {
+				t.Fatalf("%v %s", state, why)
+			}
+		}
+		return 0, ctx
+	}, verifyPerfPhases...)
+	history, err := deskkit.LoadPerfHistory(1)
+	if err != nil || len(history.Records) != 1 {
+		t.Fatalf("perf record: %v", err)
+	}
+	record := history.Records[0]
+	wantRequests := int64(1)
+	if code != 0 || int64(sends) != wantRequests || record.Counters[perfrec.CounterHTTP] != wantRequests || phaseCount(record, "blocker") != 100 {
+		t.Fatalf("fan-in: exit=%d sends=%d record=%+v", code, sends, record)
+	}
+	var observed int64
+	for _, request := range record.V3.Requests {
+		observed += request.Attempts
+	}
+	if observed != wantRequests {
+		t.Fatalf("observer attempts=%d want=%d", observed, wantRequests)
+	}
+	encoded, _ := json.Marshal(record)
+	t.Logf("blocker measurement: %s", encoded)
+}
