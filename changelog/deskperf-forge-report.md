@@ -1,0 +1,2 @@
+### Added
+- `deskperf report` gains a forge-calls section, per tool and per release build: total forge calls, calls per run (p50 / p90 / max), each row's share of all forge calls, and the rate-limit cost against the 5000-per-hour App budget (busiest UTC hour and the p90 run). It reads perf-v1 `forgeCalls` and the perf-v2 `http` counter; a run whose counter was not observed is reported as unavailable, never as zero.
