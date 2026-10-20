@@ -57,6 +57,39 @@ func hookBytes(t *testing.T, bin, dir string, env []string, input []byte) ([]byt
 	return stdout.Bytes(), stderr.Bytes(), code
 }
 
+// Pin the caches used to compile this source package before fixture HOME changes.
+// With GOPATH/GOMODCACHE unset, Go otherwise derives a new, empty module cache
+// from that disposable home. Every child remains offline; a missing dependency
+// is a setup failure, never evidence that a policy mutation was caught.
+func pinHookBuildCaches(t *testing.T) {
+	t.Helper()
+	cmd := exec.Command("go", "env", "-json", "GOMODCACHE", "GOCACHE")
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve source build caches: %v\n%s", err, out)
+	}
+	var caches map[string]string
+	if err := json.Unmarshal(out, &caches); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"GOMODCACHE", "GOCACHE"} {
+		p := caches[key]
+		info, err := os.Stat(p)
+		if !filepath.IsAbs(p) || err != nil || !info.IsDir() {
+			t.Fatalf("source build cache %s is unavailable: %q (%v)", key, p, err)
+		}
+		t.Setenv(key, p)
+	}
+	for key, value := range map[string]string{
+		"GOENV": "off", "GOWORK": "off", "GOTOOLCHAIN": "local",
+		"GOPROXY": "off", "GOSUMDB": "off", "GOVCS": "off",
+		"GOPRIVATE": "", "GONOPROXY": "", "GONOSUMDB": "",
+	} {
+		t.Setenv(key, value)
+	}
+}
+
 // TestWriteHookParity executes the actual main binary. It checks independent
 // expected decisions first, then compares the complete legacy JSON envelope and
 // stdout/exit contract with the production adapter's direct evaluator result.
@@ -65,6 +98,7 @@ func TestWriteHookParity(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX callout fixtures; Windows lexical decisions run in deskcore")
 	}
+	pinHookBuildCaches(t)
 	bin := buildHook(t)
 	base := t.TempDir()
 	shared := filepath.Join(base, "shared")
@@ -285,9 +319,6 @@ func hookPolicyMutations(t *testing.T) {
 			if strings.Count(string(b), m.old) != 1 {
 				t.Fatal("mutation anchor drifted")
 			}
-			if err := os.WriteFile(source, []byte(strings.Replace(string(b), m.old, m.replacement, 1)), 0o600); err != nil {
-				t.Fatal(err)
-			}
 			dir, pkg := filepath.Join(root, "tools", "desk"), "./cmd/writeguard"
 			env := append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off", "GOFLAGS=", "WRITEPOLICY_BASELINE_BIN=")
 			if m.core {
@@ -319,10 +350,32 @@ func hookPolicyMutations(t *testing.T) {
 				}
 				env = append(env, "GOFLAGS=-modfile="+modfile)
 			}
-			cmd := exec.Command("go", "test", "-count=1", "-timeout=45s", "-run", m.test, pkg)
-			cmd.Dir, cmd.Env = dir, env
-			out, err := cmd.CombinedOutput()
-			if err == nil || !strings.Contains(string(out), m.diagnostic) {
+			run := func(childEnv []string) ([]byte, error) {
+				cmd := exec.Command("go", "test", "-v", "-count=1", "-timeout=45s", "-run", m.test, pkg)
+				cmd.Dir, cmd.Env = dir, childEnv
+				return cmd.CombinedOutput()
+			}
+			fixture := strings.Trim(m.test, "^$")
+			out, err := run(env)
+			if err != nil || !strings.Contains(string(out), "--- PASS: "+fixture+" ") {
+				t.Fatalf("unmutated child fixture did not pass: %v\n%s", err, out)
+			}
+			t.Log("unmutated child passed the same named fixture offline")
+			if m.name == "skipped-deny" {
+				// Reproduce the CI failure with an empty cache, independently of
+				// HOME. It must remain a setup error, not a successful mutation kill.
+				cold, coldErr := run(append(env, "GOMODCACHE="+t.TempDir()))
+				if coldErr == nil || !strings.Contains(string(cold), "module lookup disabled by GOPROXY=off") ||
+					strings.Contains(string(cold), m.diagnostic) || strings.Contains(string(cold), "--- FAIL: "+fixture+" ") {
+					t.Fatalf("empty-cache control was not a distinct setup failure: %v\n%s", coldErr, cold)
+				}
+				t.Log("empty-cache control failed in setup, without a policy-failure witness")
+			}
+			if err := os.WriteFile(source, []byte(strings.Replace(string(b), m.old, m.replacement, 1)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, err = run(env)
+			if err == nil || !strings.Contains(string(out), m.diagnostic) || !strings.Contains(string(out), "--- FAIL: "+fixture+" ") {
 				t.Fatalf("production mutant escaped or failed for another reason: %v\n%s", err, out)
 			}
 			t.Log("production mutant caught by independently specified fixture")
