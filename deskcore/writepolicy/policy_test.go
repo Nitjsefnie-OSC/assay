@@ -3,7 +3,7 @@ package writepolicy
 import "testing"
 
 func fixtureInput(tool, target string) Evaluation {
-	cl := Classify(Request{Tool: tool, Target: target}, LexicalContext{Platform: POSIX, Cwd: "/owned", Home: "/home/operator", Env: map[string]string{}})
+	cl := Classify(Request{Tool: tool, Target: target}, LexicalContext{Platform: POSIX, Cwd: "/owned", Home: "/fixture-home", Env: map[string]string{}})
 	return Evaluation{Classified: cl, ClassificationID: cl.ID(), Policy: Policy{Profile: LegacyHook,
 		SharedRoot: "/shared", ProjectDir: "/owned", CwdTop: "/owned", SentinelPath: "/claim"},
 		Claim: ClaimObservation{Source: NoClaim}, Callout: CalloutObservation{State: CalloutUnconfigured}}
@@ -227,7 +227,7 @@ func TestWritePolicyCases(t *testing.T) {
 			{`C:\shared\new`, Deny}, {`C:\owned\new`, Allow}, {`C:\shared\.claude\worktrees\w\new`, Allow},
 			{`C:\shared\.claude\worktrees\..\..\new`, Deny},
 		} {
-			cl := Classify(Request{Tool: "Write", Target: tc.target}, LexicalContext{Platform: Windows, Cwd: `C:\owned`, Home: `C:\Users\operator`})
+			cl := Classify(Request{Tool: "Write", Target: tc.target}, LexicalContext{Platform: Windows, Cwd: `C:\owned`, Home: `C:\fixture-home`})
 			in := Evaluation{Classified: cl, ClassificationID: cl.ID(), Claim: ClaimObservation{Source: NoClaim}, Policy: Policy{Profile: LegacyHook, SharedRoot: `C:\shared`, ProjectDir: `C:\owned`}, Callout: CalloutObservation{State: CalloutUnconfigured}}
 			if got := completeFixture(t, in, nil); got.Decision != tc.want {
 				t.Fatalf("%s: %+v", tc.target, got)
