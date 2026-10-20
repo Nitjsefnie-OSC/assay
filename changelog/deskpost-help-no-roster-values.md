@@ -1,0 +1,2 @@
+### Fixed
+- A help screen from a desk tool (`deskpost finish --help`, `deskpost --help`, `<tool> <verb> --help` and the other unambiguous help shapes) no longer prints the resolved roster configuration — trusted logins, bot slugs and ids, the allowed-repo set. The effective-config echo is skipped on a help request; a refused configuration is still reported by its problem count, and an unrecognised key by its name only. Real runs echo exactly as before. (#3754)
