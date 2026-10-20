@@ -86,7 +86,7 @@ Options:
 1. **Accept the demonstrated bounded design** — accept the evidenced compatibility and containment for its declared scope; provisioning, deployment and source retirement retain their separate operator acts.
 2. **Hold for correction** — name the missing proof or incompatible behavior; retain the current supported path until corrected.
 
-Default if no answer: none
+Default if no answer: none — blocks until answered
 
 The decision becomes concrete from the implementation design and evidence. No answer
 keeps acceptance pending; it grants no time-based default or activation authority.
