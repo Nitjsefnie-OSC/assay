@@ -231,6 +231,23 @@ measured/unavailable counts with totals over measured records only, and per-phas
 distributions. The `perfrec` module's README documents the recorder API for other
 standalone tools.
 
+A forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
+runs, unavailable runs, total forge calls, calls per run (p50 / p90 / max, nearest rank), each
+row's share of all forge calls, and the rate-limit cost — the busiest UTC clock hour's calls
+and that hour and the p90 run as a percentage of the 5000-requests-per-hour App budget. Unlike
+wall time, the forge count is pooled across the two schemas: perf-v1 `forgeCalls` and the
+perf-v2 `http` counter are the same seam with the same lower-bound meaning, and a call spends
+the budget whichever schema recorded it. Its rules:
+
+- A perf-v2 record whose `http` counter is `unavailable` is an unavailable run: it adds no
+  calls and sits in no distribution, and a row with no measured run prints `-`, never `0`.
+- `statusgen`'s perf-v1 `forgeCalls` is documented as "not counted" (below), so its records
+  are unavailable runs too; perf-v1 has no unavailable state of its own.
+- Steps are never read (their calls belong to the invocation), and perf-v3 records stay in
+  their own section.
+- The figures are HTTP attempts and lower bounds, not GraphQL quota points, and the budget is
+  per App installation: this machine's history is only part of what draws on it.
+
 Never recorded: argv, flag values, repo, PR or issue numbers, branch, path, title, body,
 error text, session tag, environment values, hostname, user name, or tokens. A test plants a
 repo slug, a PR number, a branch, an absolute path, a session tag and a token-shaped
