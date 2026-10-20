@@ -297,6 +297,56 @@ layout, retention and install id exist once.
 The perf history is not the desk audit ledger and never reads or writes it. It also holds no
 agent usage: per-invocation tokens and cost belong to the agent runner's own usage record.
 
+### statusgen phases in perf-v3
+
+With `ASSAY_TELEMETRY=1` **and** a selected perf-v3 profile (`ASSAY_PERF_PROFILE` or
+`--perf-profile`, `tool` or `workflow`), `statusgen` writes one `perf-v3` process-summary record
+through the shared recorder instead of the `perf-v2` record. With the switch on and no profile
+selected, the `perf-v2` record above is unchanged; with the switch off nothing is created,
+whatever profile context is set.
+
+- **Profile and context.** `statusgen` binds the same eight `--perf-*` flags the desk tools take
+  on its own flag set (it cannot import the desk adapter). A flag overrides its environment
+  variable and an empty flag clears it; the values reach the shared resolver exactly as the flag
+  parser accepted them, never re-read from argv. A malformed value becomes `invalid` coverage —
+  it never changes output or exit. The tool profile records no session, agent, role or work
+  field, even when the environment carries them.
+- **Phase roster.** `discover`, `parse`, `evaluate`, `render`, `write` and `deskread`. Phases are
+  exclusive: entering a nested phase pauses the enclosing one, so phase milliseconds never
+  double count (`phaseOverlap` stays false) and `n` counts segments, not calls. `evaluate` is the
+  residue between flag parse and exit not claimed by another phase.
+- **Boundary and rosters.** A v3 record starts at the same process-init mark as the `perf-v2`
+  record and ends at the same exit. Its phase roster is not the v2 stage roster, and a reader
+  never merges the two schemas, so compare like with like.
+- **deskread child.** The only online route is the `deskread` child that `--forge` starts. Its
+  start-to-exit wait is the `deskread` phase; the one-time `--help` check below runs before
+  that phase opens, so it is not part of the child's wait. The context reaches the child as `--perf-*` flags
+  on its own command line, after the read kind. Under the workflow profile they carry the
+  session, agent, role and work with this invocation as the parent. Under the tool profile they
+  carry the profile alone. With no profile selected they carry `--perf-profile=off`, so a parent
+  that cleared its profile never hands on one it did not use. The flags are passed only when the
+  resolved `deskread` lists all of them in its `--help`. That check runs once per run, with an
+  empty environment and a time bound. An older `deskread` that would refuse an unknown flag gets
+  none, so output and exit never change. Because the context travels on the child's command
+  line, another local user who can list processes can read it while the child runs. It holds
+  only validated values: random opaque ids, the role, work references and the profile, never a
+  credential. The child's provider requests, credentials and cost
+  are its own observations: the parent records no request observation (`requestCoverage` is
+  `missing`), and child time is never added to the parent's.
+- **Reading.** `deskperf report --tool statusgen` reads these records through the same shared
+  decoder and v3 reducer as every desk tool; `--perf-profile workflow --group-by session` (or
+  `work`, `agent`, `role`) groups them with the desk tools' records and the `deskread` child.
+- **Boundary kept.** `statusgen`'s dependency closure still has no desk, deskkit, adapter or
+  custody package, the recorder reads no credential, and a recording run starts exactly the
+  processes a switch-off run starts. The one addition is the offline `deskread --help` check,
+  made only when a `deskread` child is started.
+
+A future context resolver (statusgen/20) may consume explicit, source-bound, immutable input
+snapshots that a run already holds; it may not weaken independent membership enumeration — a
+new file outside an earlier read set still invalidates completeness, and HEAD equality alone
+never makes a dirty working-tree parse reusable. The snapshot-reuse inventory and the
+repeatable workload bench for these phases are follow-up work under statusgen/26.
+
 ## Dependency posture
 
 The client uses the Go standard library only (`net/http`), consistent with
