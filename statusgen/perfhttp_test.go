@@ -28,7 +28,8 @@ func (d *perfFakeDoer) Do(*http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))}, nil
 }
 
-// regression: statusgen's forge calls were invisible to deskperf's http counter
+// Statusgen's forge calls were invisible to deskperf's http counter.
+// regression: #3101
 func TestPerfHTTPCountsEachCall(t *testing.T) {
 	// GitHub REST seam (ghfetch.go): a transport failure is still an attempt.
 	before := perfHTTPCalls.Load()
@@ -74,7 +75,8 @@ func TestPerfHTTPCountsEachCall(t *testing.T) {
 	}
 }
 
-// regression: the counted forge calls must land in the record as a measured http counter
+// The counted forge calls must land in the record as a measured http counter.
+// regression: #3101
 func TestPerfRecordCarriesHTTP(t *testing.T) {
 	clock := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	probe := perfrec.Probe{Now: func() time.Time { clock = clock.Add(time.Millisecond); return clock }}
