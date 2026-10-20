@@ -301,7 +301,7 @@ Before selecting a projection, run `issueboard --version` locally and require it
 an older binary uses the legacy `issueboard issues` sweep with the same manual
 work-readiness checks below until the pin is deliberately upgraded. Do not retry a
 failed projected sweep through a broad read. Reverting the plugin and producer pins
-restores the old sweep. See [the compatibility matrix](../../../../docs/issue-projections.md).
+restores the old sweep. See [the compatibility matrix](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
 An empty work-ready observation covers only unrepresented issue candidates; intake,
 addressed inbox, representation/PR checks and watcher health still need their own reads.
 
@@ -1030,3 +1030,25 @@ worker-desk's own.
 - **A tick that did not happen is could-not-check, never idle.** Two ticks with no successful sweep is
   the silent-board-freeze class — re-arm, and if it does not clear, file it (§Output contract,
   detected blindness).
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-desk-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-desk-role` for descriptive desk attribution; never alter `DESK_LOOP`.

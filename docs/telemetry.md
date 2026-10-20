@@ -274,11 +274,12 @@ Coverage is terminal observations, not a running-process census: killed or still
 commands may have no record. Child and forge counters retain the documented lower bounds;
 adding wrappers does not make custom runners or HTTP clients counted transports.
 
-## Planned perf-v3 workflow profile — 19 October 2026
+## Local perf-v3 profiles — 19 October 2026
 
-The [attributed performance specification](performance-attribution-spec.md) is a future
-contract, delivered by desktools-v2/63–65. No perf-v3 producer is implemented by this
-amendment. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
+The [attributed performance specification](performance-attribution-spec.md) is delivered incrementally by desktools-v2/63–65. The local schema, typed resolver,
+writer and mixed reader are implemented in perfrec; CLI/launcher and provider adoption are
+separate integrations. The [frozen API and wire contract](../perfrec/V3.md) describes exact
+fields, bounds, coverage and examples. Human acceptance remains separate. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
 scopes their future exception to a new schema and explicit workflow profile only.
 
 Existing `ASSAY_TELEMETRY=1` without a selected new profile keeps prior producer behavior.
@@ -296,6 +297,12 @@ observations; parent inclusive time and child/request time are never summed into
 workflow time. Future perfdata import applies its own explicit workflow consent and
 source/epoch aliases before preview or upload; it never forwards raw local work locators or
 native harness IDs. Existing counts-only network telemetry and its two switches are unchanged.
+
+The current [provider adapter coverage](provider-performance.md) records actual sends at
+the counted leaf, forwards response bodies without an additional read, and separates
+desktoken authentication HTTP. Qualified public-provider queries may select bounded cost
+metadata in the same operation. Other schemas retain unknown cost without a probe or
+fallback request. Hot-path composition remains explicit; this is not fleet-wide coverage.
 
 The planned v3 contract includes query/cache-service calls as a separate observation boundary:
 client logical/transport counts and latency, handler/cache/coalescing work, and actual upstream

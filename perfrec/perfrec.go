@@ -103,7 +103,10 @@ type Record struct {
 	SourceSHA   string `json:"sourceSHA"`
 	Install     string `json:"install"`
 
-	// perf-v2 only.
+	// perf-v3 only; legacy wire shapes never include it.
+	V3 *V3Data `json:"v3,omitempty"`
+
+	// perf-v2 and perf-v3 interval fields.
 	Boundary     string            `json:"boundary,omitempty"`
 	CPU          string            `json:"cpu,omitempty"`
 	Phases       []PhaseStat       `json:"phases,omitempty"`
@@ -336,9 +339,38 @@ func (w *Writer) Append(stateDir string, rec Record) { _ = w.Write(stateDir, rec
 // Write is Append's body with the error kept, for the tests that need to see WHY a write did
 // not land. Production callers go through Append, which discards it.
 func (w *Writer) Write(stateDir string, rec Record) error {
+	if rec.Schema == SchemaV3 {
+		if !Enabled() {
+			return errors.New("perfrec: v3 recording is disabled")
+		}
+		if err := validV3(rec); err != nil {
+			return err
+		}
+	}
 	dir := Dir(stateDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
+	}
+	if rec.Schema == SchemaV3 {
+		if info, err := os.Lstat(dir); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("perfrec: unsafe v3 directory")
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+		for _, name := range []string{"install-id", w.now().UTC().Format("2006-01-02") + ".jsonl"} {
+			p := filepath.Join(dir, name)
+			if info, err := os.Lstat(p); err == nil {
+				if !info.Mode().IsRegular() {
+					return errors.New("perfrec: unsafe v3 file")
+				}
+				if err = os.Chmod(p, 0o600); err != nil {
+					return err
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
 	}
 	w.pruneOnce(dir)
 	id, err := InstallID(dir)

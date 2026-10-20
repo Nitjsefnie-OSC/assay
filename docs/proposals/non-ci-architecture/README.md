@@ -1,6 +1,6 @@
 # Unified product architecture for Assay
 
-**Status: future architecture we are moving towards. Updated 16 October 2026; includes portfolio, drift, the write-through forge service, operation-count split and portable execution environments.** This directory is the canonical public home of Assay's future product architecture. It states the direction of travel, not what is already implemented or deployed. Detailed contract changes still require revision-bound review; implementation and activation require their own evidence and authorization. Publishing or merging this documentation does not activate a runtime, grant credentials or amend existing briefs.
+**Status: future architecture we are moving towards. Updated 19 October 2026; includes portfolio, drift, the write-through forge service, operation-count split, portable execution environments and the proposed shared write-policy and implementation-pickup amendments.** This directory is the canonical public home of Assay's future product architecture. It states the direction of travel, not what is already implemented or deployed. Detailed contract changes still require revision-bound review; implementation and activation require their own evidence and authorization. Publishing or merging this documentation does not activate a runtime, grant credentials or amend existing briefs.
 
 Read the [implemented foundations and remaining work](11-target-architecture.md#implemented-foundations-and-work-still-to-build) alongside the target. Portfolio allocation, target/context drift and continuing observation are included in the destination; their integrated automation remains work to build and qualify.
 
@@ -42,6 +42,7 @@ Verification is the first end-to-end test.
 | [Product intent and portfolio](26-product-intent-and-portfolio.md) | Product-target, capacity and observation contracts; concrete briefs, active-work boundaries and remaining admission |
 | [Agent execution environments](27-agent-execution-environments.md) | Qualified harness/model/backend profiles, workspace readiness receipts, recovery and lifecycle visibility; seven implementation briefs |
 | [Desk workflow efficiency](../../desk-workflow-efficiency-spec.md) | Draft: complete review observations, shared collection/evaluation, diagnostic measurement and caller retirement; [existing-work reconciliation](../../desk-workflow-efficiency-change-map.md) |
+| [Shared write policy](../../write-policy.md) | Proposed pure evaluator in deskcore, retained writeguard adapter, managed consumers and independent enforcement qualification |
 | [Synthetic change set](examples/architecture-change-v0.yaml) | Illustrative records with no approval or implementation claim; not a supported schema |
 
 ## Future direction and mechanisms to qualify
