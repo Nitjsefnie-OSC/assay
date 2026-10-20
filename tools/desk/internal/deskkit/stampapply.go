@@ -9,12 +9,8 @@ func StampTimelineFor(f Forge, repo ForgeRepo, number int, kind TargetKind) (Sta
 	if kind == TargetIssue {
 		var issue *Issue
 		issue, err = f.GetIssueTyped(repo, number, TargetIssue)
-		if err == nil && issue == nil {
-			err = fmt.Errorf("missing issue")
-		}
 		if err == nil {
-			tl.Present = issue.Labels
-			tl.Events, err = f.ListIssueLabelEvents(repo, number)
+			return stampTimelineForIssue(f, repo, number, issue)
 		}
 	} else if kind == TargetChange {
 		var pr *PullRequest
@@ -33,6 +29,18 @@ func StampTimelineFor(f Forge, repo ForgeRepo, number int, kind TargetKind) (Sta
 		return tl, Unverifiable("cannot read model stamp provenance", err)
 	}
 	return tl, nil
+}
+
+// The caller supplies a typed issue observation; history still comes from the forge.
+func stampTimelineForIssue(f Forge, repo ForgeRepo, number int, issue *Issue) (StampTimeline, error) {
+	if issue == nil {
+		return StampTimeline{}, Unverifiable("cannot read model stamp provenance", fmt.Errorf("missing issue"))
+	}
+	events, err := f.ListIssueLabelEvents(repo, number)
+	if err != nil {
+		return StampTimeline{}, Unverifiable("cannot read model stamp provenance", err)
+	}
+	return StampTimeline{Present: issue.Labels, Events: events}, nil
 }
 
 // ApplyVerifiedModelStamp is the shared issue/change applier. Success means the
