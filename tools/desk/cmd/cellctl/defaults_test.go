@@ -246,6 +246,9 @@ func TestCellDefaultsRefusesPerCellKeys(t *testing.T) {
 		"GITLAB_TOKEN_STORE", "DESKD_GITLAB_TOKEN_FILE", "DESKD_APP_PEM", "DESKD_APP_ID_VAR", "ORGS",
 		// A switch for one run of one command.
 		"CELLS_ROOT", "DRY_RUN", "CELL_ATTENDED", "DESK_MODEL_OVERRIDE",
+		// Descriptive metadata belongs to one invocation, never a defaults file.
+		"ASSAY_PERF_PROFILE", "ASSAY_PERF_SESSION_ID", "ASSAY_PERF_AGENT_ID", "ASSAY_PERF_PARENT_AGENT_ID",
+		"ASSAY_PERF_PARENT_INVOCATION_ID", "ASSAY_PERF_ROLE", "ASSAY_PERF_WORK", "DESK_LOOP",
 		// What locates the cells root when CELLS_ROOT is unset, and the config homes.
 		"HOME", "USERPROFILE", "XDG_DATA_HOME",
 		"ASSAY_CONFIG_HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR", "CLAUDE_CONFIG_DIR", "CODEX_HOME",

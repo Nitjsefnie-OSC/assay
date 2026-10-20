@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/cellcadence"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
@@ -16,6 +17,7 @@ import (
 // deskInputs are the typed, already-resolved options of one `desk` launch: what the command
 // layer (cobra.go) hands the launch code, so the launch code never sees argv.
 type deskInputs struct {
+	Performance                perfrec.Context
 	CfgIn                      string
 	Model                      string // --model, else DESK_MODEL_OVERRIDE
 	Provider, Harness, Cockpit string // as given by flag; "" = not given
@@ -418,7 +420,7 @@ func cmdDesk(c *Cell, role string, o deskInputs) {
 			die("desk: cannot record role ownership: %v", err)
 		}
 	}
-	c.deskLaunch(role, harness, model, modelDisp, session, wt, cfg, provider, prov, deskRoots, persist, persistKVs, policyRes, cockpit)
+	c.deskLaunch(role, harness, model, modelDisp, session, wt, cfg, provider, prov, deskRoots, persist, persistKVs, policyRes, cockpit, o.Performance)
 }
 
 func orDefault(v, def string) string {

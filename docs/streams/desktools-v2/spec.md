@@ -490,3 +490,18 @@ kinds/reducer fixtures; /65 supplies provider observations and existing forge-ne
 owns service implementation/qualification. Local v3 requires no unshipped service or database.
 No implicit diagnostic propagation, raw work locator forwarding or per-handler process-CPU
 attribution is permitted; missing service coverage is unknown.
+
+## 11. Shared write-policy extraction — 18 October 2026
+
+[Write policy](../../write-policy.md) is a proposed additive extraction into the
+existing deskcore module. /66 owns the evaluator, writeguard adapter and actual-consumer
+census; writeguard keeps its current CLI parser (the /31 port is withdrawn).
+Other guards keep their semantic owners. Managed consumers require allocation-bound
+inputs and separate sandbox/packaging qualification. Before pickup apply brief-v1
+§4.1.1 and current engineering guidelines; this amendment does not activate a hook.
+
+Target-consumer clarification, 19 October 2026: graph-execution/22 directly consumes
+/66 for the local harness boundary and independent sandbox proof. desktools-v2/31's
+parser port is withdrawn (medici-finance/assay#3409 merged, ruled at
+medici-finance/assay#3420), so /66 has no parser-port edge: writeguard keeps its current
+parser, routed exempt, and /66 owns the hook adapter. The guard controls are not retired.
