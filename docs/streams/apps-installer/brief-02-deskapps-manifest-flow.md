@@ -41,12 +41,16 @@ id: 566d5440-7cb6-4731-9aea-d153ee6b16c8
 
 ## Context
 files:
-- `tools/desk/cmd/deskapps/` (new): `main.go`, `server.go` (loopback HTTP), `manifest.go`
-  (tier → manifests), `convert.go` (code exchange), `records.go` (apps.env / state writes),
-  `page/` (embedded HTML + CSS, no external assets), `*_test.go`.
+- `tools/desk/cmd/deskapps/` (new)
 - `tools/desk/internal/deskkit/` — reuse `Log`, exit codes, credential search path helpers; add nothing role-specific here.
-- `tools/desk/README.md` (new § deskapps), `docs/desk-tools/deskapps.md` (planned).
-- `tools/desk/cmd/deskapps/mutations.json` (new).
+- `tools/desk/README.md` (new § deskapps)
+- `docs/desk-tools/deskapps.md` (planned)
+- `tools/desk/cmd/deskapps/mutations.json` (new)
+
+The new command directory holds `main.go`, `server.go` (loopback HTTP), `manifest.go` (tier →
+manifests), `convert.go` (code exchange), `records.go` (apps.env / state writes), `page/`
+(embedded HTML + CSS, no external assets) and `*_test.go`; the directory declaration above
+covers every one of them.
 
 single-point-of-failure: the `state` nonce keeps a callback from being accepted for a row it was
 not issued for. The genuinely INDEPENDENT second layer is the owner check on the conversion
