@@ -3,7 +3,8 @@
 **Status:** draft — 20 October 2026. Extends the decision-oriented workflow direction in
 [desk-workflow-efficiency-spec.md](desk-workflow-efficiency-spec.md) for verification.
 That source's approval does not approve this extension. The accompanying diagnostic code is
-explicitly requested implementation; the read-reuse changes below remain proposed. No
+explicitly requested implementation; the broader read-reuse changes below remain proposed. The association-scan follow-on
+described in §3 is now explicitly requested implementation. No
 runtime, cache service, collection, credentials, release or consumer cutover is activated.
 
 **Inspected source:** public Assay main `874e509a5319ae6fb94225a3d9c88e3fc34864ed`.
@@ -103,6 +104,47 @@ Do not batch provider requests until their individual duplication and coverage a
 A later typed batch read may replace several reads only with per-target completeness,
 author/stamp/history parity, bounded pagination and actual point-cost comparison on both
 supported forges. A larger GraphQL operation is not automatically cheaper.
+
+### Association scan: pass-scoped local observations
+
+The first association improvement changes the algorithm at `SelectQueue`: all roots in
+one scan share one observation set, discarded before returning the queue. Resolve each
+checkout's configured identity and HEAD once; resolve fetched `origin/main` only when a
+cross-repository item needs it, once per checkout. Read and validate the graph registry
+once per tracking root and exact commit; read/resolve each distinct committed brief once
+per root, exact commit and path. Successes and failures share that lifetime. No pass is
+retained on the loop, queue item or dispatcher. A later selection creates a new pass.
+The work scales with distinct roots, immutable registries and brief paths, rather than
+restarting repository discovery for every referring brief. This is an observation reuse
+change; parsing and scheduling policy remain shared with the fresh reader.
+
+Use the existing `gitcore.Open`, `Resolve` and `FileAt` seams for local reads, including
+linked worktrees and shared objects. Repository identity uses a narrow configured-URL
+reader: the last repository-local `remote.origin.url`, without transport rewrites or
+pushurl fallback. This has gitcore's existing local-config scope; configurations that
+rely on global/include/worktree remote overrides are not qualified by this scan. Fresh
+dispatch still uses its original Git/config checks and can refuse a planned item.
+Do not migrate credential/config ownership or any execution-admission check in this work.
+
+Yes, the brief already stores `deliverable_repo`, `homed-in` and file-tag declarations.
+Aliases still need that commit's graph registry. Declarations cannot establish a checkout's
+actual identity, current revision or fetched-main status. Keep the working-file trigger,
+committed declaration lookup, same-repository fast path and cross-repository checks;
+avoid copying observed checkout state into brief metadata.
+
+Dispatch and admission keep the existing fresh reader and all consequential rechecks.
+A same-repository brief remains legacy even if HEAD lags fetched main. Missing/corrupt
+registries and unavailable roots remain could-not-check; ambiguous/conflicting declarations
+remain refused. A pass is not an atomic multi-root snapshot and grants no authority.
+
+Reuse the existing perf-v3 recorder with fixed phases `association` (committed declaration
+resolution), `association-root` (distinct checkout open attempts), and
+`association-registry` (immutable registry read/validation attempts). Their `n` values expose
+whether repetition returns. These phases are nested/inclusive, not additive wall time;
+registry reuse is not a provider-cache hit. No path or repository becomes a metric label.
+See [the qualification report](verifyloop-association-performance.md) for the neutral
+benchmark, parity/freshness cases and limits. Provider read reuse and the future-state
+owners below remain separate work; this local change saves no GitHub requests.
 
 ### Shared conditional transport, separately qualified
 

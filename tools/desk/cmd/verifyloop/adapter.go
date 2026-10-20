@@ -120,10 +120,11 @@ func (v *VerifyLoop) SelectQueue() ([]loopengine.Item, error) {
 	var items []loopengine.Item
 	var err error
 	stopScan := v.performance.phase("queue-scan")
+	pass := deskkit.NewVerifierAssociationPass(v.performance.session)
 	if len(v.Roots) > 0 {
-		items, err = scanAwaitingRoots(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now)
+		items, err = scanAwaitingRootsPass(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
 	} else {
-		items, err = scanAwaitingIn(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now)
+		items, err = scanAwaitingPass(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
 	}
 	stopScan()
 	if err != nil {

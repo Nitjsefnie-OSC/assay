@@ -10,19 +10,22 @@ import (
 	"testing"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/gitquiet"
 	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
+	"github.com/medici-finance/assay/tools/desk/internal/regression"
 )
 
-func associationGit(t *testing.T, root string, args ...string) string {
+func associationGit(t testing.TB, root string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	cmd.Env = regression.FixtureEnv("GIT_TEMPLATE_DIR="+gitquiet.TemplateDir(t), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v %s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
 }
-func associationRepo(t *testing.T, repo string, files map[string]string) string {
+func associationRepo(t testing.TB, repo string, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
 	associationGit(t, root, "init")
@@ -203,7 +206,7 @@ func TestCrossRepoPromptCutsEvidence(t *testing.T) {
 }
 
 // associationRoster plants the fixture roster for a direct association call.
-func associationRoster(t *testing.T) {
+func associationRoster(t testing.TB) {
 	t.Helper()
 	for _, line := range strings.Split(fixtureRoster, "\n") {
 		if k, v, ok := strings.Cut(line, "="); ok {
