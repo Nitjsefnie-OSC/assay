@@ -95,7 +95,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **COULD NOT CHECK — main-red arm could not check — no `--main-health` input was supplied, so whether main is red is unknown here (statusgen does not read live CI). A main-red fix cannot be lifted into the critical tier on this run; this is not a reading that main is green.**
 
-_Next-up: 20 of 58 eligible — 38 held back (17 by per-stream caps, 21 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 20 of 59 eligible — 39 held back (17 by per-stream caps, 22 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
 _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. By stream: desktools-v2 (17). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
@@ -126,7 +126,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 14eeef75 2026-10-20T19:32:53Z_
+_last regen: f3724a2d 2026-10-20T20:14:43Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +147,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 14eeef75 2026-10-20T19:32:53Z_
+_last regen: f3724a2d 2026-10-20T20:14:43Z_
 
 **Progress:** 34/83 brief items done.
 
@@ -204,13 +204,13 @@ _last regen: 14eeef75 2026-10-20T19:32:53Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (11 for the desk · 36 for the driver · 32 for workers · 19 for an operator · 30 runner-pending — of 130 total; 2 could-not-check)
+## Awaiting verification / review (10 for the desk · 38 for the driver · 31 for workers · 19 for an operator · 30 runner-pending — of 130 total; 2 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
 _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a live/mutating check with no completed Evidence row behind it. UNRUN is DERIVED from Verify-vs-Evidence coverage — a row counts as run only when an Evidence row names it with a date and a runner, so silence reads as unrun. `--lint` names each one and whether it was routed to a follow-up._
 
-### Awaiting human gate (36)
+### Awaiting human gate (38)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -238,6 +238,8 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 10 [exec:strong] | implemented | 1500 | 1 | — | driver | close the sign-off card | — | — |
 | forge-gitlab | 11 [exec:strong] | implemented | 1500 | 1 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
 | desk-supervision | 09 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1185 | — | — |
+| desk-supervision | 20 [exec:strong] | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#3765 | — | — |
+| desk-supervision | 21 [exec:strong] | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#3764 | — | — |
 | desk-tools | 01 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | desk-tools | 18 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | desk-tools | 29 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
@@ -251,7 +253,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | statusgen | 16 [exec:strong] | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#3398 | — | — |
 | windows-port | 10 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 
-### Awaiting implementer rework (32)
+### Awaiting implementer rework (31)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -278,7 +280,6 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 21 [exec:strong] | implemented | 1500 | 1 | — | worker | fix, cite medici-finance/assay#1915 | — | — |
 | forge-gitlab | 13 [exec:strong] | implemented | 1500 | 1 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | desk-supervision | 08 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1363 | — | — |
-| desk-supervision | 20 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#3748 | — | — |
 | desk-tools | 02 | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1792 — row 5 is a prose PR-body check the witness cannot execute (check-definition); row 1 environment flake #612/#1232; row 4 vacuous post-merge self-diff (#1657 class) | — | — |
 | desk-tools | 03 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1784 | — | — |
 | desk-tools | 07 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#2179 | — | — |
@@ -347,7 +348,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 14 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-07 assay-verifier-app[bot] @ 91f04b81ba06 (claude-opus-5-5) | — |
 | quality | 19 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 3add8a9ae315 (claude-opus-5-5) | — |
 
-### Desk-actionable (11)
+### Desk-actionable (10)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -359,7 +360,6 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | derived-board | 06 [exec:strong] | implemented | 2500 | 1 | — | verify-desk | dispatch one judge | — | — |
 | desk-supervision | 04 [exec:strong] | implemented | 2000 | 2 | — | verify-desk | dispatch one judge | — | — |
 | harness-portability | 14 [exec:strong] | implemented | 2000 | 2 | — | verify-desk | triage, then re-bucket | — | — |
-| desk-supervision | 21 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 | desk-tools | 17 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 | harness-portability | 13 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 
@@ -877,7 +877,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 23 Product target binding and context drift assessment — todo (wave 3)
 - 24 Portfolio allocation and capacity accounting — todo (wave 2)
 - 25 Read-only portfolio and drift projections — todo (wave 4)
-- 26 Extend statusgen phase measurements through the shared performance recorder — todo (wave 4)
+- 26 Extend statusgen phase measurements through the shared performance recorder — in-progress (wave 4)
 - 27 Reject newly introduced actionable lint notices on changed briefs — todo (wave 1)
 - 28 Separate frozen historical notices from actionable lint findings — todo (wave 1)
 - 29 Run the existing structural row checks before writing a new brief — todo (wave 2)

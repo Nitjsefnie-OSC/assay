@@ -141,6 +141,7 @@ func runNextUp(root string) int {
 	// from whichever root it happened to invoke. A malformed/conflicting declaration
 	// is a hard PROBLEM in --lint; here it just yields "" and the field is omitted.
 	repo, _ := rootRepo(streams)
+	defer perfEnter("render")()
 	view := buildDispatchView(nu, streams, repo, claimSource)
 	out, err := json.Marshal(view)
 	if err != nil {
