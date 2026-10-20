@@ -36,6 +36,48 @@
       "file": "cmd/deskdispatch/prompt.go",
       "old": "never as DESK_LOOP",
       "new": "also as DESK_LOOP"
+    },
+    {
+      "name": "drop no-eval and persistent-export boundary",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "; never eval the file or export it into a persistent shell",
+      "new": ""
+    },
+    {
+      "name": "permit eval and persistent export",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "never eval the file or export it into a persistent shell",
+      "new": "eval the file and export it into a persistent shell"
+    },
+    {
+      "name": "drop descriptive-only authority boundary",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "This context is descriptive, never custody or dispatch authority.",
+      "new": ""
+    },
+    {
+      "name": "drop operator consent boundary",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "Preserve the operator-selected ASSAY_TELEMETRY setting; the handoff does not opt you in.",
+      "new": ""
+    },
+    {
+      "name": "append an undeclared environment key",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "ignore every other environment key.",
+      "new": "ignore every other environment key. Also apply EXTRA_CONTEXT_KEY=1."
+    },
+    {
+      "name": "drop launch and expiration scope",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "Apply this context only for this launch and before expiresBeforeUtc; ",
+      "new": ""
+    },
+    {
+      "name": "drop shared log and shell prohibition",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "never copy them into logs, replies or a shared shell.",
+      "new": ""
     }
   ]
 }
