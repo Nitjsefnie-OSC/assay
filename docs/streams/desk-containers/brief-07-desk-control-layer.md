@@ -28,14 +28,9 @@ id: cbf80c98-0c5e-4309-836b-89bced9ffae5
 ## Context
 
 files:
-- `containers/control/EVALUATION.md` (planned) — the tmux/tmuxinator vs equivalents
-  evaluation, with ONE recommendation per platform.
-- `containers/control/desks.yaml` (planned) — declarative session definition
-  (tmuxinator-style: one pane per desk running the launch script), or the recommended
-  tool's equivalent layout file.
-- `containers/control/desk-grid.sh` (planned) — fallback plain-tmux launcher (no
-  tmuxinator dependency): builds the session with a pane per desk; `--dry-run` prints
-  the per-pane commands.
+- `containers/control/EVALUATION.md` (planned) — the tmux/tmuxinator vs equivalents evaluation, with ONE recommendation per platform.
+- `containers/control/desks.yaml` (planned) — declarative session definition (tmuxinator-style: one pane per desk running the launch script), or the recommended tool's equivalent layout file.
+- `containers/control/desk-grid.sh` (planned) — fallback plain-tmux launcher (no tmuxinator dependency): builds the session with a pane per desk; `--dry-run` prints the per-pane commands.
 - Win32 deliverable per the evaluation's recommendation (planned): a native config
   (Windows Terminal `wt` fragment / wezterm Lua / zellij layout) or a documented WSL2
   recipe in `containers/control/EVALUATION.md` (planned) — one committed, working answer.

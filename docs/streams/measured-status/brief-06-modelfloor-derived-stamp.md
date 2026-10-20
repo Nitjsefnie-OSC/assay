@@ -41,8 +41,7 @@ id: 59e98b33-3177-47e6-94e9-70ca852738a4
 
 ## Context
 files:
-- `tools/desk/internal/deskkit/modelstamp.go` — `DispatcherRoles`, `IsDispatcherLogin`,
-  `AttestedModelStampOf` and the Indeterminate->refuse actor check.
+- `tools/desk/internal/deskkit/modelstamp.go` — `DispatcherRoles`, `IsDispatcherLogin`, `AttestedModelStampOf` and the Indeterminate->refuse actor check.
 - `tools/desk/internal/deskkit/modelstampactor_test.go` — the actor-check tests.
 facts:
 - today the floor trusts a stamp only when the label ACTOR's login is a bound dispatcher slug

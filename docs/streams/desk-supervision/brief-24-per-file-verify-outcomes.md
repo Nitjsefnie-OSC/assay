@@ -71,10 +71,8 @@ consumers:
 ## Context
 
 files:
-- **add** `tools/desk/internal/deskkit/verifyoutcomes.go` (planned) + `verifyoutcomes_test.go` (planned)
-  — the desk-side reader choke point and the record-name function.
-- **edit** `tools/desk/cmd/verifyloop/briefscan.go` — `readOutcomeSidecar` (line 240) and
-  `readWakeReceipts` (line 384) read through the choke point.
+- **add** `tools/desk/internal/deskkit/verifyoutcomes.go` (planned) + `verifyoutcomes_test.go` (planned) — the desk-side reader choke point and the record-name function.
+- **edit** `tools/desk/cmd/verifyloop/briefscan.go` — `readOutcomeSidecar` (line 240) and `readWakeReceipts` (line 384) read through the choke point.
 - **edit** `tools/desk/cmd/deskevidence/deskevidence.go`, `main.go`, `outcome.go`,
   `verifiedgate.go` + tests — the per-record writer, the class guard, the cap override retired.
 - **add** `tools/desk/cmd/deskevidence/concurrency_test.go` (planned) — the mergeability proxy test.

@@ -29,8 +29,7 @@ id: 8d6363a5-d747-4a47-b4da-52137ebcc3b9
 
 files:
 - `containers/desk-run.sh` (new) — the launcher.
-- `containers/desk-run.test.sh` (new) — dry-run + negative-path tests (no docker
-  daemon required: tests exercise `--dry-run` output and refusal paths).
+- `containers/desk-run.test.sh` (new) — dry-run + negative-path tests (no docker daemon required: tests exercise `--dry-run` output and refusal paths).
 - `docs/docker.md` — add the "run a desk from your desktop" section.
 
 facts:
