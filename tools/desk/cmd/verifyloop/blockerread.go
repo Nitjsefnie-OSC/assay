@@ -24,25 +24,32 @@ import (
 // issueSourceFn builds the plan's issue-state source. A package var so a test can install a
 // forge that fails the way a missing credential does.
 var issueSourceFn = func() deskkit.IssueStateSource {
-	return &forgeIssueSource{forgeFor: resolveForge, notice: os.Stderr}
+	s := &forgeIssueSource{notice: os.Stderr}
+	s.forgeFor = func(repo deskkit.ForgeRepo) (deskkit.Forge, error) {
+		return resolveForge(repo, s.observer)
+	}
+	return s
 }
 
 // resolveForge is this package's only forge resolution: the verifier-role forge for repo.
-func resolveForge(repo deskkit.ForgeRepo) (deskkit.Forge, error) {
-	return deskkit.ForgeFor(repo, verifyloopRole)
+func resolveForge(repo deskkit.ForgeRepo, observer deskkit.RequestObserver) (deskkit.Forge, error) {
+	return deskkit.ForgeFor(repo, verifyloopRole, observer)
 }
 
 // forgeIssueSource reads issue state through a per-repo forge, resolving each repo's forge (and
 // so its credential) once per plan pass, and only for a repository in the configured set.
 type forgeIssueSource struct {
-	forgeFor func(deskkit.ForgeRepo) (deskkit.Forge, error)
-	notice   io.Writer // when set, names each repository once, before its first forge contact
-	forges   map[string]deskkit.Forge
-	errs     map[string]error
-	pending  map[string]*pendingChanges
+	performance verifyPerformance
+	observer    deskkit.RequestObserver
+	forgeFor    func(deskkit.ForgeRepo) (deskkit.Forge, error)
+	notice      io.Writer // when set, names each repository once, before its first forge contact
+	forges      map[string]deskkit.Forge
+	errs        map[string]error
+	pending     map[string]*pendingChanges
 }
 
 func (s *forgeIssueSource) IssueState(ref deskkit.BlockerRef) (deskkit.BlockerState, string) {
+	defer s.performance.phase("blocker")()
 	repo := ref.Repo()
 	fg, err := s.forge(repo)
 	if err != nil {

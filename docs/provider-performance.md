@@ -105,3 +105,37 @@ Protocol labels currently recognize the native public GraphQL paths only. An
 enterprise or custom subpath can remain labelled REST even when its API uses
 GraphQL; its cost is still unknown, never inferred from that label. This is a
 coverage limitation rather than qualified enterprise protocol attribution.
+
+## verifyloop scheduling consumer
+
+verifyloop composes `RequestObserverFor` at its existing verifier-role forge resolution
+for blocker and pending-Evidence reads. The context is selected before those reads from
+the existing explicit environment profile. With no profile, legacy recording stays perf-v2;
+no observer is installed. Selected profiles reuse the bounded perf-v3 own-request duration,
+protocol/resource/outcome and GraphQL-cost observations above.
+
+The invocation also records a fixed phase roster and separates `plan` from `verdict`,
+including both dry-run shorthands. Phases are inclusive, can overlap, and are never added
+to wall time. Preflight's separate transports, auth/row subprocesses and verifier children
+remain coverage gaps; this integration does not mark the complete request inventory
+measured. Cache/waiter counters remain unavailable. No endpoint or subject labels, new
+requests, cache, parser flags or scheduling changes are introduced. See the
+[draft performance extension](verifyloop-performance-spec.md) for the boundaries and proposed
+local/future follow-ons; diagnostic integration alone does not approve those changes.
+
+For a supported build containing this integration, an explicit local perf-v3 tool run is:
+
+```sh
+ASSAY_TELEMETRY=1 ASSAY_PERF_PROFILE=tool verifyloop plan --root . --json
+deskperf report --days 1 --tool verifyloop --json
+```
+
+Use `ASSAY_PERF_PROFILE=workflow` only when local work/session attribution is wanted;
+workflow grouping in the existing reporter additionally requires `--perf-profile workflow`.
+The tool profile carries no workflow subjects. A real plan retains its normal preflight
+and authorized scheduling reads; the example is not an offline test recipe.
+
+The verifyloop performance regression suite exercises both selected v3 profiles, the
+legacy/off paths, pending-admission parity and deterministic verdict phases. Its
+`performance-mutations.json` uses the existing muhar harness to prove it catches a removed
+request observer, a lost phase roster and incorrect dry-run operation attribution.

@@ -1,0 +1,23 @@
+{
+  "test": "go test ./cmd/verifyloop -run '^TestVerifyPerformance' -count=1 -timeout 120s",
+  "control": {
+    "name": "CONTROL: omit the scheduling request observer",
+    "file": "cmd/verifyloop/main.go",
+    "old": "source.observer = deskkit.RequestObserverFor(performance.context, performance.session, perfrec.OriginDirect)",
+    "new": "source.observer = deskkit.RequestObserver{}"
+  },
+  "mutations": [
+    {
+      "name": "drop the supplied phase roster at the shared recorder boundary",
+      "file": "internal/deskkit/perf.go",
+      "old": "perfrec.Begin(perfProbe(), perfEntry(), phases)",
+      "new": "perfrec.Begin(perfProbe(), perfEntry(), nil)"
+    },
+    {
+      "name": "attribute dry-run verdicts to planning",
+      "file": "cmd/verifyloop/main.go",
+      "old": "deskkit.PerfCommand(verifyPerfVerbs, \"verdict\")",
+      "new": "deskkit.PerfCommand(verifyPerfVerbs, \"plan\")"
+    }
+  ]
+}
