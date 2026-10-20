@@ -102,7 +102,15 @@ exact named managed desk Pods, with current UID/container/generation validation.
 No operator attach/exec/port-forward/debug access reaches compatibility desks, PostgreSQL,
 executors or other cells. Any terminal access to a compatibility desk is transitive custody
 of its App PEM and model credentials; the table's credential-free operator boundary is a
-managed-profile property only. Never infer it from absent Secret-read permission.
+managed-profile property only. Compatibility TTY output is also a session transcript
+in container logs, including echoed input. Restrict compatibility `pods/log` alongside
+attach/exec/ephemeral-debug to the relevant key-custody principals. Node log files and
+collectors are part of that boundary: exclude compatibility namespaces from node log
+shipping, or require downstream stores, exports/backups and readers to meet the same
+custody and retention/access controls. Generic shared logging must not widen credential
+custody. /29 qualifies both API log access and the actual collection path with synthetic
+transcripts; the managed operator must not gain compatibility log access. Never infer
+custody isolation from absent Secret-read permission.
 Explicitly map transport verbs and named resources. Do not grant wildcard RBAC, Secrets
 reads, impersonation or RBAC mutation.
 If a later design needs workload mutation, author its admission restrictions and prove it

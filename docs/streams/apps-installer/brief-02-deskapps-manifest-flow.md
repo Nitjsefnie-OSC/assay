@@ -44,8 +44,7 @@ files:
 - `tools/desk/cmd/deskapps/` (new): `main.go`, `server.go` (loopback HTTP), `manifest.go`
   (tier → manifests), `convert.go` (code exchange), `records.go` (apps.env / state writes),
   `page/` (embedded HTML + CSS, no external assets), `*_test.go`.
-- `tools/desk/internal/deskkit/` — reuse `Log`, exit codes, credential search path helpers; add
-  nothing role-specific here.
+- `tools/desk/internal/deskkit/` — reuse `Log`, exit codes, credential search path helpers; add nothing role-specific here.
 - `tools/desk/README.md` (new § deskapps), `docs/desk-tools/deskapps.md` (planned).
 - `tools/desk/cmd/deskapps/mutations.json` (new).
 

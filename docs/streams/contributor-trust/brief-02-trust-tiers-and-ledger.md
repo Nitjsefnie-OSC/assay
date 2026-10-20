@@ -57,16 +57,11 @@ version: 1
 ## Context
 
 files:
-- `tools/desk/internal/deskkit/trusttier.go` (new) — the tier type, the ledger reader, and
-  `ResolveTier(repo, login string, id int64) (Tier, Provenance)`; pure over an injected
-  loader so it tests offline.
+- `tools/desk/internal/deskkit/trusttier.go` (new) — the tier type, the ledger reader, and `ResolveTier(repo, login string, id int64) (Tier, Provenance)`; pure over an injected loader so it tests offline.
 - `tools/desk/internal/deskkit/trusttier_test.go` (new).
-- `tools/desk/internal/deskkit/rosterconfig.go` — one new roster key naming the ledger's path;
-  read exactly like every other roster key (environment over roster file, per class).
-- `statusgen/rosterconfig.go` — the documented-duplicate twin gains the same key, and the
-  existing cross-tree coupling test is extended to cover it.
-- `docs/contributor-trust.md` (planned) (new) — the published tier model: the four names, what each
-  unlocks, how an identity moves, and the explicit statement that the rows are not published.
+- `tools/desk/internal/deskkit/rosterconfig.go` — one new roster key naming the ledger's path; read exactly like every other roster key (environment over roster file, per class).
+- `statusgen/rosterconfig.go` — the documented-duplicate twin gains the same key, and the existing cross-tree coupling test is extended to cover it.
+- `docs/contributor-trust.md` (planned) (new) — the published tier model: the four names, what each unlocks, how an identity moves, and the explicit statement that the rows are not published.
 - `changelog/contributor-trust-tiers.md` (new).
 
 single-point-of-failure: the ledger read. Behind it, two independent layers — the resolver's

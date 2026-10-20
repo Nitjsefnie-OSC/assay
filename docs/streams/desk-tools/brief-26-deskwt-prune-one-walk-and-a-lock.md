@@ -142,27 +142,16 @@ ancestor-set build can reach the removal step, flips `irreversible` to yes and t
 gate.
 
 files:
-- `tools/desk/cmd/deskwt/prune.go` (existing) — `pruneSweep` restructured around a per-sweep
-  `sweepCtx` (the ancestor set, the shared object cache, the per-worktree `*gitcore.Repo`
-  cache); the gate reorder; `unmergedReason`'s count removed; the batched removal tail; the
-  read-only `--dry-run` arm; the singleton acquisition; two new flags.
-- `tools/desk/cmd/deskwt/prunesingleton.go` (planned) (new) — the stamp file, its flock, the
-  TTL debounce, the held/recent report strings, and the stamp's read/write/parse.
-- `tools/desk/cmd/deskwt/deskwt.go` (existing) — `removeWorktreeDir` split into
-  `removeWorktreeTree` (the `os.RemoveAll` alone) and the existing prune-and-verify tail;
-  `remove`'s call site keeps both halves in the order it has today.
-- `tools/desk/internal/gitcore/gitcore.go` (existing) — `OpenWith(dir string, objects
-  cache.Object) (*Repo, error)`; `Open` becomes `OpenWith(dir, cache.NewObjectLRUDefault())`.
+- `tools/desk/cmd/deskwt/prune.go` (existing) — `pruneSweep` restructured around a per-sweep `sweepCtx` (the ancestor set, the shared object cache, the per-worktree `*gitcore.Repo` cache); the gate reorder; `unmergedReason`'s count removed; the batched removal tail; the read-only `--dry-run` arm; the singleton acquisition; two new flags.
+- `tools/desk/cmd/deskwt/prunesingleton.go` (planned) (new) — the stamp file, its flock, the TTL debounce, the held/recent report strings, and the stamp's read/write/parse.
+- `tools/desk/cmd/deskwt/deskwt.go` (existing) — `removeWorktreeDir` split into `removeWorktreeTree` (the `os.RemoveAll` alone) and the existing prune-and-verify tail; `remove`'s call site keeps both halves in the order it has today.
+- `tools/desk/internal/gitcore/gitcore.go` (existing) — `OpenWith(dir string, objects cache.Object) (*Repo, error)`; `Open` becomes `OpenWith(dir, cache.NewObjectLRUDefault())`.
 - `tools/desk/cmd/deskwt/prunesingleton_test.go` (planned) (new).
-- `tools/desk/cmd/deskwt/pruneperf_test.go` (planned) (new) — the synthetic-repo fixture
-  builder, the N-scaling test, the concurrency test and the per-candidate benchmark.
-- `tools/desk/cmd/deskwt/prune_test.go` (existing) — new rows for the gate order, the
-  read-only dry run and the fail-closed ancestor set; `TestPruneSkipsDirtyTracked`'s fixture
-  made unambiguous (see the facts).
+- `tools/desk/cmd/deskwt/pruneperf_test.go` (planned) (new) — the synthetic-repo fixture builder, the N-scaling test, the concurrency test and the per-candidate benchmark.
+- `tools/desk/cmd/deskwt/prune_test.go` (existing) — new rows for the gate order, the read-only dry run and the fail-closed ancestor set; `TestPruneSkipsDirtyTracked`'s fixture made unambiguous (see the facts).
 - `tools/desk/internal/gitcore/gitcore_test.go` (existing) — the shared-cache row.
 - `tools/desk/cmd/deskwt/prune-mutations.json` (planned) (new) — the `muhar` spec for row 11.
-- `tools/desk/README.md` (existing) — the prune singleton, its two flags, and the statement
-  that `--dry-run` is read-only.
+- `tools/desk/README.md` (existing) — the prune singleton, its two flags, and the statement that `--dry-run` is read-only.
 - `changelog/desk-tools-26-prune-perf.md` (planned) (new).
 
 facts (read at `e428134c`, 2026-09-14):

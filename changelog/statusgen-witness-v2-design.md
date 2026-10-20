@@ -1,0 +1,2 @@
+### Added
+- Design briefs statusgen/36–38 bind an execution witness to the delivering change request and a digest of the content its Verify row read, replacing commit ancestry, so squash merges no longer orphan valid witnesses. The record keeps the executing identity and binds the outcome, the Verify row's acceptance text and any dirty paths, and its change request is verified from the landing commit. They add a versioned witness schema (v1 judged unchanged, unknown schemas refused) and a one-time backfill limited to commits listed in a merged change request.

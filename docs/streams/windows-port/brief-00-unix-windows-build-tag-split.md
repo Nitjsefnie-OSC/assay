@@ -50,27 +50,16 @@ id: 381120b3-8be8-40a0-afb9-24d95d56dae0
 ## Context
 
 files:
-- **create** `statusgen/procgroup_unix.go` (planned) + `statusgen/procgroup_windows.go` (planned) — the
-  process-group kill helper `gitinfo.go` calls.
-- **create** `statusgen/rosterowner_unix.go` (planned) + `statusgen/rosterowner_windows.go` (planned) — the file-owner
-  check `rosterconfig.go` calls.
-- **amend** `statusgen/gitinfo.go` — replace the inline `SysProcAttr`/`Kill` block with the helper
-  call; drop the now-unused `syscall` import.
-- **amend** `statusgen/rosterconfig.go` — replace the inline `*syscall.Stat_t` block with the
-  helper call; drop the now-unused `syscall` import.
-- **create** `tools/desk/internal/deskkit/filelock_unix.go` (planned) +
-  `tools/desk/internal/deskkit/filelock_windows.go` (planned) — ONE exported advisory-lock helper for the
-  whole module.
+- **create** `statusgen/procgroup_unix.go` (planned) + `statusgen/procgroup_windows.go` (planned) — the process-group kill helper `gitinfo.go` calls.
+- **create** `statusgen/rosterowner_unix.go` (planned) + `statusgen/rosterowner_windows.go` (planned) — the file-owner check `rosterconfig.go` calls.
+- **amend** `statusgen/gitinfo.go` — replace the inline `SysProcAttr`/`Kill` block with the helper call; drop the now-unused `syscall` import.
+- **amend** `statusgen/rosterconfig.go` — replace the inline `*syscall.Stat_t` block with the helper call; drop the now-unused `syscall` import.
+- **create** `tools/desk/internal/deskkit/filelock_unix.go` (planned) + `tools/desk/internal/deskkit/filelock_windows.go` (planned) — ONE exported advisory-lock helper for the whole module.
 - **create** `tools/desk/internal/deskkit/rosterowner_unix.go` (planned) +
   `tools/desk/internal/deskkit/rosterowner_windows.go` (planned) — the deskkit owner check.
-- **amend** `tools/desk/internal/deskkit/claim.go`, `tools/desk/internal/loopengine/lineagelock.go`,
-  `tools/desk/cmd/deskpost/writeflow.go`, `tools/desk/cmd/deskevidence/writeflow.go`,
-  `tools/desk/cmd/deskrelease/writeflow.go` — the five flock call sites move onto the deskkit
-  helper; each site's retry loop, deadline, and error text stay byte-identical apart from the
-  locking line and the busy-comparison.
+- **amend** `tools/desk/internal/deskkit/claim.go`, `tools/desk/internal/loopengine/lineagelock.go`, `tools/desk/cmd/deskpost/writeflow.go`, `tools/desk/cmd/deskevidence/writeflow.go`, `tools/desk/cmd/deskrelease/writeflow.go` — the five flock call sites move onto the deskkit helper; each site's retry loop, deadline, and error text stay byte-identical apart from the locking line and the busy-comparison.
 - **amend** `tools/desk/internal/deskkit/rosterconfig.go` — owner check moves to the helper.
-- **amend** `tools/desk/go.mod` — `golang.org/x/sys` moves out of the `// indirect` block
-  (`go mod tidy` does this; the version does not change and `go.sum` is untouched).
+- **amend** `tools/desk/go.mod` — `golang.org/x/sys` moves out of the `// indirect` block (`go mod tidy` does this; the version does not change and `go.sum` is untouched).
 
 facts:
 - **eight-unix-only-sites-not-four**: `grep -rn --include='*.go' 'syscall\.' statusgen tools/desk`

@@ -45,8 +45,7 @@ id: d1d1d3a0-00c4-4ee3-ad70-1e56e965d986
 ## Context
 files:
 - `docs/streams/apps-installer/solo-identity.md` (new) — the spec.
-- `docs/streams/apps-installer/README.md` — status row and the note that the implementation
-  brief is authored after the ruling.
+- `docs/streams/apps-installer/README.md` — status row and the note that the implementation brief is authored after the ruling.
 
 single-point-of-failure: in Solo the ONE identity is the operator's, so the separation the tools
 otherwise provide by bot login does not exist. The spec must name what replaces it — GitHub's own
