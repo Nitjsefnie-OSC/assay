@@ -451,7 +451,9 @@ func TestPerfTrustMetadataErrorFailsClosed(t *testing.T) {
 				if !strings.Contains(input.Query, "_assayPerf:") {
 					t.Fatal("fixture did not exercise the extended trust operation")
 				}
-				data := `null`
+				// Valid business data beside errors must pin the GraphQL-error
+				// refusal itself, not pass through a separate null-item refusal.
+				data := `{"repository":{"issue":{"lastEditedAt":null,"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`
 				if provider == "gitlab" {
 					// Non-null valid business data must not hide a rejected metadata
 					// selection behind the independent null-noteable refusal.

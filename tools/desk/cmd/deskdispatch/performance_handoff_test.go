@@ -84,22 +84,34 @@ func TestPerfPrivateHandoff(t *testing.T) {
 			t.Fatalf("handoff lost its key/authority scope: %q", rule)
 		}
 	}
-	// Inspect only the handoff instructions, excluding the variable local path
-	// and unrelated assignment sections. Presence pins alone would accept a
-	// contradictory instruction appended after the attribution-only sentence.
+	// Bound the whole optional section by the next assignment field, rather
+	// than silently ignoring additional paragraphs or text before the path.
 	_, handoff, ok := strings.Cut(prompt, "## Optional local performance context\n\n")
 	if !ok {
 		t.Fatal("missing handoff instruction section")
 	}
-	handoff, _, _ = strings.Cut(handoff, "\n\n")
-	_, instructions, ok := strings.Cut(handoff, "`. ")
+	handoff, _, ok = strings.Cut(handoff, "\n- **Item key:**")
 	if !ok {
-		t.Fatal("missing handoff instruction boundary")
+		t.Fatal("missing handoff section boundary")
+	}
+	instructions := strings.TrimSpace(strings.ReplaceAll(handoff, "`"+path+"`", "`handoff-path`"))
+	if strings.Contains(instructions, "\n\n") {
+		t.Fatal("handoff instructions gained another paragraph")
+	}
+	for _, name := range []string{"DESK_LOOP", "ASSAY_TELEMETRY"} {
+		if strings.Count(instructions, name) != 1 {
+			t.Fatalf("handoff repeats operational authority or consent name: %s", name)
+		}
 	}
 	allowedNames := map[string]bool{"ASSAY_PERF_": true, "KEY": true, "DESK_LOOP": true, "ASSAY_TELEMETRY": true}
 	for _, name := range regexp.MustCompile(`\b[A-Z][A-Z0-9_]*\b`).FindAllString(instructions, -1) {
 		if !allowedNames[name] {
 			t.Fatalf("handoff names an undeclared environment key: %s", name)
+		}
+	}
+	for _, assignment := range regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)=`).FindAllStringSubmatch(instructions, -1) {
+		if assignment[1] != "KEY" {
+			t.Fatalf("handoff adds an environment assignment: %s", assignment[1])
 		}
 	}
 	old := filepath.Join(dir, "expired"+performanceSuffix)
