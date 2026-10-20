@@ -270,7 +270,8 @@ func declarationLine(line string) ([]string, error) {
 				if c == '}' {
 					braces--
 				}
-				if c == ' ' || c == '\t' || ((c == ',' || c == ';' || c == '+') && braces == 0) {
+				// A glued "(…)" is an annotation, never part of the path.
+				if c == ' ' || c == '\t' || ((c == ',' || c == ';' || c == '+' || c == '(') && braces == 0) {
 					break
 				}
 				i++
@@ -282,17 +283,27 @@ func declarationLine(line string) ([]string, error) {
 		}
 		result = append(result, p)
 		line = strings.TrimSpace(line)
+		// Annotations are stripped BEFORE the ':' and terminal tests, so their
+		// position never decides whether the remaining tail is understood.
+		for {
+			for strings.HasPrefix(line, "(") {
+				i := strings.IndexByte(line, ')')
+				if i < 0 {
+					return nil, Refused("refused: unclosed Context files: annotation")
+				}
+				line = strings.TrimSpace(line[i+1:])
+			}
+			// "and tests" names the declaration's tests, never a path.
+			rest, ok := strings.CutPrefix(line, "and tests")
+			if !ok || !(rest == "" || rest == "." || strings.ContainsAny(rest[:1], " ,(")) {
+				break
+			}
+			line = strings.TrimSpace(rest)
+		}
 		if strings.HasPrefix(line, ":") {
 			break
-		} // description after a quoted declaration
-		for strings.HasPrefix(line, "(") {
-			i := strings.IndexByte(line, ')')
-			if i < 0 {
-				return nil, Refused("refused: unclosed Context files: annotation")
-			}
-			line = strings.TrimSpace(line[i+1:])
-		}
-		if line == "" || line == "." || line == "and tests" || line == "and tests," || line == "and tests (new)," || line == "their tests," {
+		} // description after a declaration and its annotations
+		if line == "" || line == "." || line == "their tests," {
 			break
 		}
 		if strings.HasPrefix(line, ",") || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "+") {

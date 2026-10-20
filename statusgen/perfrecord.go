@@ -172,9 +172,11 @@ var perfHTTPCalls atomic.Int64
 // the client follows inside that Do is part of the same attempt and does not count again.
 func perfCountHTTP() { perfHTTPCalls.Add(1) }
 
-// perfSourceStamp is the ONE place the record's build stamp is read. perfrec.SourceSHA keeps a
-// commit-shaped stamp and records anything else (a release tag, "dev") as "unpinned".
-func perfSourceStamp() string { return statusgenVersion }
+// perfSourceStamp is the ONE place the record's build stamp is read: the commit the binary was
+// built from (perfrec.Revision: the toolchain's vcs.revision). statusgen has no link-time commit
+// stamp, hence the empty one. It is never statusgenVersion: that is a release TAG, which
+// perfrec.SourceSHA's hex-only gate records as "unpinned".
+func perfSourceStamp() string { return perfrec.Revision("") }
 
 // perfBuildRecord ends the session and builds this process's record; ok is false when the
 // switch is off.
@@ -406,7 +408,7 @@ func recordV3(exit int) bool {
 	if r := perfCtx.Data().Role; r != "" {
 		role = r
 	}
-	perfrec.Append(s.Finish(perfToolName, perfVerb(os.Args[1:]), role, exit, statusgenVersion))
+	perfrec.Append(s.Finish(perfToolName, perfVerb(os.Args[1:]), role, exit, perfSourceStamp()))
 	return true
 }
 
