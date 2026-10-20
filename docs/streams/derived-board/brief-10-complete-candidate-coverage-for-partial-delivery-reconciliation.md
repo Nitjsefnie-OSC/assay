@@ -13,7 +13,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 3
+version: 4
 authored: 2026-10-20 by assay-worker-app
 sources:
   - https://github.com/medici-finance/assay/issues/2703#issuecomment-6302222772
@@ -116,7 +116,6 @@ Run from the repository root. Each test row saves output and asserts a real PASS
 | 8 | `statusgen --root . --consumers --brief derived-board/10 --base 0d6a1bb5bc835c2fe80d0b23da53faba23964abf` | pre-merge authoring check only; exit 0, exactly 2 corroborated, 0 disproved and 12 unchecked. At implementation pickup amend this row, with a version increment, to immutable delivery and first-parent base pins and actual expected routing counts before independent execution verification; unchecked judgments require review | check |
 | 9 | `statusgen --root . --lint` | exit 0; no new PROBLEM; generated surfaces remain producer-owned | check |
 | 10 | `o=$(mktemp); git diff --name-only d004a756bbe8f0e7920376d96c61d8d50a991914^1 d004a756bbe8f0e7920376d96c61d8d50a991914 > "$o" && python3 -c 'import pathlib,sys; actual=set(pathlib.Path(sys.argv[1]).read_text().splitlines()); expected={"changelog/statusgen-migrate-registers-and-table-cells.md","statusgen/migrate.go","statusgen/migrate_test.go","statusgen/readmetable.go","statusgen/readmetable_test.go"}; assert actual==expected, actual; print("PR 735: exact five preparatory paths confirmed")' "$o"` | exit 0; exact confirmation line; independent local Git object confirms the reported preparatory path set, not merely a fixture repeating it; delivery adequacy remains reviewed against brief 07 scope | check +dereference |
-
 | 11 | `(cd statusgen && test -n "$GITHUB_TOKEN" && o=$(mktemp) && ASSAY_COHORT_RECHECK=1 go test . -run '^TestCandidateRecollect$' -count=1 -timeout 210s -v > "$o" 2>&1 && grep -Fx -- 'RECOLLECT checked-clean' "$o" && grep -F -- '--- PASS: TestCandidateRecollect' "$o")` | exit 0 only after two bounded independent forge walks agree with the recorded pre-cutoff eligible inventory and both candidate paths; receipt binds revision, fixture hash, page/response hashes, terminal evidence and actual read cost; omitted-page membership is named checked-failed; changed historical inputs, caps or unavailable access are could-not-check with no clean marker; credentials never printed | check +dereference |
 | 12 | `(cd statusgen && o=$(mktemp); go test . -run '^TestRecollectControls$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestRecollectControls' "$o")` | exit 0; independent httptest responses expose a fixture with an omitted whole page and recomputed self-consistent terminal receipt/hashes, naming the missing member; disabling independent comparison makes the control fail; changed old body/ref, disagreement between walks, every read bound, error and missing token yield could-not-check; post-cutoff merges are excluded; without opt-in a transport that fails on any call proves zero network/credential reads | check:ci +mutation |
 
