@@ -176,6 +176,23 @@ func TestRolloutSourceAdmission(t *testing.T) {
 	}
 }
 
+// PR #2655 delivers the analyzer action and local controls, but its body
+// disclaims deployment. The current brief's Tasks 1 and 5 still require CI
+// acquisition and the human-applied workflow before delivery is complete.
+// regression: #2703
+func TestCISliceSourceAdmission(t *testing.T) {
+	d := readDeclaredPartials("..", "medici-finance/assay")
+	if !d.partial(2655, "desk-tools/34") {
+		t.Error("analyzer PR #2655 is not declared partial")
+	}
+	prs := []PRRecord{{BriefRef: "desk-tools/34", Number: 2655, State: prMerged, MergeSHA: "7efb00c"}}
+	markDeclaredPartials(prs, d, nil)
+	c := deriveSingle(t, BriefIdent{ID: "desk-tools/34"}, LifecycleInput{LookedAt: true, PRs: prs})
+	if c.Cell != "in-progress" || c.MergedPR != "" {
+		t.Fatalf("local analyzer slice became complete: %+v", c)
+	}
+}
+
 // The same cohort enters trailer admission and then backfill. One cached file
 // read per PR and one shared shape read for the Evidence candidate suffice.
 // A real acceptance-definition delivery stays admissible even with VERIFY FAIL.
