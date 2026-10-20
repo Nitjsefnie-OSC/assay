@@ -72,11 +72,16 @@ or operational authority. Codex forwards its explicit environment policy via
 work references. Do not put secrets in attribution; local-only storage is not a
 promise that attribution is hidden from other local process observers.
 
-Cell launches reuse the CLI's already selected, recorded invocation; they never
-resolve a second parent ID. Untyped tool boundaries clear inherited parent
-invocation IDs, because an inherited grandparent is not an observed parent.
+Cell launches reuse the CLI's already selected invocation under the launching
+process's ASSAY_TELEMETRY consent; they never resolve a second parent ID. When
+consent exists only in cell.env and not in that process, the child can collect
+under its cell consent but has an unknown parent; no parent record is invented.
+Untyped tool children started through deskkit.Run clear inherited parent invocation
+IDs, because an inherited grandparent is not an observed parent. Direct executor
+launches do not pass through this helper and remain separately owned boundaries.
 Protocol-option-off and unknown-service-context cases are not applicable until
 the service protocol owner admits that interface; local consent-off tests do not
 qualify those future service cases. Handoff expiry bounds permitted use; physical
 pruning requires a subsequent write. A hard deletion deadline is unqualified and
-remains subject to the existing human acceptance decision.
+is disclosed in the recorded human acceptance on #3537; no hard-deletion guarantee
+is inferred from that ruling.

@@ -24,6 +24,18 @@
       "file": "cmd/deskdispatch/performance_handoff.go",
       "old": "today.AddDate(0, 0, 7)",
       "new": "today.AddDate(0, 0, 8)"
+    },
+    {
+      "name": "drop handoff attribution-only key scope",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "Apply only its seven documented ASSAY_PERF_* environment entries; ignore every other environment key.",
+      "new": "Apply the handoff environment entries."
+    },
+    {
+      "name": "drop prohibition on operational desk override",
+      "file": "cmd/deskdispatch/prompt.go",
+      "old": "never as DESK_LOOP",
+      "new": "also as DESK_LOOP"
     }
   ]
 }

@@ -69,6 +69,13 @@ func TestPerfPrivateHandoff(t *testing.T) {
 	if !strings.Contains(prompt, path) || strings.Contains(prompt, strings.Repeat("b", 32)) || strings.Contains(prompt, "ASSAY_PERF_AGENT_ID=") {
 		t.Fatal("prompt exposed attribution or lost handoff")
 	}
+	// The handoff prompt is part of the security boundary: a consumer may
+	// apply attribution keys only, and may never turn them into desk authority.
+	for _, rule := range []string{"seven documented ASSAY_PERF_* environment entries", "ignore every other environment key", "never as DESK_LOOP"} {
+		if !strings.Contains(prompt, rule) {
+			t.Fatalf("handoff lost its key/authority scope: %q", rule)
+		}
+	}
 	old := filepath.Join(dir, "expired"+performanceSuffix)
 	if err := os.WriteFile(old, []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
