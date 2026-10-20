@@ -8,6 +8,21 @@
   "exclusion_rules": [
     {
       "class": "test",
+      "pattern": "containers/k8s",
+      "reason": "desk-containers/06 source-only YAML-to-JSON test adapter invoked by the offline packaging checker; Go main is run from the existing desk module, never installed or released as an operator CLI"
+    },
+    {
+      "class": "test",
+      "pattern": "containers/k8s/check.py",
+      "reason": "desk-containers/06 source-only offline render/schema, manifest and credential assertions with hostile controls; invoked by its Verify rows and check.sh, never installed or released as an operator CLI"
+    },
+    {
+      "class": "test",
+      "pattern": "containers/k8s/check.sh",
+      "reason": "desk-containers/06 source-only launcher for the offline packaging verification suite; invoked by its Verify rows and documented pre-install validation, never installed or released as an operator CLI"
+    },
+    {
+      "class": "test",
       "pattern": "docs/streams/desktools-go-git/reproduce-05-counts.bash",
       "reason": "source-only offline verification instrument for issue #3035 and desktools-go-git/05 row 6; runs counters on pinned local Git archives, never installed or released as an operator CLI"
     },
