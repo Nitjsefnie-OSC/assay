@@ -3,3 +3,5 @@ Provider adapters can now pass invocation-owned perf-v3 observations through the
 - Preserve credential/outbound mutation anchors after observer composition and make all seven provider controls executable by the canonical mutation harness.
 
 - Pin metadata-error refusal against non-null GitLab business data, commit reproducible trust/query-shape mutations, and share the closed compiled query inventory between admission and its shape guard.
+
+- Pin the GitHub decoded-envelope metadata-error refusal with valid non-null item data and a preserved mutation control.

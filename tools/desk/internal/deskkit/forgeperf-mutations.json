@@ -78,6 +78,13 @@
       "old": "const gitlabTrustQuery = `query($path:ID!,$iid:String!){project(fullPath:$path){%s(iid:$iid){comments:notes(filter:ONLY_COMMENTS,first:100){pageInfo{hasNextPage} nodes{createdAt lastEditedAt author{id username bot}}} activity:notes(filter:ONLY_ACTIVITY,last:100){pageInfo{hasPreviousPage} nodes{body createdAt}}}}}`",
       "new": "const gitlabTrustQuery = `query($path:ID!,$iid:String!){project(fullPath:$path){%s(iid:$iid){comments:notes(filter:ONLY_COMMENTS,first:100){pageInfo{hasNextPage} nodes{createdAt lastEditedAt author{id username bot}}} activity:notes(filter:ONLY_ACTIVITY,last:100){pageInfo{hasPreviousPage} nodes{body createdAt}}}}} fragment extra on Query { __typename }`",
       "test": "TestPerfCostOperationShape"
+    },
+    {
+      "name": "GitHub decoded envelope errors ignored alongside valid item",
+      "file": "internal/deskkit/trustfetch.go",
+      "old": "if len(env.Errors) > 0 {",
+      "new": "if false && len(env.Errors) > 0 {",
+      "test": "TestPerfTrustMetadataErrorFailsClosed"
     }
   ]
 }
