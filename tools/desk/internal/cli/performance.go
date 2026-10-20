@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var perfNames = []string{"perf-profile", "perf-session-id", "perf-agent-id", "perf-parent-agent-id", "perf-parent-invocation-id", "perf-desk-role", "perf-role", "perf-work"}
+var perfNames = []string{"perf-profile", "perf-session-id", "perf-agent-id", "perf-parent-agent-id", "perf-parent-invocation-id", "perf-loop-role", "perf-role", "perf-work"}
 
 type perfKey struct{}
 
@@ -42,7 +42,7 @@ func perfSet(in *perfrec.ContextInput, name, value string) {
 		in.ParentAgentID = v
 	case "perf-parent-invocation-id":
 		in.ParentInvocationID = v
-	case "perf-desk-role":
+	case "perf-loop-role":
 		in.DeskRole = v
 	case "perf-role":
 		in.Role = v

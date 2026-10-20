@@ -29,7 +29,7 @@ func TestPerfV3RealDeskLaunch(t *testing.T) {
 			home := filepath.Join(f.cellDir, "home")
 			authority := filepath.Join(f.cellDir, "authority.role")
 			nl := string(rune(10))
-			script := strings.Join([]string{"#!/bin/sh", "case $1 in", "--version) echo '2.1.278 (stub)'; exit 0;;", "plugin) exit 0;;", "esac", "export HOME=" + bashQuote(home) + " USERPROFILE=" + bashQuote(home), "printf '%s' \"$DESK_LOOP\" > " + bashQuote(authority), "exec " + bashQuote(child) + " list --perf-desk-role=worker-desk", ""}, nl)
+			script := strings.Join([]string{"#!/bin/sh", "case $1 in", "--version) echo '2.1.278 (stub)'; exit 0;;", "plugin) exit 0;;", "esac", "export HOME=" + bashQuote(home) + " USERPROFILE=" + bashQuote(home), "printf '%s' \"$DESK_LOOP\" > " + bashQuote(authority), "exec " + bashQuote(child) + " list --perf-loop-role=worker-desk", ""}, nl)
 			must(t, os.WriteFile(filepath.Join(f.binDir, harness), []byte(script), 0700))
 			path := filepath.Join(f.cellDir, "cell.env")
 			base, err := os.ReadFile(path)

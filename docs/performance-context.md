@@ -36,7 +36,7 @@ propagation gap and never fails dispatch.
 
 Originating desk attribution and operational authority can differ. The only
 environment source for deskRole is DESK_LOOP. When a new agent changes its
-operational loop, its tool calls must use the explicit --perf-desk-role flag
+operational loop, its tool calls must use the explicit --perf-loop-role flag
 to preserve the originating desk attribution. Never change DESK_LOOP for
 measurement and never invent a second environment source for this field.
 
