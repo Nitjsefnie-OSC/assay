@@ -193,6 +193,46 @@ func TestCISliceSourceAdmission(t *testing.T) {
 	}
 }
 
+// Merged slices of two briefs whose own Task items stay owed. harness-portability/13:
+// PRs #621 and #3705 land the protocol, run-log scaffold and README row, while Task 3
+// (bundle PARITY/RELEASE-NOTES record) and Task 4 (the first live run and its log) are
+// still owed. desk-supervision/08: PR #1266 delivers the kit and arm artifacts, and #3239
+// repairs its checks, but both record that the observer logs Task 3 reads are absent,
+// so Task 3's wedge counts and Task 4's decision line remain owed. The control derives
+// the same merges without the brief's claims and must reach implemented, so the
+// brief metadata, not the fold, is what holds each row in progress.
+// regression: #2703
+func TestOwedTaskSourceAdmission(t *testing.T) {
+	d := readDeclaredPartials("..", "medici-finance/assay")
+	for _, tc := range []struct {
+		brief string
+		prs   []int
+	}{
+		{"harness-portability/13", []int{621, 3705}},
+		{"desk-supervision/08", []int{1266, 3239}},
+	} {
+		t.Run(tc.brief, func(t *testing.T) {
+			var prs, control []PRRecord
+			for _, n := range tc.prs {
+				if !d.partial(n, tc.brief) {
+					t.Errorf("PR #%d is not declared partial for %s", n, tc.brief)
+				}
+				pr := PRRecord{BriefRef: tc.brief, Number: n, State: prMerged, MergeSHA: "abcdef0"}
+				prs = append(prs, pr)
+				control = append(control, pr)
+			}
+			markDeclaredPartials(prs, d, nil)
+			b := BriefIdent{ID: tc.brief}
+			if c := deriveSingle(t, b, LifecycleInput{LookedAt: true, PRs: control}); c.Cell != "implemented" {
+				t.Fatalf("control: undeclared merges must derive implemented: %+v", c)
+			}
+			if c := deriveSingle(t, b, LifecycleInput{LookedAt: true, PRs: prs}); c.Cell != "in-progress" || c.MergedPR != "" {
+				t.Fatalf("slice with owed Task items became complete: %+v", c)
+			}
+		})
+	}
+}
+
 // The same cohort enters trailer admission and then backfill. One cached file
 // read per PR and one shared shape read for the Evidence candidate suffice.
 // A real acceptance-definition delivery stays admissible even with VERIFY FAIL.
