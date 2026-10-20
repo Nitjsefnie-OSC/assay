@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,120 @@ type pendingChanges struct {
 	err   error
 	base  string
 	reads map[int]*pendingRead
+	// These observations belong to this repository's admitted forge and this
+	// selection only. A new selection drops the whole pendingChanges value.
+	files      map[pendingFileKey]pendingFileRead
+	receipts   map[pendingAttestationKey]pendingAttestation
+	indexed    bool
+	byBrief    map[string][]pendingCandidate
+	unreadable []pendingCandidate
+}
+
+type pendingFileKey struct{ repo, sha, file string }
+type pendingAttestationKey struct {
+	repo   string
+	number int
+}
+type pendingFileRead struct {
+	content  []byte
+	bindings []string
+	err      error
+}
+type pendingAttestation struct {
+	receipt deskkit.VerifierReceipt
+	err     error
+}
+type pendingCandidate struct {
+	order  int
+	change deskkit.ChangeRef
+}
+
+func (c *pendingChanges) file(f deskkit.Forge, repo deskkit.ForgeRepo, file, sha string) (pendingFileRead, error) {
+	if !pendingSHA(sha) {
+		return pendingFileRead{}, fmt.Errorf("pending file requires an exact commit")
+	}
+	if c.files == nil {
+		c.files = map[pendingFileKey]pendingFileRead{}
+	}
+	key := pendingFileKey{repo.Slug(), sha, file}
+	read, ok := c.files[key]
+	if !ok {
+		read.content, read.err = pendingFile(f, repo, file, sha)
+		read.content = bytes.Clone(read.content)
+		if read.err == nil {
+			read.bindings = deskkit.VerifierEvidenceBindings(read.content)
+		}
+		c.files[key] = read
+	}
+	// A caller cannot mutate an observation another item will evaluate.
+	read.content, read.bindings = bytes.Clone(read.content), slices.Clone(read.bindings)
+	return read, read.err
+}
+
+func (c *pendingChanges) attestation(f deskkit.Forge, repo deskkit.ForgeRepo, number int, performance verifyPerformance) (deskkit.VerifierReceipt, error) {
+	if c.receipts == nil {
+		c.receipts = map[pendingAttestationKey]pendingAttestation{}
+	}
+	key := pendingAttestationKey{repo.Slug(), number}
+	read, ok := c.receipts[key]
+	if !ok {
+		stop := performance.phase("attestation")
+		read.receipt, read.err = deskkit.ReadVerifierAttestation(f, repo, number)
+		stop()
+		c.receipts[key] = read
+	}
+	return read.receipt, read.err
+}
+
+// Build from complete reads ALREADY performed, after the first exhaustive walk.
+// A successful early hold keeps the old lazy read behavior. Unreadable verifier
+// changes remain candidates for every brief, in the original list order.
+func (c *pendingChanges) indexChanges(verifier string) {
+	if c.indexed {
+		return
+	}
+	c.byBrief = map[string][]pendingCandidate{}
+	c.unreadable = nil
+	for i, change := range c.list.Changes {
+		if !deskkit.SameActor(change.Author.Login, verifier) {
+			continue
+		}
+		read := c.reads[change.Number]
+		if read == nil {
+			return // not an exhaustive walk yet
+		}
+		candidate := pendingCandidate{i, change}
+		if read.err != nil {
+			c.unreadable = append(c.unreadable, candidate)
+			continue
+		}
+		seen := map[string]bool{}
+		for _, file := range read.files {
+			if file.Status != "removed" && !seen[file.Filename] {
+				seen[file.Filename] = true
+				c.byBrief[file.Filename] = append(c.byBrief[file.Filename], candidate)
+			}
+		}
+	}
+	c.indexed = true
+}
+
+func (c *pendingChanges) changesFor(brief string) []deskkit.ChangeRef {
+	if !c.indexed {
+		return c.list.Changes
+	}
+	matching, unknown := c.byBrief[brief], c.unreadable
+	var changes []deskkit.ChangeRef
+	for len(matching)+len(unknown) > 0 {
+		if len(unknown) == 0 || len(matching) > 0 && matching[0].order < unknown[0].order {
+			changes = append(changes, matching[0].change)
+			matching = matching[1:]
+		} else {
+			changes = append(changes, unknown[0].change)
+			unknown = unknown[1:]
+		}
+	}
+	return changes
 }
 
 // pendingRead is one verifier-authored change's pull-request and complete file read,
@@ -81,7 +196,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 		return "", fmt.Errorf("verifier role login is unbound; pending Evidence authorship is unknown")
 	}
 	var uncertain error
-	for _, change := range cache.list.Changes {
+	for _, change := range cache.changesFor(it.BriefPath) {
 		// Only the pinned verifier App can author admitted Evidence: the Evidence writer
 		// requires that identity. A change by anyone else (a worker, the desk, a human, a
 		// fork or deleted account) carries no hold and no uncertainty, and is filtered on
@@ -122,12 +237,12 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 			uncertain = fmt.Errorf("%s has incomplete open-change/source provenance", ref)
 			continue
 		}
-		content, e := pendingFile(f, repo, it.BriefPath, pr.HeadSHA)
+		file, e := cache.file(f, repo, it.BriefPath, pr.HeadSHA)
 		if e != nil {
 			uncertain = e
 			continue
 		}
-		bindings := deskkit.VerifierEvidenceBindings(content)
+		content, bindings := file.content, file.bindings
 		if len(bindings) == 0 {
 			uncertain = fmt.Errorf("%s has no admitted Evidence binding", ref)
 			continue
@@ -142,9 +257,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 				uncertain = fmt.Errorf("%s has an invalid attestation reference", ref)
 				continue
 			}
-			stop := s.performance.phase("attestation")
-			receipt, e := deskkit.ReadVerifierAttestation(f, repo, recordRef.Number)
-			stop()
+			receipt, e := cache.attestation(f, repo, recordRef.Number, s.performance)
 			if e != nil {
 				uncertain = e
 				continue
@@ -156,7 +269,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 				uncertain = fmt.Errorf("%s Evidence differs from its exact attested run", ref)
 				continue
 			}
-			wait, e := pendingRun(f, repo, root, it, receipt, content, files, pr.HeadSHA, now, inputs, s)
+			wait, e := pendingRun(f, repo, root, it, receipt, content, files, pr.HeadSHA, now, inputs, s, cache)
 			if e != nil {
 				uncertain = e
 				continue
@@ -176,6 +289,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 			return ref, nil
 		}
 	}
+	cache.indexChanges(verifier)
 	if uncertain != nil {
 		return "", uncertain
 	}
@@ -207,7 +321,7 @@ func pendingFile(f deskkit.Forge, repo deskkit.ForgeRepo, file, sha string) ([]b
 	return got.Content, nil
 }
 
-func pendingRun(f deskkit.Forge, repo deskkit.ForgeRepo, root string, it loopengine.Item, receipt deskkit.VerifierReceipt, content []byte, files []deskkit.ChangedFile, head string, now time.Time, inputs deskkit.WakeInputs, issues deskkit.IssueStateSource) (bool, error) {
+func pendingRun(f deskkit.Forge, repo deskkit.ForgeRepo, root string, it loopengine.Item, receipt deskkit.VerifierReceipt, content []byte, files []deskkit.ChangedFile, head string, now time.Time, inputs deskkit.WakeInputs, issues deskkit.IssueStateSource, observations *pendingChanges) (bool, error) {
 	b := receipt.Binding
 	if err := receipt.CheckEvidenceContent(b.Brief, content, nil); err != nil {
 		return false, err
@@ -284,10 +398,11 @@ func pendingRun(f deskkit.Forge, repo deskkit.ForgeRepo, root string, it loopeng
 		if path.Dir(file.Filename) != path.Join(deskkit.OutcomeRecordsDir, stream) || !strings.HasPrefix(path.Base(file.Filename), num+"-") || file.Status == "removed" {
 			continue
 		}
-		raw, e := pendingFile(f, repo, file.Filename, head)
+		read, e := observations.file(f, repo, file.Filename, head)
 		if e != nil {
 			return false, e
 		}
+		raw := read.content
 		if e := deskkit.CheckRecordKeys(raw); e != nil {
 			return false, e
 		}
@@ -327,11 +442,11 @@ func pendingRun(f deskkit.Forge, repo deskkit.ForgeRepo, root string, it loopeng
 	if !deskkit.SameActor(rec.Verifier, verifier) || rec.Repo != repo.Slug() || !pendingSHA(rec.SHA) {
 		return false, fmt.Errorf("pending outcome has no exact verifier/repository/Evidence revision")
 	}
-	evidence, e := pendingFile(f, repo, b.Brief, rec.SHA)
+	evidence, e := observations.file(f, repo, b.Brief, rec.SHA)
 	if e != nil {
 		return false, e
 	}
-	if !bytes.Equal(evidence, content) {
+	if !bytes.Equal(evidence.content, content) {
 		return false, fmt.Errorf("pending outcome revision names different Evidence")
 	}
 	if !rec.IsFailedOrBlocked() {
