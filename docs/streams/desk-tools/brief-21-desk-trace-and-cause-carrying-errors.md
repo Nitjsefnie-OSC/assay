@@ -76,8 +76,7 @@ files:
   `Cause()`; `RefusedWithCause`)
 - `tools/desk/internal/deskkit/trace_test.go` (NEW)
 - `tools/desk/internal/deskkit/trace-mutations.json` (NEW - the `muhar` spec for row 16)
-- `tools/desk/cmd/deskdispatch/` (`exec.go`, `dispatch.go`, `worktree.go`, `main.go`, and a
-  new `trace_test.go`)
+- `tools/desk/cmd/deskdispatch/` (`exec.go`, `dispatch.go`, `worktree.go`, `main.go`, and a new `trace_test.go`)
 - `tools/desk/cmd/deskwt/` (`exec.go`, `main.go`, `trace_test.go`)
 - `tools/desk/cmd/desktoken/` (`desktoken.go`, `main.go`, `trace_test.go`)
 - `tools/desk/cmd/deskfile/` (`exec.go`, `main.go`, `trace_test.go`)

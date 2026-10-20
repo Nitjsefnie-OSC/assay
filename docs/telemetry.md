@@ -231,6 +231,33 @@ measured/unavailable counts with totals over measured records only, and per-phas
 distributions. The `perfrec` module's README documents the recorder API for other
 standalone tools.
 
+A forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
+runs, unavailable runs, total forge calls, calls per run (p50 / p90 / max, nearest rank), each
+row's share of all forge calls, and the rate-limit cost — the busiest UTC clock hour's calls
+and that hour and the p90 run as a percentage of the 5000-requests-per-hour App budget floor. Unlike
+wall time, the forge count is pooled across the two schemas: perf-v1 `forgeCalls` and the
+perf-v2 `http` counter are the same seam with the same lower-bound meaning, and a call spends
+the budget whichever schema recorded it. Its rules:
+
+- A perf-v2 record whose `http` counter is `unavailable` is an unavailable run: it adds no
+  calls and sits in no distribution, and a row with no measured run prints `-`, never `0`.
+- `statusgen`'s perf-v1 `forgeCalls` is documented as "not counted" (below), so its records
+  are unavailable runs too; perf-v1 has no unavailable state of its own.
+- Steps are never read (their calls belong to the invocation), and perf-v3 records stay in
+  their own section.
+- The figures are HTTP attempts, not GraphQL quota points. 5000 requests per hour is the floor
+  of an App installation's REST limit (a larger installation gets more), while the counted
+  attempts also include GraphQL calls (their own points budget), conditional 304s and other
+  forges, and the busiest hour pools every tool whichever installation it ran as. A
+  percentage therefore gauges pressure; it is neither a bound on nor a measure of any one
+  installation's draw.
+- A row is keyed on the record's tool label and build stamp only when they have the roster
+  and hex shapes (`perfrec.Label`, `perfrec.SourceSHA`); anything else groups under `other`
+  or `unpinned`, so a malformed or planted perf-v1/perf-v2 record cannot put a path, URL or
+  control byte into this section. (The older tables on the same report still print the raw
+  `tool`.) A negative count reads as unavailable, and sums hold at the int64 maximum instead
+  of wrapping.
+
 Never recorded: argv, flag values, repo, PR or issue numbers, branch, path, title, body,
 error text, session tag, environment values, hostname, user name, or tokens. A test plants a
 repo slug, a PR number, a branch, an absolute path, a session tag and a token-shaped
@@ -274,11 +301,12 @@ Coverage is terminal observations, not a running-process census: killed or still
 commands may have no record. Child and forge counters retain the documented lower bounds;
 adding wrappers does not make custom runners or HTTP clients counted transports.
 
-## Planned perf-v3 workflow profile — 19 October 2026
+## Local perf-v3 profiles — 19 October 2026
 
-The [attributed performance specification](performance-attribution-spec.md) is a future
-contract, delivered by desktools-v2/63–65. No perf-v3 producer is implemented by this
-amendment. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
+The [attributed performance specification](performance-attribution-spec.md) is delivered incrementally by desktools-v2/63–65. The local schema, typed resolver,
+writer and mixed reader are implemented in perfrec; CLI/launcher and provider adoption are
+separate integrations. The [frozen API and wire contract](../perfrec/V3.md) describes exact
+fields, bounds, coverage and examples. Human acceptance remains separate. The preceding field prohibitions remain binding on perf-v1/perf-v2; this section
 scopes their future exception to a new schema and explicit workflow profile only.
 
 Existing `ASSAY_TELEMETRY=1` without a selected new profile keeps prior producer behavior.
@@ -296,6 +324,12 @@ observations; parent inclusive time and child/request time are never summed into
 workflow time. Future perfdata import applies its own explicit workflow consent and
 source/epoch aliases before preview or upload; it never forwards raw local work locators or
 native harness IDs. Existing counts-only network telemetry and its two switches are unchanged.
+
+The current [provider adapter coverage](provider-performance.md) records actual sends at
+the counted leaf, forwards response bodies without an additional read, and separates
+desktoken authentication HTTP. Qualified public-provider queries may select bounded cost
+metadata in the same operation. Other schemas retain unknown cost without a probe or
+fallback request. Hot-path composition remains explicit; this is not fleet-wide coverage.
 
 The planned v3 contract includes query/cache-service calls as a separate observation boundary:
 client logical/transport counts and latency, handler/cache/coalescing work, and actual upstream

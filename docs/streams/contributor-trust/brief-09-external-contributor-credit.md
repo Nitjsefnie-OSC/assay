@@ -48,16 +48,9 @@ version: 1
 ## Context
 
 files:
-- `tools/changelog/aggregate.py` — a new `credits` subcommand (fragment directory in, a
-  fragment-to-pull-request map out, resolved from git alone), and an optional `--credits
-  <file>` on `highlights` and `roll` that appends the credit suffix to every bullet of a
-  credited fragment. The module stays pure over the filesystem and makes no network call.
-- `tools/changelog/aggregate_test.sh` — three new cases, plus the `AGG_IMPL` fail-first
-  evidence the harness already supports.
-- `.github/workflows/release.yml` — the aggregate step resolves the credits map and passes it
-  to `highlights`; the same map is passed to `roll` in the write step so the changelog section
-  and the release body agree. The release job's checkout gains the history depth the git half
-  of the resolution needs.
+- `tools/changelog/aggregate.py` — a new `credits` subcommand (fragment directory in, a fragment-to-pull-request map out, resolved from git alone), and an optional `--credits <file>` on `highlights` and `roll` that appends the credit suffix to every bullet of a credited fragment. The module stays pure over the filesystem and makes no network call.
+- `tools/changelog/aggregate_test.sh` — three new cases, plus the `AGG_IMPL` fail-first evidence the harness already supports.
+- `.github/workflows/release.yml` — the aggregate step resolves the credits map and passes it to `highlights`; the same map is passed to `roll` in the write step so the changelog section and the release body agree. The release job's checkout gains the history depth the git half of the resolution needs.
 - `changelog/README.md` — one sentence in the proxy recipe, and the opt-out marker.
 - `tools/changelog/README.md` — the credits map's shape and its three states.
 - `changelog/contributor-trust-credit.md` (new).

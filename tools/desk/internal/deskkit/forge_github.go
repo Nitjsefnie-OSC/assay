@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/medici-finance/assay/perfrec"
 	"io"
 	"net/http"
 	"net/url"
@@ -57,9 +58,10 @@ import (
 // defaults to go-gh's own transport, so a test points BaseURL at an httptest server (and may
 // supply a Client whose Transport reaches it).
 type GitHubForge struct {
-	Token   string
-	BaseURL string
-	Client  *http.Client
+	Token    string
+	BaseURL  string
+	Client   *http.Client
+	Observer RequestObserver
 
 	// rc caches the go-gh REST client built from Token/BaseURL. Lazily constructed by
 	// restClient so a bare struct literal (the golden test's construction shape) still works.
@@ -114,7 +116,7 @@ func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {
 	rc, err := ghapi.NewRESTClient(ghapi.ClientOptions{
 		Host:      host,
 		AuthToken: g.Token,
-		Transport: countRoundTrips(transport), // perf forgeCalls; counts and delegates
+		Transport: observedTransport(countRoundTrips(transport), g.Observer, "provider", false),
 	})
 	if err != nil {
 		return nil, Unverifiable("cannot build go-gh REST client", err)
@@ -261,6 +263,10 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 		return nil, err
 	}
 	var bodyReader io.Reader
+	pointsSelected := false
+	if path == "/graphql" && g.Observer.Sink != nil && g.baseURL() == GitHubAPIBase {
+		in, pointsSelected = ghPointInput(in)
+	}
 	if in != nil {
 		b, merr := json.Marshal(in)
 		if merr != nil {
@@ -268,7 +274,16 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 		}
 		bodyReader = bytes.NewReader(b)
 	}
-	resp, rerr := rc.Request(method, g.baseURL()+path, bodyReader)
+	ctx := context.Background()
+	var capture *pointCapture
+	if pointsSelected {
+		// go-gh sanitizes JSON through another response-body wrapper. Keep the
+		// observation handle on this operation rather than asserting the body's
+		// concrete type after library response processing.
+		capture = &pointCapture{}
+		ctx = context.WithValue(ctx, pointCaptureKey{}, capture)
+	}
+	resp, rerr := rc.RequestWithContext(ctx, method, g.baseURL()+path, bodyReader)
 	if rerr != nil {
 		var he *ghapi.HTTPError
 		if errors.As(rerr, &he) {
@@ -279,6 +294,9 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(resp.Body)
+	if capture != nil && capture.body != nil {
+		attachRequestPoints(capture.body, decodeRequestPoints(raw, perfrec.UnitGitHubPoints))
+	}
 	if readErr != nil {
 		return nil, Unverifiable(fmt.Sprintf("%s %s response body cut off mid-transfer (%d bytes arrived) — refusing to treat a partial answer as a complete one", method, path, len(raw)), readErr)
 	}

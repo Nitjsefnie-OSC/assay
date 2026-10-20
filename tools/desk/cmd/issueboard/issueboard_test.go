@@ -145,7 +145,7 @@ func installForge(t *testing.T, byRepo map[string]*repoFixture) *[]forgeCall {
 	t.Setenv("DESK_TOOLS_DISABLED", "") // ensure the kill switch is disarmed
 	calls := &[]forgeCall{}
 	prev := forgeFor
-	forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
+	forgeFor = func(repo string, _ ...deskkit.RequestObserver) (deskkit.Forge, deskkit.ForgeRepo, error) {
 		owner, name, _ := strings.Cut(repo, "/")
 		return &fakeForge{repo: repo, data: byRepo[repo], calls: calls}, deskkit.ForgeRepo{Owner: owner, Name: name}, nil
 	}

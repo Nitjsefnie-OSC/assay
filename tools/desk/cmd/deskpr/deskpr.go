@@ -59,12 +59,13 @@ type gitFacts struct {
 // (audit every path). finalize is deferred so exactly one line is written no
 // matter which branch returns.
 type auditCtx struct {
-	verb          string
-	repo          string
-	pr            *int
-	head          string
-	detail        string
-	successResult string // ResultOK unless a noop set it to ResultNoop
+	verb           string
+	repo           string
+	pr             *int
+	head           string
+	detail         string
+	successResult  string // ResultOK unless a noop set it to ResultNoop
+	writeAttempted bool   // set before any potentially mutating remote call
 }
 
 func (a *auditCtx) log(result, detail string) {
@@ -110,7 +111,10 @@ func (a *auditCtx) finalize(err error) {
 	case deskkit.ExitRefused:
 		result = deskkit.ResultRefused
 	default:
-		result = deskkit.ResultUnverifiable
+		result = deskkit.ResultUnwritten
+		if a.writeAttempted {
+			result = deskkit.ResultUnverifiable
+		}
 	}
 	a.log(result, err.Error())
 }
@@ -376,6 +380,7 @@ func cmdCreate(args []string) (err error) {
 		return werr
 	}
 
+	ac.writeAttempted = true
 	if pushErr := pushFn(spec); pushErr != nil {
 		return pushErr
 	}
@@ -772,6 +777,7 @@ func cmdUpdate(args []string) (err error) {
 		// one); the tracking ref for the PR head branch is still recorded (push.go recordPushed).
 		spec.srcRef, spec.dstBranch = "HEAD", pushDest
 	}
+	ac.writeAttempted = true
 	if pushErr := pushFn(spec); pushErr != nil {
 		return pushErr
 	}

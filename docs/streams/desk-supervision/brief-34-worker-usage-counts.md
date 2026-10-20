@@ -53,20 +53,14 @@ consumers:
 
 ## Context
 files:
-- **add** `tools/desk/internal/deskkit/usage.go` (planned) — `UsageRecord` type (schema
-  `usage-v1`), store-directory resolution, append writer, strict reader.
+- **add** `tools/desk/internal/deskkit/usage.go` (planned) — `UsageRecord` type (schema `usage-v1`), store-directory resolution, append writer, strict reader.
 - **add** `tools/desk/internal/deskkit/usage_test.go` (planned).
 - **add** `tools/desk/cmd/deskusage/main.go` (planned), `tools/desk/cmd/deskusage/record.go` (planned),
   `tools/desk/cmd/deskusage/summary.go` (planned) and their tests — the verb.
-- **edit** `tools/desk/internal/deskkit/rosterconfig.go` — `EnvUsageDir = "ASSAY_USAGE_DIR"` and
-  its entry in `knownRosterKeys()` (line 536).
-- **edit** `statusgen/rosterconfig.go` (`scanKnownRosterKeys`, line 457) and
-  `statusgen/testdata/roster_coupling.json` — the twin of the new key (the file's own
-  KEEP-IN-SYNC rule).
-- **edit** `plugins/assay/skills/worker-desk/SKILL.md` — the "Fill to N, refill on completion"
-  bullet (line 127) gains the record step.
-- **edit** `tools/desk/README.md` — a `deskusage` row in the tool table and the
-  `ASSAY_USAGE_DIR` key.
+- **edit** `tools/desk/internal/deskkit/rosterconfig.go` — `EnvUsageDir = "ASSAY_USAGE_DIR"` and its entry in `knownRosterKeys()` (line 536).
+- **edit** `statusgen/rosterconfig.go` (`scanKnownRosterKeys`, line 457) and `statusgen/testdata/roster_coupling.json` — the twin of the new key (the file's own KEEP-IN-SYNC rule).
+- **edit** `plugins/assay/skills/worker-desk/SKILL.md` — the "Fill to N, refill on completion" bullet (line 127) gains the record step.
+- **edit** `tools/desk/README.md` — a `deskusage` row in the tool table and the `ASSAY_USAGE_DIR` key.
 - **add** `changelog/desk-supervision-34.md` (planned).
 
 facts:

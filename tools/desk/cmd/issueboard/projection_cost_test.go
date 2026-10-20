@@ -63,7 +63,7 @@ func TestProjectionCostProbe(t *testing.T) {
 		t.Errorf("unexpected provider request %s %s", req.Method, req.URL.Path)
 		return 500, `{}`
 	}}
-	forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
+	forgeFor = func(repo string, _ ...deskkit.RequestObserver) (deskkit.Forge, deskkit.ForgeRepo, error) {
 		owner, name, _ := strings.Cut(repo, "/")
 		return &deskkit.GitHubForge{Token: "local-fixture", BaseURL: "https://fixture.invalid", Client: &http.Client{Transport: transport}}, deskkit.ForgeRepo{Owner: owner, Name: name}, nil
 	}

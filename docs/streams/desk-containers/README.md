@@ -35,8 +35,8 @@ component list, build/run topology, and open questions.
 | 03 | [per-desk images (named by desk) + build matrix + publish wiring](brief-03-desk-images-build-matrix.md) | 2 | M | done | 2026-09-16 verify-desk (desk-containers/03 dispatched verifier; row 5 now PASS given assay#1025, rows 1-4/7 could-not-check offline-docker-lane, risk-value NAMED-NOT-DERIVED filed assay#1218) | 2026-09-17 assay-reviewer-app[bot] (approved PR #1220 @ c391ed99ccedc80dc426893c265dd8100c8f398f) |
 | 04 | [interactive desktop launch script (desk-run.sh)](brief-04-launch-script.md) | 3 | M | todo | — | — |
 | 05 | [docker-compose definition for the five desks](brief-05-docker-compose.md) | 3 | S | todo | — | — |
-| 06 | [Kubernetes manifests for the five desks](brief-06-k8s-manifests.md) | 3 | M | todo | — | — |
-| 07 | [multi-desk control layer — tmux/tmuxinator evaluation + cross-platform config](brief-07-desk-control-layer.md) | 4 | M | todo | — | — |
+| 06 | [Kubernetes manifests for the five desks](brief-06-k8s-manifests.md) | 3 | M | implemented | — | — |
+| 07 | [Optional Linux operator terminal layout over the shared desk attach path](brief-07-desk-control-layer.md) | 11 | M | todo | — | — |
 | 08 | [A tick contract: one bounded pass when the harness says `--tick`, so a loop pod can finish](brief-08-tick-contract-for-desk-skills.md) | 3 | M | implemented | — | — |
 | 09 | [cellctl: host-local harness cell — scrubbed per-cell environment, `smoke`, `status`, session lock, stricter `check`](brief-09-scrubbed-host-cell.md) | 0 | M | implemented | — | — |
 | 10 | [cellctl in Go: `tools/desk/cmd/cellctl`, bash kept as the oracle until parity](brief-10-cellctl-go-port.md) | 1 | L | implemented | — | — |
@@ -57,6 +57,8 @@ component list, build/run topology, and open questions.
 | 25 | [`cellctl desk --force` — diagnose a failed desk boot, repair what it can, ask before each destructive step, `-y` answers yes](brief-25-desk-force-repair.md) | 2 | M | todo | — | — |
 | 26 | [Local PostgreSQL in Docker for a multi-cell host — pinned image, one database and restricted role per cell, runtime credentials, backup and restore drill, and the `cell.env` keys a cell reads its DSN from](brief-26-local-docker-postgres.md) | 3 | M | todo | — | — |
 | 27 | [PostgreSQL on Kubernetes with CloudNativePG — a Kustomize component with one Cluster, a database and role per cell, out-of-band Secrets, object-store backups, and the explicit local-to-CNPG migration procedure](brief-27-cnpg-kubernetes-postgres.md) | 4 | L | todo | — | — |
+| 28 | [Package in-cluster cellctl and bind the interactive desk profile](brief-28-package-in-cluster-cellctl-and-bind-the-interactive-desk-profile.md) | 10 | M | todo | — | — |
+| 29 | [Qualify the Kubernetes desk cell and operator recovery end to end](brief-29-qualify-the-kubernetes-desk-cell-and-operator-recovery-end-to-end.md) | 11 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -249,3 +251,22 @@ steps, and it leaves the same unfinished checkpoints behind.
   is an interactive-terminal confirm only (typed confirm code, then re-measure, then atomic
   consume before any effect). It is a convenience, not an authorization control.
   Approval-based apply is deferred (amendment 21). No verb defines a blanket `--yes`.
+
+## Current Kubernetes-first path — 20 October 2026
+
+Read [amendment 28](../../proposals/non-ci-architecture/28-interactive-kubernetes-desks.md).
+It supersedes the historical desktop-first critical path above for this cohort. One desk
+per interactive Pod/PVC; cellctl runs in a separate Linux operator Pod. Native Windows,
+desktop Docker, CronJobs, GitOps examples and a workflow controller are not required.
+
+- Packaging head: /06, with existing /02 credential acceptance still owed.
+- Managed runtime: graph-execution/26 + /22 -> /27, plus agent-execution/01–03 -> new /09.
+- Operator: /06 + /15 + agent-execution/09 -> new /28.
+- Qualification: /28 + /27 (CNPG) + /18 (lifecycle) + /20 (inventory) -> new /29.
+- Optional Linux layout: /28 -> revised /07; it is not a qualification gate.
+
+The new branch has waves /09=9, /28=10, /29=11; /07=11. These are dependency depths,
+not promises that external admission/security prerequisites have passed. All reusable
+specs, briefs, code, profiles and generic migration/qualification live in Assay. Preserve
+historical facts and old gates; the managed path cannot claim the legacy PEM profile as
+candidate isolation. No cluster was contacted or profile activated by this amendment.

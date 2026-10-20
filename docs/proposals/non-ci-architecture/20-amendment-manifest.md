@@ -266,3 +266,41 @@ statusgen/26 and performance-collection/01–09 are amended; completed /61 stays
 The target, future-state bindings, storage/recovery and runtime handoff carry the same
 context/consent/coverage contract. This supersedes earlier v2-only future measurement intent,
 not historical v1/v2 facts, Evidence or the collection stream's parked state.
+
+## Write-policy and pickup amendment — 18 October 2026
+
+| Obligation | Owning plan / candidate change | Proof and limits |
+|---|---|---|
+| One reusable local write evaluator and command adapter | New desktools-v2/66 (writeguard keeps its current parser; the /31 port is withdrawn) | Library/built-hook parity, effect boundary, source-bound consumers and external-module builds; other guards keep independent owners |
+| Future/guideline recheck at implementation pickup | statusgen/20–21 amended; current spec and worker-kit instructions use the manual procedure | /20 scoped guideline/target discovery; /21 actual dispatch hold/continue behavior and shipped-version citation; no resolver/activation claimed |
+| Managed workspace consumers | Consumer plans must bind allocation observations, hook profile and sandbox roots; qualification consumes exact producer versions | Public contracts stand alone; adopter tracking/rollout and active-worker acknowledgments remain in their own venue |
+
+Inspected base: `c3d073572f41e09bedcac05944f9a202c3267353`. Historical accounts and
+completed Evidence remain unchanged. Live claims/PRs were not read in this local
+authoring pass: these candidate amendments require the existing affected-work
+checkpoint/reconciliation before dispatch and never silently rebind a running worker.
+
+Active-plan inspection, 18 October 2026: 52 open public PRs were enumerated through
+the worker identity. medici-finance/assay#3409 (since merged) withdrew /31; medici-finance/assay#3429 (since
+merged) also changed the brief specification.
+This amendment keeps /66 independent and adds graph-execution/22 as its target
+consumer. Reconcile source revisions at merge/pickup; no running worker is rebound
+and no competing proposal is treated as approved. Dispatch refs were not read.
+
+## Interactive Kubernetes owner routing — 20 October 2026
+
+[Controlling amendment](28-interactive-kubernetes-desks.md). No new stream or runtime owner.
+
+| Obligation | Applied authoring change | Acceptance |
+|---|---|---|
+| Separately interactive role Pods | desk-containers/06 version 5 | Five workloads/PVCs; structured offline negative controls; compatibility custody disclosed |
+| Shared Kubernetes transport and managed standing profile | New agent-execution/09; /08 follows /09 | Current identity/stop/readiness checks, no workflow-store prerequisite; verifier privileges remain distinct |
+| In-cluster operator | New desk-containers/28 | Compiled cellctl through existing clients; scoped operator capability, reconnect never launches |
+| Whole-cell and optimization proof | New desk-containers/29 | Five-role flow, custody/recovery boundaries, bounded startup and zero idle model calls; separate real-profile witness |
+| Optional fleet presentation | desk-containers/07 version 4 after /28 | Linux attachment layout; no native Windows gate or parallel launcher |
+| Storage and scheduled compatibility | /27 and /12 dated routing | CNPG profile consumes base directly; CronJobs cannot co-own interactive roles |
+| Shared runtime, roles and public migration | graph-execution/26–27 consumption; amendment 28 migration table | Existing R1–R8 semantics, exact-subject observations and perf-v3 counts retained; source handoff preserves history |
+
+New tests are future implementation obligations. Existing completed Evidence is unchanged.
+Active PostgreSQL/image-scan/performance PRs are recorded in amendment 28 and reconciled at
+pickup. The parked execution stream is not silently admitted by this routing note.

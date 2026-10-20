@@ -36,28 +36,11 @@ id: c4f45c56-1898-4dcc-aaaa-d10ecda4df98
 
 ## Context
 files:
-- `statusgen/brieffile.go` — accept `schema: brief-v2`; parse the hierarchical `brief:`
-  (`<cell>:<repo>:<stream>:<NN>`) and validate cell/repo against `graph-repos.yaml` and
-  stream/NN against the path; resolve elided refs; parse `version:` (int ≥ 1) and PROBLEM a
-  Task/Verify diff without a bump (needs the merge-base — same plumbing the existing
-  Status-transition lint uses); witness rows carry `version`, and the lifecycle fold demotes
-  a witness whose version ≠ the brief's to `unknown (witness for vN, brief is vM)`; parse `gates:` / `feathers:` into
-  typed structs; parse `id:` (uuid v4 shape, PROBLEM on duplicate ids across the tree),
-  `supersedes:` (refs, validated), Verify-row `id`/`target`; validate refs against the §3.3 grammar and `docs/streams/graph-repos.yaml` (planned) — created by brief 01;
-  PROBLEM on unknown edge `type`; gating behaviour NOT implemented (reserved).
-- `statusgen/lifecycle.go` (new) — the pure derivation: inputs `{briefs, prRecords,
-  witnesses, approvals, rulings, issueLabels, lookedAt}` → per-brief `{cell, reason,
-  witnessRef}`. No I/O. Precedence and demotion per spec §2.
-- `statusgen/ghfetch.go` (new) — the ONLY network code: list PRs (open + merged, paged,
-  with bodies and merge SHAs), reviews at head, issue labels. Token from `GITHUB_TOKEN` /
-  `--token-file`; read-only endpoints only; every failure returns `lookedAt=false` with
-  the HTTP status, never an empty "nothing found".
-- `statusgen/main.go` — new verb `reconcile [--root . --repo owner/name --json --offline]`;
-  `--lint` gains the offline arm (PR-derived cells `unknown (offline)`).
-- `statusgen/lifecycle_test.go` — the fixture matrix: one per row of the spec §2 table
-  plus demotion cases (reopened PR, red witness, dismissed approval) and the offline
-  arm. (Authored above as `statusgen/testdata/lifecycle/`; the matrix landed inline in
-  the test file — text corrected 2026-10-09, the /03 half of #1909.)
+- `statusgen/brieffile.go` — accept `schema: brief-v2`; parse the hierarchical `brief:` (`<cell>:<repo>:<stream>:<NN>`) and validate cell/repo against `graph-repos.yaml` and stream/NN against the path; resolve elided refs; parse `version:` (int ≥ 1) and PROBLEM a Task/Verify diff without a bump (needs the merge-base — same plumbing the existing Status-transition lint uses); witness rows carry `version`, and the lifecycle fold demotes a witness whose version ≠ the brief's to `unknown (witness for vN, brief is vM)`; parse `gates:` / `feathers:` into typed structs; parse `id:` (uuid v4 shape, PROBLEM on duplicate ids across the tree), `supersedes:` (refs, validated), Verify-row `id`/`target`; validate refs against the §3.3 grammar and `docs/streams/graph-repos.yaml` (planned) — created by brief 01; PROBLEM on unknown edge `type`; gating behaviour NOT implemented (reserved).
+- `statusgen/lifecycle.go` (new) — the pure derivation: inputs `{briefs, prRecords, witnesses, approvals, rulings, issueLabels, lookedAt}` → per-brief `{cell, reason, witnessRef}`. No I/O. Precedence and demotion per spec §2.
+- `statusgen/ghfetch.go` (new) — the ONLY network code: list PRs (open + merged, paged, with bodies and merge SHAs), reviews at head, issue labels. Token from `GITHUB_TOKEN` / `--token-file`; read-only endpoints only; every failure returns `lookedAt=false` with the HTTP status, never an empty "nothing found".
+- `statusgen/main.go` — new verb `reconcile [--root . --repo owner/name --json --offline]`; `--lint` gains the offline arm (PR-derived cells `unknown (offline)`).
+- `statusgen/lifecycle_test.go` — the fixture matrix: one per row of the spec §2 table plus demotion cases (reopened PR, red witness, dismissed approval) and the offline arm. (Authored above as `statusgen/testdata/lifecycle/`; the matrix landed inline in the test file — text corrected 2026-10-09, the /03 half of #1909.)
 
 facts:
 - Cell precedence (highest witnessed wins): `done` > `verified` > `implemented` >

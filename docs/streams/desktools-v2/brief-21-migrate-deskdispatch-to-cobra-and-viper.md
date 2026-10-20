@@ -278,5 +278,33 @@ RISK-VALUE: DERIVED — tier default = "any" @ tools/desk/cmd/deskdispatch/cli.g
 
 **VERIFY: PASS** — all 10 Verify rows pass with 0 fail in the network-off container witness at 0e661b6e15de, row 10 included, and every row also passes by hand.
 
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLIHelpOffline$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIHelpOffline " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 2 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLIConfigFlow$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIConfigFlow " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 3 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLILegacyForms$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLILegacyForms " "$f")" -eq 1` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go run ./cmd/muhar -j 1 -spec internal/clicontract/testdata/mutations/desktools-v2-21.json` | pass exit=0 sandbox=container-netns | sha256:f6ef0bc66633 | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test -count=1 ./cmd/deskdispatch/...` | pass exit=0 sandbox=container-netns | sha256:51e0cd197348 | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && GOOS=windows go vet ./cmd/deskdispatch` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 7 | `f=$(mktemp) && cd tools/desk && CLI_OWNER=desktools-v2/21 go test -count=1 -v ./internal/clicontract -run '^TestCLIOwnerMigrated$' > "$f" 2>&1 && grep -F -e "--- PASS: TestCLIOwnerMigrated " "$f"` | pass exit=0 sandbox=container-netns | sha256:0c9e5268a24f | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 8 | `bash tools/desk/internal/regression/check-floor.sh` | pass exit=0 sandbox=container-netns | sha256:25342791aba4 | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --consumers` | pass exit=0 sandbox=container-netns | sha256:68dde192c481 | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+| 10 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestCLIHelpDoesNotDiscoverManifests$' ./cmd/deskdispatch/ > "$out" && grep -F -- '--- PASS: TestCLIHelpDoesNotDiscoverManifests ' "$out")` | pass exit=0 sandbox=container-netns | sha256:87ccea60d99e | 2026-10-20 | assay-verifier-app[bot] @ b787e831d0be (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#3600 run=c4298e4ba80ddd369b46afbbe3b44f8c058b25340813832f1a4cedeabd613946 source=b787e831d0be847f1ca81cc48496c8c0deb01fe5 brief=docs/streams/desktools-v2/brief-21-migrate-deskdispatch-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+
+### Verifier pass — 2026-10-20 (merged main b787e831d0be, re-wake re-verify)
+
+The execution witness above ran at source b787e831d0be847f1ca81cc48496c8c0deb01fe5 in a local docker container, image assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie, git 2.47), started with `--network none`, verifyrun sandbox=container-netns with the engine's default seccomp profile. Admission is the Verification-Attestation line above (medici-finance/assay#3600); the dispatcher admission check returned 0 before and after the witness run. This runner follows the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). This pass was woken because two deskdispatch inputs changed since 0e661b6e15de: the worker prompt reference and the worker prompt objective reference, each gaining a 12-line "Architecture pickup" prose section. No Go source, test, mutation spec or registry row in the deliverable changed, and the Verify table is unchanged.
+
+The substance is the existing by-hand Evidence block of 2026-10-19 at source 0e661b6e15de107efcf05ed7d8d0d21983eb3afa, where every Verify row passed by hand with 0 fail; this pass did not re-run the rows by hand.
+
+Risk-bearing values: frontmatter risk metadata is present with all four fields "no", and the gate is model. Enumeration over the change since the prior pass (0e661b6e15de..b787e831d0be, deliverable paths) found no literal constant: the two reference files gained prose only. The values enumerated and derived in the earlier passes (ExitUsage = 2 at tools/desk/internal/cli/cli.go:18; tier default = "any" at tools/desk/cmd/deskdispatch/cli.go:70) are unchanged at this source.
+
+RISK-VALUE: N/A — enumeration over 0e661b6e15de..b787e831d0be for the deskdispatch package, the clicontract mutation spec and the migration registry found no new or changed literal; the earlier DERIVED entries stand unchanged.
+
+Closure note: row 9's command, as defined, has no explicit --brief, --delivery or --base. The shared consumer-delivery-range lint reports that as a NOTICE today and promotes it to a PROBLEM when a change closes this brief (simulated in scratch with the stream row set to verified: one PROBLEM, on row 9 only). This is a check-definition gap tracked by the consumer-range class issue medici-finance/assay#1915, not a deliverable defect. Outside the Verify table, the pinned form (--brief desktools-v2/21, --delivery 66dbced7188e, --base its first parent 418592cb5b78) exited 0 with summary 8 corroborated, 0 disproved, 0 unchecked.
+
+**VERIFY: PASS** — all 10 Verify rows pass with 0 fail in the network-off container witness at b787e831d0be; the verified closure still needs row 9 re-authored with pinned consumer endpoints (medici-finance/assay#1915).
+
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.

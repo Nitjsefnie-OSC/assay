@@ -183,7 +183,7 @@ Use the projected forms only with an `issueboard --version` producer advertising
 never as a retry after an incomplete projected read. The intake projection preserves
 the whole issue population, escalation/closure and quarantine; the inbox projection
 covers only the named addressee. Local raw intake remains `issueboard intake`.
-See [producer/plugin compatibility and rollback](../../../../docs/issue-projections.md).
+See [producer/plugin compatibility and rollback](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
 
 ## Scored triage — the impact/risk/effort triple at exit
 
@@ -640,3 +640,25 @@ is not enough: an issue with that title from anyone else is ordinary intake. The
 If inspecting raw forge results, keep these records out of intake and work scans; use a
 direct issue read only to audit or recover the exact dispatch. Closing a record attests
 the pre-work stamp, never that the brief was verified or the work was done.
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-desk-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-desk-role` for descriptive desk attribution; never alter `DESK_LOOP`.

@@ -44,8 +44,7 @@ id: 0a18147e-5225-4ba4-91ab-b3bcd92bc00d
 
 files:
 - `tools/desk/scripts/forge-ban.sh` (planned) — the statusgen half exits non-zero above zero.
-- `.github/workflows/forge-surface-control.yml` — that half becomes a gate, not an echo, and
-  the path filter gains `statusgen/**` so a statusgen change runs it.
+- `.github/workflows/forge-surface-control.yml` — that half becomes a gate, not an echo, and the path filter gains `statusgen/**` so a statusgen change runs it.
 - NEW `statusgen/forgeread_nogh_test.go` (planned) — the no-`gh` scan proof.
 - NEW `statusgen/reader_boundary_test.go` (planned) — the capability-boundary test, row 10.
 - `changelog/<branch>.md` — the per-PR fragment this repository requires.
