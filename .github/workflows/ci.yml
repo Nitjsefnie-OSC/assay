@@ -12,8 +12,16 @@ name: ci
 #   are plain public HTTPS, so `go build`/`go test` fetch deps normally.
 
 on:
+  # Pull requests get exactly one run, from the pull_request event. Push runs
+  # only on main, so a PR head is no longer built twice (once per event) on the
+  # same commit. Superseded PR runs are cancelled; main runs never are.
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
