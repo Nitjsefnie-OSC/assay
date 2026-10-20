@@ -1,1 +1,2 @@
 - Bind optional local performance context through shared CLI, current custody parsers, explicit desk launches and runner adapter contexts; document unsupported producer boundaries.
+- Classify invocation metadata in the cell environment registry and constrain private handoff instructions without changing operational authority.
