@@ -39,7 +39,7 @@ func TestPerfV3CLIContextPrecedence(t *testing.T) {
 		profile             perfrec.Profile
 	}{
 		{"inherited", nil, "implement", strings.Repeat("a", 32), "worker-desk", 0, perfrec.ProfileWorkflow},
-		{"override", []string{"--perf-role", "review", "--perf-session-id", "", "--perf-agent-id", strings.Repeat("e", 32), "--perf-parent-agent-id", "", "--perf-parent-invocation-id", "", "--perf-desk-role", "pr-review-desk", "--perf-work", issue}, "review", "", "pr-review-desk", 2, perfrec.ProfileWorkflow},
+		{"override", []string{"--perf-role", "review", "--perf-session-id", "", "--perf-agent-id", strings.Repeat("e", 32), "--perf-parent-agent-id", "", "--perf-parent-invocation-id", "", "--perf-loop-role", "pr-review-desk", "--perf-work", issue}, "review", "", "pr-review-desk", 2, perfrec.ProfileWorkflow},
 		{"clear", []string{"--perf-role=", "--perf-work="}, "", strings.Repeat("a", 32), "worker-desk", 0, perfrec.ProfileWorkflow},
 		{"invalid", []string{"--perf-role=invalid metadata must stay private", "--perf-session-id=private text"}, "", "", "worker-desk", 0, perfrec.ProfileWorkflow},
 		{"tool", []string{"--perf-profile=tool"}, "", "", "", 0, perfrec.ProfileTool},
@@ -109,7 +109,7 @@ func checkCurrentParser(t *testing.T, name, work string) {
 		return out, cmd.ProcessState.ExitCode()
 	}
 	baseline, code := run()
-	changed, got := run("--perf-role=review", "--perf-desk-role=pr-review-desk", "--perf-session-id=", "--perf-work="+work)
+	changed, got := run("--perf-role=review", "--perf-loop-role=pr-review-desk", "--perf-session-id=", "--perf-work="+work)
 	if got != code || string(changed) != string(baseline) {
 		t.Fatalf("optional flags changed current-parser output/exit: %d/%d\n%s\n%s", code, got, baseline, changed)
 	}

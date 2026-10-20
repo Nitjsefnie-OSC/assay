@@ -257,7 +257,7 @@ var perfV3Phases = []string{"discover", "parse", "evaluate", "render", "write", 
 // perfNames are the shared --perf-* context flags (the desk tools' adapter registers the same
 // eight). statusgen binds them on its own flag set: it may not import the desk adapter.
 var perfNames = []string{"perf-profile", "perf-session-id", "perf-agent-id", "perf-parent-agent-id",
-	"perf-parent-invocation-id", "perf-desk-role", "perf-role", "perf-work"}
+	"perf-parent-invocation-id", "perf-loop-role", "perf-role", "perf-work"}
 
 // perfInput collects the parsed --perf-* values. Only the flag package writes it (Set below),
 // so values reach the resolver exactly as the real parser accepted them; it is never re-read
@@ -280,7 +280,7 @@ func (v perfFlag) Set(s string) error {
 		perfInput.ParentAgentID = val
 	case "perf-parent-invocation-id":
 		perfInput.ParentInvocationID = val
-	case "perf-desk-role":
+	case "perf-loop-role":
 		perfInput.DeskRole = val
 	case "perf-role":
 		perfInput.Role = val
