@@ -118,7 +118,7 @@ stay intact, including verified work awaiting generated-board reconciliation.
   apart. No all-role broker, operator key on the service, or human credential at rest.
 - Initial network serving is read/plan-only. Human named actions remain a closed set
   behind their own evidence/decision contract and are not activated by these briefs.
-  `desk__answer` and `desk__adopt` remain absent from agent-facing discovery and dispatch.
+  The legacy human-answer and adopt tools remain absent from agent-facing discovery and dispatch.
   An API plan is never approval, and an approval record is never an unqualified apply route.
 - CLI, MCP and later cockpit use the same authorized results. Filter before private
   joins, counts, errors, pagination, ETags and SSE events. Reauthorize cached reads and

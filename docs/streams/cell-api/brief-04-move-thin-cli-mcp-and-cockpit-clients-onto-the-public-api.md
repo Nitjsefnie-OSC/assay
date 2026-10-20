@@ -11,7 +11,7 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Confirm the supported client matrix and selected read/status workflow, including explicit retained legacy consumers. Agent interfaces must not gain human acts or new ambient credentials."
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 id: 9ca7f67b-e213-452c-93b3-1e86eb234144
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
@@ -107,7 +107,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 
 2. Generate the TypeScript client from the same reviewed contract and supply one small cockpit connection example for cell status, holds, SSE disconnect/reconnect and explicit resync. Exercise it only after the service; no frontend framework replacement, Electron packaging, new feature backlog or direct database/forge dependency. Record every other cockpit/web consumer as retained or separately deferred in 01’s inventory.
 
-3. Keep the agent tool set closed: enumerate actual MCP discovery and dispatch; neither desk__answer nor desk__adopt exists, including aliases/raw forwarding. Human named actions cannot be exposed through CLI query or MCP convenience wrappers. A direct call outside discovery must still fail at server authority.
+3. Keep the agent tool set closed: enumerate actual MCP discovery and dispatch; neither the legacy human-answer tool nor the adopt tool exists, including aliases/raw forwarding. Human named actions cannot be exposed through CLI query or MCP convenience wrappers. A direct call outside discovery must still fail at server authority.
 
 4. Prove CLI, MCP and the thin cockpit example display the same independent fixture results, distinguish execution/effects/acceptance and retain null coverage. Put the parity and end-to-end reconnect harness in the separate desk-module `internal/cellapi/integration/` test package: it starts the mounted server and invokes CLI/MCP/TypeScript consumers without adding those dependencies to the public `cellapi` package. Keep 01's external-import test on that public package. Reconnecting cannot launch a model request, repeat an effect or grant a new lease. Mark migrated consumer receipts without retiring the old service; 07 owns that last-consumer decision. Update client/compatibility docs and generated artifacts.
 
@@ -116,7 +116,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 Consume cell-api/01's versioned HTTP/JSON and SSE seam and the existing cell-op-v1
 result/plan meanings. Authentication, current authorization, provider custody and
 acceptance are separate. Required coverage/freshness, exact subject and unknown outcomes
-survive every adapter. No agent-facing `desk__answer` or `desk__adopt`; no generic role,
+survive every adapter. No agent-facing legacy human-answer or adopt tools; no generic role,
 URL, SQL-write, token or apply escape hatch. Human named actions remain closed and
 separately qualified. Initial service exposure is read/plan-only; approval-based apply
 stays absent until amendment 21's five R7/R3 properties are independently qualified.

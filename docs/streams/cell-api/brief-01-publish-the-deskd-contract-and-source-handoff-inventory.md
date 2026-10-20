@@ -118,7 +118,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 Consume cell-api/01's versioned HTTP/JSON and SSE seam and the existing cell-op-v1
 result/plan meanings. Authentication, current authorization, provider custody and
 acceptance are separate. Required coverage/freshness, exact subject and unknown outcomes
-survive every adapter. No agent-facing `desk__answer` or `desk__adopt`; no generic role,
+survive every adapter. No agent-facing legacy human-answer or adopt tools; no generic role,
 URL, SQL-write, token or apply escape hatch. Human named actions remain closed and
 separately qualified. Initial service exposure is read/plan-only; approval-based apply
 stays absent until amendment 21's five R7/R3 properties are independently qualified.

@@ -11,7 +11,7 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Confirm the concrete issuer and caller mapping, entitlement and revocation bounds, and effective private-data isolation from the demonstrated design. Do not infer approval of a later draft authentication mechanism from an older architecture merge."
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 id: 16d1b169-2541-4b85-90cc-d0d42945e86c
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
@@ -104,7 +104,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 
 2. Filter current authorized inputs before joins, aggregate counts, errors, pagination, ETags, events and cached responses. Recheck access on every read and resumed SSE stream; revoke active streams within the approved bound. A foreign cell, stale grant, swapped admission or unavailable authorization must not reveal object existence or totals. Test actual mounted handlers with the UI bypassed.
 
-3. Expose only read/status/plan operations in this slice. Keep generic apply and human named-action execution absent until their separately qualified contract. Keep human keys and persistent human credentials out of the service. Agent discovery and direct invocation cannot expose desk__answer or desk__adopt; no universal token, role switch or raw proxy. Reuse per-role executors and their existing refusal/audit behavior.
+3. Expose only read/status/plan operations in this slice. Keep generic apply and human named-action execution absent until their separately qualified contract. Keep human keys and persistent human credentials out of the service. Agent discovery and direct invocation cannot expose the legacy human-answer or adopt tools; no universal token, role switch or raw proxy. Reuse per-role executors and their existing refusal/audit behavior.
 
 4. Exercise store admission with ingress deliberately bypassed, and existing executor authority with client checks bypassed. Prove operator terminal/log outputs are unavailable to external/agent callers and scrubbed before serving. Quarantine free-text requests unless the existing contained-reader and answer-only effect boundary are qualified; do not add a second comms ingress. Preserve rate limits and bounded request/reply audit digests without credentials.
 
@@ -115,7 +115,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 Consume cell-api/01's versioned HTTP/JSON and SSE seam and the existing cell-op-v1
 result/plan meanings. Authentication, current authorization, provider custody and
 acceptance are separate. Required coverage/freshness, exact subject and unknown outcomes
-survive every adapter. No agent-facing `desk__answer` or `desk__adopt`; no generic role,
+survive every adapter. No agent-facing legacy human-answer or adopt tools; no generic role,
 URL, SQL-write, token or apply escape hatch. Human named actions remain closed and
 separately qualified. Initial service exposure is read/plan-only; approval-based apply
 stays absent until amendment 21's five R7/R3 properties are independently qualified.

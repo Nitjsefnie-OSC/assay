@@ -4,3 +4,4 @@
 
 ### Fixed
 - Use the canonical blocking decision default in all seven cell-api briefs; retain their authored options, pending evidence and human acceptance gates.
+- Describe the excluded legacy human-action tools with neutral wording throughout the cell-api plan; preserve agent-facing discovery and direct-invocation restrictions.
