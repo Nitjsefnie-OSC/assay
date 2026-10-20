@@ -268,6 +268,8 @@ RISK-VALUE: DERIVED — documentedEPV = 10 @ qualgen/riskscore/learned_test.go:3
 
 **VERIFY: BLOCKED** — four authored rows passed; row 5 observed could-not-check (exit 2), not an observed implementation failure. No status advance. Check-definition instance attached to [medici-finance/assay#1915](https://github.com/medici-finance/assay/issues/1915#issuecomment-6115983645). Wake only after the Verify definition or applicable consumers instrument changes to obtain the delivery diff on merged main.
 
+### Non-implementer verifier re-run — 2026-10-19 claude-opus-5-5[1m]
+
 | # | Command | Result | Output | Date | Runner |
 |---|---------|--------|--------|------|--------|
 | 1 | `cd qualgen && go test ./riskscore/ -run '^TestMinCorpusDerivedFromFeatureCount$' -count=1 -v 2>&1 \| grep -c '^--- PASS: TestMinCorpusDerivedFromFeatureCount'` | pass exit=0 sandbox=container-netns | sha256:4355a46b19d3 | 2026-10-19 | assay-verifier-app[bot] @ 8eb028b49bc5 (on-behalf-of human:ian) (forge-identity) |
@@ -275,8 +277,6 @@ RISK-VALUE: DERIVED — documentedEPV = 10 @ qualgen/riskscore/learned_test.go:3
 | 3 | `cd qualgen && go build ./riskscore/` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 8eb028b49bc5 (on-behalf-of human:ian) (forge-identity) |
 | 4 | `grep -q 'Derivation:' qualgen/riskscore/learned.go` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-19 | assay-verifier-app[bot] @ 8eb028b49bc5 (on-behalf-of human:ian) (forge-identity) |
 | 5 | `statusgen --root . --consumers --brief assay:assay:measured-status:02` | fail exit=2 sandbox=container-netns | sha256:3e4f11ddc077 | 2026-10-19 | assay-verifier-app[bot] @ 8eb028b49bc5 (on-behalf-of human:ian) (forge-identity) |
-
-### Non-implementer verifier re-run — 2026-10-19 claude-opus-5-5[1m]
 
 The table above is the execution witness for this re-run: `statusgen verifyrun --sandbox container-netns`, non-dry, in a throwaway clone of merged main `8eb028b49bc5e7d45e470cc25dc8b4f531605238`. Runner: a local docker container, image assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie, git 2.47), `--network none`, sandbox=container-netns, default seccomp, GOPROXY=off, statusgen and the desk tools built from the tree. It ran under the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). The runner is not the implementer. Dispatcher admission passed before and after the witness (medici-finance/assay#3545). The rows were also run by hand under `bash -o pipefail` in a separate scratch clone at the same sha (host go1.27.2 darwin/arm64, statusgen v1.0.51, `KUBECONFIG=/dev/null`). Rows 1 and 2 printed `1`, rows 3 and 4 exited 0, and row 5 exited 2.
 
@@ -293,6 +293,8 @@ RISK-VALUE: DERIVED — EventsPerVariable = 10 @ qualgen/riskscore/learned.go:46
 Verification-Attestation: medici-finance/assay#3545 run=7b85f0ecf5b4a7cf79d5ea019f8aca9e0f554c8a34fed11c958ecbdf92d462c6 source=8eb028b49bc5e7d45e470cc25dc8b4f531605238 brief=docs/streams/measured-status/brief-02-mincorpus-derivation.md model=claude-opus-5-5 tier=strong
 
 **VERIFY: BLOCKED** — rows 1 to 4 pass in the witness and by hand. Row 5, as restored by medici-finance/assay#3508, still exits 2 (could-not-check) on merged main, because the consumers instrument has no delivery diff to read there (class medici-finance/assay#1915). The delivery-pinned diagnostic finds 0 disproved, but a could-not-check is not a pass, so the status does not advance.
+
+Outcome record: owed, not on this branch. This run's receipt (`blocked`, check-definition, medici-finance/assay#1915) holds the full row set, rows 1 to 5, and it lands from a fresh admitted verifier pass. It supersedes `02-20261012T011455Z-0c5b83ba8296`, the newest earlier receipt for this brief, which holds row 5 under the same blocker. All earlier receipts stay unchanged as history.
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
