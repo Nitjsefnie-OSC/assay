@@ -211,6 +211,9 @@ func scanAwaitingPass(r deskkit.RootConfig, homeRepo, targetSHA string, reader d
 				" carries a ts more than the clock-skew tolerance ahead of now — could-not-check, never let win (#1803 SR-1803-2)"
 		}
 		if oc, ok := outcomes[br.Stream+"/"+br.Num]; ok {
+			if oc.wakeError != "" {
+				payload["could_not_check"] = oc.wakeError
+			}
 			payload["sidecar_outcome"] = oc.Outcome
 			payload["sidecar_ts"] = oc.TS
 			payload["sidecar_sha"] = oc.SHA
@@ -261,10 +264,11 @@ func scanAwaitingPass(r deskkit.RootConfig, homeRepo, targetSHA string, reader d
 
 // outcomeRow is the subset of a verify-outcome record the stuck-flip bucket keys on.
 type outcomeRow struct {
-	TS      string `json:"ts"`
-	Brief   string `json:"brief"`
-	Outcome string `json:"outcome"`
-	SHA     string `json:"sha"`
+	wakeError string // internal decode uncertainty; never sourced from a JSON field
+	TS        string `json:"ts"`
+	Brief     string `json:"brief"`
+	Outcome   string `json:"outcome"`
+	SHA       string `json:"sha"`
 }
 
 // readVerifyOutcomeRecords is verifyloop's ONE reader of verify-outcome records
@@ -295,6 +299,15 @@ func readVerifyOutcomeRecords(root string) (outcomes map[string]outcomeRow, rece
 		}
 		if wrec, ok := deskkit.ParseWakeReceipt(rec.Raw); ok {
 			receipts[brief] = wrec
+		} else {
+			var header struct {
+				Schema string `json:"wake_schema"`
+			}
+			if json.Unmarshal(rec.Raw, &header) == nil && header.Schema == deskkit.SchemaWakeV1 {
+				row := outcomes[brief]
+				row.wakeError = "latest wake receipt for " + brief + " could not decode row identities — could-not-check, never fall back to an older receipt"
+				outcomes[brief] = row
+			}
 		}
 	}
 	return outcomes, receipts, future, nil

@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,6 +166,9 @@ func TestPartialWakeDispatchPreservesPassedRows(t *testing.T) {
 		t.Fatalf("partial coverage lost: %v %#v", d, it.Payload)
 	}
 	prompt := renderDispatchPrompt(it, tier)
+	if strings.Contains(prompt, "Verify table — run EVERY row") || !strings.Contains(prompt, "account for EVERY row") {
+		t.Fatalf("partial execution precedence is ambiguous: %s", prompt)
+	}
 	if !strings.Contains(prompt, "Newly runnable row identities under the unchanged partial receipt: 3") || !strings.Contains(prompt, "Prior receipt PASS observations") || !strings.Contains(prompt, "never infer a whole-brief PASS") {
 		t.Fatalf("dispatch lost observation boundaries: %s", prompt)
 	}
@@ -192,6 +197,90 @@ func TestPartialWakeLegacyRequiresUnchangedInputs(t *testing.T) {
 			disp, reason, _ := dispositionsOf(t, v)
 			if disp["example-stream/01"] != tc.want {
 				t.Fatalf("got %v (%s),want %v", disp["example-stream/01"], reason["example-stream/01"], tc.want)
+			}
+		})
+	}
+}
+
+// regression: #1731
+func TestPartialWakeExecutionLexemesStayCompatible(t *testing.T) {
+	brief := "## Verify\n\n| # | Command | Expect |\n|---|---|---|\n| 1 | `one` | exit 0 |\n| 06 | `six` | exit 0 |\n| +7 | `seven` | exit 0 |\n| 0 | `zero` | exit 0 |\n| -1 | `minus` | exit 0 |\n"
+	rows := parseVerifyRows(brief)
+	want := []int{1, 6, 7, 0, -1}
+	if len(rows) != len(want) {
+		t.Fatalf("legacy numeric execution rows dropped: got %#v", rows)
+	}
+	for i, row := range rows {
+		if row.Num != want[i] {
+			t.Fatalf("row %d: got %d want %d", i, row.Num, want[i])
+		}
+	}
+}
+
+// regression: #1731
+func TestPartialWakeInvalidTableRowsAreNotOmitted(t *testing.T) {
+	for _, id := range []string{"0", "06", "+7", "-1"} {
+		t.Run(id, func(t *testing.T) {
+			brief := strings.Replace(planBriefRows(2), "| 2 |", "| "+id+" |", 1)
+			root := planFixtureRoot(t, map[string]string{"01": brief})
+			rec := heldReceipt(holdTS)
+			rec.Rows = []deskkit.VerifyRowID{"1"}
+			rec.RowsTotal = 1
+			writeReceipts(t, root, rec)
+			v := &VerifyLoop{Root: root, WakeReader: fakeWake{revs: map[string]string{"file:pkg/x.go": "rev1"}}, Issues: openIssues, Now: fixedClock("2026-09-20T12:00:00Z")}
+			disp, why, _ := dispositionsOf(t, v)
+			if disp["example-stream/01"] != dispCouldNotCheck {
+				t.Fatalf("table row %q omitted: %v (%s)", id, disp["example-stream/01"], why["example-stream/01"])
+			}
+		})
+	}
+}
+
+// regression: #1731
+func TestPartialWakeMalformedLatestNeverFallsBack(t *testing.T) {
+	root := planFixtureRoot(t, map[string]string{"01": planBriefRows(2), "02": planBriefRows(2)})
+	old := heldReceipt(holdTS)
+	old.Rows = []deskkit.VerifyRowID{"2"}
+	good, err := old.MarshalLine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the legacy timestamp reducer in the path: the newer malformed receipt,
+	// not the older well-formed hold, must determine the visible uncertainty.
+	bad := strings.Replace(string(good), `"rows":[2]`, `"rows":[0]`, 1)
+	bad = strings.Replace(bad, holdTS, "2026-09-20T06:00:00Z", 1)
+	if err := os.WriteFile(filepath.Join(root, "docs/streams/verify-outcomes.jsonl"), []byte(string(good)+"\n"+bad+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	v := &VerifyLoop{Root: root, WakeReader: fakeWake{revs: map[string]string{"file:pkg/x.go": "rev1"}}, Issues: openIssues, Now: fixedClock("2026-09-20T12:00:00Z")}
+	disp, why, _ := dispositionsOf(t, v)
+	if disp["example-stream/01"] != dispCouldNotCheck {
+		t.Fatalf("malformed latest receipt disappeared: %v (%s)", disp["example-stream/01"], why["example-stream/01"])
+	}
+	if disp["example-stream/02"] != dispDispatch {
+		t.Fatal("malformed receipt must not quarantine an unrelated healthy brief")
+	}
+}
+
+// regression: #1731
+func TestPartialWakeCountBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		total, passed int
+	}{
+		{"wrong-total", 3, 2}, {"above-remainder", 4, 3}, {"negative-pass", 4, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := planFixtureRoot(t, map[string]string{"01": planBriefRows(4)})
+			rec := heldReceipt(holdTS)
+			rec.Rows = []deskkit.VerifyRowID{"1", "2"}
+			rec.RowsTotal = tc.total
+			rec.RowsPassed = tc.passed
+			writeReceipts(t, root, rec)
+			v := &VerifyLoop{Root: root, WakeReader: fakeWake{revs: map[string]string{"file:pkg/x.go": "rev1"}}, Issues: openIssues, Now: fixedClock("2026-09-20T12:00:00Z")}
+			disp, why, _ := dispositionsOf(t, v)
+			if disp["example-stream/01"] != dispCouldNotCheck {
+				t.Fatalf("bad count accepted: %v (%s)", disp["example-stream/01"], why["example-stream/01"])
 			}
 		})
 	}

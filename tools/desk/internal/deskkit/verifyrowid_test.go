@@ -28,7 +28,7 @@ func TestVerifyRowIDCompatibilityAndRefusal(t *testing.T) {
 		}
 	}
 	for _, raw := range []string{
-		`{"rows":[6,"6a"],"rows_total":2,"rows_passed":1,"row_results":[{"row":6,"result":"pass"},{"row":"6a","result":"could-not-run"}]}`,
+		`{"rows":[6,"6a"],"rows_total":2,"rows_passed":0,"row_results":[{"row":6,"result":"could-not-run"},{"row":"6a","result":"could-not-run"}]}`,
 		`{"rows":[6],"rows_total":1,"rows_passed":0,"row_results":[{"row":6,"result":"could-not-run"}]}`,
 	} {
 		if _, err := ParseJoinInput([]byte(raw)); err != nil {
@@ -39,5 +39,13 @@ func TestVerifyRowIDCompatibilityAndRefusal(t *testing.T) {
 		if _, err := ParseJoinInput([]byte(raw)); err == nil {
 			t.Errorf("writer accepted ambiguous identity %s", raw)
 		}
+	}
+}
+
+// regression: #1731
+func TestVerifyRowIDWriterRejectsHeldPassOverlap(t *testing.T) {
+	raw := []byte(`{"rows":["6a"],"rows_total":2,"rows_passed":1,"row_results":[{"row":6,"result":"could-not-run"},{"row":"6a","result":"pass"}]}`)
+	if _, err := ParseJoinInput(raw); err == nil {
+		t.Fatal("writer accepted held row also claiming PASS")
 	}
 }

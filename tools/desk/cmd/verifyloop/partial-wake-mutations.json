@@ -35,8 +35,8 @@
     {
       "name": "discard-lettered-identity",
       "file": "cmd/verifyloop/verifyrows.go",
-      "old": "ID:         id,",
-      "new": "ID:         deskkit.VerifyRowID(strconv.Itoa(num)),"
+      "old": "num, numErr := strconv.Atoi(rawID)",
+      "new": "num, numErr := strconv.Atoi(rawID)\n if exact && numErr != nil {id = deskkit.VerifyRowID(strconv.Itoa(num))}"
     },
     {
       "name": "reuse-pass-after-input-change",
@@ -49,6 +49,36 @@
       "file": "cmd/verifyloop/dispatch.go",
       "old": "if rows := payloadValue(it, \"wake_passed_rows\"); rows != \"\" {",
       "new": "if rows := payloadValue(it, \"wake_passed_rows\"); false && rows != \"\" {"
+    },
+    {
+      "name": "count-bounds-weakening",
+      "file": "cmd/verifyloop/briefscan.go",
+      "old": "rec.RowsTotal != len(all) || rec.RowsPassed < 0 || rec.RowsPassed > len(remaining)",
+      "new": "rec.RowsPassed < 0"
+    },
+    {
+      "name": "drop-malformed-latest-uncertainty",
+      "file": "cmd/verifyloop/briefscan.go",
+      "old": "if oc.wakeError != \"\" {",
+      "new": "if false && oc.wakeError != \"\" {"
+    },
+    {
+      "name": "writer-held-pass-overlap",
+      "file": "internal/deskkit/verifyoutcomejoin.go",
+      "old": "if heldRows[row] {",
+      "new": "if false && heldRows[row] {"
+    },
+    {
+      "name": "drop-noncanonical-inventory",
+      "file": "cmd/verifyloop/verifyrows.go",
+      "old": "if !exact {\n\t\t\t\t\tid = deskkit.VerifyRowID(rawID)",
+      "new": "if !exact {\n continue\n\t\t\t\t\tid = deskkit.VerifyRowID(rawID)"
+    },
+    {
+      "name": "ambiguous-partial-prompt",
+      "file": "cmd/verifyloop/dispatch.go",
+      "old": "if payloadValue(it, \"wake_runnable_rows\") != \"\" {",
+      "new": "if false && payloadValue(it, \"wake_runnable_rows\") != \"\" {"
     }
   ]
 }

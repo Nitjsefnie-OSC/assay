@@ -351,6 +351,7 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 		return Refused(fmt.Sprintf("refused: rows_passed %d exceeds rows_total %d", passed, total))
 	}
 
+	heldRows := map[VerifyRowID]bool{}
 	if v, has := f["rows"]; has {
 		var rows []VerifyRowID
 		if err := json.Unmarshal(v, &rows); err != nil {
@@ -362,6 +363,7 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 				return Refused("refused: rows repeats row " + string(row))
 			}
 			seen[row] = true
+			heldRows[row] = true
 		}
 	}
 	if v, has := f["row_results"]; has {
@@ -400,6 +402,9 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 				return Refused(fmt.Sprintf("refused: row_results[%d].result must be one of pass, fail, could-not-run, deferred", i))
 			}
 			if res == RowPass {
+				if heldRows[row] {
+					return Refused("refused: held row " + string(row) + " also claims PASS")
+				}
 				pass++
 			}
 		}

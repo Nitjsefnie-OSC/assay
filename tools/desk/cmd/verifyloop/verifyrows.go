@@ -39,16 +39,9 @@ func (r verifyRow) runnerExecuted() bool {
 // `Class` column is legacy: every row defaults to `check`. Rows whose `#` cell is not an
 // integer are outside verdict-v1; the scheduling reader retains exact suffixed IDs.
 func parseVerifyRows(briefContent string) []verifyRow {
-	// verdict-v1 remains integer-only. Do not silently change its signed schema.
-	// Scheduling uses parseVerifyRowsIn directly and retains suffixed identities.
-	rows := parseVerifyRowsIn(extractSection(briefContent, "## Verify"))
-	var numeric []verifyRow
-	for _, row := range rows {
-		if row.Num > 0 {
-			numeric = append(numeric, row)
-		}
-	}
-	return numeric
+	// Preserve the exact historical Atoi execution contract, independently of the
+	// stricter canonical identities required before scheduling can reuse observations.
+	return parseVerifyRowsMode(extractSection(briefContent, "## Verify"), false)
 }
 
 // parseVerifyRowsIn parses the rows of an already-extracted Verify SECTION body. It is the
@@ -58,6 +51,10 @@ func parseVerifyRows(briefContent string) []verifyRow {
 // ID retains an exact positive number plus optional ASCII letter suffix; Num is
 // populated only for the separate integer-only verdict-v1 execution contract.
 func parseVerifyRowsIn(section string) []verifyRow {
+	return parseVerifyRowsMode(section, true)
+}
+
+func parseVerifyRowsMode(section string, scheduling bool) []verifyRow {
 	if section == "" {
 		return nil
 	}
@@ -88,11 +85,24 @@ func parseVerifyRowsIn(section string) []verifyRow {
 				}
 				return ""
 			}
-			id, ok := deskkit.ParseVerifyRowID(cell(numCol))
-			if !ok {
-				continue
+			rawID := cell(numCol)
+			id, exact := deskkit.ParseVerifyRowID(rawID)
+			num, numErr := strconv.Atoi(rawID)
+			if scheduling {
+				if !exact && numErr != nil {
+					continue
+				}
+				// Keep noncanonical numeric cells in the inventory. Reuse must surface
+				// them as could-not-check, never silently omit an original row.
+				if !exact {
+					id = deskkit.VerifyRowID(rawID)
+				}
+			} else {
+				if numErr != nil {
+					continue
+				}
+				id = deskkit.VerifyRowID(rawID)
 			}
-			num, _ := strconv.Atoi(string(id))
 			class := "check"
 			if hasClass {
 				if c := cell(classCol); c != "" {
