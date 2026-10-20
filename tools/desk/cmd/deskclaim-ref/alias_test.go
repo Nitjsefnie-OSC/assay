@@ -125,26 +125,29 @@ func raceHarness(t *testing.T, r *raceStore) func(args ...string) int {
 	return func(args ...string) int { return run(args) }
 }
 
-// Same instant: the larger id loses, removes its own ref, and refuses; the smaller id wins.
-func TestAliasRaceTieGoesToTheSmallerID(t *testing.T) {
+// A race loser yields whatever the ids or dates say: the claim date is the client's own clock and
+// no compare-and-swap ties two spellings together, so no ordering rule may let the later
+// claimant keep its ref. It removes its own ref and refuses; the rival's claim is untouched.
+func TestAliasRace_later_claimant_yields_whatever_ids_or_dates_say(t *testing.T) {
 	cases := []struct {
 		name, mine, rival string
-		wantRC            int
+		rivalDate         func(f *fakeStore) string
 	}{
-		{"larger id loses", "b--pr-108", "a--pr-108", exitRefused},
-		{"smaller id wins", "a--pr-108", "b--pr-108", exitOK},
+		{"same second, larger id", "b--pr-108", "a--pr-108", func(f *fakeStore) string { return f.now.Format(time.RFC3339) }},
+		{"same second, smaller id", "a--pr-108", "b--pr-108", func(f *fakeStore) string { return f.now.Format(time.RFC3339) }},
+		{"rival dated earlier", "a--pr-108", "z--pr-108", func(f *fakeStore) string { return f.now.Add(-time.Second).Format(time.RFC3339) }},
+		{"rival dated later (skewed clock)", "z--pr-108", "a--pr-108", func(f *fakeStore) string { return f.now.Add(time.Hour).Format(time.RFC3339) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newStore()
-			r := &raceStore{fakeStore: f, rival: tc.rival, rivalDate: f.now.Format(time.RFC3339)}
+			r := &raceStore{fakeStore: f, rival: tc.rival, rivalDate: tc.rivalDate(f)}
 			rc := raceHarness(t, r)("acquire", tc.mine, "--repo", aliasRepo, "--owner", "sess-M")
-			if rc != tc.wantRC {
-				t.Fatalf("rc = %d, want %d", rc, tc.wantRC)
+			if rc != exitRefused {
+				t.Fatalf("rc = %d, want 5", rc)
 			}
-			_, kept := f.claims[tc.mine]
-			if kept != (tc.wantRC == exitOK) {
-				t.Errorf("own ref present = %v after rc %d", kept, rc)
+			if _, kept := f.claims[tc.mine]; kept {
+				t.Error("the later claimant kept its ref")
 			}
 			if _, ok := f.claims[tc.rival]; !ok {
 				t.Error("the rival's claim was disturbed")
@@ -153,21 +156,52 @@ func TestAliasRaceTieGoesToTheSmallerID(t *testing.T) {
 	}
 }
 
-// The earlier forge-stamped date wins regardless of id order.
-func TestAliasRaceEarlierDateWins(t *testing.T) {
-	f := newStore()
-	r := &raceStore{fakeStore: f, rival: "z--pr-108", rivalDate: f.now.Add(-time.Second).Format(time.RFC3339)}
-	if rc := raceHarness(t, r)("acquire", "a--pr-108", "--repo", aliasRepo, "--owner", "sess-M"); rc != exitRefused {
-		t.Fatalf("an earlier rival did not win: rc = %d", rc)
+// A rival that has already finished its own acquire (exit 0, post-check done) never looks again,
+// so the claimant that arrives second must yield even when its id and date sort first.
+func TestAliasRace_finished_rival_is_never_left_holding_beside_us(t *testing.T) {
+	cases := []struct {
+		name       string
+		rivalAge   time.Duration // how long ago the finished rival's claim was minted
+		mine, them string
+	}{
+		{"same second, our id smaller", 0, "a--pr-108", "b--pr-108"},
+		{"our clock behind theirs", -5 * time.Second, "z--pr-108", "a--pr-108"},
 	}
-	if _, kept := f.claims["a--pr-108"]; kept {
-		t.Error("the loser kept its ref")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newStore()
+			f.seedClaim(tc.them, "sess-R", "dispatched", "", tc.rivalAge)
+			// Our pre-check listing predates the rival's create: hide it from the first listing.
+			h := &hideOnceStore{fakeStore: f, hide: tc.them}
+			rc := listFailHarness(t, h)("acquire", tc.mine, "--repo", aliasRepo, "--owner", "sess-M")
+			if rc != exitRefused {
+				t.Fatalf("rc = %d, want 5 (both would hold the PR)", rc)
+			}
+			if _, kept := f.claims[tc.mine]; kept {
+				t.Error("we kept our ref beside a finished rival")
+			}
+			if _, ok := f.claims[tc.them]; !ok {
+				t.Error("the finished rival's claim was disturbed")
+			}
+		})
 	}
+}
 
-	f2 := newStore()
-	r2 := &raceStore{fakeStore: f2, rival: "a--pr-108", rivalDate: f2.now.Add(time.Second).Format(time.RFC3339)}
-	if rc := raceHarness(t, r2)("acquire", "z--pr-108", "--repo", aliasRepo, "--owner", "sess-M"); rc != exitOK {
-		t.Fatalf("an earlier claim lost to a later rival: rc = %d", rc)
+// A loser that cannot remove its own ref says so (exit 6) rather than reporting a clean refusal
+// with its ref still standing.
+type removeFailStore struct{ *hideOnceStore }
+
+func (removeFailStore) Remove(string) (deskkit.ClaimWriteOutcome, bool) {
+	return deskkit.ClaimWriteUnverifiable, false
+}
+
+func TestAliasRace_loser_that_cannot_release_exits_6(t *testing.T) {
+	f := newStore()
+	f.seedClaim("a--pr-108", "sess-A", "dispatched", "", 10*time.Minute)
+	h := &hideOnceStore{fakeStore: f, hide: "a--pr-108"}
+	rc := listFailHarness(t, removeFailStore{h})("acquire", "b--pr-108", "--repo", aliasRepo, "--owner", "sess-M")
+	if rc != exitUnverifiable {
+		t.Fatalf("rc = %d, want 6", rc)
 	}
 }
 

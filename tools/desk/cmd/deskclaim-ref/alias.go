@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
@@ -23,6 +22,11 @@ import (
 // per-PR keys have no alias. This mirrors tools/dispatch-claim.sh in repos that ship it: the two
 // tools speak one protocol, so they must agree on what counts as the same claim.
 
+// Scope of "same claim": only the two key shapes above. deskkit's review-claim family helpers
+// (ReviewClaimFamilies, ReviewClaimKeyIsSecurity) are a separate, wider grammar for review keys
+// (any --<lane> suffix, case-insensitive security); a key with another suffix, or an upper-case
+// `PR`, is NOT aliased here and keeps its own claim. Widening this to one shared parser is a
+// follow-up; until then the two definitions differ on purpose and this is the narrower one.
 var prKeyRe = regexp.MustCompile(`^.+--pr-([0-9]+)(--security)?$`)
 
 // prKeyParts returns the PR number and lane ("" or "--security") of a per-PR key. The number is
@@ -91,9 +95,14 @@ func claimLive(id string) (ref deskkit.ClaimStoreRecord, live, verifiable bool) 
 }
 
 // checkAliases refuses when another spelling of the same PR and lane is live. phase "pre" runs
-// before the create. Phase "post" runs after our create succeeded and settles two spellings
-// created in the same instant: the claim with the earlier forge-stamped date wins (ties go to
-// the smaller id), and the loser removes its own ref and refuses. stop=false means clear.
+// before the create. Phase "post" runs after our create succeeded: two spellings can both pass
+// their pre-check before either creates, and no compare-and-swap ties two different refs
+// together, so the post phase settles it without any ordering rule. It yields to ANY live alias:
+// the claimant removes its own ref and refuses. No clock is consulted (the claim date is the
+// client's own clock, so it cannot arbitrate), and a rival that already finished its own post
+// phase and returned 0 never looks again, so the later claimant must always be the one to yield.
+// The worst case is that two claimants created in the same instant both see each other and both
+// refuse; that fails closed, and a retry settles it. stop=false means clear.
 //
 // A post-phase check that cannot be answered (exit 6) removes the ref just created, best effort:
 // a claim whose uniqueness nobody confirmed must not be left standing.
@@ -121,21 +130,8 @@ func checkAliasesOnce(id, phase string) (rc int, stop bool) {
 			continue
 		}
 		if phase == "post" {
-			mine, st := store.Read(id)
-			if st != deskkit.ClaimReadHeld {
-				errf("unverifiable: could not re-read our own claim on %s%s", id, causeSuffix())
-				return exitUnverifiable, true
-			}
-			won, ok := claimsBefore(id, mine.Date, other, ref.Date)
-			if !ok {
-				errf("unverifiable: unreadable claim date on %s or %s", id, other)
-				return exitUnverifiable, true
-			}
-			if won {
-				continue
-			}
 			if outcome, _ := store.Remove(id); outcome != deskkit.ClaimWriteApplied {
-				errf("unverifiable: lost the race to %s but could not release %s/%s%s", other, refPrefix, id, causeSuffix())
+				errf("unverifiable: %s is live but could not release %s/%s%s", other, refPrefix, id, causeSuffix())
 				return exitUnverifiable, true
 			}
 		}
@@ -144,20 +140,6 @@ func checkAliasesOnce(id, phase string) (rc int, stop bool) {
 		return exitRefused, true
 	}
 	return exitOK, false
-}
-
-// claimsBefore reports whether claim a sorts before claim b: earlier forge-stamped date first,
-// then the smaller id. ok=false when either date is unreadable.
-func claimsBefore(aID, aDate, bID, bDate string) (before, ok bool) {
-	at, err1 := time.Parse(time.RFC3339, aDate)
-	bt, err2 := time.Parse(time.RFC3339, bDate)
-	if err1 != nil || err2 != nil {
-		return false, false
-	}
-	if !at.Equal(bt) {
-		return at.Before(bt), true
-	}
-	return aID < bID, true
 }
 
 // printAliasHeld is what `show` appends for every live alias of id: a FREE here is not free when
