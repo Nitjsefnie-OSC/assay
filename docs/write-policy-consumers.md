@@ -150,9 +150,20 @@ The concrete immutable source handoff is instead:
 | Public source commit | `a5c75d60d584e7bcfe7a97510a502567f1dc97a6` |
 | Complete module Git tree at that commit | `158db710b9860994fa7a680d259c8e05c32d05a3` |
 | Write-policy Git tree at that commit | `ecef94d5be39d593c3286d3f72957e220cecb32b` |
-| Module checksum | `h1:EFIFHAvlGWz8l0/W19D/6AQq29MWxfcCKnF58qC6OZ0=` |
-| go.mod checksum | `h1:fT/P/8tLzSLzogIRNMLXVu8yWnqVOm3xwqf/tMjjPTg=` |
 | API / compatible profiles | `writepolicy/v1` / `legacy-hook/v1`, `managed/v1` |
+
+The verified external consumer uses this exact module requirement:
+
+```go.mod
+require github.com/medici-finance/assay/deskcore v0.0.0-20261020202831-a5c75d60d584
+```
+
+Its corresponding authentic `go.sum` records are:
+
+```go.sum
+github.com/medici-finance/assay/deskcore v0.0.0-20261020202831-a5c75d60d584 h1:EFIFHAvlGWz8l0/W19D/6AQq29MWxfcCKnF58qC6OZ0=
+github.com/medici-finance/assay/deskcore v0.0.0-20261020202831-a5c75d60d584/go.mod h1:fT/P/8tLzSLzogIRNMLXVu8yWnqVOm3xwqf/tMjjPTg=
+```
 
 On 20 October 2026 the public Go proxy resolved that exact commit and served the
 module with checksum verification enabled. All 57 module source blobs matched
