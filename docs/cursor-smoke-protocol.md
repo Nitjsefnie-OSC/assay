@@ -189,8 +189,9 @@ and the reviewer's verdict.
 Expect: a draft PR URL/number exists on the scratch adopter repository, carries a real diff
 (not an empty or placeholder change), and received exactly one reviewer verdict from the
 `pr-review-desk` cycle; the isolation and evidence floors from Steps 5–7 hold throughout and
-are not re-relaxed for this step; the review gate is upheld (the skill does not flip the PR
-ready, merge or close it). A loop that stops before a PR exists, or reaches a PR with no
+are not re-relaxed for this step; the review gate is upheld (`pr-review-desk` owns the
+draft-to-ready flip and only after its own approval; a human merges; no skill merges or closes
+the PR, and the worker never flips it ready). A loop that stops before a PR exists, or reaches a PR with no
 review cycle, is a FAIL (or `BLOCKED` where the environment, not the bundle, is the cause)
 routed to the owning surface of the skill that stopped — and a PR number invented for the
 run log is the vacuous-green failure this stream forbids.

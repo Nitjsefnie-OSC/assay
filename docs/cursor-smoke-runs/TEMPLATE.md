@@ -24,7 +24,7 @@ Step 1: Fresh install per the adopt path
   Action taken: ...
   Transcript excerpt:
     <paste — the dry-run, the placement and the `--check` exit 0>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL): owner/repo#<n> (harness-portability/12)
 
 Step 2: Resident rules present without manual pasting (both surfaces)
@@ -33,7 +33,7 @@ Step 2: Resident rules present without manual pasting (both surfaces)
   Action taken: ...
   Transcript excerpt:
     <paste — each session stating rule 3 unprompted>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL): owner/repo#<n> (harness-portability/12)
 
 Step 3: Invoke each skill by name (headless) -> body loads
@@ -42,7 +42,7 @@ Step 3: Invoke each skill by name (headless) -> body loads
   Action taken: invoked every assay:* skill in Step 3's list by name
   Transcript excerpt:
     <paste one identifying line per loaded body>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL): owner/repo#<n> (harness-portability/12)
 
 Step 4: Auto-trigger probe
@@ -52,7 +52,7 @@ Step 4: Auto-trigger probe
   Transcript excerpt:
     <paste — IDE auto-load, and the headless outcome either way>
   Headless auto-trigger posture: <fired | did not fire — state it>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL): owner/repo#<n> (harness-portability/12)
 
 Step 5: Dispatch probe -> observed runs / degrades / refuses matches the ruled matrix
@@ -63,7 +63,7 @@ Step 5: Dispatch probe -> observed runs / degrades / refuses matches the ruled m
   Transcript excerpt:
     <paste — N>=2 items, each completed with its own worktree / evidence / review, and the
     session's own statement of any degradation>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL; floor breach if an item was dropped or a guarantee weakened): owner/repo#<n> (harness-portability/12, or /04 for a floor breach)
 
 Step 6: Isolation probe -> refuses where it cannot isolate, runs where it can
@@ -74,7 +74,7 @@ Step 6: Isolation probe -> refuses where it cannot isolate, runs where it can
   Action taken: ...
   Transcript excerpt:
     <paste — the refusal under the blocking posture, the worktree under the permitting one>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL, floor breach): owner/repo#<n> (harness-portability/04)
 
 Step 7: Evidence-discipline probe -> real command evidence recorded
@@ -83,7 +83,7 @@ Step 7: Evidence-discipline probe -> real command evidence recorded
   Action taken: ...
   Transcript excerpt:
     <paste — command + exit code + output>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL, floor breach): owner/repo#<n> (harness-portability/04)
 
 Step 8: Full desk loop -> draft PR, then one pr-review-desk review cycle
@@ -95,7 +95,7 @@ Step 8: Full desk loop -> draft PR, then one pr-review-desk review cycle
   Reviewer verdict: <verdict from the one pr-review-desk cycle>
   Transcript excerpt:
     <paste — dispatch, the draft PR URL, and the review verdict>
-  Result: <PASS | FAIL | BLOCKED>
+Result: <PASS | FAIL | BLOCKED>
   Issue (if FAIL): owner/repo#<n> (owning surface of the skill that stopped)
 
 Human gate sign-off: <account> confirms — real Cursor install, version as listed, an excerpt
