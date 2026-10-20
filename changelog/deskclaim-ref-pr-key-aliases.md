@@ -1,0 +1,3 @@
+### Fixed
+
+- `deskclaim-ref` now treats one PR claimed under two key spellings as one claim (`pr-05` and `pr-5` included): `acquire`, `steal` (and the TTL reclaim) and `progress` refuse while another spelling of the same PR and lane is live, a claim created in the same instant as another spelling yields to it (the later claimant removes its own ref and refuses; at worst both refuse and a retry settles it), `show` prints an `ALIAS-HELD` line after `FREE`, and a claim set that cannot be read exits 6 (a post-create check that cannot be answered also removes the ref it just created). `deskdispatch` reports an `ALIAS-HELD` holder as a live holder instead of a claim-acquire error, and no longer counts an `ALIAS-HELD` row as an occupied slot.
