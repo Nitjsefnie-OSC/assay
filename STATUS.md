@@ -19,7 +19,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [contributor-trust](docs/streams/contributor-trust/README.md) | P1 | active | 0/9 | 2026-10-20 |  |
 | [derived-board](docs/streams/derived-board/README.md) | P1 | active | 3/9 | 2026-10-19 |  |
 | [desk-containers](docs/streams/desk-containers/README.md) | P2 | active | 2/27 | 2026-10-20 |  |
-| [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 7/35 | 2026-10-20 |  |
+| [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 8/35 | 2026-10-20 |  |
 | [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/52 | 2026-10-20 |  |
 | [desktools-go-git](docs/streams/desktools-go-git/README.md) | P2 | active | 5/8 | 2026-10-19 |  |
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/50 | 2026-10-20 | 15 withdrawn |
@@ -33,7 +33,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/35 | 2026-10-20 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-19 |  |
 
-### Stuck auto-flips (31)
+### Stuck auto-flips (30)
 
 _gate:model briefs at `verified` that the model auto-flip has not moved to `done`. See docs/board-stuck-autoflips.md._
 
@@ -50,7 +50,6 @@ _gate:model briefs at `verified` that the model auto-flip has not moved to `done
 | [desk-supervision/17](docs/streams/desk-supervision/README.md) | Verification failures create durable worker repair obligations | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-supervision/18](docs/streams/desk-supervision/README.md) | Enforce repair reservations at worker dispatch | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-supervision/19](docs/streams/desk-supervision/README.md) | Persist review findings and apply the existing round cap across sessions | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
-| [desk-supervision/22](docs/streams/desk-supervision/README.md) | Configure provider, model and effort per cell role | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-supervision/27](docs/streams/desk-supervision/README.md) | Verify-outcome records carry join keys — delivering PRs, verifier tier and timing, per-row results — and every failure a blocker kind | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-tools/15](docs/streams/desk-tools/README.md) | `deskdispatch --dry-run --worktree <path>` — render the prompt against an operator-supplied home | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-tools/23](docs/streams/desk-tools/README.md) | Opt-in local usage + timing telemetry — a per-invocation perf record with a 7-day history, and `deskperf` to read it | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
@@ -126,7 +125,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 406e36aa 2026-10-20T04:44:04Z_
+_last regen: d1825924 2026-10-20T04:47:51Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +146,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 406e36aa 2026-10-20T04:44:04Z_
+_last regen: d1825924 2026-10-20T04:47:51Z_
 
 **Progress:** 34/83 brief items done.
 
@@ -202,7 +201,7 @@ _last regen: 406e36aa 2026-10-20T04:44:04Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (14 for the desk · 31 for the driver · 31 for workers · 30 for an operator · 19 runner-pending — of 129 total; 4 could-not-check)
+## Awaiting verification / review (14 for the desk · 31 for the driver · 31 for workers · 30 for an operator · 18 runner-pending — of 128 total; 4 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
@@ -315,7 +314,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 13 [exec:strong] | implemented | 1000 | 0 | — | operator | environment blocker, cite #1631 | — | — |
 | quality | 19 [exec:strong] | verified | 1000 | 0 | — | operator | environment blocker, cite #1800 | 2026-10-19 assay-verifier-app[bot] @ 3add8a9ae315 (claude-opus-5-5) | — |
 
-### Runner-pending (19)
+### Runner-pending (18)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -334,7 +333,6 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-supervision | 17 [exec:strong] | verified | 1500 | 1 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 2f44050f8a70 (claude-opus-5-5) | — |
 | desk-supervision | 19 [exec:strong] | verified | 1500 | 1 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-04 assay-verifier-app[bot] @ 70deba75a577 (claude-opus-5-5) | — |
 | desk-supervision | 18 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-20 assay-verifier-app[bot] @ b73d90d774fc (claude-opus-5-5) | — |
-| desk-supervision | 22 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-20 assay-verifier-app[bot] @ b73d90d774fc (claude-opus-5-5) | — |
 | desktools-v2 | 05 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-02 assay-verifier-app[bot] @ 454982f91a72 (claude-opus-5-5) | — |
 | desktools-v2 | 12 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ e4d474af8bca (claude-opus-5-5) | — |
 | desktools-v2 | 14 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-07 assay-verifier-app[bot] @ 91f04b81ba06 (claude-opus-5-5) | — |
@@ -557,7 +555,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 09 Integrate qualified improvement evidence into Improve — todo (wave 3)
 - 10 Qualify native evidence across execution modes — todo (wave 5)
 
-### desk-supervision (28 open)
+### desk-supervision (27 open)
 
 - 04 Lifecycle hooks — after-create / before-run / after-run / before-remove from config home — implemented (wave 1)
 - 08 Objectives over transitions — measure an objective-style worker kit with skillbench — implemented (wave 1)
@@ -573,7 +571,6 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 19 Persist review findings and apply the existing round cap across sessions — verified (wave 0)
 - 20 Review scope and first-pass completeness — implemented (wave 0)
 - 21 Reverify changed external prerequisites without a synthetic push — implemented (wave 1)
-- 22 Configure provider, model and effort per cell role — verified (wave 0)
 - 23 Evidence lands on main behind a file-scoped gatekeeper — validator workflow + lander App — todo (wave 2)
 - 24 One file per verify outcome — retire the shared appended outcomes log — implemented (wave 0)
 - 25 Carry a correctness approval across a merge of main that leaves the PR's diff byte-identical — todo (wave 1)
@@ -919,7 +916,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 - 01 base image — toolchains, desk-tools, assay skills, persistent-volume layout — done (wave 1)
 - 03 per-desk images (named by desk) + build matrix + publish wiring — done (wave 2)
 
-### desk-supervision (7 done)
+### desk-supervision (8 done)
 
 - 01 Observable probes + the `desksupervise` observer — liveness that bites — done (wave 0)
 - 02 Per-run stop signal — `STOP.run.<key>` flag + desk-window stop on observer signal — done (wave 1)
@@ -928,6 +925,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 - 06 Workpad — one upserted progress comment per PR — done (wave 0)
 - 07 Runtime snapshot — `desksupervise status` for operators and the console — done (wave 1)
 - 16 Verification wake conditions — stop repeating unchanged blocked checks — done (wave 0)
+- 22 Configure provider, model and effort per cell role — done (wave 0)
 
 ### desk-tools (14 done)
 
@@ -1072,4 +1070,4 @@ _Terminal: retired by a later decision or merged into a successor. Not counted i
 
 ## Totals
 
-**32** streams (**21** active, **0** paused, **11** parked) · **106/497** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
+**32** streams (**21** active, **0** paused, **11** parked) · **107/497** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
