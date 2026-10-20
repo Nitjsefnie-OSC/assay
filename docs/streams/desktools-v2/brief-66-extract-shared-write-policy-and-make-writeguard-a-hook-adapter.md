@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: Local write-isolation and exemption behavior are security controls; review must confirm policy relocation and all adapters preserve refusals and independent sandbox enforcement.
 decision-trigger: spec
-issues: []
+issues: [3752]
 schema: brief-v2
 version: 1
 id: 26781d38-3bac-4c4e-8ba2-0688894744fb

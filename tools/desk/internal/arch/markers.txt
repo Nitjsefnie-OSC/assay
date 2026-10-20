@@ -13,3 +13,4 @@ S-identity 2
 S-publication-scan 1
 S-review-verdict 3
 S-worktree 1
+S-write-policy 1

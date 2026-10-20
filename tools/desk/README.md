@@ -5409,20 +5409,17 @@ unprompted-code-execution class this tool exists to remove. Until `sudo make des
 
 `cmd/writeguard` is the Claude Code PreToolUse hook (registered in `.claude/settings.json`)
 that mechanically refuses writes to the SHARED checkout: Edit/Write/MultiEdit/NotebookEdit
-targets inside it, and Bash commands that write into it or cd into it. Full decision model:
-the `guard.go` package doc comment. It fails OPEN (any parse/git error allows) so a broken
-guard can never brick every session.
+targets inside it, and recognized Bash commands that write into it or cd into it.
+Decisions come from `deskcore/writepolicy`; the command observes paths, Git, claims
+and callouts and renders the existing hook protocol. See [the contract](../../docs/write-policy.md)
+and [source/consumer qualification](../../docs/write-policy-consumers.md). Legacy
+parse/Git failures produce no decision; that mapping is not available to managed admission.
 
-**Deployment (#20).** This repo's own `.claude/settings.json` now wires the
-installed `/opt/desk-tools/bin/writeguard` binary into `hooks.PreToolUse` for both the
-file-edit tools and `Bash` — mirroring the wiring already live in the sibling
-a sibling adopter repo. Before #20, the guard was built and
-unit-tested here (`go test ./cmd/writeguard/...`) but never actually armed for sessions
-dispatched against this repo's own shared checkout: prompt discipline (worker-prompt
-essentials in the batch-fanout skill, §Guardrails' `git -C <shared> status --porcelain`
-dirt-poll) was the only backstop for THIS repo, which is exactly the F-34/F-35 class this
-hook exists to mechanically close. Any repo that adopts `tools/desk` and wants the same
-backstop copies the same `hooks.PreToolUse` block into its own `.claude/settings.json`.
+**Deployment.** The supported harness configuration invokes the installed writeguard
+binary for file-edit tools and Bash. This public source tree has no adopter
+`.claude/settings.json`; `TestSettingsJSONWiresWriteguard` therefore skips. Building
+or publishing this package does not install or arm a hook. An adopter must separately
+qualify its actual configuration, missing-binary behavior and sandbox boundaries.
 
 **The shared-homed exemption is OPT-IN (#1035).** A session homed in the shared checkout
 (project dir AND payload cwd both resolve there, per #1007) is exempt ONLY when the
@@ -5547,8 +5544,11 @@ never on a keyword appearing in it:
 
 **Known-uncovered** (true before this PR and unchanged by it; not regressions): escaped or
 split command names (`\rm`, `r"m"`, `'git' clean`), interpreters (`python3 -c`,
-`perl -i -pe`), `find . -delete`, `rsync --backup-dir`, and the git mutations not in the
+`perl -i -pe`), `rsync --backup-dir`, and the git mutations not in the
 alternation (`revert`, `pull`, `branch -f`, `worktree add`, `config`).
+
+`find` mutation forms already recognized by the existing classifier are covered by
+`TestIssue1193FindDeleteExec` (18 cases). This does not qualify arbitrary `find` commands.
 
 Backtick substitution was listed here as uncovered-and-unchanged. **That was wrong and is
 measured wrong** (#1259 security review S-3): this PR's masking is what hid it, so main
