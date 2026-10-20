@@ -280,6 +280,66 @@ Rows 1, 2 and 3 pass again in this witness run at d34483321afd, exit 0 each. The
 
 **VERIFY: PASS** — 4/4 Verify rows pass in the container witness at d34483321afd (rows 1 to 3 also pass by hand at 98763cb13757, above). Row 4 exits 0 with 10 corroborated, 0 disproved, 0 unchecked. Gate: human; status left for the human gate to advance.
 
+### Second-stamp re-verify — 2026-10-20 at 671d33a050bc (container witness plus by-hand runs)
+
+#### Container witness (statusgen verifyrun, sandbox=container-netns)
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3ContextAndConsent$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3ContextAndConsent ' "$out")` | pass exit=0 sandbox=container-netns | sha256:94ae9dfaafb6 | 2026-10-20 | assay-verifier-app[bot] @ 671d33a050bc (on-behalf-of human:ian) (forge-identity) |
+| 2 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3RecordToReportFlow$' ./internal/deskkit/ > "$out" && grep -F -- '--- PASS: TestPerfV3RecordToReportFlow ' "$out")` | pass exit=0 sandbox=container-netns | sha256:d9df2704f70e | 2026-10-20 | assay-verifier-app[bot] @ 671d33a050bc (on-behalf-of human:ian) (forge-identity) |
+| 3 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3IsolationAndOverhead$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3IsolationAndOverhead ' "$out")` | pass exit=0 sandbox=container-netns | sha256:63c04c51e730 | 2026-10-20 | assay-verifier-app[bot] @ 671d33a050bc (on-behalf-of human:ian) (forge-identity) |
+| 4 | `statusgen --root . --consumers --brief desktools-v2/63` | pass exit=0 sandbox=container-netns | sha256:5bbac2405598 | 2026-10-20 | assay-verifier-app[bot] @ 671d33a050bc (on-behalf-of human:ian) (forge-identity) |
+
+Verification-Attestation: medici-finance/assay#3786 run=ddec25df7dc4ad526c4e40349d72368292f8f6cac1da480b2ec75bae0d553688 source=671d33a050bcc8516d2ba3776d2754a6b330beb3 brief=docs/streams/desktools-v2/brief-63-define-perf-v3-attribution-profiles-and-compatible-local-readers.md model=claude-opus-5-5 tier=strong
+
+Subject revision: merged main 671d33a050bcc8516d2ba3776d2754a6b330beb3, detached and clean, with origin/main at the same commit. It contains the delivery 3937f39ae2d00d150633f2c22568a79d1f5efb5a and the earlier Evidence above (d34483321afd and its follow-up). This is the second stamp, from a different session than the first-stamp verifier; it is not the implementer. The dispatcher check (deskdispatch --check-verifier) gave exit 0 before any row ran, with the binding above. Runner class: a local docker container under the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). The image is assay-verify:go1.27, id sha256:955fd6c46c93 (built FROM golang:1.27.2-trixie, git 2.47). It ran with --network none, GOPROXY=off, GOTOOLCHAIN=local, the engine's default seccomp profile and statusgen verifyrun --sandbox container-netns, KUBECONFIG=/dev/null, and no live infrastructure. Each row was also run by hand at the subject revision on the host (git 2.56.0, go1.27.2 darwin/arm64, statusgen v1.0.52).
+
+Protected table: deskpathguard rederive found 4 original rows and 0 author-added rows at this source. The parsed Verify section is byte-identical at the merge-base ff225b351d7d, at the delivery 3937f39ae2d0 and at the subject revision. The marker below is the one already on main in the Evidence above, carried into this run.
+
+Verification-Table: delivery=3937f39ae2d00d150633f2c22568a79d1f5efb5a base=ff225b351d7d69de90567d37940077e0a1a16639 original=ff225b351d7d69de90567d37940077e0a1a16639
+
+Prior Evidence: a PASS verdict dated 2026-10-20 at d34483321afd, which followed the run at source 98763cb13757 above. Since 98763cb13757 the deliverable code is byte-identical: git diff over perfrec/, the deskkit perf.go and perfread.go files and cmd/deskperf/ is empty. Two related files did change. docs/telemetry.md gained the statusgen/26 perf-v3 section. In docs/performance-attribution-spec.md one flag-table line was renamed, --perf-desk-role to --perf-loop-role. That flag is bound by the CLI adapter that desktools-v2/64 owns, and the spec line numbers cited below are unchanged.
+
+#### By-hand runs at 671d33a050bc (host)
+
+| # | Command | Expected | Observed | Date / runner |
+|---|---------|----------|----------|---------------|
+| 1 | Verify row 1 command, verbatim | exit 0; named PASS | exit 0; `--- PASS: TestPerfV3ContextAndConsent (0.00s)` | 2026-10-20 independent verifier, second stamp (host, darwin/arm64) |
+| 2 | Verify row 2 command, verbatim | exit 0; named PASS | exit 0; `--- PASS: TestPerfV3RecordToReportFlow (0.05s)` | 2026-10-20 independent verifier, second stamp (host, darwin/arm64) |
+| 3 | Verify row 3 command, verbatim | exit 0; named PASS | exit 0; `--- PASS: TestPerfV3IsolationAndOverhead (0.52s)` | 2026-10-20 independent verifier, second stamp (host, darwin/arm64) |
+| 4 | Verify row 4 command, bare and verbatim | exit 0; consumer routing corroborates the actual diff | exit 0; `summary: 10 corroborated, 0 disproved, 0 unchecked, 0 brief(s) claiming nothing`, over base b787e831d0be847f1ca81cc48496c8c0deb01fe5..3937f39ae2d00d150633f2c22568a79d1f5efb5a (immutable delivered snapshot) | 2026-10-20 independent verifier, second stamp (host, darwin/arm64) |
+
+Row 4 now gets its delivery from the Verification-Table marker on main. No delivery or base was passed by hand. The corroborated entries match the first stamp. Fixed-here: perfrec/ (13 changed paths), deskkit perf.go and perfread.go, cmd/deskperf/ (3 changed paths), docs/telemetry.md. Follow-up: desktools-v2/64, /65 and /62, statusgen/26, performance-collection/01 and /02. The witness row 4 output hash (sha256:5bbac2405598) equals the hash of the row 4 witness at d34483321afd.
+
+#### Fail-first spot check (rows 1 to 3)
+
+The deliverable code is unchanged since the first stamp's full mutation table. To check that the rows still discriminate at this source, three of its plants were applied again. Each went into production code in a scratch clone at 671d33a050bc, ran through the exact row 1, 2 and 3 commands, and was then restored. All three rows exit 0 on the unmutated tree, before and after.
+
+| Plant (production file) | Row 1 | Row 2 | Row 3 | Result |
+|---|---|---|---|---|
+| CONTROL: the tool-profile writer identity check always admits (context.go line 313) | 1 | 0 | 0 | killed |
+| V-E6: the telemetry opt-in is always on (perfrec.go line 127) | 1 | 0 | 1 | killed |
+| V-E3: workflow grouping without workflow permission (reduce.go line 72) | 0 | 1 | 0 | killed |
+
+#### Risk-bearing values (trigger: risk sensitive-data yes)
+
+The enumeration is the first stamp's, over the delivery diff b787e831..3937f39a. Every literal was re-read at this source at the same file and line: ProfileTool = "tool" @ perfrec/context.go:18; ProfileWorkflow = "workflow" @ perfrec/context.go:19; MaxWork = 8 @ perfrec/context.go:76; MaxWorkBytes = 4096 @ perfrec/context.go:77; NewID [16]byte @ perfrec/context.go:114; issue bound 2147483647 @ perfrec/context.go:152; opt-in enabled != "1" @ perfrec/context.go:207; tool-profile identity check @ perfrec/context.go:313; EnvVar = "ASSAY_TELEMETRY" @ perfrec/perfrec.go:47; RetentionDays = 7 @ perfrec/perfrec.go:50; Enabled == "1" @ perfrec/perfrec.go:127; InstallIDPattern 32 lowercase hex @ perfrec/perfrec.go:256; file mode 0o600 @ perfrec/perfrec.go:273, :282, :367 and :387; directory mode 0o700 @ perfrec/perfrec.go:351 and :358; MaxRequestGroups = 64 @ perfrec/v3.go:80. None changed, so the ranking and derivations above still hold.
+
+RISK-VALUE: DERIVED — ProfileTool = "tool" @ perfrec/context.go:18, with its writer check @ perfrec/context.go:313 — only the workflow profile may carry linked context (spec line 59), and the writer refuses it under the tool profile even with the parser bypassed; the CONTROL plant is killed by row 1 again at this source.
+
+RISK-VALUE: DERIVED — Enabled == "1" @ perfrec/perfrec.go:127 (with enabled != "1" @ perfrec/context.go:207 and EnvVar = "ASSAY_TELEMETRY" @ perfrec/perfrec.go:47) — new writing needs ASSAY_TELEMETRY=1 exactly (spec lines 33 and 35); plant V-E6 is killed by rows 1 and 3 again at this source.
+
+RISK-VALUE: DERIVED — directory mode 0o700 @ perfrec/perfrec.go:351/:358 and file mode 0o600 @ perfrec/perfrec.go:367/:387 — owner-only access, as the spec requires (lines 47 and 112).
+
+RISK-VALUE: DERIVED — RetentionDays = 7 @ perfrec/perfrec.go:50 — seven UTC days of history (spec lines 32 and 113).
+
+RISK-VALUE: DERIVED — NewID [16]byte from crypto/rand @ perfrec/context.go:114 — 128 random bits put the birthday bound near 2^64 IDs, far above any local seven-day history. The spec names no width, so this derivation is from first principles.
+
+RISK-VALUE: NAMED, NOT DERIVED — MaxWork = 8 @ perfrec/context.go:76, MaxWorkBytes = 4096 @ perfrec/context.go:77, MaxRequestGroups = 64 @ perfrec/v3.go:80, issue bound 2147483647 @ perfrec/context.go:152 — reversible size bounds on optional context. The spec asks for "bounded" without numbers, and exceeding a bound marks the context invalid without failing the operation.
+
+**VERIFY: PASS** — 4/4 Verify rows pass at 671d33a050bc, in the network-off container witness and by hand; bare row 4 exits 0 with 10 corroborated, 0 disproved, 0 unchecked. This is the second stamp; gate:human sign-off is pending, and the status is left for the human gate.
+
 ## Review
 
 Gate: human. Reject changed legacy meanings, guessed identity/cost, lost coverage or optional measurement that changes an operation.
