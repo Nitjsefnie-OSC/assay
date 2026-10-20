@@ -15,7 +15,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-09-23 by the-desk (assay:author-brief, opus-5.5; requested by the driver)
 sources:
   - "Driver request 2026-09-23: examples for installing assay via Argo CD and Flux, aimed at helping adopters run it in their own clusters"
@@ -85,3 +85,13 @@ Row 9 is the negative-path row: fake credentials must be refused by the entrypoi
 
 ## Review
 Gate: model (all four risk answers no — deployment templates with no credential values; nothing touches a shared cluster). The reviewer checks rows 3, 6 and 9 and that the base is unchanged when the component is not listed.
+
+## Interactive cohort routing — 20 October 2026
+
+[The current target](../../proposals/non-ci-architecture/28-interactive-kubernetes-desks.md)
+requires separately interactive standing desks. Tick-mode CronJobs remain an opt-in distinct
+profile, never the default or an additional writer for an interactive role binding. The
+interactive cohort does not depend on CronJob/GitOps examples. /27's CNPG packaging consumes
+/06's base directly; it must not require /12's component to exist. CNPG administration and
+restore terminal capabilities remain separate from the /28 operator and all desk identities.
+Existing tasks, migration gates, recovery obligations and Verify rows otherwise stand.

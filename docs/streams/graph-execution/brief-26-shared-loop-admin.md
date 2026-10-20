@@ -55,7 +55,7 @@ consumers:
 - 'operator lifecycle and cockpit: out-of-scope (adopter qualification)'
 - 'loopadmin/journal PostgreSQL schema and migrations: follow-up graph-execution/26 (this brief; flips to fixed-here when the implementation edits the path)'
 - 'spec/operator-incarnation-v1.md (read before each launch): follow-up graph-execution/16'
-version: 9
+version: 10
 id: bcbee0b0-8f12-4e7a-b028-0637b2bab0c3
 ---
 
@@ -293,3 +293,15 @@ This is a forward consumer-routing amendment only: the new consumer waits on thi
 not the reverse. Original Task/Verify and completed Evidence are unchanged. Reconcile any
 active implementation claim before adding capture hooks. Native emission qualification is
 delivered by the named follow-up; this source contract alone does not claim it exists.
+
+## Interactive Kubernetes consumer — 20 October 2026
+
+[The in-cluster operator/interactive target](../../proposals/non-ci-architecture/28-interactive-kubernetes-desks.md)
+consumes this owner through agent-execution/09. Preserve current preparation, journal,
+role-policy, credential and zero-idle-launch acceptance. The standing Kubernetes profile
+requires no workflow instance/controller and creates no separate launch owner. A role Pod
+or terminal may stay available while bounded model invocations start only for admitted
+work/judgment. Pod replacement cannot treat an unconfirmed old execution group as stopped.
+Carry current perf-v3 context across the transport and retain unknown usage. Existing
+negative-path, independent-control and startup work/count checks apply to this consumer;
+/09 and desk-containers/29 own its adapter and effective-profile qualification.

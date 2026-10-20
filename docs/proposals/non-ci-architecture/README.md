@@ -166,3 +166,12 @@ deployment. The coverage table maps existing owners and routes only two new cont
 ## Portable execution environments — 16 October 2026
 
 The [execution amendment](27-agent-execution-environments.md) extends existing R2/R3/R4/R7 owners through the [agent-execution stream](../../streams/agent-execution/README.md). It separates harness, model and backend selection, makes preparation and preservation explicit, and qualifies recovery without making an environment receipt an authority grant. AX remains an optional offline compatibility investigation. Existing PostgreSQL coordination, role executors, lifecycle and activation decisions remain controlling; no remote backend is selected.
+
+## Interactive Kubernetes desks — requested 20 October 2026
+
+[Amendment 28](28-interactive-kubernetes-desks.md) makes separately interactive desk Pods and
+an in-cluster Linux cellctl operator the required cohort. Native Windows, desktop Docker,
+tick CronJobs and workflow-controller adoption do not gate it. The public existing owners
+carry optimization and custody; agent-execution/09 and desk-containers/28–29 close the
+profile, operator and end-to-end qualification gaps. Existing approval/admission and live
+activation boundaries remain. This records direction and authored work, not deployment.
