@@ -111,8 +111,6 @@ Named tests below are planned. The verifier must see each named PASS; exit zero 
 
 ## Evidence
 
-Pending implementation and independent verification. Authoring claims no acceptance result.
-
 | # | Command | Result | Output | Date | Runner |
 |---|---------|--------|--------|------|--------|
 | 1 | `cd tools/desk && GOWORK=off go test ./cmd/deskpost/ -run ^TestExternalPrerequisiteSameHead$ -v -count=1` | pass exit=0 sandbox=container-netns | sha256:0932fdefbc15 | 2026-10-20 | assay-verifier-app[bot] @ b1cf3d790708 (on-behalf-of human:ian) (forge-identity) |
