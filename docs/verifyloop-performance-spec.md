@@ -1,11 +1,13 @@
 # Verification planning performance and diagnostics
 
-**Status:** draft — 20 October 2026. Extends the decision-oriented workflow direction in
-[desk-workflow-efficiency-spec.md](desk-workflow-efficiency-spec.md) for verification.
-That source's approval does not approve this extension. The accompanying diagnostic code is
-explicitly requested implementation; the broader read-reuse changes below remain proposed. The association-scan follow-on
-described in §3 is now explicitly requested implementation. No
-runtime, cache service, collection, credentials, release or consumer cutover is activated.
+**Status:** draft design. Diagnostics merged in
+[medici-finance/assay#3738](https://github.com/medici-finance/assay/pull/3738).
+[medici-finance/assay#3763](https://github.com/medici-finance/assay/pull/3763) proposes
+and qualifies bounded local association, blocker and wake-input reuse, plus skipping work
+for roots rejected by preflight. Its merge is the acceptance point for that local code.
+The broader extension to [desk-workflow-efficiency-spec.md](desk-workflow-efficiency-spec.md)
+remains proposed; its source's approval does not approve this extension. No runtime,
+cache service, collection, credentials, release or consumer cutover is activated.
 
 **Inspected source:** public Assay main `874e509a5319ae6fb94225a3d9c88e3fc34864ed`.
 Material paths: `tools/desk/cmd/verifyloop/{main,adapter,briefscan,blockerread,pending,plan,verdictrun}.go`,
@@ -119,11 +121,10 @@ restarting repository discovery for every referring brief. This is an observatio
 change; parsing and scheduling policy remain shared with the fresh reader.
 
 Use the existing `gitcore.Open`, `Resolve` and `FileAt` seams for local reads, including
-linked worktrees and shared objects. Repository identity uses a narrow configured-URL
-reader: the last repository-local `remote.origin.url`, without transport rewrites or
-pushurl fallback. This has gitcore's existing local-config scope; configurations that
-rely on global/include/worktree remote overrides are not qualified by this scan. Fresh
-dispatch still uses its original Git/config checks and can refuse a planned item.
+linked worktrees and shared objects. Repository identity uses the existing scoped Git reader once per root, preserving
+include/worktree overrides and raw identity semantics. Gitcore supplies object/ref reads.
+A small number of identity subprocesses is intentional; repeated discovery per brief is
+removed. Fresh dispatch still uses its original Git/config checks.
 Do not migrate credential/config ownership or any execution-admission check in this work.
 
 Yes, the brief already stores `deliverable_repo`, `homed-in` and file-tag declarations.
@@ -144,7 +145,28 @@ whether repetition returns. These phases are nested/inclusive, not additive wall
 registry reuse is not a provider-cache hit. No path or repository becomes a metric label.
 See [the qualification report](verifyloop-association-performance.md) for the neutral
 benchmark, parity/freshness cases and limits. Provider read reuse and the future-state
-owners below remain separate work; this local change saves no GitHub requests.
+owners below remain separate work; association reuse saves local work. The qualified blocker and rejected-root changes below also reduce provider requests.
+
+### Other bounded algorithm changes in the local proposal
+
+At each `SelectQueue` entry, clear the scheduling source's mutable observation maps.
+Observe each blocker once per admitted repository, issue/change kind and number; reuse
+known states and failures within that scan. Equivalent reference syntax shares the same
+observation, while diagnostics still name the caller's reference. The source instance
+fixes the configured forge/host and verifier custody boundary; no cache crosses that
+instance or a new pass. Every lookup retains the repository allowlist check.
+
+Within one root's default offline scan reader, reuse input revisions by exact input key.
+Retain the existing receipt-scope validation and action-completion methods; custom readers
+keep their own semantics. Unknown inputs remain unknown, and a new scan refreshes them.
+This makes shared files/source predicates observed inputs to a pass rather than repeated
+filesystem or source-closure probes for every referring receipt.
+
+`buildPlan` starts with an empty admitted-root list each time. If multi-root preflight
+rejects every root, retain all skipped/unreadable coverage and exit 6, and skip queue,
+canonical-base and provider work. An empty admitted multi-root set is not single-root
+mode. This corrects the old fallback to the process's default root; healthy-root and
+explicit-single-root paths keep their existing scans and rechecks.
 
 ### Shared conditional transport, separately qualified
 
@@ -208,7 +230,7 @@ remain unchanged. The instrumentation is not a performance optimization or relea
 | Work/semantic owner | Treatment of this extension | Dependency and retirement |
 |---|---|---|
 | desk-tools/23–25; desktools-v2/61, /63–65 | Reuse recorder, audit/token improvements, contexts, provider observer and mixed readers. The accompanying implementation is verifyloop consumer integration. | No reimplementation or reopening their completed Evidence. Installed pins must include the required APIs. |
-| desk-tools/37–44 workflow-efficiency program | Reuse matched-cost/oracle method and observation/evaluation boundary. Allocate verifier-specific local follow-ons after approval. | Review-only Task/Verify scopes are not silently expanded; no dependency on their unshipped review CLI. |
+| desk-tools/37–44 workflow-efficiency program | Reuse matched-cost/oracle method and observation/evaluation boundary. This PR proposes the bounded association/blocker/wake slice; allocate other local follow-ons after their approval. | Review-only Task/Verify scopes are not silently expanded; no dependency on their unshipped review CLI. |
 | desktools-v2/62 | Reuse the matched hot-path qualification owner and report grouping; include the verifier cohort when a citing follow-on is authored. | Local read fixes can be tested independently; full combined startup/credential claims require their actual prerequisites. |
 | desktools-v2/58–60 | Credential-provider extraction, concurrent lookup sharing/expiry and activation-discovery reuse remain separate startup improvements. | Not prerequisites to blocker/attestation/file reuse or current diagnostics. No token custody moves into perfrec/statusgen. |
 | desktools-v2/40 | Existing verifyloop/reviewloop Cobra/Viper migration owns parser compatibility and explicit performance overrides. | This change preserves the current parser and does not consume its unfinished CLI. |
@@ -219,8 +241,9 @@ remain unchanged. The instrumentation is not a performance optimization or relea
 
 This is scope routing, not an executable wave plan or approval of changed briefs. Author
 citing briefs with the existing author-brief process after the design is approved; preserve
-active checkpoints and completed Task/Verify/Evidence. The immediate diagnostics are already
-requested; larger behavioral changes are not implemented by this proposal.
+active checkpoints and completed Task/Verify/Evidence. Diagnostics are already merged; PR #3763 proposes and qualifies the bounded local
+algorithm changes named above. Attestation consolidation, pending joins, shared conditional
+transport and future service adoption remain proposals under their existing owners.
 
 ## 6. Future-state dependencies
 
@@ -277,10 +300,11 @@ insufficient. No live production access is needed for development qualification.
 
 ## 8. Decisions, rollout and recovery
 
-Recommended first slice: accept the bounded diagnostics, then approve local observation reuse
-with no persistent mutable cache, no added upstream concurrency and unchanged preflight.
-Review the separate shared conditional-transport extraction when its scope contract and
-matched results are concrete. These are review recommendations, not recorded approval.
+Diagnostics are merged. The bounded local code in PR #3763 is proposed for normal review
+and human merge: no persistent mutable cache, no added upstream concurrency and no
+preflight bypass. Its qualification is in the linked report. Review shared conditional
+transport, attestation consolidation and other provider changes separately when their
+scope contracts and matched results are concrete. The broader design remains a draft.
 
 Release the diagnostic producer with the existing desk/perf dependency closure; adopt normal
 consumer pins and independently verify the installed binary. New phase/verb labels do not
@@ -289,7 +313,7 @@ restores the old diagnostics; disabling the opt-in restores unrecorded operation
 authority migration is needed. Read-reuse changes require their own semantic/cost acceptance;
 service adoption later requires R5/R6's separate release, cutover and rollback contract.
 
-Maintainer decisions still needed: approval of the behavioral extension and any persistent
-cache scope/retention contract. Numerical production targets and an operational observation
-window are qualification decisions after a matched baseline; no additional operator action
+Maintainer decisions still needed: acceptance of the local PR, approval of the remaining
+provider/service extensions, and any persistent cache scope/retention contract. Numerical production targets and an
+operational observation window are qualification decisions after a matched baseline; no additional operator action
 is required to review this draft or run its offline diagnostic tests.

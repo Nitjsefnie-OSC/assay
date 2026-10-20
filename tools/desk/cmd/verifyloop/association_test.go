@@ -15,6 +15,8 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/regression"
 )
 
+// Fixture environment isolation also addresses the helper tracked in
+// https://github.com/medici-finance/assay/issues/3750.
 func associationGit(t testing.TB, root string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)

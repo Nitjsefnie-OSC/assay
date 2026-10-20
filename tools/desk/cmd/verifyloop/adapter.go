@@ -116,6 +116,9 @@ func (v *VerifyLoop) Name() string { return "verify-desk" }
 // (implemented + empty Evidence) before tier-2 (free-closes / Evidence-present), oldest-first
 // within class. See briefscan.go.
 func (v *VerifyLoop) SelectQueue() ([]loopengine.Item, error) {
+	if source, ok := v.Issues.(interface{ beginPlanningPass() }); ok {
+		source.beginPlanningPass()
+	}
 	now := v.wakeNow()
 	var items []loopengine.Item
 	var err error

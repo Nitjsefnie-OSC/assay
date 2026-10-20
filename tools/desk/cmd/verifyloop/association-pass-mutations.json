@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/verifyloop -run '^TestAssociationPass' -count=1 -timeout 90s",
+  "test": "go test ./cmd/verifyloop -run '^Test(AssociationPass|BlockerObservation|PlanningRevision|Plan_AllRejected|VerifyPerformanceBlockerFanIn)' -count=1 -timeout 120s",
   "mutations": [
     {
       "name": "fresh-dispatch",
@@ -42,6 +42,49 @@
       "file": "cmd/verifyloop/briefscan.go",
       "old": "associateVerifierItemIn(item, root, pass)",
       "new": "associateVerifierItemIn(item, root, deskkit.NewVerifierAssociationPass(nil))"
+    },
+    {
+      "name": "blocker-reuse",
+      "file": "cmd/verifyloop/blockerread.go",
+      "old": "observed, ok := s.blockers[key]\n\tif !ok {",
+      "new": "observed, ok := s.blockers[key]\n\tif true || !ok {"
+    },
+    {
+      "name": "blocker-scope-key",
+      "file": "cmd/verifyloop/blockerread.go",
+      "old": "blockerObservationKey{repo: repo.Slug(), kind: kind, number: ref.Number}",
+      "new": "blockerObservationKey{repo: \"\", kind: deskkit.TargetIssue, number: ref.Number}"
+    },
+    {
+      "name": "blocker-pass-refresh",
+      "file": "cmd/verifyloop/blockerread.go",
+      "old": "s.blockers, s.pending = nil, nil",
+      "new": "s.pending = nil"
+    },
+    {
+      "name": "rejected-root-scan",
+      "file": "cmd/verifyloop/plan.go",
+      "old": "if !o.multi || len(v.Roots) > 0 {",
+      "new": "if true {"
+    },
+    {
+      "name": "wake-input-reuse",
+      "file": "cmd/verifyloop/observations.go",
+      "old": "if seen, ok := r.revisions[input]; ok {",
+      "new": "if seen, ok := r.revisions[input]; false && ok {"
+    },
+    {
+      "name": "scoped-origin",
+      "file": "internal/deskkit/verifierassociation.go",
+      "old": "r.repo, err = verifierOrigin(root)",
+      "new": "rawRemote, e := r.git.RemoteURL(\"origin\")\n if e != nil { err = e } else { r.repo, err = RemoteRepoSlug(rawRemote) }"
     }
-  ]
+  ],
+  "root": ".",
+  "control": {
+    "name": "CONTROL: omit dispatch association recheck",
+    "file": "cmd/verifyloop/association.go",
+    "old": "if it.Payload[\"source_repo\"] == \"\" {",
+    "new": "if true {"
+  }
 }

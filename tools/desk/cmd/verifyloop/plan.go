@@ -317,6 +317,8 @@ func buildPlan(v *VerifyLoop, o planOpts) (*planDoc, error) {
 			return nil, rerr
 		}
 		doc.configured = len(roots)
+		// A reused loop cannot carry an earlier pass's admitted roots forward.
+		v.Roots = nil
 		for _, rc := range roots {
 			pr := planRoot{Repo: rc.Repo, Queue: baseOff}
 			abs, err := deskkit.ResolveRoot(rc)
@@ -358,9 +360,15 @@ func buildPlan(v *VerifyLoop, o planOpts) (*planDoc, error) {
 		}
 	}
 
-	items, err := v.SelectQueue()
-	if err != nil {
-		return nil, deskkit.Unverifiable("cannot read the Awaiting queue", err)
+	var items []loopengine.Item
+	// An empty admitted multi-root set is not the legacy single-root mode.
+	// Keep its coverage gaps, but do no queue/source/provider work for it.
+	if !o.multi || len(v.Roots) > 0 {
+		var err error
+		items, err = v.SelectQueue()
+		if err != nil {
+			return nil, deskkit.Unverifiable("cannot read the Awaiting queue", err)
+		}
 	}
 	doc.Counts.Awaiting = len(items)
 

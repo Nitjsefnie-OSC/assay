@@ -142,7 +142,7 @@ func scanAwaitingPass(r deskkit.RootConfig, homeRepo, targetSHA string, reader d
 	// clock — both injectable in tests. The default is the OFFLINE, probe-free reader over this
 	// root's tree (content hashes + the tool version; it never observes an external action).
 	if reader == nil {
-		reader = deskkit.NewRootRevisionReader(root, deskkit.ReleaseTagOrDev())
+		reader = &planningRevisionReader{RootRevisionReader: deskkit.NewRootRevisionReader(root, deskkit.ReleaseTagOrDev()), revisions: map[string]planningRevision{}}
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()

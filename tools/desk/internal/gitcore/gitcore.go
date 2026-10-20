@@ -659,7 +659,7 @@ func List(opts ListOpts) ([]*plumbing.Reference, error) {
 // shared .git/config (see roleinit_test.go, workpad.go). A gitcore-based config reader would
 // silently return the WRONG (or empty) value for exactly that case, so `config --get
 // user.email` and `config --list -z` stay on the git binary — see brief-03's PR body for the
-// full note. remote.origin.url is the one config key this package DOES read (via the remote URL helpers
+// full note. remote.origin.url is the one config key this package DOES read (via RemoteURL,
 // below): remotes are never worktree-scoped in this house's actual usage.
 
 // Toplevel returns the working tree root containing dir, matching
@@ -863,22 +863,6 @@ func (r *Repo) AheadCount(base, head string) (int, error) {
 		return 0, fmt.Errorf("gitcore: ahead-count: %w", err)
 	}
 	return count, nil
-}
-
-// ConfiguredRemoteURL reads the last repository-local remote.<name>.url value,
-// matching config --get for identity checks. It deliberately does not apply
-// transport insteadOf rules or fall back to pushurl. Like RemoteURL, it does not
-// merge global/worktree config; callers must use repository-local remote identity.
-func (r *Repo) ConfiguredRemoteURL(name string) (string, error) {
-	cfg, err := r.repo.Config()
-	if err != nil {
-		return "", fmt.Errorf("gitcore: configured-remote-url %s: %w", name, err)
-	}
-	urls := cfg.Raw.Section("remote").Subsection(name).OptionAll("url")
-	if len(urls) == 0 {
-		return "", fmt.Errorf("gitcore: configured-remote-url %s: no URL configured", name)
-	}
-	return urls[len(urls)-1], nil
 }
 
 // RemoteURL returns the first URL for the named remote from repository-local config,

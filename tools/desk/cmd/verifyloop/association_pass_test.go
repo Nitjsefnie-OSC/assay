@@ -25,9 +25,8 @@ func TestAssociationPassQueueParityAndReuse(t *testing.T) {
 			t.Fatalf("fresh-reader parity %s: %v\ngot %+v\nwant %+v", it.ID, err, it, want)
 		}
 	}
-	// Remove the Git executable and poison caller Git context AFTER constructing
-	// the fixtures: production SelectQueue must still read only its named roots.
-	t.Setenv("PATH", t.TempDir())
+	// Poison caller Git context after fixture creation. Repository identity
+	// preserves the existing scoped Git read; all object/ref reads use gitcore.
 	t.Setenv("GIT_DIR", filepath.Join(t.TempDir(), "not-the-source"))
 	t.Setenv("GIT_WORK_TREE", t.TempDir())
 	t.Setenv("ASSAY_PERF_PROFILE", "tool")
@@ -225,6 +224,39 @@ func TestAssociationPassPlanningLaggingCheckouts(t *testing.T) {
 				if it.Payload["could_not_check"] != "" || it.Payload["source_repo"] != "" {
 					t.Fatalf("legacy/same-repository lag changed: %+v", it)
 				}
+			}
+		})
+	}
+}
+
+// The pass must use the same effective origin as fresh admission. A local-only
+// URL read can misclassify a declared source as same-repository and skip recheck.
+func TestAssociationPassScopedOriginParity(t *testing.T) {
+	for _, scope := range []string{"include", "worktree"} {
+		t.Run(scope, func(t *testing.T) {
+			v := associationQueueFixture(t, 3)
+			associationGit(t, v.Root, "config", "remote.origin.url", "https://github.com/example-org/agents.git")
+			if scope == "include" {
+				config := filepath.Join(t.TempDir(), "identity.config")
+				if err := os.WriteFile(config, []byte("[remote \"origin\"]\n url = https://github.com/example-org/tracker.git\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				associationGit(t, v.Root, "config", "include.path", config)
+			} else {
+				associationGit(t, v.Root, "config", "extensions.worktreeConfig", "true")
+				associationGit(t, v.Root, "config", "--worktree", "remote.origin.url", "https://github.com/example-org/tracker.git")
+			}
+			items, err := v.SelectQueue()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cross := items[0]
+			if cross.Payload["source_repo"] != "example-org/agents" || cross.Payload["repo"] != "example-org/tracker" || cross.Payload["could_not_check"] != "" {
+				t.Fatalf("effective origin misclassified: %+v", cross)
+			}
+			want, err := associateVerifierItem(cross, v.Root)
+			if err != nil || !reflect.DeepEqual(want, cross) {
+				t.Fatalf("fresh/pass identity mismatch: %v", err)
 			}
 		})
 	}

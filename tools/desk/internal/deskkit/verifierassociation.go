@@ -237,13 +237,11 @@ func (p *VerifierAssociationPass) Head(root string) (string, string, error) {
 	}
 	if !r.headRead {
 		r.headRead = true
-		raw, err := r.git.ConfiguredRemoteURL("origin")
-		if err != nil {
-			err = Unverifiable("cannot establish verifier source origin", err)
-		}
-		if err == nil {
-			r.repo, err = RemoteRepoSlug(strings.TrimSpace(raw))
-		}
+		// Identity is read once per root through the existing scoped Git reader.
+		// gitcore handles objects/refs; its local-only remote helper cannot
+		// preserve includes or worktree overrides used by fresh admission.
+		var err error
+		r.repo, err = verifierOrigin(root)
 		if err == nil && !IsAllowedRepo(r.repo) {
 			err = Refused("verifier source outside configured repositories")
 		}
