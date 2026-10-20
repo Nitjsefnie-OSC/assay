@@ -208,8 +208,9 @@ An installation operator first provisions ten **distinct** role credential
 Secrets out of band, selects persistent storage and capacity, pre-provisions the
 approved agent CLI/work inputs, and reviews an overlay. Model credentials,
 endpoint and model selection come from each role's runtime model Secret. The
-placeholder-only `secrets.example.yaml` is excluded from Kustomize and must never
-be applied with real values added to the repository. See the package README for
+empty Secret skeletons in `secrets.example.yaml` are excluded from Kustomize,
+are not deployable and must never be applied. Required key names are comments;
+provision their values out of band and never add them to the repository. See the package README for
 non-root volume permissions and file-based credential profile limits.
 
 The base allows only selected DNS egress; it deliberately cannot reach the

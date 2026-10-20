@@ -50,8 +50,9 @@ admitting a profile. Kubernetes Secret files otherwise default to root ownership
 0400 alone would be unreadable to this non-root process. The mount remains
 read-only, and only `app.pem` is projected.
 
-`secrets.example.yaml` contains placeholders for all ten Secrets and is excluded
-from the build. Do not apply or populate that tracked file. Provision real Secrets
+`secrets.example.yaml` contains empty named skeletons for all ten Secrets, with
+required keys listed only in comments; it is excluded from the build. These
+skeletons are not deployable. Do not apply or populate that tracked file. Provision real Secrets
 out of band using the [credential contract](../secrets.md); independently scoped
 roles must not share a Secret reference **or actual credential value**. Static
 checks can prove distinct references, not distinct key material inside live
