@@ -294,6 +294,7 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 // TestPerfRecordRevision: a statusgen built the way the release builds it — inside a git
 // checkout, with only the release tag stamped (-X main.statusgenVersion) — records the commit
 // it was built from as sourceSHA, not "unpinned". `--version` still prints the release tag.
+// Both writers are held to it: the perf-v2 line and the perf-v3 line a selected profile writes.
 // regression: F-release-binary-unpinned
 func TestPerfRecordRevision(t *testing.T) {
 	head, err := exec.Command("git", "rev-parse", "HEAD").Output()
@@ -302,17 +303,36 @@ func TestPerfRecordRevision(t *testing.T) {
 	}
 	want := strings.TrimSpace(string(head))[:12]
 	bin := buildPerfBinary(t, "-buildvcs=true", "-ldflags", "-X main.statusgenVersion=v9.9.9")
-	home := t.TempDir()
-	got := runPerfBinary(t, bin, home, true, "1", "--version")
-	if strings.TrimSpace(got.out) != "v9.9.9" {
-		t.Errorf("--version = %q, want the stamped release tag v9.9.9", got.out)
-	}
-	recs := perfRecords(t, home)
-	if len(recs) != 1 {
-		t.Fatalf("one run wrote %d records, want exactly 1", len(recs))
-	}
-	if sha := recs[0]["sourceSHA"]; sha != want {
-		t.Errorf("sourceSHA = %v, want %s (the build's vcs.revision) — a release-tag-only stamp must not record unpinned", sha, want)
+	for _, c := range []struct{ name, schema, profile string }{
+		{"perf-v2", "perf-v2", ""},
+		{"perf-v3", "perf-v3", "tool"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command(bin, "--version")
+			cmd.Dir = t.TempDir()
+			cmd.Env = append(perfTestEnv(home, filepath.Dir(cmd.Dir)), "ASSAY_TELEMETRY=1")
+			if c.profile != "" {
+				cmd.Env = append(cmd.Env, "ASSAY_PERF_PROFILE="+c.profile)
+			}
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("run --version: %v", err)
+			}
+			if strings.TrimSpace(string(out)) != "v9.9.9" {
+				t.Errorf("--version = %q, want the stamped release tag v9.9.9", out)
+			}
+			recs := perfRecords(t, home)
+			if len(recs) != 1 {
+				t.Fatalf("one run wrote %d records, want exactly 1", len(recs))
+			}
+			if sch := recs[0]["schema"]; sch != c.schema {
+				t.Fatalf("schema = %v, want %s (the test must exercise that writer)", sch, c.schema)
+			}
+			if sha := recs[0]["sourceSHA"]; sha != want {
+				t.Errorf("sourceSHA = %v, want %s (the build's vcs.revision) — a release-tag-only stamp must not record unpinned", sha, want)
+			}
+		})
 	}
 }
 

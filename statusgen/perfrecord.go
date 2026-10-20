@@ -408,7 +408,7 @@ func recordV3(exit int) bool {
 	if r := perfCtx.Data().Role; r != "" {
 		role = r
 	}
-	perfrec.Append(s.Finish(perfToolName, perfVerb(os.Args[1:]), role, exit, statusgenVersion))
+	perfrec.Append(s.Finish(perfToolName, perfVerb(os.Args[1:]), role, exit, perfSourceStamp()))
 	return true
 }
 
