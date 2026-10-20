@@ -21,7 +21,7 @@ accepted:
 NOT approved.** The ruling below answers option 1 on the brief's decision issue, but its text
 names neither this record nor the brief, so neither the design-approval gate nor the
 decision-gate hold can use it. The design approval is pending on its own decision issue:
-DECISION-ISSUE-URL
+https://github.com/medici-finance/assay/issues/3597
 Until the driver's comment approving this record exists there, nothing here claims the design
 was approved.
 
@@ -125,7 +125,7 @@ before the record's approval is linked.
 
 ## Open / not decided
 
-- **The design approval.** It is the driver's, and it is pending on DECISION-ISSUE-URL
+- **The design approval.** It is the driver's, and it is pending on https://github.com/medici-finance/assay/issues/3597
   It counts only as the driver's own unedited comment there naming `DR-desktools-v2-63`,
   linked from this record's `ruling:` key. A pull-request approval, a desk relay or a reviewer
   verdict does not stand in for it.
@@ -153,7 +153,7 @@ before the record's approval is linked.
 **Merging this record alone authorizes no flip.** A change that moves desktools-v2/63 to
 `implemented` and adds `design: DR-desktools-v2-63` to the brief's frontmatter waits for ALL of:
 
-1. the driver's own unedited comment on DECISION-ISSUE-URL
+1. the driver's own unedited comment on https://github.com/medici-finance/assay/issues/3597
    approving `DR-desktools-v2-63` (option 1, naming the record);
 2. a push adding this record's `ruling:` key, linking that comment;
 3. a clean `statusgen --corroborate` read of this record.
