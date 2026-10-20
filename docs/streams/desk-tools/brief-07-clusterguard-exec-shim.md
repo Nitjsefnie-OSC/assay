@@ -824,6 +824,44 @@ RISK-VALUE: NAMED, NOT DERIVED (shown WRONG) — one readOnlyVerbs entry in tool
 
 **VERIFY: FAIL** — 13 of 15 rows meet their Expect. Row 7 fails — detail filed privately; human-gated. The #2179 false pass is fixed. Row 12 exits 1 because of a load-dependent race in internal/cellcadence TestBudgetAndGuard/guard, outside this brief's files; clusterguard and forgeban are ok in every run. Status stays implemented.
 
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test ./cmd/clusterguard/... -count=1` | pass exit=0 sandbox=container-netns | sha256:2c6f588ad86a | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestRefusesWithoutOptIn$' -count=1 -v` | pass exit=0 sandbox=container-netns | sha256:a3e9f1957a3e | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestRefusesScriptWrappedCall$' -count=1` | pass exit=0 sandbox=container-netns | sha256:b96573e2626c | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestPassesThroughWithOptIn$' -count=1 && go test ./cmd/clusterguard/ -run '^TestPassThroughSkipsTheShimDirectory$' -count=1` | pass exit=0 sandbox=container-netns | sha256:e0cffd57eae4 | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestSymlinkNameDispatch$' -count=1 -v` | pass exit=0 sandbox=container-netns | sha256:201ca7095b6c | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestVerbClassification$' -count=1 && go test ./cmd/clusterguard/ -run '^TestReadOnlyTierRefusesMutatingVerbs$' -count=1 && go test ./cmd/clusterguard/ -run '^TestUnlistedFlagNotReadOnly$' -count=1 && go test ./cmd/clusterguard/ -run '^TestROTierUnlistedFlagRefuses$' -count=1` | pass exit=0 sandbox=container-netns | sha256:028e728f234a | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 8 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestUnrecognisedOptInValueRefuses$' -count=1 && go test ./cmd/clusterguard/ -run '^TestNoRealBinaryIsUnverifiable$' -count=1 && go test ./cmd/clusterguard/ -run '^TestUnknownInvocationNameIsUnverifiable$' -count=1` | pass exit=0 sandbox=container-netns | sha256:e3d9ab6c4f5a | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 9 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestStopFlagRefusesEvenWithOptIn$' -count=1` | pass exit=0 sandbox=container-netns | sha256:bf0dfe731868 | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 10 | `cd tools/desk && go test ./cmd/clusterguard/ -run '^TestAbsolutePathInvocationBypassesTheShim$' -count=1 && go test ./cmd/clusterguard/ -run '^TestLogRecordsBothVerdicts$' -count=1 && go test ./cmd/clusterguard/ -run '^TestLogRedactsCredentialArguments$' -count=1` | pass exit=0 sandbox=container-netns | sha256:5c5cae63285d | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 11 | `cd tools/desk && d=$(mktemp -d) && go build -o "$d/clusterguard" ./cmd/clusterguard && "$d/clusterguard" > "$d/usage.out" 2>&1; rc=$?; grep -q 'ASSAY_ALLOW_CLUSTER' "$d/usage.out"; g1=$?; grep -q 'talosctl' "$d/usage.out"; g2=$?; [ "$rc" -eq 0 ] && [ "$g1" -eq 0 ] && [ "$g2" -eq 0 ]` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 12 | `cd tools/desk && go test ./... -count=1` | fail exit=1 sandbox=container-netns | sha256:58fb25d629f4 | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 13 | `gofmt -l tools/desk/cmd/clusterguard > /tmp/cg-fmt.out; test ! -s /tmp/cg-fmt.out` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 14 | `cd statusgen && go run . --root .. --lint; echo $?` | pass exit=0 sandbox=container-netns | sha256:da4e5ef7e979 | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+| 15 | `cd tools/desk && go run ./cmd/muhar -spec cmd/clusterguard/mutations.json` | pass exit=0 sandbox=container-netns | sha256:19bcfbfcd0d0 | 2026-10-20 | assay-verifier-app[bot] @ eb82d5b6232b (on-behalf-of human:ian) (forge-identity) |
+
+### Non-implementer verifier run — 2026-10-20 (UTC) claude-opus-5-5 verifier at eb82d5b6232b (container execution witness)
+
+Verification-Attestation: medici-finance/assay#3587 run=50cc1c61136a2019b36738e81b5a48a2d34cdd7bbef096cb25c2e25e655cec76 source=eb82d5b6232b962c39190e664d7f099b1bae7bba brief=docs/streams/desk-tools/brief-07-clusterguard-exec-shim.md model=claude-opus-5-5 tier=strong
+
+The witness table above was written by statusgen verifyrun, which ran every Verify row on merged main at eb82d5b6232b962c39190e664d7f099b1bae7bba. That source contains the read-only classifier fix medici-finance/assay#3468 (merge fa29aa727389). The runner was a local docker container: image assay-verify:go1.27 (built from golang:1.27.2-trixie, git 2.47), run with --network none, sandbox=container-netns and the engine's default seccomp profile. It ran as uid 0 on linux-arm64. It follows the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). This pass supersedes the 2026-10-16 Evidence in medici-finance/assay#3450. Admission: deskdispatch --check-verifier exited 0 before the container run and again after it. The runner is not the implementer.
+
+row 7 (the read-only-tier refusal case) — PASS, exit 0, the expected refusal observed
+
+Row 12 was re-run twice in the same container. Both runs failed the same tests, so the failure is deterministic and not flaky. Five packages failed. In every failing test, the cause traced to the container rather than the code, so row 12 is could-not-check (environment). The causes, by package:
+
+- cmd/desksourceguard TestDefaultPlatform: the container's linux-arm64 platform is not one desk-tools publishes.
+- cmd/desktoken TestGitLabRotateRefusesBeforeRotatingWhenCustodyDirIsUnwritable and TestGitLabWriteFailureLockout: uid 0 ignores the directory permissions these tests rely on.
+- cmd/scanloop TestClassify_UnreadableLocalStateRoutesToJudgment: uid 0 can still read state the test makes unreadable.
+- internal/cellcache TestAdmitRecordedLockedPath and TestCacheAdmitTakesLock (unreadable_report subtests): the same uid 0 cause.
+- cmd/deskwt, eight TestMaintenance tests: git 2.47 in the image has no git hook list subcommand.
+
+cmd/clusterguard and internal/forgeban were ok in both runs. The non-root git 2.56 host run in the 2026-10-16 Evidence above did not fail any of these five packages.
+
+**VERIFY: BLOCKED** — 14 of 15 rows pass with their witness, including row 7. Row 12 cannot pass in this runner because of uid 0, linux-arm64 and git 2.47, so it needs a non-root runner with git 2.53 or later.
+
 ## Review
 
 Gate: model (all four risk answers no). The reviewer records verdict + date in the stream README
