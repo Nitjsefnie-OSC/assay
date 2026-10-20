@@ -9,7 +9,7 @@ why: >-
   version. Cycles and ordering mistakes become lint failures before anything runs.
 wave: 2
 depends: ["composability/00", "composability/02"]
-unblocks: ["composability/05"]
+unblocks: ["composability/05", "cell-api/07"]
 effort: L
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}

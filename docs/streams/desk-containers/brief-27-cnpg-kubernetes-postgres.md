@@ -11,7 +11,7 @@ why: >-
   recovery point, validate, switch endpoints, reconcile, and only then reopen admission.
 wave: 4
 depends: ["desk-containers/06", "desk-containers/26"]
-unblocks: ["desk-containers/29"]
+unblocks: ["desk-containers/29", "cell-api/05"]
 effort: L
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
