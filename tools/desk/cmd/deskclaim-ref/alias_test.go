@@ -12,7 +12,7 @@ const aliasRepo = "medici-finance/assay"
 
 // One PR claimed under two label spellings is ONE claim (medici-finance/assay#3700): a live
 // claim under another spelling refuses and creates nothing.
-func TestAcquireRefusesWhileAnotherSpellingOfThePRIsLive(t *testing.T) {
+func TestAcquire_refuses_while_alias_live(t *testing.T) {
 	f := newStore()
 	f.seedClaim("a--pr-108", "sess-A", "dispatched", "feat/x", 10*time.Minute)
 	run, so, _ := harness(t, f)
@@ -44,7 +44,7 @@ func TestAcquireIgnoresAnExpiredAlias(t *testing.T) {
 }
 
 // Branch-as-claim: an alias past its TTL whose branch is still on the remote is live.
-func TestAcquireRefusesAnAliasWhoseBranchStillExists(t *testing.T) {
+func TestAcquire_refuses_alias_with_live_branch(t *testing.T) {
 	f := newStore()
 	f.seedClaim("a--pr-108", "sess-A", "dispatched", "feat/x", 300*time.Minute)
 	f.branches["feat/x"] = true
@@ -70,7 +70,7 @@ func TestAliasLanesStaySeparate(t *testing.T) {
 }
 
 // pr-108 and pr-1081 are different PRs; non-PR keys have no alias at all.
-func TestAliasDoesNotMatchOtherPRsOrNonPRKeys(t *testing.T) {
+func TestAlias_ignores_other_PRs_and_non_PR_keys(t *testing.T) {
 	f := newStore()
 	f.seedClaim("a--pr-1081", "sess-A", "dispatched", "", 5*time.Minute)
 	f.seedClaim("a--stream--07", "sess-A", "dispatched", "", 5*time.Minute)
@@ -85,7 +85,7 @@ func TestAliasDoesNotMatchOtherPRsOrNonPRKeys(t *testing.T) {
 }
 
 // A claim set that cannot be listed is could-not-check (exit 6), never "no alias".
-func TestAcquireFailsClosedWhenTheClaimSetIsUnreadable(t *testing.T) {
+func TestAcquire_fails_closed_on_unreadable_set(t *testing.T) {
 	f := newStore()
 	f.readFails = true
 	run, so, se := harness(t, f)
