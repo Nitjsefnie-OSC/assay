@@ -12,7 +12,7 @@ gate-why: "Correlated operational measurements and their access/retention bounda
 decision-trigger: spec
 issues: []
 schema: brief-v2
-version: 5
+version: 6
 id: 20aa552e-a2cf-4e0d-959c-0b47c9091d0a
 authored: 2026-10-13 by performance collection authoring
 sources:
@@ -157,12 +157,12 @@ below, exercising production code rather than an independently reimplemented che
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestProducerLocalFlow$' ./... > "$o" && grep -F -- '--- PASS: TestProducerLocalFlow ' "$o")` | exit 0; named PASS. Dispatch, runner usage and imported historian data reach the same local report with DB/API absent; consent-off leaves optional storage untouched. |
-| 2 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestUsageAndIdentity$' ./adapters/... > "$o" && grep -F -- '--- PASS: TestUsageAndIdentity ' "$o")` | exit 0; named PASS. Redispatch has a new attempt; repeated cumulative polls count once; shared sessions, unknown costs, clock skew and mapping-epoch changes cannot create false joins. |
+| 2 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestUsageAndIdentity$' ./adapters/... > "$o" && grep -F -- '--- PASS: TestUsageAndIdentity ' "$o")` | exit 0; named PASS. Redispatch has a new attempt; repeated cumulative polls count once; shared sessions, unknown costs, clock skew and mapping-epoch changes cannot create false joins. A profile-version change keeps distinct profile identities rather than merging them, and a cross-profile duplicate of one usage record is counted once. |
 | 3 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestImportsAndCoverage$' ./adapters/... > "$o" && grep -F -- '--- PASS: TestImportsAndCoverage ' "$o")` | exit 0; named PASS. Legacy perf-v1 fixture, incomplete history, manual effort, late CI and evidence invalidation import preserve basis and cutoff; missing source is visibly unavailable. |
 | 4 | check:ci +flow +mutation | `(cd loopadmin && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestObserverAuthority$' ./runner/... > "$o" && grep -F -- '--- PASS: TestObserverAuthority ' "$o")` | exit 0; named PASS. Runner sink failures and callbacks cannot alter fencing, cancellation, limits or acceptance; callbacks cannot block under the client lock. |
 | 5 | check:ci +dereference | `statusgen --root . --consumers --brief performance-collection/02` | exit 0; routing claims corroborated against the implementation diff, including each changed consumer. |
-| 6 | check:ci +flow | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && go test -count=1 -v -run '^TestOperatingReportSourceCoverage$' ./... > "$o" && grep -F -- '--- PASS: TestOperatingReportSourceCoverage ' "$o")` | exit 0; named test runs and passes, including the negative cases in Task 8. |
-| 7 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPhaseProducerFlow$' ./... > "$o" && grep -F -- '--- PASS: TestPhaseProducerFlow ' "$o")` | exit 0; named PASS. Real adapter fixtures reconstruct nested work without double count; old perf-v1 yields unknown fields. Consent-off, drop/slow sink and missing children preserve domain results and expose coverage. |
+| 6 | check:ci +flow | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && go test -count=1 -v -run '^TestOperatingReportSourceCoverage$' ./... > "$o" && grep -F -- '--- PASS: TestOperatingReportSourceCoverage ' "$o")` | exit 0; named test runs and passes, including the negative cases in Task 8. Imported totals and coverage reach the local report output unchanged, with unknown and unsupported fields kept distinct from zero. |
+| 7 | check:ci +flow +mutation | `(cd perfdata && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestPhaseProducerFlow$' ./... > "$o" && grep -F -- '--- PASS: TestPhaseProducerFlow ' "$o")` | exit 0; named PASS. Real adapter fixtures reconstruct nested work without double count; old perf-v1 yields unknown fields. Consent-off, drop/slow sink and missing children preserve domain results and expose coverage. Required CI evidence and operational budget accounting are identical with the optional sink on, off, dropped or slow. |
 | 8 | check:ci +flow +mutation | `(cd perfdata && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerformanceInstrumentVersionImport$' ./adapters/... > "$out" && grep -F -- '--- PASS: TestPerformanceInstrumentVersionImport ' "$out")` | exit 0; named PASS; legacy and successor desk/statusgen fixtures preserve boundary, nullable coverage and stable import identity; mixed-version naive totals and absent-to-zero plants fail |
 
 ## Pre-mortem and detection
@@ -231,3 +231,24 @@ retention policy.
 ## Reporting amendment provenance
 
 2026-10-15: three operating reports requested; collection precedes on-demand and daily generation. Source inspection: public main d430e8f18. Existing status and independent Evidence are unchanged.
+
+## Proposed assessment consumer amendment — 15 October 2026
+
+Apply [review-profiles/spec](../review-profiles/spec.md)'s calibration/cost requirements
+to the existing adapter work, without expanding payload consent or cloning instrumentation.
+When an authorized source exposes them, preserve profile/run/attempt references, fixed
+model/prompt/router/workload versions, token categories, CPU, elapsed/queue time and
+forge/GH call counts. Include failed/retry work and packet/benchmark/collection overhead;
+shared/unattributed cost and unsupported fields stay explicit. Optional observations
+carry references, never raw source packets, prompts, findings or required evidence.
+
+Extend this brief's planned adapter fixture suite with collection-off, unknown CPU,
+repeated cumulative usage, profile-version change and cross-profile duplicate cases. Verify
+rows 2, 6 and 7 name these obligations in their Expect cells: profile-version and
+cross-profile identity (row 2), totals and coverage preserved into this brief's own local
+report output (row 6), and required CI evidence and operational budget accounting
+independent of the optional sink (row 7). The end-to-end case ends at that versioned local
+report output, which exists when this brief runs; this brief has no dependency on
+review-profiles/04. Review-profiles/04 owns calibration reduction and reads the same
+fixtures or report output when it runs. Neither brief holds local synthetic work for the
+other.
