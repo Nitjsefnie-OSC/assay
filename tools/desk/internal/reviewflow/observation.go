@@ -375,6 +375,17 @@ func laneApproved(lanes []LaneConclusion, name string) bool {
 	return false
 }
 
+// laneRequired reports whether the named lane is required on a row. A planned
+// Row carries it as RiskClassed so observation plans match ReadBoard rows.
+func laneRequired(lanes []ReviewLane, name string) bool {
+	for _, l := range lanes {
+		if l.Name == name {
+			return l.Required
+		}
+	}
+	return false
+}
+
 func observationRowID(r ObservationRow) string {
 	return fmt.Sprintf("%s#%d", r.Identity.Repository, r.Identity.Number)
 }
@@ -395,7 +406,7 @@ func PlanObservation(o Observation, policy ObservationPolicy) (ObservationPlan, 
 	b := &Board{AsOf: o.Inputs.Collection.End, Scope: &BoardScope{Count: len(o.Inputs.Admitted)}, Popn: &PRPopulation{Complete: true}}
 	for _, r := range recomputed.Result.Rows {
 		rule, _ := LookupAction(r.Action)
-		b.Rows = append(b.Rows, Row{Provider: r.Identity.Repository.Provider, Host: r.Identity.Repository.Host, Repo: r.Identity.Repository.Repository, Number: r.Identity.Number, Head: r.Identity.Head, Title: r.Title, Action: r.Action, Score: r.Score, Rule: rule})
+		b.Rows = append(b.Rows, Row{Provider: r.Identity.Repository.Provider, Host: r.Identity.Repository.Host, Repo: r.Identity.Repository.Repository, Number: r.Identity.Number, Head: r.Identity.Head, Title: r.Title, Action: r.Action, RiskClassed: laneRequired(r.Lanes, "security"), Score: r.Score, Rule: rule})
 	}
 	// Freshness and coverage were checked above against the explicit caller policy.
 	// Share the legacy idle count decision without importing its cadence TTL.

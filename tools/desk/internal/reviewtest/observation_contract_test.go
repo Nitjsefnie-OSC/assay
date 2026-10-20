@@ -143,6 +143,35 @@ func TestReviewContractFlow(t *testing.T) {
 		_, e = rf.BuildObservation(in, p)
 		expectInputError(t, e, rf.SchemaError)
 	})
+	t.Run("board-row-parity", func(t *testing.T) {
+		// A planned Row must equal the Row ReadBoard builds from the same decision,
+		// so a later consumer cannot read a risk-classed change as "no security lane".
+		for _, risk := range []bool{false, true} {
+			in, p := observationFixture()
+			in.Changes[0].Facts.RiskClassed = risk
+			o := observation(t, in, p)
+			plan, e := rf.PlanObservation(o, p)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if len(plan.Verbs) != 1 {
+				t.Fatalf("want one planned verb, got %d", len(plan.Verbs))
+			}
+			r := o.Result.Rows[0]
+			actions, _ := json.Marshal(rf.ActionsReport{AsOf: p.Now.Format(time.RFC3339), Rows: []rf.ActionRow{{Repo: r.Identity.Repository.Repository, Number: r.Identity.Number, Title: r.Title, Action: r.Action, RiskClassed: risk, Score: r.Score}}})
+			prs, _ := json.Marshal(rf.PRsReport{Rows: []rf.PRRow{{Repo: r.Identity.Repository.Repository, Number: r.Identity.Number, HeadSHA: r.Identity.Head}}})
+			b, e := rf.ReadBoard(actions, prs)
+			if e != nil {
+				t.Fatal(e)
+			}
+			got, want := plan.Verbs[0].Row, b.Rows[0]
+			// ReadBoard is the single-forge legacy wire: Provider/Host are empty there.
+			got.Provider, got.Host = "", ""
+			if got.RiskClassed != risk || !reflect.DeepEqual(got, want) {
+				t.Fatalf("observation plan row %+v differs from ReadBoard row %+v (riskClassed want %v)", got, want, risk)
+			}
+		}
+	})
 	t.Run("applicability", func(t *testing.T) {
 		for _, name := range []string{"head", "base", "body", "reviews", "checks", "lane-head", "lane-body", "lane-checks"} {
 			t.Run(name, func(t *testing.T) {
