@@ -1810,7 +1810,7 @@ func maskQuoted(cmd string) string {
 // segmentBefore (#1190 review): without it, a mutation verb on line 1 swallowed
 // every bare word on ALL following lines as one of its targets, and a bare word
 // resolved against a shared cwd lands inside the shared checkout — so
-// `rm -rf /private/tmp/zz` + newline + `echo SIM-OK` was refused as a file
+// An unrelated removal outside shared + newline + `echo SIM-OK` was refused as a file
 // mutation targeting <shared>/SIM-OK. Multi-line Bash is routine for agents;
 // the same command with `;` was always allowed. A BACKSLASH-escaped newline is
 // a line continuation, not a boundary — `rm -rf \` + newline + `<shared>/dist`
