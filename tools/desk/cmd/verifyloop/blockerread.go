@@ -46,6 +46,24 @@ type forgeIssueSource struct {
 	forges      map[string]deskkit.Forge
 	errs        map[string]error
 	pending     map[string]*pendingChanges
+	blockers    map[blockerObservationKey]blockerObservation
+}
+
+// A source can be used by a loop for multiple selections. Mutable scheduling
+// observations are refreshed at selection entry, never retained into a new pass.
+func (s *forgeIssueSource) beginPlanningPass() {
+	s.blockers, s.pending = nil, nil
+	s.forges, s.errs = nil, nil
+}
+
+type blockerObservationKey struct {
+	repo   string
+	kind   deskkit.TargetKind
+	number int
+}
+type blockerObservation struct {
+	state deskkit.BlockerState
+	why   string
 }
 
 func (s *forgeIssueSource) IssueState(ref deskkit.BlockerRef) (deskkit.BlockerState, string) {
@@ -55,25 +73,44 @@ func (s *forgeIssueSource) IssueState(ref deskkit.BlockerRef) (deskkit.BlockerSt
 	if err != nil {
 		return deskkit.BlockerCouldNotCheck, oneLine(err)
 	}
-	var iss *deskkit.Issue
+	kind := deskkit.TargetIssue
 	if ref.Kind == "change" {
-		iss, err = fg.GetIssueTyped(repo, ref.Number, deskkit.TargetChange)
-	} else {
-		iss, err = fg.GetIssue(repo, ref.Number)
+		kind = deskkit.TargetChange
 	}
-	if err != nil || iss == nil {
-		if err == nil {
-			err = deskkit.Unverifiable("empty issue read", nil)
+	key := blockerObservationKey{repo: repo.Slug(), kind: kind, number: ref.Number}
+	if s.blockers == nil {
+		s.blockers = map[blockerObservationKey]blockerObservation{}
+	}
+	observed, ok := s.blockers[key]
+	if !ok {
+		var iss *deskkit.Issue
+		if kind == deskkit.TargetChange {
+			iss, err = fg.GetIssueTyped(repo, ref.Number, kind)
+		} else {
+			iss, err = fg.GetIssue(repo, ref.Number)
 		}
-		return deskkit.BlockerCouldNotCheck, "reading " + ref.Raw + ": " + oneLine(err)
+		observed.state = deskkit.BlockerCouldNotCheck
+		switch {
+		case err != nil:
+			observed.why = oneLine(err)
+		case iss == nil:
+			observed.why = "empty issue read"
+		default:
+			switch strings.ToLower(strings.TrimSpace(iss.State)) {
+			case "open", "opened":
+				observed.state = deskkit.BlockerOpen
+			case "closed", "merged":
+				observed.state = deskkit.BlockerClosed
+			default:
+				observed.why = "unknown state " + iss.State
+			}
+		}
+		s.blockers[key] = observed
 	}
-	switch strings.ToLower(strings.TrimSpace(iss.State)) {
-	case "open", "opened":
-		return deskkit.BlockerOpen, ""
-	case "closed", "merged":
-		return deskkit.BlockerClosed, ""
+	if observed.state == deskkit.BlockerCouldNotCheck {
+		return observed.state, "reading " + ref.Raw + ": " + observed.why
 	}
-	return deskkit.BlockerCouldNotCheck, "reading " + ref.Raw + ": unknown state " + iss.State
+	return observed.state, ""
 }
 
 // forge is the existing allowlisted coordinate and credential boundary, shared

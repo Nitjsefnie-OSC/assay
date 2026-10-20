@@ -8,6 +8,7 @@ var verifyPerfPhases = []string{
 	"startup", "guard", "preflight", "queue-scan", "blocker",
 	"pending-discovery", "pending-evidence", "attestation",
 	"base-queue", "classify", "render", "rows", "sign",
+	"association", "association-root", "association-registry",
 }
 
 // Invocation-local and optional. Nested phases are inclusive; the shared recorder
