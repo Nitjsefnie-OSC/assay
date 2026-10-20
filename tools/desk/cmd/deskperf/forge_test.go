@@ -267,7 +267,7 @@ func TestForgeHostileLabels(t *testing.T) {
 // TestForgeDistributionEdges pins what the hand-built histories above cannot: a row with
 // eleven measured runs, where p90 is not the max; a record whose timestamp does not parse,
 // counted in the totals and in no hour; an all-zero history, whose shares stay 0, never NaN;
-// a negative perf-v1 count, read as unavailable; and two counts whose sum would overflow.
+// a negative count of either schema, read as unavailable; and two counts whose sums would overflow.
 // regression: deskperf-forge-edges
 func TestForgeDistributionEdges(t *testing.T) {
 	rec := func(tool, ts string, http int64) deskkit.PerfRecord {
@@ -297,14 +297,15 @@ func TestForgeDistributionEdges(t *testing.T) {
 	}
 
 	v1 := deskkit.PerfRecord{Schema: perfrec.Schema, TS: "2026-10-11T09:00:00Z", Tool: "deskpr", Verb: "create", SourceSHA: "aaaa111", ForgeCalls: -7}
-	if neg := deskkit.SummarisePerfForge([]deskkit.PerfRecord{v1}); neg.Measured != 0 || neg.Unavailable != 1 || neg.Calls != 0 {
-		t.Errorf("negative perf-v1 count = %+v; want one unavailable run, no calls", neg)
+	if neg := deskkit.SummarisePerfForge([]deskkit.PerfRecord{v1, rec("deskpr", "2026-10-11T09:00:00Z", -3)}); neg.Measured != 0 ||
+		neg.Unavailable != 2 || neg.Calls != 0 {
+		t.Errorf("negative perf-v1 and perf-v2 counts = %+v; want two unavailable runs, no calls", neg)
 	}
 	big := rec("deskpr", "2026-10-11T09:00:00Z", math.MaxInt64)
 	if o := deskkit.SummarisePerfForge([]deskkit.PerfRecord{big, big}); o.Calls != math.MaxInt64 || o.PeakHourCalls != math.MaxInt64 ||
-		o.Tools[0].Calls != math.MaxInt64 || o.Releases[0].Calls != math.MaxInt64 {
-		t.Errorf("overflowing sums = %d total, %d peak, %d tool, %d release; want each held at the int64 maximum",
-			o.Calls, o.PeakHourCalls, o.Tools[0].Calls, o.Releases[0].Calls)
+		o.Tools[0].Calls != math.MaxInt64 || o.Releases[0].Calls != math.MaxInt64 || o.Tools[0].PeakHourCalls != math.MaxInt64 {
+		t.Errorf("overflowing sums = %d total, %d peak, %d tool, %d release, %d tool peak; want each held at the int64 maximum",
+			o.Calls, o.PeakHourCalls, o.Tools[0].Calls, o.Releases[0].Calls, o.Tools[0].PeakHourCalls)
 	}
 }
 

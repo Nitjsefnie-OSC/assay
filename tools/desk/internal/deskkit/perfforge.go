@@ -15,8 +15,8 @@ package deskkit
 //
 // The perf-v1 and perf-v2 readers do not re-check a record's tool or build stamp, so this view
 // keys its rows on perfrec.Label and perfrec.SourceSHA, as the perf-v3 reader does: a value
-// that is not a roster label or a hex stamp groups under "other" or "unpinned" and never
-// reaches the page. Every sum saturates at the int64 maximum rather than wrapping.
+// without a roster-shaped label's form (a shape check, not roster membership) or a hex stamp's
+// groups under "other" or "unpinned", so no path, URL or control byte reaches the page. Every sum saturates at the int64 maximum rather than wrapping.
 
 import (
 	"math"
