@@ -179,7 +179,11 @@ func TestWriteHookParity(t *testing.T) {
 			v, out, counts := cfg.evaluate(tc.tool, tc.target)
 			totalPaths += counts.Paths
 			totalCallouts += counts.Callouts
-			if v.Block != tc.deny || (out.Decision == writepolicy.Deny) != tc.deny {
+			wantDecision := writepolicy.Allow
+			if tc.deny {
+				wantDecision = writepolicy.Deny
+			}
+			if v.Block != tc.deny || out.Decision != wantDecision {
 				t.Fatalf("direct: %+v / %+v", v, out)
 			}
 			var want []byte
@@ -381,4 +385,55 @@ func hookPolicyMutations(t *testing.T) {
 			t.Log("production mutant caught by independently specified fixture")
 		})
 	}
+	t.Run("terminal-unknown-allows", hookUnknownOutcomeMutation)
+}
+
+// The overlay changes the production adapter file, not a fixture-only mapper.
+// It is confined to this child build; the separate consumer proof uses no overlay.
+func hookUnknownOutcomeMutation(t *testing.T) {
+	root, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "tools", "desk", "cmd", "writeguard", "observe.go")
+	b, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const anchor = "case writepolicy.Allow:"
+	if strings.Count(string(b), anchor) != 1 {
+		t.Fatal("adapter mutation anchor drifted")
+	}
+	dir := t.TempDir()
+	copyPath := filepath.Join(dir, "observe.go")
+	if err := os.WriteFile(copyPath, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	overlay, err := json.Marshal(map[string]any{"Replace": map[string]string{source: copyPath}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlayPath := filepath.Join(dir, "overlay.json")
+	if err := os.WriteFile(overlayPath, overlay, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func() ([]byte, error) {
+		cmd := exec.Command("go", "test", "-overlay", overlayPath, "-v", "-count=1", "-timeout=45s", "-run", "^TestHookOutcomeMapping$", "./cmd/writeguard")
+		cmd.Dir = filepath.Join(root, "tools", "desk")
+		cmd.Env = append(os.Environ(), "GOFLAGS=", "WRITEPOLICY_BASELINE_BIN=")
+		return cmd.CombinedOutput()
+	}
+	if out, err := run(); err != nil || !strings.Contains(string(out), "--- PASS: TestHookOutcomeMapping ") {
+		t.Fatalf("unmutated adapter fixture did not pass: %v\n%s", err, out)
+	}
+	t.Log("unmutated child passed the same named fixture offline")
+	if err := os.WriteFile(copyPath, []byte(strings.Replace(string(b), anchor, "case writepolicy.Allow, writepolicy.Unknown:", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run()
+	if err == nil || !strings.Contains(string(out), "terminal unknown was allowed or lost its reason") ||
+		!strings.Contains(string(out), "--- FAIL: TestHookOutcomeMapping/invalid-observation ") {
+		t.Fatalf("adapter mutant escaped or failed for another reason: %v\n%s", err, out)
+	}
+	t.Log("production mutant caught by independently specified fixture")
 }

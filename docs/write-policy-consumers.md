@@ -4,10 +4,10 @@ Source delivery for desktools-v2/66, 20 October 2026. Pickup inspected
 `c7afc51121d636c0a6200f454dc45287ad35e32f`. Before implementation, ordinary
 merge-current advanced the branch to `f09ef6239aa1439473717f9c795aacf393e5462a`;
 writeguard, deskcore, contracts and the build/workflow readers below were unchanged
-between those revisions. Final merge-current advanced to
-`205c8b46a6b467f4693fc1d5e1152cf2690d9ab5`; only unrelated status and verification
-records changed. This PR's source is the producer handoff, not a published
-module version or installed hook receipt.
+between those revisions. Subsequent merge-current reached
+`ce25be49efeb8a345019c6a663002edfd705da27`; no target policy source changed.
+This PR carries the producer handoff and adapter repair. An immutable public
+module source version is qualified below; this is not an installed hook receipt.
 
 The human approved option 1 of the bounded extraction and closed
 [decision #3752](https://github.com/medici-finance/assay/issues/3752#issuecomment-6299695731).
@@ -65,6 +65,7 @@ The following behaviors are preservation obligations, not newly granted authorit
 |---|---|---|
 | Hook protocol | `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`; file path then notebook path; unsupported/empty target produces no decision | Built-binary golden inputs and stdout/exit expectations |
 | Legacy discovery failure | Malformed top-level/tool JSON, missing project directory or failed main-checkout Git discovery gives no stdout and exit zero | Malformed input and disposable non-repository binary fixtures |
+| Terminal core Unknown | Invalid, unsupported or otherwise unresolved terminal evaluations refuse in the hook adapter; they are not legacy parse/Git no-decision exits | Actual adapter mapping fixtures and an Unknown-to-allow production mutation |
 | Activation/configuration | Existing activation check and `ClassWrite` config-home source remain; environment cannot replace callout policy | Built hook activation and environment-versus-config fixtures |
 | Sentinel order | Sentinel mutation is refused before shared-home exemption, including already-exempt sessions | Direct/core binary cases plus order-reversal mutation |
 | Claim | Any nonempty environment claim, or non-directory readable sentinel; default 12-hour expiry; nonblank non-comment scoped roots, or unscoped empty/comment body | Explicit observation tests and adapter fixtures, including the existing inclusive expiry boundary and future-mtime behavior, aliases and invalid observations |
@@ -140,8 +141,51 @@ then runs a separate module with `GOWORK=off`, an empty module cache, no `replac
 no network and no ambient private-module configuration. The consumer asserts a
 shared-path denial and managed missing-context hold. This proves module packaging
 and import behavior, not the existence of a release or checksum in a public proxy.
-A compatible published deskcore version has not been selected or published.
-Consumers must await the human release/version act and then qualify their exact pin.
+The concrete immutable source handoff is instead:
+
+| Identity | Exact value |
+|---|---|
+| Module | `github.com/medici-finance/assay/deskcore` |
+| Available source pseudo-version | `v0.0.0-20261020202831-a5c75d60d584` |
+| Public source commit | `a5c75d60d584e7bcfe7a97510a502567f1dc97a6` |
+| Complete module Git tree at that commit | `158db710b9860994fa7a680d259c8e05c32d05a3` |
+| Write-policy Git tree at that commit | `ecef94d5be39d593c3286d3f72957e220cecb32b` |
+| Module checksum | `h1:EFIFHAvlGWz8l0/W19D/6AQq29MWxfcCKnF58qC6OZ0=` |
+| go.mod checksum | `h1:fT/P/8tLzSLzogIRNMLXVu8yWnqVOm3xwqf/tMjjPTg=` |
+| API / compatible profiles | `writepolicy/v1` / `legacy-hook/v1`, `managed/v1` |
+
+On 20 October 2026 the public Go proxy resolved that exact commit and served the
+module with checksum verification enabled. All 57 module source blobs matched
+the Git objects byte for byte; the zip's inherited root license also matched.
+All 11 production Go/module-manifest blobs are identical to this PR's repaired
+source. Subsequent adapter repairs and added core regression tests do not change
+that module's production API or behavior; the published source version does not
+contain those later tests or the command-local adapter.
+
+A second qualification copied the actual downloaded `.info`, `.mod` and `.zip`
+into a supplied offline file proxy, then ran the external consumer with an empty
+module cache, the two recorded sums, `GOWORK=off`, `-mod=readonly`, no `replace`,
+VCS disabled and no network. It returned `writepolicy/v1 shared=deny
+managed-missing=unknown`. This proves the exact available source version resolves
+and imports independently, beyond the synthetic packaging fixture. The read-only
+public resolution can be repeated with:
+
+```sh
+GOWORK=off GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
+  go mod download -json github.com/medici-finance/assay/deskcore@v0.0.0-20261020202831-a5c75d60d584
+```
+
+For an independently admitted Go consumer, that exact module requirement and
+those sums are the compatible source pin to qualify; no consumer pin is changed
+by this handoff. The umbrella release builds tools/desk from its complete source
+checkout with the existing sibling replacement, including the core copied by
+both Docker contexts. It does not resolve the placeholder version from a proxy.
+The independent route above requires neither a workspace nor that replacement.
+The nested module has no semantic release tag at this check; umbrella `v*` tags
+release tools and do not themselves name `deskcore/vX.Y.Z`. No tag or release was
+created here, and a future named release still follows the normal release owner.
+Managed profile activation, observation authentication and sandbox qualification
+remain with graph-execution/22 and /27; source availability grants none of them.
 
 The unfiltered `.github/workflows/ci.yml` already runs the desk suite on all PR/push
 source changes, including the consumer/parity fixtures. Its module loop currently
@@ -164,7 +208,7 @@ against the unfiltered build-test job. No allocator was relabelled a policy dupl
 ## Local qualification and cost
 
 The named brief tests cover independent typed expectations, real built-hook parity,
-actual production denial/order/admission mutations, transitive effect-helper
+actual production denial/order/admission and terminal-Unknown mapping mutations, transitive effect-helper
 mutations, and external module resolution. All inherited hook tests remain. The
 real pre-extraction binary is an additional local byte-for-byte stdout/exit oracle;
 it is never the sole decision oracle. Tests use disposable files and Git repositories.
@@ -174,6 +218,13 @@ sandbox. Installed hook wiring remains could-not-check: the inherited
 `TestSettingsJSONWiresWriteguard` skips because this public tree has no
 `.claude/settings.json`. Native execution was Darwin arm64, Go 1.27.2. Windows
 lexical fixtures are supplied; native Windows behavior is not qualified here.
+The Windows qualification owner must cover backslash command basenames and
+case-insensitive environment names before activation. The observation loop
+currently terminates structurally: each requested path is memoized, the frozen
+command and scoped claim body are finite, and claim-body/callout pending states
+advance once. A numeric round cap is deferred to the adapter protocol owner;
+an arbitrary cap would change valid long-command legacy behavior. Future changes
+to request generation must preserve progress and this termination argument.
 
 The same nine disposable hook fixtures were measured before and after extraction.
 Counters were added only to private source copies; their stdout/exit matched the

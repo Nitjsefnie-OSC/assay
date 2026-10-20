@@ -87,19 +87,31 @@ func (c Config) evaluate(tool, target string) (Verdict, writepolicy.Outcome, obs
 			}
 			continue
 		}
-		if out.Decision != writepolicy.Deny {
-			return Verdict{}, out, stats
-		}
+		return c.renderOutcome(out, calloutReason), out, stats
+	}
+}
+
+// renderOutcome maps only a terminal core result. Observation requests are
+// satisfied above; an unresolved result cannot authorize the hook call. Legacy
+// malformed-input and Git-discovery no-decision exits remain in run, before this
+// evaluator is called, and are not core Unknown outcomes.
+func (c Config) renderOutcome(out writepolicy.Outcome, calloutReason string) Verdict {
+	switch out.Decision {
+	case writepolicy.Allow:
+		return Verdict{}
+	case writepolicy.Deny:
 		switch out.Reason {
 		case writepolicy.SentinelDenied:
-			return c.sentinelBlock(out.Detail.Tool, out.Detail.Target), out, stats
+			return c.sentinelBlock(out.Detail.Tool, out.Detail.Target)
 		case writepolicy.SharedDenied:
-			return c.renderBlock(out.Detail), out, stats
+			return c.renderBlock(out.Detail)
 		case writepolicy.CalloutDenied:
-			return Verdict{Block: true, Reason: calloutReason}, out, stats
+			return Verdict{Block: true, Reason: calloutReason}
 		default:
-			return Verdict{Block: true, Reason: "writeguard: BLOCKED — unknown refusal code"}, out, stats
+			return Verdict{Block: true, Reason: "writeguard: BLOCKED — unknown refusal code"}
 		}
+	default:
+		return Verdict{Block: true, Reason: "writeguard: BLOCKED — policy evaluation is unresolved (" + string(out.Reason) + ")"}
 	}
 }
 
