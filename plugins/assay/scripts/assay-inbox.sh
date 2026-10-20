@@ -42,6 +42,7 @@
 #   0  every query succeeded (the printed table is complete)
 #   1  precondition failure — gh/jq missing, or no repos resolvable
 #   2  at least one gh query FAILED; the table, if any, is PARTIAL
+#   6  auto discovery has no loop identity; no queue read was attempted
 #
 # PORTABILITY: bash 3.2 (stock /bin/bash on macOS) is a supported target — the brief's
 # premise is "plain git + gh + any terminal". No bash-4-only builtins (mapfile/readarray,
@@ -131,6 +132,10 @@ turn-taking (one decision per turn, record the ruling, move to the next) belongs
 Read-only — this never writes to any issue, and --flow writes no file but OUT.html.
 
 Environment:
+  ASSAY_INBOX_READER  auto (default), typed or legacy for issue discovery. Auto requires
+                     a nonempty DESK_LOOP before probing. For an ambient terminal read,
+                     explicitly set ASSAY_INBOX_READER=legacy. Flow modes do no discovery.
+  ASSAY_DESKINBOX     typed discovery producer (default: deskinbox on PATH).
   ASSAY_INBOX_LIMIT   per-repo-per-label fetch cap passed to `gh issue list` (default 500).
   ASSAY_STATUSGEN     statusgen binary for --flow (default: `statusgen` on PATH).
   ASSAY_DESKBOARD     deskboard binary for --flow (default: `deskboard` on PATH).
@@ -142,6 +147,8 @@ Exit codes:
      the exit code stays a statement about the DECISION queue: a blind flow section on the
      --html page is reported in the summary line and on the page, and does not redden the
      run, because a caller checking this code is asking whether it saw all the decisions.
+  6  auto discovery lacks a loop identity — no queue read was attempted. Explicitly set
+     ASSAY_INBOX_READER=legacy for ambient discovery. Flow modes do not require it.
 EOF
 }
 
@@ -532,6 +539,9 @@ truncated=0
 # a blind reader reddens the run exactly as a failed query does.
 flow_failures=0
 
+# Flow reads only the existing flow emitters, never an issue population. Keep
+# all discovery selection, identity checks and probes out of both flow renderers.
+if [[ "$MODE" != flow && "$MODE" != flowhtml ]]; then
 # The new producer is selected BEFORE any discovery. Never retry a partial typed
 # read through the legacy per-label fanout: that would duplicate collection and
 # could conceal the permission/page failure. Explicit legacy is the rollback.
@@ -546,7 +556,7 @@ use_typed=0
 # producer still performs its canonical role resolution and fails closed.
 reader_loop="${DESK_LOOP:-}"
 if [[ "$INBOX_READER" == auto && -z "${reader_loop//[[:space:]]/}" ]]; then
-  echo "assay-inbox: auto discovery requires a loop identity; queue could-not-check. Select explicit legacy mode for an ambient read." >&2
+  echo "assay-inbox: auto discovery requires a loop identity; queue could-not-check. Select ASSAY_INBOX_READER=legacy explicitly for an ambient read." >&2
   exit 6
 fi
 if [[ "$INBOX_READER" != legacy ]]; then
@@ -612,6 +622,8 @@ for repo in ${REPOS[@]+"${REPOS[@]}"}; do
     printf '%s' "$merged" > "$TMP_JSON"
   done
 done
+fi
+
 fi
 
 # Dedupe by repo+number (an issue can carry more than one contract label), rank by the most

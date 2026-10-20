@@ -2216,6 +2216,34 @@ roster_off
 check "$([[ "$RC" -eq 0 && "$OUT" == *"example-org/tracker#100 — question 1 of 1"* && "$OUT" == *"0 reversible-default"* ]] && echo 0 || echo 1)" \
   "typed discovery retains the trust screen for an untrusted author's reversible-default claim" "exit=$RC stdout=$OUT stderr=$ERR"
 
+# regression: class flow-without-issue-discovery
+# Flow has no issue population: neither reader selection nor issue credentials apply.
+w="$TMPROOT/flow-no-identity"
+make_flow_tools "$w"
+mkdir -p "$w/alpha"
+board_fixture "$w" alpha 7 3 11 2 40
+flow_cell_fixtures "$w" alpha
+throughput_fixture "$w" review
+for program in gh deskinbox; do
+  cat > "$w/$program" <<'NO_DISCOVERY'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$0.argv"
+exit 91
+NO_DISCOVERY
+  chmod +x "$w/$program"
+done
+for format in table html; do
+  flow_args=(--flow --root "$w/alpha")
+  if [[ "$format" == html ]]; then flow_args+=(--html "$w/flow.html"); fi
+  OUT=$(unset DESK_LOOP ASSAY_INBOX_READER; PATH="$w:$PATH" ASSAY_DESKINBOX="$w/deskinbox" bash "$SCRIPT" "${flow_args[@]}" 2>"$w/stderr")
+  RC=$?
+  ERR=$(cat "$w/stderr")
+  check "$([[ "$RC" -eq 0 && ! -s "$w/gh.argv" && ! -s "$w/deskinbox.argv" ]] && echo 0 || echo 1)" \
+    "flow $format without identity or reader selection never probes discovery" "exit=$RC stderr=$ERR"
+done
+check "$([[ -s "$w/flow.html" ]] && echo 0 || echo 1)" \
+  "identity-free flow HTML writes its actual reader-backed output" "flow HTML missing"
+
 # ------------------------------------------------------------------ done ----
 echo
 printf '%s passed, %s failed\n' "$pass" "$fail"

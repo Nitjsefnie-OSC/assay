@@ -30,7 +30,7 @@ Neither observation grants write, claim, admission or executor authority.
 | New plugin with older producer | Use the documented legacy spellings before discovery, preserving manual readiness checks. Do not send an unsupported selector or retry after a partial projected read. |
 | Inbox script with compatible producer | With a nonempty desk-loop identity, auto mode checks `deskinbox --version` for `issue-discovery-v1` before any discovery. It runs exactly one typed listing per requested repository; no legacy label queries run in that arm. `ASSAY_DESKINBOX` selects a pinned executable. |
 | Human terminal without a desk-loop identity | Auto refuses with could-not-check before either typed or ambient discovery. Choose explicit `ASSAY_INBOX_READER=legacy` for an ambient `gh` read. Explicit typed mode still requires the canonical App role. |
-| Inbox script with absent/older producer | Auto selects legacy before discovery. `ASSAY_INBOX_READER=typed` instead refuses before any discovery; use it to qualify the migrated arm without broad reads. |
+| Inbox script with absent/older producer | With a nonempty desk-loop identity, auto selects legacy before discovery. `ASSAY_INBOX_READER=typed` instead refuses before any discovery; use it to qualify the migrated arm without broad reads. |
 | Explicit rollback | `ASSAY_INBOX_READER=legacy` restores shell label discovery. Restore the previous plugin and producer pins together for worker/intake. No live pin, installation or executor switch is performed here. |
 
 Typed discovery reads with the session’s minted App identity; the shell’s existing
@@ -84,3 +84,5 @@ metadata failure, response parity and the raw-comment gap. Shared dependencies
 remain subject to their own review and human acceptance. The separate
 desk-tools/38 verification prerequisite is retained: source tests here do not
 certify it or authorize runtime activation, releases, installations or pin changes.
+
+Flow-only shell modes (`--flow`, including `--html`) read existing flow emitters and perform no issue discovery, producer capability probe or issue query. They therefore need no loop identity or reader selection. Shell discovery modes return 6 before any read when auto has no loop identity; select `ASSAY_INBOX_READER=legacy` explicitly for ambient discovery.
