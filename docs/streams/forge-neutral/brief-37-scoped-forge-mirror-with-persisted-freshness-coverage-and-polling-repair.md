@@ -151,7 +151,9 @@ Options:
    footprint is smaller, and the earlier observations are gone if access returns. The mirror then
    re-reads from scratch.
 
-Default if no answer: none. The mirror stays unactivated and the brief stays held until answered.
+Default if no answer: none — blocks until answered.
+
+The mirror stays unactivated and the brief stays held until answered.
 
 ## Ground rules
 

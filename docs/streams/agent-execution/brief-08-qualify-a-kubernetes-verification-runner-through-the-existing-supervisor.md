@@ -73,6 +73,8 @@ runtime isolation, storage retention and recovery objectives, after reviewing th
 qualification evidence. No response means no activation. No permission is inferred from a
 manifest, API success or a published verdict. This brief does not choose a production target.
 
+Default if no answer: none — blocks until answered.
+
 ## Task
 
 1. Implement a runner-protocol adapter through the existing supervisor. Use immutable

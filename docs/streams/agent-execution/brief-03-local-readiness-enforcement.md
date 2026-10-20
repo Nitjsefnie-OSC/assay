@@ -39,6 +39,8 @@ Decision-trigger: spec. At pickup, prepare the concrete launcher/profile boundar
 
 Contract-consumption: agent-execution/01 supplies the qualified execution-profile types consumed here.
 
+Default if no answer: none — blocks until answered.
+
 ## Read first
 
 - [Controlling future-state amendment](../../proposals/non-ci-architecture/27-agent-execution-environments.md).

@@ -70,7 +70,9 @@ failure path remains explicit, and managed admission does not inherit a legacy f
 Options:
 1. **Approve the bounded extraction** — preserve legacy behavior and qualify the separate managed profile before activation.
 2. **Narrow or hold it** — retain current behavior until the missing boundary or compatibility evidence is supplied.
-Default if no answer: none — blocks the undecided security change until answered.
+Default if no answer: none — blocks until answered.
+
+The undecided security change remains blocked until answered.
 
 ## Ground rules
 
