@@ -1965,10 +1965,7 @@ func classifyPRFrom(repo string, p prBase, snapReviews []review, haveReviews boo
 
 	action, note := classify(in)
 	note += staleGrantNote
-	if rs.bodyEditReverified {
-		note += " — same-head APPROVE accepted under the documented body-edit re-verification class " +
-			"(deskflip re-verifies it at the gate)"
-	}
+	note += reviewflow.BodyEditReverificationNote(rs.bodyEditReverified)
 	if len(degradeReasons) > 0 {
 		// The row's RENDERED text carries the could-not-check reason(s) that produced the
 		// degrade, whether or not the classify() arm it landed on would otherwise have

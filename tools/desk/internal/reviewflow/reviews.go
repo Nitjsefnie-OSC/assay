@@ -178,3 +178,13 @@ func ReduceReviews(reviews []ReviewFact, head string) ReviewState {
 	}
 	return st
 }
+
+// BodyEditReverificationNote annotates the canonical owner's resolved exemption;
+// it does not evaluate or grant that exemption.
+func BodyEditReverificationNote(reverified bool) string {
+	if !reverified {
+		return ""
+	}
+	return " — same-head APPROVE accepted under the documented body-edit re-verification class " +
+		"(deskflip re-verifies it at the gate)"
+}

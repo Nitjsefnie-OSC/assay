@@ -106,6 +106,9 @@ func TestReviewContractFlow(t *testing.T) {
 					t.Fatal(e)
 				}
 				row := plan.Result.Rows[0]
+				if tc.name == "body-reverified" && !strings.Contains(row.Note, " — same-head APPROVE accepted under the documented body-edit re-verification class (deskflip re-verifies it at the gate)") {
+					t.Fatal("body-edit re-verification note missing")
+				}
 				if row.Action != tc.action || row.Disposition != tc.disposition {
 					t.Fatalf("decision %s/%s; want %s/%s", row.Action, row.Disposition, tc.action, tc.disposition)
 				}
@@ -208,6 +211,10 @@ func TestReviewContractFlow(t *testing.T) {
 		if len(plan.Verbs) != 2 || plan.Verbs[0].Key == plan.Verbs[1].Key {
 			t.Fatal("qualified hosts coalesced")
 		}
+		in.Changes[1].Identity.Repository.Host = in.Changes[0].Identity.Repository.Host
+		in.Admitted[1].Host = in.Admitted[0].Host
+		in.Requested[1].Host = in.Requested[0].Host
+		in.Population[1].Repository.Host = in.Population[0].Repository.Host
 		in.Changes[1].Identity.Repository.Provider = "gitlab"
 		in.Admitted[1].Provider = "gitlab"
 		in.Requested[1].Provider = "gitlab"
@@ -262,6 +269,7 @@ func TestReviewContractFlow(t *testing.T) {
 		}
 	})
 	t.Run("mutation-controls", func(t *testing.T) {
+		contractMutation(t, "internal/reviewflow/coalesce.go", "Provider: r.Provider, Host: r.Host, Repo: r.Repo", "Provider: \"\", Host: r.Host, Repo: r.Repo", "^TestReviewContractFlow$/^population-order-and-scope$", "qualified providers coalesced")
 		contractMutation(t, "internal/reviewflow/observation.go", "Body: v.Inputs.Body.Revision", "Body: v.AppliesTo.Body", "^TestReviewContractFlow$/^applicability$/^body$", "want stale input error")
 		contractMutation(t, "internal/reviewflow/idlegate.go", "if v.NeedsReview > 0 || v.ReReview > 0 {", "if false && (v.NeedsReview > 0 || v.ReReview > 0) {", "^TestReviewContractFlow$/^population-order-and-scope$", "display cap or empty result")
 	})

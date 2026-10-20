@@ -341,6 +341,7 @@ func BuildObservation(in ObservationInputs, policy ObservationPolicy) (Observati
 	depths := ObservationDepths{Cutoff: in.Collection.End, Total: len(in.Changes), Actions: map[string]int{}, Dispositions: map[string]int{}}
 	for _, v := range in.Changes {
 		action, note := Classify(v.Facts.ClassifyInput(), in.ReviewerDisplay)
+		note += BodyEditReverificationNote(v.Facts.Reviews.BodyEditReverified)
 		rule, err := LookupAction(action)
 		if err != nil {
 			return Observation{}, err
