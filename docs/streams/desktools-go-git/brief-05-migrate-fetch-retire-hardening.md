@@ -38,18 +38,9 @@ id: 7d8455f5-acc2-477a-9d89-3facc6c7de7e
 ## Context
 
 files:
-- `tools/desk/cmd/deskgit/deskgit.go`, `tools/desk/cmd/deskgit/transportexec.go`, `tools/desk/cmd/deskgit/exec.go` —
-  the hardened `fetch` (pinned `--upload-pack=git-upload-pack`, `--refmap=`,
-  `--no-recurse-submodules`, scrubbed env, effective-origin-URL gate). Migrate to
-  `gitcore.Fetch`; keep ONLY the roster / allowed-repo gate (now: read
-  `remote.origin.url`, parse, check allowed, use verbatim — no insteadOf layer to
-  smuggle through). Delete the argv-hardening code made moot.
-- `tools/desk/cmd/deskadvisory/advisory.go` — the third-party-fork fetch with its own controlled
-  `GIT_ASKPASS` + `-c credential.helper=` + `init`/`checkout`. Replace with an
-  in-memory-storer clone/fetch via `gitcore` so the token never touches disk or the
-  child env; drop the askpass file entirely.
-- `tools/desk/cmd/deskmerge/currency.go` — the base + `refs/pull/N/head` fetch. Migrate to
-  `gitcore.Fetch`. (deskmerge's TRIAL MERGE stays on the binary — brief 07.)
+- `tools/desk/cmd/deskgit/deskgit.go`, `tools/desk/cmd/deskgit/transportexec.go`, `tools/desk/cmd/deskgit/exec.go` — the hardened `fetch` (pinned `--upload-pack=git-upload-pack`, `--refmap=`, `--no-recurse-submodules`, scrubbed env, effective-origin-URL gate). Migrate to `gitcore.Fetch`; keep ONLY the roster / allowed-repo gate (now: read `remote.origin.url`, parse, check allowed, use verbatim — no insteadOf layer to smuggle through). Delete the argv-hardening code made moot.
+- `tools/desk/cmd/deskadvisory/advisory.go` — the third-party-fork fetch with its own controlled `GIT_ASKPASS` + `-c credential.helper=` + `init`/`checkout`. Replace with an in-memory-storer clone/fetch via `gitcore` so the token never touches disk or the child env; drop the askpass file entirely.
+- `tools/desk/cmd/deskmerge/currency.go` — the base + `refs/pull/N/head` fetch. Migrate to `gitcore.Fetch`. (deskmerge's TRIAL MERGE stays on the binary — brief 07.)
 - `docs/streams/desktools-go-git/inventory.md` (planned) — tick op family 1.
 
 facts:

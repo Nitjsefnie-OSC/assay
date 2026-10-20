@@ -49,8 +49,7 @@ mutation row proves the scan catches what a review misses.
 
 files:
 - `containers/secrets.md` (new) — the normative runtime credential contract.
-- `containers/scripts/layer-secret-scan.sh` (new) — scans a built image's layers +
-  config for key-shaped material; exit non-zero on any hit.
+- `containers/scripts/layer-secret-scan.sh` (new) — scans a built image's layers + config for key-shaped material; exit non-zero on any hit.
 - `containers/scripts/layer-secret-scan.test.sh` (new) — the mutation test fixture.
 
 facts:
