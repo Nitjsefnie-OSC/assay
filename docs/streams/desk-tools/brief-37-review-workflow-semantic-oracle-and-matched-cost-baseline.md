@@ -359,6 +359,28 @@ Landing note: this block lands on the Evidence branch after a two-parent merge o
 **VERIFY: BLOCKED**: no acceptance obligation failed. Rows 1–3, as written at source 54c3342f, pass by hand both on the host and under the network-deny sandbox, and the pinned row 3 corroborates all 4 consumers. Supplemental row 4 passes and earns no acceptance credit. Closure is blocked because the mandatory verifyrun witness could not run any row on this darwin host (environment, medici-finance/assay#1800). A verified closure needs a witness for every row, so this run advances no lifecycle cell, README row or stamp. The rederived base row-3 command still reports 4 unchecked (the medici-finance/assay#1915 class); it is recorded for provenance only.
 
 Outcome record: `blocked`, environment, medici-finance/assay#1800. It supersedes the newest earlier receipt for this brief, `37-20261018T033804Z-c015447e9a86`. The withdrawal above retracts that receipt's row-pass claims, its primary-byte audit and its medici-finance/assay#3342 blocker. All earlier receipts stay unchanged as history.
+### Fresh independent verification — 2026-10-20
+
+Verification-Attestation: medici-finance/assay#3718 run=e6049fd8292576ffefde9f4ffcfcc2f95d176cc0946f742eb27cfbe93fa69a5c source=b267d1120f28c02292a6970e3512a4b1d9c98de4 brief=docs/streams/desk-tools/brief-37-review-workflow-semantic-oracle-and-matched-cost-baseline.md model=gpt-6-astra tier=strong
+
+Verification-Table: delivery=e28201023c74b5f407ae98f9833ee4f79999f1db base=f92d2e9f24251bb3ac57c6447f229916d7748dfc original=f92d2e9f24251bb3ac57c6447f229916d7748dfc
+
+This run is blocked at the admitted executor preflight. Native dispatcher admission exited 0 for the source and model above. A supplemental parser-only preflight against the unchanged brief and pinned adapter exited 1 with `admitted.rows refused: unsupported Verify prose or multiline row`. No acceptance command or container executed. The adapter supports neither this Verify section's introductory prose nor the original `check:ci +flow +mutation` class spelling. Its receipt allowlist also excludes the native admitted `autocrlf=input eol=native` checkout. The latter two mismatches are source/receipt inspection, not additional execution results.
+
+The current original commands are preserved, including restored row 3. Original row 1 retains its pre-delivery Expect below; the later expansion does not replace that obligation. Row 4 is author-added supplemental work, excluded from original acceptance credit. Existing Evidence, refusals and receipts remain historical and are not withdrawn by this blocked run.
+
+| # | Command | Expected original obligation | Observed | Runner |
+|---|---------|------------------------------|----------|--------|
+| 1 | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestWorkflowOracle$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestWorkflowOracle ' "$o")` | exit 0; named PASS. Literal intended actions, exact heads, lane independence, holds, order and uncapped depths agree with existing production entrypoints; a planted wrong head, missing WAIT row and changed ordering each fail. | could-not-run: executor preflight rejected the unchanged Verify section before row execution; no exit code or output exists for this row | 2026-10-20 gpt-6-astra |
+| 2 | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestCostCohort$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestCostCohort ' "$o")` | exit 0; named PASS. Fixture manifest reproduces cold/steady, skew/growth, concurrency and failed/partial runs; complete parent/child CPU, wall and request coverage is explicit. Unknown costs never become zero. | could-not-run: executor preflight rejected the unchanged Verify section before row execution; no exit code or output exists for this row | 2026-10-20 gpt-6-astra |
+| 3 | `statusgen --root . --consumers --brief desk-tools/37` | exit 0; implementation consumer routing is corroborated against the actual diff. Out-of-scope judgments remain review obligations. | could-not-run: executor preflight rejected the unchanged Verify section before row execution; no exit code or output exists for this row | 2026-10-20 gpt-6-astra |
+| 4 | `(cd tools/desk && GOWORK=off go test -count=1 -v -run '^TestGitPackagesInstallQuiet$' ./internal/gitquiet)` | exit 0; named PASS; the new Git-fixture package uses the shared quiet runner without weakening fixture controls or cleanup. | author-added; could-not-run: same executor preflight; supplemental only, no acceptance credit | 2026-10-20 gpt-6-astra |
+
+Accounting: original acceptance 0 passed, 0 failed, 3 could-not-run / 3 total. Supplemental row 4: 0 executed / 1 total. No bound execution witness, binding file or fail-first evidence was produced. The parser diagnostic is not an execution witness. Substance and risk-value derivation remain incomplete; this run supplies no qualification or closure decision.
+
+Needed remedy: reviewed support for the unchanged table and native checkout in the admission adapter, regression coverage, required release/pin/installation audit, then fresh independent dispatch/admission and the exact sealed execution bracket. Preserve the original acceptance table, historical findings and all existing human/closure gates. No lifecycle cell or stamp advances.
+
+**VERIFY: BLOCKED** — admitted executor cannot represent this unchanged brief; every original acceptance row remains unrun.
 
 ## Review
 
