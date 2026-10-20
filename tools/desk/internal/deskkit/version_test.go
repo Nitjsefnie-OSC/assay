@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVersionUnpinned(t *testing.T) {
@@ -375,5 +376,32 @@ func TestVersionBuildInfoFallback(t *testing.T) {
 	SourceSHA, BuiltAt = "", ""
 	if s, b := Version(); s != "unpinned" || b != "unpinned" {
 		t.Errorf("no vcs info: Version() = %q,%q, want unpinned,unpinned", s, b)
+	}
+}
+
+// TestPerfRecordsBuildRevision: both desk perf writers — PerfRun's perf-v2 record and
+// PerfStep's perf-v1 step record — take sourceSHA from Version(), so an unstamped binary with
+// VCS information records its commit, not "unpinned", on every record it writes.
+// regression: F-release-binary-unpinned
+func TestPerfRecordsBuildRevision(t *testing.T) {
+	state := perfFixture(t)
+	oldS, oldB, oldR := SourceSHA, BuiltAt, readBuildInfo
+	t.Cleanup(func() { SourceSHA, BuiltAt, readBuildInfo = oldS, oldB, oldR })
+
+	rev := strings.Repeat("fedcba9876543210", 3)[:40]
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: rev}}}, true
+	}
+	SourceSHA, BuiltAt = "", ""
+	PerfRun("deskpr", []string{"create"}, []string{"create"}, func([]string) int { return 0 })
+	PerfStep("deskboot", "token-mint", time.Millisecond, 0)
+	recs, _ := perfLines(t, state)
+	if len(recs) != 2 {
+		t.Fatalf("want 2 records, got %d", len(recs))
+	}
+	for i, rec := range recs {
+		if rec["sourceSHA"] != rev[:12] {
+			t.Errorf("record %d (%v) sourceSHA = %v, want the build revision %s", i, rec["schema"], rec["sourceSHA"], rev[:12])
+		}
 	}
 }
