@@ -25,7 +25,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/49 | 2026-10-20 | 15 withdrawn |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-19 |  |
 | [forge-neutral](docs/streams/forge-neutral/README.md) | P1 | active | 5/43 | 2026-10-19 |  |
-| [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-19 |  |
+| [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-20 |  |
 | [harness-portability](docs/streams/harness-portability/README.md) | P2 | active | 5/17 | 2026-10-19 |  |
 | [iso-9001](docs/streams/iso-9001/README.md) | P2 | active | 4/11 | 2026-10-19 |  |
 | [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-19 |  |
@@ -33,7 +33,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/35 | 2026-10-19 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-19 |  |
 
-### Stuck auto-flips (26)
+### Stuck auto-flips (27)
 
 _gate:model briefs at `verified` that the model auto-flip has not moved to `done`. See docs/board-stuck-autoflips.md._
 
@@ -57,6 +57,7 @@ _gate:model briefs at `verified` that the model auto-flip has not moved to `done
 | [desktools-v2/15](docs/streams/desktools-v2/README.md) | Cobra and Viper foundation and complete CLI migration routing | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desktools-v2/61](docs/streams/desktools-v2/README.md) | Version shared performance boundaries and keep legacy reports comparable | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [graph-execution/09](docs/streams/graph-execution/README.md) | Versioned workflow instances and shared identity | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
+| [graph-execution/20](docs/streams/graph-execution/README.md) | Shared loop-admin runner protocol and offline conformance kit | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [harness-portability/06](docs/streams/harness-portability/README.md) | Codex packaging — generated manifest, coverage rule, install path | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [iso-9001/03](docs/streams/iso-9001/README.md) | A finding closes on a fired control — the corrective-action effectiveness record | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [quality/19](docs/streams/quality/README.md) | qualgen re-fix metric — SZZ-traced fixes that repeat a defect an earlier fix already addressed | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
@@ -120,7 +121,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 38636728 2026-10-20T01:21:47Z_
+_last regen: 2718fc97 2026-10-20T01:32:51Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -141,7 +142,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 38636728 2026-10-20T01:21:47Z_
+_last regen: 2718fc97 2026-10-20T01:32:51Z_
 
 **Progress:** 33/82 brief items done.
 
@@ -283,7 +284,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
 | graph-execution | 09 [exec:strong] | verified | 20000 | 36 | — | operator | environment blocker, cite medici-finance/assay#1800 | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
-| graph-execution | 20 [exec:strong] | implemented | 14000 | 24 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
+| graph-execution | 20 [exec:strong] | verified | 14000 | 24 | — | operator | environment blocker, cite medici-finance/assay#1800 | 2026-10-19 assay-verifier-app[bot] @ 3d29dd923ab7 (claude-opus-5-5) | — |
 | statusgen | 15 [exec:strong] | verified | 11500 | 21 | — | operator | environment blocker, cite #1800 | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | graph-execution | 13 [exec:strong] | implemented | 10000 | 16 | — | operator | environment blocker, cite #1800 | — | — |
 | desktools-v2 | 61 [exec:strong] | verified | 7000 | 12 | — | operator | environment blocker, cite medici-finance/assay#1800 | 2026-10-19 assay-verifier-app[bot] @ 0e661b6e15de (claude-opus-5-5) | — |
@@ -755,7 +756,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 17 Graph-linked release and outcome records without new authority — todo (wave 10)
 - 18 Offline graph, advice and assurance integration proof — todo (wave 12)
 - 19 Durable instance store and production coverage binding — todo (wave 6)
-- 20 Shared loop-admin runner protocol and offline conformance kit — implemented (wave 0)
+- 20 Shared loop-admin runner protocol and offline conformance kit — verified (wave 0)
 - 21 Deterministic task controller with durable dispatch and waits — todo (wave 7)
 - 22 First pinned local harness adapter and qualification fixtures — todo (wave 7)
 - 23 Immutable candidate workspaces and independent check inputs — todo (wave 7)
