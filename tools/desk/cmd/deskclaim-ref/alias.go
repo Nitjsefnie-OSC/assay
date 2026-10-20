@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
@@ -24,13 +25,19 @@ import (
 
 var prKeyRe = regexp.MustCompile(`^.+--pr-([0-9]+)(--security)?$`)
 
-// prKeyParts returns the PR number and lane ("" or "--security") of a per-PR key.
+// prKeyParts returns the PR number and lane ("" or "--security") of a per-PR key. The number is
+// normalised: `pr-05` and `pr-5` are the same PR (an all-zero number reads as "0"). It stays a
+// string, so a long number cannot overflow.
 func prKeyParts(id string) (num, lane string, ok bool) {
 	m := prKeyRe.FindStringSubmatch(id)
 	if m == nil {
 		return "", "", false
 	}
-	return m[1], m[2], true
+	num = strings.TrimLeft(m[1], "0")
+	if num == "" {
+		num = "0"
+	}
+	return num, m[2], true
 }
 
 // aliasIDs lists the OTHER claim ids spelling the same PR and lane as id, in sorted order. The
@@ -87,7 +94,18 @@ func claimLive(id string) (ref deskkit.ClaimStoreRecord, live, verifiable bool) 
 // before the create. Phase "post" runs after our create succeeded and settles two spellings
 // created in the same instant: the claim with the earlier forge-stamped date wins (ties go to
 // the smaller id), and the loser removes its own ref and refuses. stop=false means clear.
+//
+// A post-phase check that cannot be answered (exit 6) removes the ref just created, best effort:
+// a claim whose uniqueness nobody confirmed must not be left standing.
 func checkAliases(id, phase string) (rc int, stop bool) {
+	rc, stop = checkAliasesOnce(id, phase)
+	if stop && rc == exitUnverifiable && phase == "post" {
+		store.Remove(id)
+	}
+	return rc, stop
+}
+
+func checkAliasesOnce(id, phase string) (rc int, stop bool) {
 	others, status := aliasIDs(id)
 	if status == deskkit.ClaimReadUnverifiable {
 		errf("unverifiable: could not list dispatch claims to check other spellings of %s%s", id, causeSuffix())
@@ -143,16 +161,23 @@ func claimsBefore(aID, aDate, bID, bDate string) (before, ok bool) {
 }
 
 // printAliasHeld is what `show` appends for every live alias of id: a FREE here is not free when
-// another spelling of the same PR holds it. A claim set that cannot be read adds nothing; the
-// verb's own line already says what it read.
-func printAliasHeld(id string) {
+// another spelling of the same PR holds it. exitUnverifiable when the claim set (or one alias) could
+// not be read: the verb's own line is already printed, but the answer is not "no alias".
+func printAliasHeld(id string) int {
 	others, status := aliasIDs(id)
 	if status == deskkit.ClaimReadUnverifiable {
-		return
+		errf("unverifiable: could not list dispatch claims to check other spellings of %s%s", id, causeSuffix())
+		return exitUnverifiable
 	}
+	rc := exitOK
 	for _, other := range others {
 		ref, live, verifiable := claimLive(other)
-		if !verifiable || !live {
+		if !verifiable {
+			errf("unverifiable: could not read the claim on %s, another spelling of %s%s", other, id, causeSuffix())
+			rc = exitUnverifiable
+			continue
+		}
+		if !live {
 			continue
 		}
 		ageStr := "?"
@@ -161,4 +186,5 @@ func printAliasHeld(id string) {
 		}
 		logf("ALIAS-HELD %s — %s at=%s age=%sm (same PR as %s)", other, ref.Msg, ref.Date, ageStr, id)
 	}
+	return rc
 }

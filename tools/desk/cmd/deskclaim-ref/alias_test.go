@@ -205,3 +205,201 @@ func TestListIsUnchangedByAliases(t *testing.T) {
 		t.Errorf("list printed an alias line: %s", so.String())
 	}
 }
+
+// A listing that errors is unverifiable even when single-claim reads still work.
+type listFailStore struct{ *fakeStore }
+
+func (listFailStore) List() ([]string, deskkit.ClaimReadStatus) {
+	return nil, deskkit.ClaimReadUnverifiable
+}
+
+func listFailHarness(t *testing.T, s deskkit.ClaimStore) func(args ...string) int {
+	t.Helper()
+	oldBuild, oldOut, oldErr := buildStore, out, errOut
+	var so, se strings.Builder
+	buildStore = func(_, _ string) (deskkit.ClaimStore, error) { return s, nil }
+	out, errOut = &so, &se
+	t.Cleanup(func() { buildStore, out, errOut = oldBuild, oldOut, oldErr })
+	return func(args ...string) int { return run(args) }
+}
+
+func TestAcquire_listing_error_fails_closed(t *testing.T) {
+	f := newStore()
+	if rc := listFailHarness(t, listFailStore{f})("acquire", "b--pr-9", "--repo", aliasRepo, "--owner", "s"); rc != exitUnverifiable {
+		t.Fatalf("rc = %d, want 6", rc)
+	}
+	if _, made := f.claims["b--pr-9"]; made {
+		t.Error("a claim was created while the alias check could not run")
+	}
+}
+
+// Leading zeros: pr-05 and pr-5 are one PR; pr-50 is not.
+func TestAlias_leading_zeros(t *testing.T) {
+	for _, tc := range []struct {
+		held, want string
+		rc         int
+	}{
+		{"a--pr-5", "b--pr-05", exitRefused},
+		{"a--pr-005", "b--pr-5", exitRefused},
+		{"a--pr-00", "b--pr-0", exitRefused},
+		{"a--pr-5", "b--pr-50", exitOK},
+	} {
+		f := newStore()
+		f.seedClaim(tc.held, "s-A", "dispatched", "", 5*time.Minute)
+		if rc, _, _ := harnessRun(t, f, "acquire", tc.want, "--repo", aliasRepo, "--owner", "s-B"); rc != tc.rc {
+			t.Errorf("%s vs %s: rc = %d, want %d", tc.held, tc.want, rc, tc.rc)
+		}
+	}
+}
+
+func harnessRun(t *testing.T, f *fakeStore, args ...string) (int, *strings.Builder, *strings.Builder) {
+	t.Helper()
+	oldBuild, oldOut, oldErr := buildStore, out, errOut
+	so, se := &strings.Builder{}, &strings.Builder{}
+	buildStore = func(_, _ string) (deskkit.ClaimStore, error) { return f, nil }
+	out, errOut = so, se
+	defer func() { buildStore, out, errOut = oldBuild, oldOut, oldErr }()
+	return run(args), so, se
+}
+
+// steal (and the reclaim that reaches it) and progress honour a live alias; nothing is touched.
+func TestSteal_refused_by_live_alias(t *testing.T) {
+	f := newStore()
+	f.seedClaim("a--pr-7", "s-A", "dispatched", "", 5*time.Minute)
+	f.seedClaim("b--pr-7", "s-B", "claimed", "", 200*time.Minute)
+	before := f.claims["b--pr-7"]
+	rc, _, _ := harnessRun(t, f, "steal", "b--pr-7", "--repo", aliasRepo, "--owner", "s-C", "--reason", "takeover")
+	if rc != exitRefused {
+		t.Fatalf("rc = %d, want 5", rc)
+	}
+	if f.claims["b--pr-7"] != before {
+		t.Error("the refused steal changed the existing claim")
+	}
+}
+
+func TestSteal_without_alias_proceeds(t *testing.T) {
+	f := newStore()
+	f.seedClaim("b--pr-7", "s-B", "claimed", "", 200*time.Minute)
+	if rc, _, _ := harnessRun(t, f, "steal", "b--pr-7", "--repo", aliasRepo, "--owner", "s-C", "--reason", "takeover"); rc != exitOK {
+		t.Fatalf("rc = %d, want 0", rc)
+	}
+}
+
+func TestReclaim_refused_by_live_alias(t *testing.T) {
+	f := newStore()
+	f.seedClaim("a--pr-7", "s-A", "dispatched", "", 5*time.Minute)
+	f.seedClaim("b--pr-7", "s-B", "claimed", "", 200*time.Minute)
+	// The alias is seeded after acquire's own pre-check by hiding it from the first listing.
+	h := &hideOnceStore{fakeStore: f, hide: "a--pr-7"}
+	rc := listFailHarness(t, h)("acquire", "b--pr-7", "--repo", aliasRepo, "--owner", "s-C")
+	if rc != exitRefused {
+		t.Fatalf("rc = %d, want 5", rc)
+	}
+	if f.claims["b--pr-7"].msg == claimMessage("b--pr-7", "s-C", "claimed", "", "") {
+		t.Error("the stale claim was taken over despite a live alias")
+	}
+}
+
+type hideOnceStore struct {
+	*fakeStore
+	hide string
+	done bool
+}
+
+func (h *hideOnceStore) List() ([]string, deskkit.ClaimReadStatus) {
+	ids, st := h.fakeStore.List()
+	if h.done {
+		return ids, st
+	}
+	h.done = true
+	var kept []string
+	for _, id := range ids {
+		if id != h.hide {
+			kept = append(kept, id)
+		}
+	}
+	return kept, st
+}
+
+func TestSteal_race_loser_removes_ref(t *testing.T) {
+	f := newStore()
+	r := &raceStore{fakeStore: f, rival: "a--pr-7", rivalDate: f.now.Format(time.RFC3339)}
+	rc := raceHarness(t, r)("steal", "b--pr-7", "--repo", aliasRepo, "--owner", "s-C", "--reason", "takeover")
+	if rc != exitRefused {
+		t.Fatalf("rc = %d, want 5", rc)
+	}
+	if _, kept := f.claims["b--pr-7"]; kept {
+		t.Error("the steal loser kept its ref")
+	}
+}
+
+func TestProgress_refused_by_live_alias(t *testing.T) {
+	f := newStore()
+	f.seedClaim("a--pr-7", "s-A", "dispatched", "", 5*time.Minute)
+	f.seedClaim("b--pr-7", "s-B", "claimed", "", 5*time.Minute)
+	before := f.claims["b--pr-7"]
+	rc, _, _ := harnessRun(t, f, "progress", "b--pr-7", "--repo", aliasRepo, "--owner", "s-B", "--branch", "feat/y")
+	if rc != exitRefused {
+		t.Fatalf("rc = %d, want 5", rc)
+	}
+	if f.claims["b--pr-7"] != before {
+		t.Error("the refused progress advanced the claim")
+	}
+}
+
+func TestProgress_without_alias_advances(t *testing.T) {
+	f := newStore()
+	f.seedClaim("b--pr-7", "s-B", "claimed", "", 5*time.Minute)
+	if rc, _, _ := harnessRun(t, f, "progress", "b--pr-7", "--repo", aliasRepo, "--owner", "s-B", "--branch", "feat/y"); rc != exitOK {
+		t.Fatalf("rc = %d, want 0", rc)
+	}
+}
+
+// A post-create check that cannot be answered removes the ref it just created.
+type postFailStore struct {
+	*fakeStore
+	created bool
+}
+
+func (p *postFailStore) CreateIfAbsent(id, msg string) deskkit.ClaimWriteOutcome {
+	o := p.fakeStore.CreateIfAbsent(id, msg)
+	if o == deskkit.ClaimWriteApplied {
+		p.created = true
+	}
+	return o
+}
+
+func (p *postFailStore) List() ([]string, deskkit.ClaimReadStatus) {
+	if p.created {
+		return nil, deskkit.ClaimReadUnverifiable
+	}
+	return p.fakeStore.List()
+}
+
+func TestPostCheck_unverifiable_releases_ref(t *testing.T) {
+	f := newStore()
+	p := &postFailStore{fakeStore: f}
+	if rc := listFailHarness(t, p)("acquire", "b--pr-7", "--repo", aliasRepo, "--owner", "s"); rc != exitUnverifiable {
+		t.Fatalf("rc = %d, want 6", rc)
+	}
+	if _, kept := f.claims["b--pr-7"]; kept {
+		t.Error("an unconfirmed claim was left standing")
+	}
+}
+
+// show: an alias leg that cannot be read exits 6 but still prints the claim's own line.
+func TestShow_unreadable_alias_leg_exits_6(t *testing.T) {
+	f := newStore()
+	f.seedClaim("b--pr-7", "s-B", "claimed", "", 5*time.Minute)
+	oldBuild, oldOut, oldErr := buildStore, out, errOut
+	so, se := &strings.Builder{}, &strings.Builder{}
+	buildStore = func(_, _ string) (deskkit.ClaimStore, error) { return listFailStore{f}, nil }
+	out, errOut = so, se
+	defer func() { buildStore, out, errOut = oldBuild, oldOut, oldErr }()
+	if rc := run([]string{"show", "b--pr-7", "--repo", aliasRepo}); rc != exitUnverifiable {
+		t.Fatalf("rc = %d, want 6", rc)
+	}
+	if !strings.Contains(so.String(), "HELD b--pr-7") || !strings.Contains(se.String(), "unverifiable") {
+		t.Errorf("out=%q err=%q", so.String(), se.String())
+	}
+}

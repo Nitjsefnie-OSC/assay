@@ -255,6 +255,10 @@ func cmdProgress(id, owner, branch string) int {
 		errf("refused: %s is held by %s, not %s — only the holder advances its own claim", id, holder, owner)
 		return exitRefused
 	}
+	// Advancing a claim is still a claim on the PR: refuse while another spelling is live.
+	if rc, stop := checkAliases(id, "pre"); stop {
+		return rc
+	}
 	switch store.UpdateFrom(id, ref.Version, claimMessage(id, owner, "dispatched", branch, "")) {
 	case deskkit.ClaimWriteApplied:
 		logf("progressed %s (state=dispatched branch=%s owner=%s) — TTL now %dm", id, dashIfEmpty(branch), owner, dispatchedTTL())
@@ -315,6 +319,10 @@ func cmdSteal(id, owner, reason string) int {
 		errf("refused: steal requires --reason (a takeover with no recorded reason is a hand-delete)")
 		return exitRefused
 	}
+	// Before anything is read or replaced: a refused steal leaves the existing claim untouched.
+	if rc, stop := checkAliases(id, "pre"); stop {
+		return rc
+	}
 	msg := claimMessage(id, owner, "claimed", "", reason)
 	ref, status := store.Read(id)
 	switch status {
@@ -326,6 +334,9 @@ func cmdSteal(id, owner, reason string) int {
 		// CAS losing, reported as "re-claimed during the steal".
 		switch store.CreateIfAbsent(id, msg) {
 		case deskkit.ClaimWriteApplied:
+			if rc, stop := checkAliases(id, "post"); stop {
+				return rc
+			}
 			logf("stole %s (owner=%s reason=%s)", id, owner, reason)
 			return exitOK
 		case deskkit.ClaimWriteRejected:
@@ -341,6 +352,9 @@ func cmdSteal(id, owner, reason string) int {
 	// old DELETE-then-POST race window).
 	switch store.UpdateFrom(id, ref.Version, msg) {
 	case deskkit.ClaimWriteApplied:
+		if rc, stop := checkAliases(id, "post"); stop {
+			return rc
+		}
 		logf("stole %s (owner=%s reason=%s)", id, owner, reason)
 		return exitOK
 	case deskkit.ClaimWriteRejected:
@@ -357,15 +371,13 @@ func cmdShow(id string) int {
 	switch status {
 	case deskkit.ClaimReadFree:
 		logf("FREE %s (no %s/%s in the repo)", id, refPrefix, id)
-		printAliasHeld(id)
-		return exitOK
+		return printAliasHeld(id)
 	case deskkit.ClaimReadUnverifiable:
 		errf("unverifiable: could not read the claim on %s%s", id, causeSuffix())
 		return exitUnverifiable
 	}
 	printHeld(id, ref)
-	printAliasHeld(id)
-	return exitOK
+	return printAliasHeld(id)
 }
 
 // printHeld writes the one HELD line `show` and `list` share — the wire contract
