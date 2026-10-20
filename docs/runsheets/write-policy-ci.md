@@ -2,8 +2,11 @@
 
 The worker App does not hold workflow-write permission. The extraction in
 [#3772](https://github.com/medici-finance/assay/pull/3772) is merged; its branch
-is retired. This follow-up retains
-[write-policy-ci.diff](write-policy-ci.diff); it changes neither live workflow.
+is retired. The human workflow owner landed the additions in
+[#3793](https://github.com/medici-finance/assay/pull/3793). The recorded
+[write-policy-ci.diff](write-policy-ci.diff) and procedure below describe that
+landing; do not repeat it on a head where the patch is already applied. The
+release workflow's staged twin must remain byte-identical to the live file.
 Use the existing human-applied workflow leg described in
 [go-analysis-ci-hunk.md](go-analysis-ci-hunk.md). The proposed workflow-App decision
 record is still unapproved and supplies no alternative authority.
