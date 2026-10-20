@@ -136,6 +136,8 @@ The tool profile carries no workflow subjects. A real plan retains its normal pr
 and authorized scheduling reads; the example is not an offline test recipe.
 
 The verifyloop performance regression suite exercises both selected v3 profiles, the
-legacy/off paths, pending-admission parity and deterministic verdict phases. Its
-`performance-mutations.json` uses the existing muhar harness to prove it catches a removed
-request observer, a lost phase roster and incorrect dry-run operation attribution.
+legacy/off paths, pending-admission parity and signed/unsigned verdict phases. It runs
+the production callback and a built executable; scheduling requests pass through the
+production factory and resolver with fixture custody and a fake physical HTTP transport.
+`performance-mutations.json` uses the existing muhar harness to pin observer propagation,
+early context selection, main entrypoint wiring, phase coverage and dry-run attribution.

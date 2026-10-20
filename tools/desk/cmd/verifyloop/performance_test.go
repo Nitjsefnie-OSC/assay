@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -14,17 +15,16 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
-// Use the production wrapper, command callback, writer and reader with existing
-// offline preflight/forge seams; no real credentials or providers are involved.
-func measuredVerify(t *testing.T, args []string, action func(verifyPerformance) int) (int, []perfrec.Record) {
+// Capture the production factory before TestMain installs its offline default.
+// This keeps the factory closure and its resolver path under the existing guard.
+var performanceIssueSource = issueSourceFn
+
+// Exercise the production callback; only external startup activation is a fixture.
+// The executable test below independently pins main's actual wrapper arguments.
+func measuredVerify(t *testing.T, args []string) (int, []perfrec.Record) {
 	t.Helper()
 	ctx := perfrec.ResolveContext(perfrec.ContextInput{})
-	code := deskkit.PerfRunMeasured("verifyloop", verifyPerfVerbs, args, func(_ []string, s *perfrec.Session) (int, perfrec.Context) {
-		if s != nil {
-			s.SelectContext(ctx)
-		}
-		return action(verifyPerformance{session: s, context: ctx}), ctx
-	}, verifyPerfPhases...)
+	code := deskkit.PerfRunMeasured("verifyloop", verifyPerfVerbs, args, performanceCallback(ctx, func() bool { return true }), verifyPerfPhases...)
 	history, err := deskkit.LoadPerfHistory(1)
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +34,13 @@ func measuredVerify(t *testing.T, args []string, action func(verifyPerformance) 
 	}
 	return code, history.Records
 }
+
+func performanceFixture() verifyPerformance {
+	ctx := perfrec.ResolveContext(perfrec.ContextInput{})
+	probe := perfrec.SystemProbe()
+	return verifyPerformance{session: perfrec.BeginSelected(probe, probe.Mark(), verifyPerfPhases, ctx), context: ctx}
+}
+
 func phaseCount(r perfrec.Record, name string) int64 {
 	for _, p := range r.Phases {
 		if p.Name == name {
@@ -70,7 +77,7 @@ func TestVerifyPerformanceOperationsAndParity(t *testing.T) {
 				var code int
 				var records []perfrec.Record
 				out := captureStdout(t, func() {
-					code, records = measuredVerify(t, tc.args, func(p verifyPerformance) int { return runMeasured(tc.args, p) })
+					code, records = measuredVerify(t, tc.args)
 				})
 				outputs = append(outputs, out)
 				if code != tc.exit {
@@ -121,11 +128,18 @@ func (f verifyRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 // Compose the real scheduling source/backend/counted transport with a fake leaf.
 // Removing the invocation observer loses the request/cost assertions below.
 func TestVerifyPerformanceSchedulingRequests(t *testing.T) {
+	oldSource := issueSourceFn
+	issueSourceFn = performanceIssueSource
+	t.Cleanup(func() { issueSourceFn = oldSource })
 	root := planFixtureRoot(t, map[string]string{"01": planBrief("model", "no", "no", "no", "no")})
 	gitT(t, root, "init", "-q")
 	gitT(t, root, "remote", "add", "origin", "https://github.com/example-org/tracker.git")
-	old := issueSourceFn
-	t.Cleanup(func() { issueSourceFn = old })
+	gitT(t, root, "add", ".")
+	gitT(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "source")
+	if got := deskkit.RepoSlugForDir(root); got != "example-org/tracker" {
+		t.Fatalf("fixture repo %q", got)
+	}
+	stubPreflight(t, func(string) error { return nil })
 	for _, profile := range []string{"", "tool", "workflow"} {
 		t.Run("profile-"+profile, func(t *testing.T) {
 			plantAllowedRoster(t, "example-org/tracker")
@@ -134,31 +148,51 @@ func TestVerifyPerformanceSchedulingRequests(t *testing.T) {
 			t.Setenv("DESK_ROOTS", "")
 			sends := 0
 			metadata := false
-			issueSourceFn = func() deskkit.IssueStateSource {
-				source := &forgeIssueSource{}
-				source.forgeFor = func(deskkit.ForgeRepo) (deskkit.Forge, error) {
-					return &deskkit.GitHubForge{Token: "fixture", Observer: source.observer, Client: &http.Client{Transport: verifyRoundTripper(func(r *http.Request) (*http.Response, error) {
-						sends++
-						body := `{"default_branch":"main"}`
-						if r.URL.Path == "/graphql" {
-							raw, _ := io.ReadAll(r.Body)
-							metadata = strings.Contains(string(raw), "_assayPerf")
-							body = `{"data":{"repository":{"pullRequests":{"pageInfo":{"hasNextPage":false},"nodes":[]}},"_assayPerf":{"cost":2}}}`
-						}
-						return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
-					})}}, nil
-				}
-				return source
+			// Keep issueSourceFn, resolveForge and ForgeFor intact. Inject only the
+			// existing credential and physical transport seams, with the same role/scope.
+			roster := filepath.Join(os.Getenv("HOME"), ".config", "assay", "roster.env")
+			raw, err := os.ReadFile(roster)
+			if err != nil {
+				t.Fatal(err)
 			}
+			if err := os.WriteFile(roster, append(raw, []byte("ASSAY_REPO_FORGES=example-org/tracker=github\n")...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			deskkit.ReloadConfig()
+			mints := 0
+			deskkit.SetGitHubCustodyMinter(func(role string, repo deskkit.ForgeRepo) (string, string, error) {
+				if role != verifyloopRole || repo.Slug() != "example-org/tracker" {
+					t.Fatalf("wrong custody: %s %s", role, repo.Slug())
+				}
+				mints++
+				return "fixture", "", nil
+			})
+			originalTransport := http.DefaultTransport
+			http.DefaultTransport = verifyRoundTripper(func(r *http.Request) (*http.Response, error) {
+				sends++
+				body := `{"default_branch":"main"}`
+				switch r.URL.Path {
+				case "/graphql":
+					raw, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Fatal(err)
+					}
+					metadata = strings.Contains(string(raw), "_assayPerf")
+					body = `{"data":{"repository":{"pullRequests":{"pageInfo":{"hasNextPage":false},"nodes":[]}},"_assayPerf":{"cost":2}}}`
+				case "/repos/example-org/tracker":
+				default:
+					t.Fatalf("unexpected provider path %s", r.URL.Path)
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})
+			t.Cleanup(func() { deskkit.SetGitHubCustodyMinter(nil); http.DefaultTransport = originalTransport })
 			var records []perfrec.Record
 			var code int
-			captureStdout(t, func() {
-				code, records = measuredVerify(t, []string{"plan"}, func(p verifyPerformance) int {
-					return deskkit.ExitCodeOf(cmdPlanMeasured([]string{"--root", root, "--json"}, p))
-				})
+			planOutput := captureStdout(t, func() {
+				code, records = measuredVerify(t, []string{"plan", "--root", root, "--json"})
 			})
-			if code != 0 || sends != 2 || len(records) != 1 {
-				t.Fatalf("exit=%d sends=%d records=%d", code, sends, len(records))
+			if code != 0 || sends != 2 || mints != 1 || len(records) != 1 {
+				t.Fatalf("exit=%d sends=%d mints=%d records=%d output=%s", code, sends, mints, len(records), planOutput)
 			}
 			r := records[0]
 			if phaseCount(r, "pending-discovery") != 1 || phaseCount(r, "pending-evidence") != 1 {
@@ -203,26 +237,22 @@ func TestVerifyPerformancePendingAdmissionParity(t *testing.T) {
 	}
 	source := &forgeIssueSource{forgeFor: func(deskkit.ForgeRepo) (deskkit.Forge, error) { return f, nil }}
 	v.Issues = source
-	code, records := measuredVerify(t, []string{"plan"}, func(p verifyPerformance) int {
-		v.performance, source.performance = p, p
-		items, e := v.SelectQueue()
-		if e != nil {
-			t.Fatal(e)
-		}
-		if !reflect.DeepEqual(items, baseline) {
-			t.Fatal("measurement changed pending admission")
-		}
-		return 0
-	})
-	if code != 0 || len(records) != 1 {
-		t.Fatalf("%d %+v", code, records)
+	p := performanceFixture()
+	v.performance, source.performance = p, p
+	items, err := v.SelectQueue()
+	if err != nil {
+		t.Fatal(err)
 	}
+	if !reflect.DeepEqual(items, baseline) {
+		t.Fatal("measurement changed pending admission")
+	}
+	record := p.session.Finish("verifyloop", "plan", "none", 0, "")
 	for phase, n := range map[string]int64{"queue-scan": 1, "pending-discovery": 1, "pending-evidence": 2, "attestation": 1} {
-		if phaseCount(records[0], phase) != n {
-			t.Fatalf("%s count=%d want=%d", phase, phaseCount(records[0], phase), n)
+		if phaseCount(record, phase) != n {
+			t.Fatalf("%s count=%d want=%d", phase, phaseCount(record, phase), n)
 		}
 	}
-	if !records[0].PhaseOverlap {
+	if !record.PhaseOverlap {
 		t.Fatal("inclusive nested phases not marked")
 	}
 }
@@ -232,19 +262,146 @@ func TestVerifyPerformanceVerdictPhases(t *testing.T) {
 	t.Setenv("ASSAY_PERF_PROFILE", "")
 	pem, _ := writeTestKey(t)
 	cfg := verdictRunConfig{root: demoRoot(t), pem: pem, dryRun: true, exec: fakeExec, now: fixedNow, out: io.Discard}
-	code, records := measuredVerify(t, []string{"verdict"}, func(p verifyPerformance) int {
-		cfg.performance = p
-		if err := runVerdict(cfg); err != nil {
-			t.Fatal(err)
-		}
-		return 0
-	})
-	if code != 0 || len(records) != 1 {
-		t.Fatal("verdict measurement missing")
+	p := performanceFixture()
+	cfg.performance = p
+	if err := runVerdict(cfg); err != nil {
+		t.Fatal(err)
 	}
+	record := p.session.Finish("verifyloop", "verdict", "none", 0, "")
 	for _, phase := range []string{"queue-scan", "rows", "sign"} {
-		if phaseCount(records[0], phase) == 0 {
+		if phaseCount(record, phase) == 0 {
 			t.Fatalf("missing %s", phase)
 		}
+	}
+}
+
+// Build and run main itself so changing its roster, phase argument or callback
+// cannot be hidden by a test-owned wrapper. Runtime PATH has no external commands,
+// the home is disposable, and plan has no Git remote or credential to contact.
+func TestVerifyPerformanceMainEntrypoint(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "verifyloop")
+	if os.PathSeparator == '\\' {
+		bin += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", bin, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		verb   string
+		exit   int
+		phases []string
+	}{
+		{"help", []string{"--help"}, "other", 0, []string{"startup"}},
+		{"plan-envelope", []string{"plan", "--root", t.TempDir(), "--no-forge"}, "plan", 6, []string{"startup", "guard", "preflight"}},
+		{"verdict-parse", []string{"verdict", "--unknown-option"}, "verdict", 5, []string{"startup", "guard"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plantAllowedRoster(t, "example-org/tracker")
+			var baseline []byte
+			for _, enabled := range []string{"0", "1"} {
+				cmd := exec.Command(bin, tc.args...)
+				cmd.Dir = t.TempDir()
+				for _, pair := range os.Environ() {
+					key, _, _ := strings.Cut(pair, "=")
+					switch key {
+					case "HOME", "USERPROFILE", "PATH", "XDG_CONFIG_HOME", "VERIFIER_PEM", "KUBECONFIG":
+						continue
+					}
+					if strings.HasPrefix(key, "ASSAY_") || strings.HasPrefix(key, "DESK_") || strings.HasPrefix(key, "GH_") || strings.HasPrefix(key, "GITHUB_") {
+						continue
+					}
+					cmd.Env = append(cmd.Env, pair)
+				}
+				cmd.Env = append(cmd.Env, "HOME="+os.Getenv("HOME"), "USERPROFILE="+os.Getenv("HOME"), "PATH="+filepath.Dir(bin), "KUBECONFIG=/dev/null", "DESK_LOOP=verify-desk", "ASSAY_TELEMETRY="+enabled, "ASSAY_PERF_PROFILE=tool", "ASSAY_CONFIG_ECHO=full")
+				out, _ := cmd.CombinedOutput()
+				if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != tc.exit {
+					t.Fatalf("exit: %v\n%s", cmd.ProcessState, out)
+				}
+				history, err := deskkit.LoadPerfHistory(1)
+				if err != nil || history.Skipped != 0 {
+					t.Fatalf("history: %v skipped=%d", err, history.Skipped)
+				}
+				if enabled == "0" {
+					baseline = out
+					if len(history.Records) != 0 {
+						t.Fatal("main wrote telemetry without consent")
+					}
+					continue
+				}
+				if string(out) != string(baseline) {
+					t.Fatalf("main recording changed output\noff:\n%s\non:\n%s", baseline, out)
+				}
+				if len(history.Records) != 1 {
+					t.Fatalf("main records: %d", len(history.Records))
+				}
+				r := history.Records[0]
+				if r.Schema != perfrec.SchemaV3 || r.Verb != tc.verb || r.V3 == nil || r.V3.Profile != perfrec.ProfileTool {
+					t.Fatalf("main attribution: %+v", r)
+				}
+				for _, phase := range tc.phases {
+					if phaseCount(r, phase) != 1 {
+						t.Fatalf("main %s phase missing: %+v", phase, r.Phases)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestVerifyPerformanceBaseAndMultiRootPhases(t *testing.T) {
+	plantFixtureRoster(t)
+	a, b := twoRoots(t)
+	t.Setenv("ASSAY_TELEMETRY", "1")
+	t.Setenv("ASSAY_PERF_PROFILE", "tool")
+	t.Setenv(deskkit.RootsEnv, "example-org/tracker="+a+",example-org/agents="+b)
+	stubPreflight(t, func(string) error { return nil })
+	serveBase(t, map[string][]baseRow{
+		a: {{Brief: "stream-a/01", QueueVersion: 1, QueueClass: "judgment-dispatch", QueueValid: true}},
+		b: {{Brief: "stream-b/01", QueueVersion: 1, QueueClass: "judgment-dispatch", QueueValid: true}},
+	})
+	var records []perfrec.Record
+	var code int
+	captureStdout(t, func() { code, records = measuredVerify(t, []string{"plan", "--json", "--no-forge", "--base-queue"}) })
+	if code != 0 || len(records) != 1 {
+		t.Fatalf("exit %d records %d", code, len(records))
+	}
+	for phase, n := range map[string]int64{"startup": 1, "guard": 1, "preflight": 3, "base-queue": 2, "queue-scan": 1, "classify": 1, "render": 1} {
+		if phaseCount(records[0], phase) != n {
+			t.Fatalf("%s phase count=%d want=%d", phase, phaseCount(records[0], phase), n)
+		}
+	}
+}
+
+func TestVerifyPerformanceBlockerPhase(t *testing.T) {
+	plantAllowedRoster(t, "example-org/tracker")
+	p := performanceFixture()
+	var calls []string
+	source := &forgeIssueSource{performance: p, forgeFor: func(deskkit.ForgeRepo) (deskkit.Forge, error) { return stateForge{state: "open", calls: &calls}, nil }}
+	ref, err := deskkit.ParseBlockerRef("example-org/tracker#99", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state, why := source.IssueState(ref); state != deskkit.BlockerOpen {
+		t.Fatalf("%v %s", state, why)
+	}
+	r := p.session.Finish("verifyloop", "plan", "none", 0, "")
+	if phaseCount(r, "blocker") != 1 || len(calls) != 1 {
+		t.Fatalf("blocker phase/calls %+v %v", r.Phases, calls)
+	}
+}
+
+func TestVerifyPerformanceUnsignedRowsPhase(t *testing.T) {
+	plantAllowedRoster(t, "example-org/tracker")
+	p := performanceFixture()
+	cfg := verdictRunConfig{performance: p, root: demoRoot(t), unsignedOut: filepath.Join(t.TempDir(), "payload.json"), exec: fakeExec, now: fixedNow, out: io.Discard}
+	if err := runVerdict(cfg); err != nil {
+		t.Fatal(err)
+	}
+	r := p.session.Finish("verifyloop", "verdict", "none", 0, "")
+	if phaseCount(r, "queue-scan") != 1 || phaseCount(r, "rows") == 0 || phaseCount(r, "sign") != 0 {
+		t.Fatalf("unsigned phases %+v", r.Phases)
 	}
 }
