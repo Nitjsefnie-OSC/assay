@@ -10,6 +10,8 @@ gate: "human"
 risk: {"regulatory": "no", "customer": "no", "irreversible": "no", "sensitive-data": "no"}
 gate-why: "Changes which review findings can hold a PR or how a standing rejection can clear; approve the precise rule before changing that control."
 decision-trigger: "start"
+decision-issue: 1403
+ruling: "https://github.com/medici-finance/assay/issues/1403#issuecomment-5762224251"
 design: "DR-external-prereq-21"
 issues: [1387]
 schema: "brief-v2"
@@ -64,16 +66,15 @@ Options:
 Default if no answer: none — blocks until answered.
 
 **Ruling recorded (2026-09-21): APPROVED — option 1.** The driver ruled on the brief's
-decision-gate issue in their own login:
-[issue 1403](https://github.com/medici-finance/assay/issues/1403), the
-[ruling comment](https://github.com/medici-finance/assay/issues/1403#issuecomment-5762224251).
+decision-gate issue in their own login, in the ruling comment on decision issue #1403
+(the brief's `ruling:` key links it).
 The ruling approves the narrow same-head external-prerequisite exception: it applies only to
 an authenticated review explicitly stating that external prerequisites are the sole blockers;
 every prerequisite is independently verified from fresh evidence and revalidated at ready
 time; mixed code/content findings, missing evidence, later revocations and unsatisfied
 security reviews still block; issue closure alone does not establish a human ruling; and the
 board, planner and ready gate must agree — no empty or comment-only source commit is needed.
-The design-decision record is [DR-external-prereq-21](../decisions/DR-external-prereq-21.md).
+The design-decision record is `docs/streams/decisions/DR-external-prereq-21.md` (the brief's `design:` key).
 
 ## Interface contract
 
