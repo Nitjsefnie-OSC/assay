@@ -2190,6 +2190,22 @@ DESK_LOOP= ASSAY_INBOX_READER=auto ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" 
 check "$([[ "$RC" -eq 6 && "$ERR" == *"loop identity"* && ! -s "$w/deskinbox.argv" && ! -s "$w/argv.log" ]] && echo 0 || echo 1)" \
   "auto without loop identity refuses before typed or ambient discovery" "exit=$RC stdout=$OUT stderr=$ERR"
 
+# Flow's exemption must not expand to walk or decision HTML. Every refusal
+# precedes producer probing, ambient reads and HTML output creation.
+for missing_identity in '' '   '; do
+  for discovery_format in walk walk-item html; do
+    : > "$w/deskinbox.argv"
+    : > "$w/argv.log"
+    rm -f "$w/refused.html"
+    discovery_args=(--walk)
+    [[ "$discovery_format" == walk-item ]] && discovery_args=(--walk --item 1)
+    [[ "$discovery_format" == html ]] && discovery_args=(--html "$w/refused.html")
+    DESK_LOOP="$missing_identity" ASSAY_INBOX_READER=auto ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" "${discovery_args[@]}" example-org/tracker
+    check "$([[ "$RC" -eq 6 && "$ERR" == *"loop identity"* && ! -s "$w/deskinbox.argv" && ! -s "$w/argv.log" && ! -e "$w/refused.html" ]] && echo 0 || echo 1)" \
+      "auto $discovery_format identity length ${#missing_identity} refuses before discovery and output" "exit=$RC stdout=$OUT stderr=$ERR"
+  done
+done
+
 DESK_LOOP='   ' ASSAY_INBOX_READER=auto ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" --no-screen example-org/tracker
 check "$([[ "$RC" -eq 6 && ! -s "$w/deskinbox.argv" && ! -s "$w/argv.log" ]] && echo 0 || echo 1)" \
   "whitespace loop identity refuses before collection" "exit=$RC stderr=$ERR"
