@@ -20,11 +20,15 @@ the install id each exist once.
 ## Versioned schemas
 
 - `perf-v1` (`Schema`, built by `New`) is the legacy record, frozen: its fields
-  and meanings never change. Boot and launch steps and `statusgen` still write it.
+  and meanings never change. Boot and launch steps still write it; `statusgen`
+  writes `perf-v2`.
 - `perf-v3` (`SchemaV3`, explicit selected profile) adds bounded local attribution and request observations. See [the frozen contract and API](V3.md).
 - `perf-v2` (`SchemaV2`, built by a `Session`) measures wall and CPU over one
   declared boundary and records counters with explicit coverage. The desk
-  tools' `PerfRun` writes it.
+  tools' `PerfRun` writes it. Phases are written in the tool's roster order,
+  not the order the run entered them, and cover only the time a phase was
+  open: time before the first phase and after the last is inside `wallMs` but
+  in no phase, so the phase `ms` never sum to it.
 
 `Record` marshals and unmarshals strictly per the schema its `schema` field
 names: a perf-v1 record carrying a perf-v2 field (or the reverse) is refused,

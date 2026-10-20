@@ -1,0 +1,2 @@
+### Changed
+- The review-scope case corpus (`docs/streams/desk-supervision/review-scope-cases.md`) now pairs an explicitly labelled first-pass review packet with labelled follow-up review packets for each of its three scenarios. The eight existing cases keep their ids and expected outcomes; six synthetic packets (A.3, B.5, B.6, C.3, C.4, C.5) complete the pairs, every blocking occurrence names its scope basis, every round count follows the review-finding ledger, and the scoring record gains a row per new packet.
