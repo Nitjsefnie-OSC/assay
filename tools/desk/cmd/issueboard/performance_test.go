@@ -32,11 +32,16 @@ func TestProjectionV3ActualRecorder(t *testing.T) {
 		t.Fatal(err)
 	}
 	var forges []string
+	seen := map[string]bool{}
 	for _, line := range strings.Split(string(rawRoster), "\n") {
-		if allowed, ok := strings.CutPrefix(line, "ASSAY_ALLOWED_REPOS="); ok {
-			for _, entry := range strings.Split(allowed, ",") {
+		key, values, _ := strings.Cut(line, "=")
+		if key == "ASSAY_ALLOWED_REPOS" || key == "ASSAY_SCAN_REPOS" {
+			for _, entry := range strings.Split(values, ",") {
 				repo, _, _ := strings.Cut(entry, ":")
-				forges = append(forges, repo+"=github")
+				if !seen[repo] {
+					forges = append(forges, repo+"=github")
+					seen[repo] = true
+				}
 			}
 		}
 	}
