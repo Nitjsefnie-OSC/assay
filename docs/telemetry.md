@@ -254,8 +254,9 @@ the budget whichever schema recorded it. Its rules:
 - A row is keyed on the record's tool label and build stamp only when they have the roster
   and hex shapes (`perfrec.Label`, `perfrec.SourceSHA`); anything else groups under `other`
   or `unpinned`, so a malformed or planted perf-v1/perf-v2 record cannot put a path, URL or
-  control byte on the page. A negative count reads as unavailable, and sums hold at the
-  int64 maximum instead of wrapping.
+  control byte into this section. (The older tables on the same report still print the raw
+  `tool`.) A negative count reads as unavailable, and sums hold at the int64 maximum instead
+  of wrapping.
 
 Never recorded: argv, flag values, repo, PR or issue numbers, branch, path, title, body,
 error text, session tag, environment values, hostname, user name, or tokens. A test plants a
