@@ -10,6 +10,8 @@ gate: "human"
 risk: {"regulatory": "no", "customer": "no", "irreversible": "no", "sensitive-data": "no"}
 gate-why: "Changes which review findings can hold a PR or how a standing rejection can clear; approve the precise rule before changing that control."
 decision-trigger: "start"
+decision-issue: 1402
+ruling: "https://github.com/medici-finance/assay/issues/1402#issuecomment-5762179072"
 design: "DR-review-scope-20"
 issues: [1387]
 schema: "brief-v2"
@@ -62,7 +64,7 @@ Default if no answer: none — blocks until answered.
 ### Recorded ruling
 
 Approved — **option 1** — by the driver (`human:<name>`) on his own GitHub login, 2026-09-21,
-[issue 1402 comment](https://github.com/medici-finance/assay/issues/1402#issuecomment-5762179072):
+in the ruling comment on decision issue #1402 (the brief's `ruling:` key links it):
 
 > Approve desk-supervision/20's first-pass inventory and impact-based blocking
 > boundary. A blocker must demonstrate changed behavior, an explicit acceptance

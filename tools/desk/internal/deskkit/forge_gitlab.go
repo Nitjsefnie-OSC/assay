@@ -73,7 +73,8 @@ type GitLabForge struct {
 	// BaseURL is the GitLab instance root; empty means GitLabAPIBase.
 	BaseURL string
 	// Client, when non-nil, is the HTTP client the backend issues requests through.
-	Client *http.Client
+	Client   *http.Client
+	Observer RequestObserver
 
 	// cl caches the client built from Token/BaseURL. Lazily constructed by client() so a
 	// bare struct literal (the golden test's construction shape) still works.
@@ -153,7 +154,9 @@ func (g *GitLabForge) client() (*gitlab.Client, error) {
 	// The client is always constructed here (when the caller supplied none) so the counting
 	// transport sees every round-trip: perf forgeCalls means the same on both backends.
 	// countingClient copies, never mutates, the caller's client.
-	opts = append(opts, gitlab.WithHTTPClient(countingClient(g.Client)))
+	hc := countingClient(g.Client)
+	hc.Transport = observedTransport(hc.Transport, g.Observer, "provider", true)
+	opts = append(opts, gitlab.WithHTTPClient(hc))
 	cl, err := gitlab.NewClient(g.Token, opts...)
 	if err != nil {
 		return nil, Unverifiable("cannot build GitLab API client", err)
@@ -1355,10 +1358,20 @@ func (g *GitLabForge) trustEvents(repo ForgeRepo, number int, noteable, op strin
 		return nil, err
 	}
 	var env glGQLTrustEnvelope
+	query := fmt.Sprintf(gitlabTrustQuery, noteable)
+	var target any = &env
+	var options []gitlab.RequestOptionFunc
+	if g.Observer.Sink != nil && g.baseURL() == GitLabAPIBase {
+		end := strings.LastIndex(query, "}")
+		query = query[:end] + ` _assayPerf:queryComplexity{score}` + query[end:]
+		capture := &pointCapture{}
+		target = &pointDecoder{target: &env, capture: capture}
+		options = append(options, gitlab.WithContext(context.WithValue(context.Background(), pointCaptureKey{}, capture)))
+	}
 	_, qerr := cl.GraphQL.Do(gitlab.GraphQLQuery{
-		Query:     fmt.Sprintf(gitlabTrustQuery, noteable),
+		Query:     query,
 		Variables: map[string]any{"path": repo.Slug(), "iid": strconv.Itoa(number)},
-	}, &env)
+	}, target, options...)
 	if qerr != nil {
 		return nil, g.mapErr(http.MethodPost, gitlab.GraphQLAPIEndpoint, gitlabUnwrapGraphQLErr(qerr))
 	}

@@ -119,7 +119,7 @@ Default if no answer: none — blocks until answered
 Acceptance waits for concrete implementation evidence.
 
 Decision recorded 2026-10-19: the mapped human selected option 1, accepting the bounded local propagation implementation. The design record transcribes that ruling; independent review and verification remain required.
-https://github.com/medici-finance/assay/issues/3537#issuecomment-6281511664
+The ruling is the comment on decision issue #3537 that the brief's `ruling:` key links.
 
 ## Ground rules
 

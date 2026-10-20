@@ -457,6 +457,10 @@ unaffected and keep their current behaviour until they are moved over.
 
 ### Local performance history — `deskperf`
 
+Optional perf-v3 provider/auth instrumentation and its exact coverage are described
+in [Own provider observations](../../docs/provider-performance.md). The legacy
+counter descriptions below remain the perf-v1/perf-v2 contract.
+
 The audit ledger records WHAT a verb did; it records nothing about how long it took. With
 `ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
 desk commands append ONE `perf-v2` line per completed invocation to a local day file
