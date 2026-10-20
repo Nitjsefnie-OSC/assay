@@ -351,6 +351,19 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 		return Refused(fmt.Sprintf("refused: rows_passed %d exceeds rows_total %d", passed, total))
 	}
 
+	if v, has := f["rows"]; has {
+		var rows []VerifyRowID
+		if err := json.Unmarshal(v, &rows); err != nil {
+			return Refused("refused: rows must contain positive integers or exact suffixed identities")
+		}
+		seen := map[VerifyRowID]bool{}
+		for _, row := range rows {
+			if seen[row] {
+				return Refused("refused: rows repeats row " + string(row))
+			}
+			seen[row] = true
+		}
+	}
 	if v, has := f["row_results"]; has {
 		var entries []json.RawMessage
 		if err := json.Unmarshal(v, &entries); err != nil || entries == nil {
@@ -362,7 +375,7 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 		if len(entries) != total {
 			return Refused(fmt.Sprintf("refused: row_results lists %d rows but rows_total is %d — it covers ALL rows", len(entries), total))
 		}
-		seen := map[int]bool{}
+		seen := map[VerifyRowID]bool{}
 		pass := 0
 		for i, e := range entries {
 			var obj map[string]json.RawMessage
@@ -374,13 +387,12 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 					return Refused(fmt.Sprintf("refused: row_results[%d].%s is not a row_results field (row, result)", i, k))
 				}
 			}
-			lex := strings.TrimSpace(string(obj["row"]))
-			row, rerr := strconv.Atoi(lex)
-			if !intLexemeRe.MatchString(lex) || rerr != nil || row < 1 {
-				return Refused(fmt.Sprintf("refused: row_results[%d].row must be a JSON integer >= 1", i))
+			var row VerifyRowID
+			if err := json.Unmarshal(obj["row"], &row); err != nil {
+				return Refused(fmt.Sprintf("refused: row_results[%d].row must be a positive integer or exact suffixed identity", i))
 			}
 			if seen[row] {
-				return Refused(fmt.Sprintf("refused: row_results[%d].row %d repeats", i, row))
+				return Refused(fmt.Sprintf("refused: row_results[%d].row %s repeats", i, row))
 			}
 			seen[row] = true
 			var res string
