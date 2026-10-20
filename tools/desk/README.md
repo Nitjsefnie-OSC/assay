@@ -464,7 +464,7 @@ counter descriptions below remain the perf-v1/perf-v2 contract.
 The audit ledger records WHAT a verb did; it records nothing about how long it took. With
 `ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
 desk commands append ONE `perf-v2` line per completed invocation to a local day file
-(boot and launch steps, and `statusgen`, still write the legacy `perf-v1` line).
+(boot and launch steps still write the legacy `perf-v1` line; `statusgen` writes `perf-v2` too).
 All 67 operational commands are wrapped, including deskfile, deskreply, scanloop, issueboard,
 reviewloop, verifyloop and the supervisor. `deskperf` is excluded so reading a report cannot
 change its input; `muhar` is a developer mutation harness with separate execution accounting.
@@ -543,8 +543,10 @@ code or its output. Per-invocation agent usage (tokens, cost) is the agent runne
   calls, and the rate-limit cost — the busiest UTC hour's calls, and that hour and the p90 run
   as a percentage of the 5000/hour App budget floor (pooled over every tool and installation:
   a gauge, not a bound). It pools perf-v1 `forgeCalls` and the perf-v2
-  `http` counter (one seam, one budget); a run whose counter is unavailable — or a
-  `statusgen` record, whose 0 means "not counted" — prints as unavailable, never as zero.
+  `http` counter (one seam, one budget); a run whose counter is unavailable — or a perf-v1
+  `statusgen` record from an older build, whose 0 means "not counted" — prints as
+  unavailable, never as zero. Current `statusgen` writes perf-v2, whose `http` count is
+  measured like any other.
   Rules: `docs/telemetry.md`.
 - `deskperf boot [--days N] [--role R] [--json]` — `deskboot`'s per-step p50 / p90 / max, in
   boot order, and the summed boot cost per role.

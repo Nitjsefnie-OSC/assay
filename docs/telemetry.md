@@ -100,8 +100,9 @@ only meaningful mode, and it is purely local.
 The desk tools (`tools/desk/`) keep a separate, **local-only** performance log under the
 same promise and the same environment variable. With `ASSAY_TELEMETRY=1` exported, the
 67 operational desk commands each append one `perf-v2` record per completed invocation to
-`~/.config/assay/perf/<YYYY-MM-DD>.jsonl`; `deskboot` boot steps, `cellctl desk` launch steps
-and `statusgen` still append the legacy `perf-v1` record. `deskperf report` and
+`~/.config/assay/perf/<YYYY-MM-DD>.jsonl`, and so does `statusgen`, with one phase per pipeline
+stage; `deskboot` boot steps and `cellctl desk` launch steps still append the legacy `perf-v1`
+record. `deskperf report` and
 `deskperf boot` read both back (see [Two schemas](#two-schemas-perf-v1-and-perf-v2)).
 Day files are kept for 7 UTC days and pruned on write. With the variable unset — or set to
 anything other than exactly `1` — nothing is created: no directory, no file, no install id.
@@ -183,7 +184,15 @@ is the versioned `perf-v2` record below, and it adds no consent or sender either
 ### Two schemas: perf-v1 and perf-v2
 
 Since desktools-v2/61, `deskkit.PerfRun` — the wrapper around every operational desk
-command — writes `perf-v2`. Boot and launch step records and `statusgen` keep writing
+command — writes `perf-v2`, and `statusgen` writes it too: its phases are its pipeline
+stages (`parse`, `lint` and the heaviest lint checks `briefs`, `ordering` and `evidence`,
+`links`, `claims`, `view`, `render`, `write`, `corroborate`), and its `http` counter counts
+each direct HTTP attempt at its forge seams (a redirect the HTTP client follows inside one
+attempt is not counted again); its `gh`/`git` child processes have no shared
+seam, so `subprocess` is listed unavailable. Its phases are listed in roster order, not
+first-entry order (the view build is entered before the claim read but listed after it), and
+they do not sum to `wallMs`: process start and the exit after the last stage fall inside
+`wallMs` but outside every phase. Boot and launch step records keep writing
 `perf-v1`. Both live in the same day files; a reader groups by `schema` and never merges the
 two, because their `wallMs` is measured over different boundaries. A `perf-v2` record carries
 exactly these fields:
@@ -241,8 +250,10 @@ the budget whichever schema recorded it. Its rules:
 
 - A perf-v2 record whose `http` counter is `unavailable` is an unavailable run: it adds no
   calls and sits in no distribution, and a row with no measured run prints `-`, never `0`.
-- `statusgen`'s perf-v1 `forgeCalls` is documented as "not counted" (below), so its records
-  are unavailable runs too; perf-v1 has no unavailable state of its own.
+- Older `statusgen` builds wrote perf-v1 with `forgeCalls` always `0`, meaning "not
+  counted", so a `statusgen` perf-v1 record is an unavailable run too; perf-v1 has no
+  unavailable state of its own. Current `statusgen` writes perf-v2, whose `http` counter is
+  read like any other perf-v2 record.
 - Steps are never read (their calls belong to the invocation), and perf-v3 records stay in
   their own section.
 - The figures are HTTP attempts, not GraphQL quota points. 5000 requests per hour is the floor
@@ -266,14 +277,17 @@ environment value, and asserts none of them appears in the written bytes.
 ### statusgen writes the same local record
 
 `statusgen` appends to the same history. With `ASSAY_TELEMETRY=1` exported, each `statusgen`
-process writes one legacy `perf-v1` record on exit into the same `~/.config/assay/perf/` day files,
+process writes one `perf-v2` record on exit into the same `~/.config/assay/perf/` day files,
 with `tool` set to `statusgen`, `verb` the mode that ran (a positional sub-command such as
 `verifyrun`, else the first mode flag such as `--lint`, else `regen` for a plain run; a token
 outside that compiled-in roster is `other`), `exit` the process exit code and `result` its
-fixed word. `role` is `none`, `sourceSHA` is the build stamp when it is hex (a release tag or
-`dev` is `unpinned`), and the child and forge counters stay `0` ("not counted"), so
-`deskperf report --tool statusgen` reads it like any other tool. With the variable unset, or
-anything other than exactly `1`, `statusgen` creates nothing and behaves as it did before.
+fixed word. `role` is `none` and `sourceSHA` is the build stamp when it is hex (a release tag
+or `dev` is `unpinned`). Its phases are its pipeline stages, its `http` counter is measured
+(every direct HTTP attempt at its forge seams, so `0` means none was made), and `subprocess`
+is listed unavailable; see [Two schemas](#two-schemas-perf-v1-and-perf-v2) for the phase
+roster and how to read it. `deskperf report --tool statusgen` reads it like any other tool.
+With the variable unset, or anything other than exactly `1`, `statusgen` creates nothing and
+behaves as it did before.
 
 This is the same local file, not the network payload above: the payload still needs
 `--telemetry` as well, and nothing in this section sends anything. The record is written by
@@ -287,9 +301,9 @@ agent usage: per-invocation tokens and cost belong to the agent runner's own usa
 
 With `ASSAY_TELEMETRY=1` **and** a selected perf-v3 profile (`ASSAY_PERF_PROFILE` or
 `--perf-profile`, `tool` or `workflow`), `statusgen` writes one `perf-v3` process-summary record
-through the shared recorder instead of the `perf-v1` line. With the switch on and no profile
-selected, the `perf-v1` line above is unchanged; with the switch off nothing is created, whatever
-profile context is set.
+through the shared recorder instead of the `perf-v2` record. With the switch on and no profile
+selected, the `perf-v2` record above is unchanged; with the switch off nothing is created,
+whatever profile context is set.
 
 - **Profile and context.** `statusgen` binds the same eight `--perf-*` flags the desk tools take
   on its own flag set (it cannot import the desk adapter). A flag overrides its environment
@@ -301,9 +315,9 @@ profile context is set.
   exclusive: entering a nested phase pauses the enclosing one, so phase milliseconds never
   double count (`phaseOverlap` stays false) and `n` counts segments, not calls. `evaluate` is the
   residue between flag parse and exit not claimed by another phase.
-- **Boundary.** A v3 record starts at the shared recorder's process-init mark; the `perf-v1`
-  line starts at `statusgen`'s own package init. Both are process measurements, but they are
-  not the same instant, so compare like with like.
+- **Boundary and rosters.** A v3 record starts at the same process-init mark as the `perf-v2`
+  record and ends at the same exit. Its phase roster is not the v2 stage roster, and a reader
+  never merges the two schemas, so compare like with like.
 - **deskread child.** The only online route is the `deskread` child that `--forge` starts. Its
   start-to-exit wait is the `deskread` phase. The context reaches the child as `--perf-*` flags
   on its own command line, after the read kind. Under the workflow profile they carry the
