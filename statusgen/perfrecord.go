@@ -19,6 +19,9 @@ package main
 // output are exactly what they were without the switch.
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"os"
@@ -325,26 +328,71 @@ func recordV3(exit int) bool {
 	return true
 }
 
-// perfChildEnv is the environment for one deskread child: with the switch armed it carries
-// this invocation's selected context (as the child's parent for the workflow profile), and
-// with no profile selected it strips any inherited ASSAY_PERF_* so an overridden or cleared
-// parent never hands its child a context it did not use. Off, the child inherits as before.
-func perfChildEnv() []string {
-	if !perfrec.Enabled() {
-		return nil
+// perfChildFlags are the context flags handed to a deskread child. The child's desk role is
+// not among them: it resolves from the operational DESK_LOOP the child inherits unchanged.
+var perfChildFlags = []string{"perf-profile", "perf-session-id", "perf-agent-id", "perf-parent-agent-id",
+	"perf-parent-invocation-id", "perf-role", "perf-work"}
+
+var perfProbed sync.Map // deskread binary -> whether its help lists every perfChildFlags entry
+
+// deskreadTakesPerf is the version gate for the context hand-off: it asks the resolved deskread
+// binary, once per process, whether its help lists every flag perfChildArgs would pass. A build
+// that predates them (it would refuse an unknown flag, changing statusgen's result) or that
+// cannot answer gets no flags. The probe runs with an empty environment and a bound, so it
+// can reach no credential, record nothing and never hang a run.
+func deskreadTakesPerf(bin string) bool {
+	if v, ok := perfProbed.Load(bin); ok {
+		return v.(bool)
 	}
-	perfSelect()
-	return perfrec.ContextEnv(os.Environ(), perfCtx, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--help")
+	cmd.Env = []string{}
+	out, _ := cmd.CombinedOutput()
+	ok := len(out) > 0
+	for _, name := range perfChildFlags {
+		ok = ok && bytes.Contains(out, []byte("--"+name))
+	}
+	perfProbed.Store(bin, ok)
+	return ok
 }
 
-// deskreadOutput runs one deskread child — the ONLY online route statusgen has — inside the
-// "deskread" phase, with the context hand-off above. The child owns its provider, credential
-// and request observations; statusgen times only the start-to-exit it waited for.
-func deskreadOutput(bin string, args ...string) ([]byte, error) {
-	cmd := exec.Command(bin, args...)
-	if env := perfChildEnv(); env != nil {
-		cmd.Env = env
+// perfChildArgs returns one deskread child's argv (args[0] is the read kind) with this
+// invocation's context inserted as --perf-* flags after the kind. perfrec.ContextEnv decides
+// what is forwarded (fed no inherited environment, it composes only the context): the tool
+// profile alone, or under the workflow profile the session, agent, role and work with this
+// invocation as the child's parent. Empty values are passed as empty flags, which clear what
+// the child would otherwise inherit; with no profile selected the child is told "off", so an
+// overridden or cleared parent never hands its child a context it did not use. Switch off, or a
+// deskread without the flags, the argv is unchanged and the child inherits as before.
+func perfChildArgs(bin string, args []string) []string {
+	if !perfrec.Enabled() || len(args) == 0 {
+		return args
 	}
-	defer perfEnter("deskread")()
-	return cmd.Output()
+	perfSelect()
+	if !deskreadTakesPerf(bin) {
+		return args
+	}
+	flags := []string{"--perf-profile=off"}
+	if perfCtx.Profile() != "" {
+		flags = nil
+	}
+	for _, kv := range perfrec.ContextEnv(nil, perfCtx, true) {
+		k, v, _ := strings.Cut(kv, "=")
+		name := "perf-" + strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(k, "ASSAY_PERF_")), "_", "-")
+		if name != "perf-work" {
+			flags = append(flags, "--"+name+"="+v)
+			continue
+		}
+		var refs []json.RawMessage
+		if json.Unmarshal([]byte(v), &refs) != nil || len(refs) == 0 {
+			flags = append(flags, "--perf-work=")
+			continue
+		}
+		for _, r := range refs {
+			flags = append(flags, "--perf-work="+string(r))
+		}
+	}
+	out := append([]string{args[0]}, flags...)
+	return append(out, args[1:]...)
 }

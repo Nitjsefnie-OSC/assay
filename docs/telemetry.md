@@ -305,9 +305,14 @@ profile context is set.
   line starts at `statusgen`'s own package init. Both are process measurements, but they are
   not the same instant, so compare like with like.
 - **deskread child.** The only online route is the `deskread` child that `--forge` starts. Its
-  start-to-exit wait is the `deskread` phase. Under the workflow profile the child receives the
-  session, agent, role and work context with this invocation as its parent; under the tool
-  profile it receives the profile alone. The child's provider requests, credentials and cost
+  start-to-exit wait is the `deskread` phase. The context reaches the child as `--perf-*` flags
+  on its own command line, after the read kind. Under the workflow profile they carry the
+  session, agent, role and work with this invocation as the parent. Under the tool profile they
+  carry the profile alone. With no profile selected they carry `--perf-profile=off`, so a parent
+  that cleared its profile never hands on one it did not use. The flags are passed only when the
+  resolved `deskread` lists all of them in its `--help`. That check runs once per run, with an
+  empty environment and a time bound. An older `deskread` that would refuse an unknown flag gets
+  none, so output and exit never change. The child's provider requests, credentials and cost
   are its own observations: the parent records no request observation (`requestCoverage` is
   `missing`), and child time is never added to the parent's.
 - **Reading.** `deskperf report --tool statusgen` reads these records through the same shared
@@ -315,7 +320,8 @@ profile context is set.
   `work`, `agent`, `role`) groups them with the desk tools' records and the `deskread` child.
 - **Boundary kept.** `statusgen`'s dependency closure still has no desk, deskkit, adapter or
   custody package, the recorder reads no credential, and a recording run starts exactly the
-  processes a switch-off run starts.
+  processes a switch-off run starts. The one addition is the offline `deskread --help` check,
+  made only when a `deskread` child is started.
 
 A future context resolver (statusgen/20) may consume explicit, source-bound, immutable input
 snapshots that a run already holds; it may not weaken independent membership enumeration — a

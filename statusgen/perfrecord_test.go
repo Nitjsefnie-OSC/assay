@@ -6,6 +6,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
@@ -424,7 +426,7 @@ func TestMainExitsOnlyViaRecorder(t *testing.T) {
 var perfShims = []string{"gh", "glab", "curl", "wget", "ssh", "nc", "docker"}
 
 type perfLab struct {
-	bin, root, home, path, log, capture string
+	bin, root, home, path, log, capture, old string
 }
 
 // newPerfLab builds statusgen, copies the offline fixture, writes the test roster into a
@@ -452,6 +454,7 @@ func newPerfLab(t *testing.T) perfLab {
 	shims := t.TempDir()
 	l.log = filepath.Join(t.TempDir(), "exec.log")
 	l.capture = filepath.Join(t.TempDir(), "child.env")
+	l.old = filepath.Join(t.TempDir(), "old-deskread")
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(shims, name), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 			t.Fatal(err)
@@ -461,8 +464,18 @@ func newPerfLab(t *testing.T) perfLab {
 		write(n, "printf '%s\\n' \""+n+" $*\" >> \""+l.log+"\"\nexit 1\n")
 	}
 	write("git", "printf '%s\\n' \"git $*\" >> \""+l.log+"\"\nexec \""+gitBin+"\" \"$@\"\n")
+	// The fake deskread answers the version-gate probe (--help, run with an empty environment,
+	// so builtins only) as a build that takes the --perf-* flags, or, while l.old exists, as one
+	// that predates them and refuses an unknown flag the way the real parser does.
 	write("deskread", "printf '%s\\n' \"deskread $*\" >> \""+l.log+"\"\n"+
-		"{ echo '--- child'; env | grep -E '^(ASSAY_PERF_[A-Z_]*|ASSAY_TELEMETRY|DESK_LOOP)=' | sort; } >> \""+l.capture+"\"\nexit 6\n")
+		"if [ \"$1\" = --help ]; then\n"+
+		"  if [ -f \""+l.old+"\" ]; then printf 'Usage: deskread <kind> [flags]\\n'; exit 0; fi\n"+
+		"  for f in "+strings.Join(perfChildFlags, " ")+"; do printf '  --%s string\\n' \"$f\"; done; exit 0\n"+
+		"fi\n"+
+		"{ echo '--- child'; for a in \"$@\"; do printf 'arg %s\\n' \"$a\"; done\n"+
+		"  env | grep -E '^(ASSAY_PERF_[A-Z_]*|ASSAY_TELEMETRY|DESK_LOOP)=' | sort; } >> \""+l.capture+"\"\n"+
+		"if [ -f \""+l.old+"\" ]; then for a in \"$@\"; do case \"$a\" in --perf-*) echo \"deskread: unknown flag: ${a%%=*}\" >&2; exit 5;; esac; done; fi\n"+
+		"exit 6\n")
 	l.path = shims + string(os.PathListSeparator) + os.Getenv("PATH")
 	return l
 }
@@ -540,24 +553,74 @@ func (l perfLab) execLog(t *testing.T) string {
 	return string(raw)
 }
 
-// childEnvs parses the fake deskread's captures, one map per child start.
-func (l perfLab) childEnvs(t *testing.T) []map[string]string {
+// perfChild is one fake deskread start: its argv and the perf-relevant environment it inherited.
+type perfChild struct {
+	args []string
+	env  map[string]string
+}
+
+// children parses the fake deskread's captures, one per child start (gate probes excluded).
+func (l perfLab) children(t *testing.T) []perfChild {
 	t.Helper()
 	raw, err := os.ReadFile(l.capture)
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	var out []map[string]string
+	var out []perfChild
 	for _, line := range strings.Split(string(raw), "\n") {
 		if line == "--- child" {
-			out = append(out, map[string]string{})
+			out = append(out, perfChild{env: map[string]string{}})
 			continue
 		}
-		if k, v, ok := strings.Cut(line, "="); ok && len(out) > 0 {
-			out[len(out)-1][k] = v
+		if len(out) == 0 {
+			continue
+		}
+		c := &out[len(out)-1]
+		if a, ok := strings.CutPrefix(line, "arg "); ok {
+			c.args = append(c.args, a)
+		} else if k, v, ok := strings.Cut(line, "="); ok {
+			c.env[k] = v
 		}
 	}
 	return out
+}
+
+// perfArgs are the --perf-* words in the child's argv.
+func (c perfChild) perfArgs() []string {
+	var out []string
+	for _, a := range c.args {
+		if strings.HasPrefix(a, "--perf-") {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// resolve is what the child's own resolver selects at start: the --perf-* flags it was handed,
+// then the environment it inherited (the order deskread's parser and perfrec apply).
+func (c perfChild) resolve() perfrec.Context {
+	in := perfrec.ContextInput{LookupEnv: func(k string) (string, bool) { v, ok := c.env[k]; return v, ok }}
+	for _, a := range c.perfArgs() {
+		name, v, _ := strings.Cut(strings.TrimPrefix(a, "--"), "=")
+		val := perfrec.Value{Value: v, Present: true}
+		switch name {
+		case "perf-profile":
+			in.Profile = val
+		case "perf-session-id":
+			in.SessionID = val
+		case "perf-agent-id":
+			in.AgentID = val
+		case "perf-parent-agent-id":
+			in.ParentAgentID = val
+		case "perf-parent-invocation-id":
+			in.ParentInvocationID = val
+		case "perf-role":
+			in.Role = val
+		case "perf-work":
+			in.Work, in.WorkPresent = append(in.Work, v), true
+		}
+	}
+	return perfrec.ResolveContext(in)
 }
 
 func decodeV3(t *testing.T, line string) perfrec.Record {
@@ -586,10 +649,20 @@ func phaseNames(rec perfrec.Record) map[string]perfrec.PhaseStat {
 	return m
 }
 
+// Fixture IDs: derived at test time per the driver's ruling; avoids a secret-shaped literal.
+var (
+	perfSession1 = perfFixtureID("perf-session-1")
+	perfAgent1   = perfFixtureID("perf-agent-1")
+	perfParent1  = perfFixtureID("perf-parent-1")
+)
+
+// perfFixtureID is the first 32 hex digits of a label's sha256: a valid perf-v3 opaque ID.
+func perfFixtureID(label string) string {
+	sum := sha256.Sum256([]byte(label))
+	return hex.EncodeToString(sum[:16])
+}
+
 const (
-	perfSession1 = "0123456789abcdef0123456789abcdef"
-	perfAgent1   = "fedcba9876543210fedcba9876543210"
-	perfParent1  = "00112233445566778899aabbccddeeff"
 	perfBriefRef = `{"kind":"brief","repo":"medici-finance/assay","brief":"assay:assay:statusgen:26","primary":true}`
 	perfIssueRef = `{"kind":"issue","forge":"github","instance":"github.com","repo":"medici-finance/assay","issue":3745}`
 )
@@ -714,17 +787,18 @@ func TestSharedPhaseRecorderFlow(t *testing.T) {
 		}
 	})
 
-	// 3. The fake deskread child: same output/exit, a timed child phase, and the causal link.
+	// 3. The fake deskread child: same output/exit, a timed child phase, and the causal link
+	// handed on the child's own argv (--perf-* flags after the read kind).
 	t.Run("deskread", func(t *testing.T) {
 		args := []string{"--lint", "--forge", "--root", "."}
 		off := l.run(t, []string{"DESK_LOOP=worker-desk"}, args...)
-		offChildren := l.childEnvs(t)
+		offChildren := l.children(t)
 		if len(offChildren) == 0 {
 			t.Fatalf("--lint --forge did not start the fake deskread; exec log:\n%s", l.execLog(t))
 		}
 		for _, c := range offChildren {
-			if delete(c, "DESK_LOOP"); len(c) != 0 {
-				t.Errorf("switch off: the child was handed perf context %v", c)
+			if delete(c.env, "DESK_LOOP"); len(c.env) != 0 || len(c.perfArgs()) != 0 {
+				t.Errorf("switch off: the child was handed perf context %v %v", c.env, c.perfArgs())
 			}
 		}
 		on, line := l.one(t, perfWorkflowEnv(), args...)
@@ -733,32 +807,72 @@ func TestSharedPhaseRecorderFlow(t *testing.T) {
 		}
 		parentLine = line
 		parent := decodeV3(t, line)
-		children := l.childEnvs(t)[len(offChildren):]
+		children := l.children(t)[len(offChildren):]
 		if ph := phaseNames(parent)["deskread"]; ph.N != int64(len(children)) || len(children) == 0 {
 			t.Errorf("deskread phase n = %d, child starts = %d", ph.N, len(children))
 		}
 		pd := parent.V3.Attribution
-		for _, c := range children {
-			if c["ASSAY_PERF_PARENT_INVOCATION_ID"] != pd.InvocationID || c["ASSAY_PERF_SESSION_ID"] != pd.SessionID ||
-				c["ASSAY_PERF_AGENT_ID"] != pd.AgentID || c["ASSAY_PERF_PROFILE"] != "workflow" || c["ASSAY_PERF_ROLE"] != "implement" {
-				t.Errorf("child context does not link to its parent %s: %v", pd.InvocationID, c)
+		for i, c := range children {
+			if c.args[0] != offChildren[i%len(offChildren)].args[0] {
+				t.Errorf("the read kind must stay first: %q", c.args)
 			}
 			// The child's own resolver (what deskread runs at start) sees the parent link and
 			// mints a fresh invocation of its own.
-			cc := perfrec.ResolveContext(perfrec.ContextInput{LookupEnv: func(k string) (string, bool) { v, ok := c[k]; return v, ok }})
+			cc := c.resolve()
 			cd := cc.Data()
-			if cd.ParentInvocationID != pd.InvocationID || cc.InvocationID() == pd.InvocationID || len(cd.Work) != 2 {
-				t.Errorf("child resolution: parent %q own %q work %v", cd.ParentInvocationID, cc.InvocationID(), cd.Work)
+			if cc.Profile() != perfrec.ProfileWorkflow || cd.ParentInvocationID != pd.InvocationID || cd.SessionID != pd.SessionID ||
+				cd.AgentID != pd.AgentID || cd.Role != "implement" || cc.InvocationID() == pd.InvocationID || len(cd.Work) != 2 {
+				t.Errorf("child context does not link to its parent %s: %+v (argv %q)", pd.InvocationID, cd, c.args)
 			}
 		}
-		// Tool profile: the child gets the profile and nothing else.
+		// Tool profile: the child gets the profile and nothing else, and resolves no workflow field.
+		start := len(l.children(t))
 		_, toolLine := l.one(t, append(perfWorkflowEnv(), "ASSAY_PERF_PROFILE=tool"), args...)
 		decodeV3(t, toolLine)
-		for _, c := range l.childEnvs(t)[len(offChildren)+len(children):] {
-			delete(c, "ASSAY_TELEMETRY")
-			delete(c, "DESK_LOOP") // operational, inherited untouched by design
-			if len(c) != 1 || c["ASSAY_PERF_PROFILE"] != "tool" {
-				t.Errorf("tool profile handed its child workflow context: %v", c)
+		// A parent whose flag cleared the profile tells its child "off", whatever it inherited.
+		_, offLine := l.one(t, perfWorkflowEnv(), append(args, "--perf-profile=off")...)
+		if rec, err := perfrec.Decode([]byte(offLine)); err != nil || rec.Schema != perfrec.Schema {
+			t.Errorf("--perf-profile=off: %v %s", err, offLine)
+		}
+		after := l.children(t)[start:]
+		if len(after) != 2*len(offChildren) {
+			t.Fatalf("child starts = %d, want %d", len(after), 2*len(offChildren))
+		}
+		for i, c := range after {
+			want, profile := "--perf-profile=tool", perfrec.ProfileTool
+			if i >= len(offChildren) {
+				want, profile = "--perf-profile=off", ""
+			}
+			cc := c.resolve()
+			if got := c.perfArgs(); len(got) != 1 || got[0] != want || cc.Profile() != profile || cc.Data().SessionID != "" || len(cc.Data().Work) != 0 {
+				t.Errorf("child handed %q resolved %s %+v, want only %s", got, cc.Profile(), cc.Data(), want)
+			}
+		}
+	})
+
+	// 3b. Version gate: a deskread that predates the --perf-* flags (its help lists none, and
+	// it refuses an unknown flag) is handed none, so the result is the switch-off result.
+	t.Run("old deskread", func(t *testing.T) {
+		if err := os.WriteFile(l.old, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(l.old)
+		args := []string{"--lint", "--forge", "--root", "."}
+		start := len(l.children(t))
+		off := l.run(t, []string{"DESK_LOOP=worker-desk"}, args...)
+		envs := map[string][]string{"tool": append(perfWorkflowEnv(), "ASSAY_PERF_PROFILE=tool"), "workflow": perfWorkflowEnv()}
+		for name, env := range envs {
+			got, line := l.one(t, env, args...)
+			if got.out != off.out || got.code != off.code || strings.Contains(got.errOut, "unknown flag") {
+				t.Errorf("%s profile with an old deskread changed the result:\n on  %d %q %q\n off %d %q", name, got.code, got.out, got.errOut, off.code, off.out)
+			}
+			if ph := phaseNames(decodeV3(t, line))["deskread"]; ph.N == 0 {
+				t.Errorf("%s: the deskread wait is still a phase with an old child: %v", name, line)
+			}
+		}
+		for _, c := range l.children(t)[start:] {
+			if got := c.perfArgs(); len(got) != 0 {
+				t.Errorf("an old deskread was handed %q", got)
 			}
 		}
 	})
@@ -980,7 +1094,7 @@ func TestPerformanceKeepsCredentialBoundary(t *testing.T) {
 	})
 
 	t.Run("tool profile is workflow-blind", func(t *testing.T) {
-		start := len(l.childEnvs(t))
+		start := len(l.children(t))
 		env := append(perfWorkflowEnv(), "ASSAY_PERF_PROFILE=tool")
 		for _, m := range modes {
 			_, line := l.one(t, env, append(m.args, "--perf-role=review", "--perf-work", perfIssueRef, "--perf-session-id", perfParent1)...)
@@ -996,15 +1110,16 @@ func TestPerformanceKeepsCredentialBoundary(t *testing.T) {
 				}
 			}
 		}
-		children := l.childEnvs(t)[start:]
+		children := l.children(t)[start:]
 		if len(children) == 0 {
 			t.Fatal("--forge started no deskread child")
 		}
 		for _, c := range children {
-			delete(c, "ASSAY_TELEMETRY")
-			delete(c, "DESK_LOOP")
-			if len(c) != 1 || c["ASSAY_PERF_PROFILE"] != "tool" {
-				t.Errorf("tool profile forwarded workflow context to its child: %v", c)
+			cc := c.resolve()
+			d := cc.Data()
+			if got := c.perfArgs(); len(got) != 1 || got[0] != "--perf-profile=tool" || cc.Profile() != perfrec.ProfileTool ||
+				d.SessionID != "" || d.AgentID != "" || d.ParentInvocationID != "" || d.Role != "" || len(d.Work) != 0 {
+				t.Errorf("tool profile forwarded workflow context to its child: %q -> %+v", got, d)
 			}
 		}
 	})
@@ -1061,7 +1176,25 @@ func TestPerformanceKeepsCredentialBoundary(t *testing.T) {
 		for _, m := range modes {
 			off := calls([]string{"DESK_LOOP=worker-desk"}, m.args)
 			on := calls(perfWorkflowEnv(), m.args)
-			if !slices.Equal(off, on) {
+			// The hand-off adds only the version gate's offline probe (once, and only where a
+			// deskread child starts) and --perf-* words on the child's own argv.
+			probes := 0
+			var norm []string
+			for _, line := range on {
+				if line == "deskread --help" {
+					probes++
+					continue
+				}
+				if strings.HasPrefix(line, "deskread ") {
+					line = strings.Join(slices.DeleteFunc(strings.Fields(line), func(f string) bool { return strings.HasPrefix(f, "--perf-") }), " ")
+				}
+				norm = append(norm, line)
+			}
+			sort.Strings(norm)
+			if want := map[bool]int{true: 1, false: 0}[m.name == "forge"]; probes != want {
+				t.Errorf("%s: %d version-gate probes, want %d", m.name, probes, want)
+			}
+			if !slices.Equal(off, norm) {
 				t.Errorf("%s: recording changed what the process starts:\n on  %q\n off %q", m.name, on, off)
 			}
 			for _, line := range on {
