@@ -95,12 +95,17 @@ var perfStart = time.Now()
 
 // recordPerf appends this process's perf-v1 line when ASSAY_TELEMETRY=1. It returns nothing
 // and never prints: the record is not allowed to change what statusgen does.
+//
+// sourceSHA is the commit the binary was built from (perfrec.Revision: the toolchain's
+// vcs.revision), never statusgenVersion: that is a release TAG, which the record's hex-only
+// gate maps to "unpinned", so every released statusgen used to record "unpinned" although
+// `--version` named its release. statusgen has no link-time commit stamp, hence the empty one.
 func recordPerf(exit int) {
 	if !perfrec.Enabled() {
 		return
 	}
 	rec := perfrec.New(perfToolName, perfVerb(os.Args[1:]), perfrec.RoleNone,
-		time.Since(perfStart), exit, statusgenVersion, time.Now())
+		time.Since(perfStart), exit, perfrec.Revision(""), time.Now())
 	if ms, ok := perfrec.CPUMillis(); ok {
 		rec.CPUMs = &ms
 	}

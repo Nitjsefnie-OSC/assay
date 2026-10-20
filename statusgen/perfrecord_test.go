@@ -57,13 +57,20 @@ func runPerfBinary(t *testing.T, bin, home string, set bool, val string, args ..
 	return perfRun{so.String(), se.String(), code}
 }
 
-func buildPerfBinary(t *testing.T) string {
+// buildPerfBinary builds statusgen with any extra `go build` flags. The plain form passes
+// -buildvcs=false: a binary with no VCS information is the one whose record must stay
+// "unpinned", whether or not the test runs inside a git checkout.
+func buildPerfBinary(t *testing.T, flags ...string) string {
 	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain unavailable")
 	}
+	if len(flags) == 0 {
+		flags = []string{"-buildvcs=false"}
+	}
 	bin := filepath.Join(t.TempDir(), "statusgen")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+	args := append(append([]string{"build"}, flags...), "-o", bin, ".")
+	if out, err := exec.Command("go", args...).CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	return bin
@@ -214,6 +221,31 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 				t.Errorf("install-id file missing: %v", err)
 			}
 		})
+	}
+}
+
+// TestPerfRecordRevision: a statusgen built the way the release builds it — inside a git
+// checkout, with only the release tag stamped (-X main.statusgenVersion) — records the commit
+// it was built from as sourceSHA, not "unpinned". `--version` still prints the release tag.
+// regression: F-release-binary-unpinned
+func TestPerfRecordRevision(t *testing.T) {
+	head, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Skipf("not a git checkout (git rev-parse HEAD: %v) — no VCS information to embed", err)
+	}
+	want := strings.TrimSpace(string(head))[:12]
+	bin := buildPerfBinary(t, "-buildvcs=true", "-ldflags", "-X main.statusgenVersion=v9.9.9")
+	home := t.TempDir()
+	got := runPerfBinary(t, bin, home, true, "1", "--version")
+	if strings.TrimSpace(got.out) != "v9.9.9" {
+		t.Errorf("--version = %q, want the stamped release tag v9.9.9", got.out)
+	}
+	recs := perfRecords(t, home)
+	if len(recs) != 1 {
+		t.Fatalf("one run wrote %d records, want exactly 1", len(recs))
+	}
+	if sha := recs[0]["sourceSHA"]; sha != want {
+		t.Errorf("sourceSHA = %v, want %s (the build's vcs.revision) — a release-tag-only stamp must not record unpinned", sha, want)
 	}
 }
 
