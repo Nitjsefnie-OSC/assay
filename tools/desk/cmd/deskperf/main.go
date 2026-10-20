@@ -1,6 +1,6 @@
 // Command deskperf reads the opt-in, local-only perf history the desk verbs write when
-// ASSAY_TELEMETRY=1 (deskkit/perf.go) and turns it into per-tool percentiles
-// and a boot-cost breakdown.
+// ASSAY_TELEMETRY=1 (deskkit/perf.go) and turns it into per-tool percentiles,
+// a forge-call and rate-limit view, and a boot-cost breakdown.
 //
 //		deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]
 //	     [--perf-profile workflow] [--group-by tool|work|session|agent|deskRole|role]
@@ -44,7 +44,13 @@ usage:
       records (the original schema) and perf-v2 records are reported as SEPARATE
       groups, never summed: the perf-v2 group adds its boundary and CPU coverage,
       the measured-CPU distribution, per-counter measured/unavailable coverage and
-      per-phase distributions
+      per-phase distributions. A forge-calls section follows, per tool and per
+      release build (sourceSHA): runs, unavailable runs, total forge calls, calls
+      per run p50 / p90 / max, share of all forge calls, the busiest UTC hour's
+      calls and that hour and the p90 run as a share of the 5000/hour App budget
+      floor (pooled over every tool and installation: a gauge, not a bound).
+      It pools legacy forgeCalls and the perf-v2 http counter (one budget); a run
+      whose counter is unavailable prints as unavailable, never as zero
   deskperf boot [--days N] [--role R] [--json]
       deskboot's per-step p50 / p90 / max and the summed boot cost, per role
   deskperf --version      print the build stamp

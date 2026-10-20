@@ -40,6 +40,7 @@ type pendingRead struct {
 }
 
 func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item, now time.Time, inputs deskkit.WakeInputs) (string, error) {
+	defer s.performance.phase("pending-evidence")()
 	if slug == "" {
 		return "", fmt.Errorf("tracking repository unavailable; pending Evidence population is unknown")
 	}
@@ -57,6 +58,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 	}
 	cache := s.pending[slug]
 	if cache == nil {
+		stop := s.performance.phase("pending-discovery")
 		cache = &pendingChanges{reads: map[int]*pendingRead{}}
 		cache.base, cache.err = f.RepoDefaultBranch(repo)
 		if cache.err == nil && cache.base == "" {
@@ -66,6 +68,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 			cache.list, cache.err = f.ListChanges(repo, deskkit.ChangeStates{Open: true})
 		}
 		s.pending[slug] = cache
+		stop()
 	}
 	if cache.err != nil {
 		return "", cache.err
@@ -139,7 +142,9 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 				uncertain = fmt.Errorf("%s has an invalid attestation reference", ref)
 				continue
 			}
+			stop := s.performance.phase("attestation")
 			receipt, e := deskkit.ReadVerifierAttestation(f, repo, recordRef.Number)
+			stop()
 			if e != nil {
 				uncertain = e
 				continue
