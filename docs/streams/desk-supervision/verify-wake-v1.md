@@ -45,7 +45,7 @@ retired — see desk-supervision/24's Task step 8). Either shape's content is ex
 | `repo`, `brief` | owner/repo and `<stream>/<NN>` the receipt is for |
 | `verifier` | the TRUSTED-WRITER identity (the engine's RunnerID / signed verdict principal), never a free-text assertion |
 | `outcome` | observed outcome (`verify-fail` / `blocked` / …) |
-| `rows` | the Verify-row numbers this receipt holds (empty = the whole brief) |
+| `rows` | exact Verify-row identities held by this receipt (empty = the whole brief); positive integers retain their JSON number form, suffixed IDs use strings such as `"6a"`; `6` and `6a` never alias |
 | `inputs` | declared input scope: `input-key -> revision`. For a brief file's own `file:<path>` key this is the revision AS IT LANDS — the copy on the target branch at write time, which already carries this landing's own Evidence append (the writer reads it from the forge and refuses a mismatch; #882 Task step 3(c)) — never the pre-Evidence copy hashed at wake-evaluation time. For every other declared deliverable, the revision observed at receipt time |
 | `tool_version` | applicable tool version at receipt time |
 | `blocker_kind` | one of the closed set below |
@@ -172,9 +172,25 @@ Invariants the tests pin (`tools/desk/cmd/verifyloop/wake_test.go`, `tools/desk/
   the classifier is stateless).
 - An **unrelated** commit does not wake work when the declared inputs are known unchanged; an
   **incomplete input scope cannot establish unchangedness**, so it refuses to claim a hold.
-- A **partial** hold lets a newly-runnable row dispatch while the held rows are recorded as
-  explicitly unrun — and **no partial result closes the whole brief** (Land flips only on a
-  whole-brief PASS).
+- A **partial** hold dispatches only non-held rows whose PASS is not already
+  observed on the unchanged receipt. A complete `row_results` inventory must name
+  every current Verify identity exactly once, match `rows_total`/`rows_passed`,
+  and never claim a held row also passed. Missing, foreign, duplicate or
+  contradictory coverage is visibly **could-not-check**, never a manufactured
+  hold. Prior observations are neither new Evidence nor a whole-brief PASS.
+  Two unchanged selections, including after a restart, remain WAIT when every
+  non-held row already passed. Changed inputs, a closed blocker and a reasoned
+  explicit recheck still wake the work through the existing first-match rules.
+- Old count-only receipts can establish this completion only for the original
+  contiguous numeric inventory, exact total and `rows_passed == non-held rows`.
+  Counts never assign PASS to individual rows. Suffixed or non-contiguous
+  inventories require exact `row_results`; they are not rounded to numeric rows.
+  The numeric constructor remains source-compatible, and the scheduling reader
+  and writer preserve numeric and suffixed IDs through append-only receipts.
+  Older binaries that cannot decode suffixed IDs need the upgraded reader; no
+  compatibility downgrade may strip suffixes. This scheduling addition does not
+  change the separate integer-only signed `verdict-v1` execution schema.
+
 - A duplicate `receipt_id` (the latest record per brief wins — the newest `ts`, never file or
   line position) does not create another event.
 

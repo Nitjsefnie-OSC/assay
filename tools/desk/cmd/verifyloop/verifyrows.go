@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
@@ -17,6 +18,7 @@ import (
 // (the verify.d convention).
 type verifyRow struct {
 	Num     int
+	ID      deskkit.VerifyRowID
 	Class   string // check | check:ci | gate:model | gate:human
 	Command string
 	// CommentLed is verifycmd.CommentLed of the raw cell: why the row's command is
@@ -35,15 +37,26 @@ func (r verifyRow) runnerExecuted() bool {
 // located by header NAME (#, class, command), never position — mirroring row-classes.md and
 // the statusgen parser — so inserting a Class column disturbs nothing. A table with no
 // `Class` column is legacy: every row defaults to `check`. Rows whose `#` cell is not an
-// integer (a separator, a stray line) are skipped.
+// integer are outside verdict-v1; the scheduling reader retains exact suffixed IDs.
 func parseVerifyRows(briefContent string) []verifyRow {
-	return parseVerifyRowsIn(extractSection(briefContent, "## Verify"))
+	// verdict-v1 remains integer-only. Do not silently change its signed schema.
+	// Scheduling uses parseVerifyRowsIn directly and retains suffixed identities.
+	rows := parseVerifyRowsIn(extractSection(briefContent, "## Verify"))
+	var numeric []verifyRow
+	for _, row := range rows {
+		if row.Num > 0 {
+			numeric = append(numeric, row)
+		}
+	}
+	return numeric
 }
 
 // parseVerifyRowsIn parses the rows of an already-extracted Verify SECTION body. It is the
 // shared half of parseVerifyRows (exact `## Verify` heading, the runner's contract) and the
 // per-row content derivation in briefscan.go, which reads the qualifier-aware extractVerify
 // section — so both read the Command cell by the same header-named rule.
+// ID retains an exact positive number plus optional ASCII letter suffix; Num is
+// populated only for the separate integer-only verdict-v1 execution contract.
 func parseVerifyRowsIn(section string) []verifyRow {
 	if section == "" {
 		return nil
@@ -75,10 +88,11 @@ func parseVerifyRowsIn(section string) []verifyRow {
 				}
 				return ""
 			}
-			num, err := strconv.Atoi(cell(numCol))
-			if err != nil {
+			id, ok := deskkit.ParseVerifyRowID(cell(numCol))
+			if !ok {
 				continue
 			}
+			num, _ := strconv.Atoi(string(id))
 			class := "check"
 			if hasClass {
 				if c := cell(classCol); c != "" {
@@ -91,6 +105,7 @@ func parseVerifyRowsIn(section string) []verifyRow {
 			// first span is a comment can lift (whole) as a runnable no-op (#2684 S1).
 			rows = append(rows, verifyRow{
 				Num:        num,
+				ID:         id,
 				Class:      class,
 				Command:    verifycmd.Lift(cell(cmdCol)),
 				CommentLed: verifycmd.CommentLed(cell(cmdCol)),
