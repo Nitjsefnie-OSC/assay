@@ -327,7 +327,10 @@ func buildPlan(v *VerifyLoop, o planOpts) (*planDoc, error) {
 				continue
 			}
 			pr.Path = abs
-			if err := preflightRoot(abs); err != nil {
+			stop := v.performance.phase("preflight")
+			err = preflightRoot(abs)
+			stop()
+			if err != nil {
 				pr.State, pr.Reason = rootSkipped, err.Error()
 				doc.Skipped++
 				doc.Roots = append(doc.Roots, pr)
@@ -347,7 +350,9 @@ func buildPlan(v *VerifyLoop, o planOpts) (*planDoc, error) {
 				r.Queue, r.QueueReason = baseUnreadable, "root not read: "+r.State
 				continue
 			}
+			stop := v.performance.phase("base-queue")
 			b := readBase(r.Path)
+			stop()
 			bases[r.Path] = &b
 			r.Queue, r.QueueReason = b.state, b.reason
 		}
@@ -373,6 +378,8 @@ func buildPlan(v *VerifyLoop, o planOpts) (*planDoc, error) {
 		return &baseLookup{state: baseUnreadable, reason: "root not read"}
 	}
 
+	stopClassify := v.performance.phase("classify")
+	defer stopClassify()
 	for _, it := range items {
 		pi := planItem{ID: it.ID, Repo: payloadValue(it, "repo"), Root: payloadValue(it, "root"), Authority: authNone}
 		// author != runner is a STRUCTURAL engine guard, shown here for transparency.
