@@ -319,14 +319,18 @@ whatever profile context is set.
   record and ends at the same exit. Its phase roster is not the v2 stage roster, and a reader
   never merges the two schemas, so compare like with like.
 - **deskread child.** The only online route is the `deskread` child that `--forge` starts. Its
-  start-to-exit wait is the `deskread` phase. The context reaches the child as `--perf-*` flags
+  start-to-exit wait is the `deskread` phase; the one-time `--help` check below runs before
+  that phase opens, so it is not part of the child's wait. The context reaches the child as `--perf-*` flags
   on its own command line, after the read kind. Under the workflow profile they carry the
   session, agent, role and work with this invocation as the parent. Under the tool profile they
   carry the profile alone. With no profile selected they carry `--perf-profile=off`, so a parent
   that cleared its profile never hands on one it did not use. The flags are passed only when the
   resolved `deskread` lists all of them in its `--help`. That check runs once per run, with an
   empty environment and a time bound. An older `deskread` that would refuse an unknown flag gets
-  none, so output and exit never change. The child's provider requests, credentials and cost
+  none, so output and exit never change. Because the context travels on the child's command
+  line, another local user who can list processes can read it while the child runs. It holds
+  only validated values: random opaque ids, the role, work references and the profile, never a
+  credential. The child's provider requests, credentials and cost
   are its own observations: the parent records no request observation (`requestCoverage` is
   `missing`), and child time is never added to the parent's.
 - **Reading.** `deskperf report --tool statusgen` reads these records through the same shared

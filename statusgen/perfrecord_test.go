@@ -490,6 +490,7 @@ var perfShims = []string{"gh", "glab", "curl", "wget", "ssh", "nc", "docker"}
 
 type perfLab struct {
 	bin, root, home, path, log, capture, old string
+	helpEnv                                  string // written only if the --help probe sees an inherited variable
 }
 
 // newPerfLab builds statusgen, copies the offline fixture, writes the test roster into a
@@ -518,6 +519,7 @@ func newPerfLab(t *testing.T) perfLab {
 	l.log = filepath.Join(t.TempDir(), "exec.log")
 	l.capture = filepath.Join(t.TempDir(), "child.env")
 	l.old = filepath.Join(t.TempDir(), "old-deskread")
+	l.helpEnv = filepath.Join(t.TempDir(), "help-env")
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(shims, name), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 			t.Fatal(err)
@@ -529,9 +531,11 @@ func newPerfLab(t *testing.T) perfLab {
 	write("git", "printf '%s\\n' \"git $*\" >> \""+l.log+"\"\nexec \""+gitBin+"\" \"$@\"\n")
 	// The fake deskread answers the version-gate probe (--help, run with an empty environment,
 	// so builtins only) as a build that takes the --perf-* flags, or, while l.old exists, as one
-	// that predates them and refuses an unknown flag the way the real parser does.
+	// that predates them and refuses an unknown flag the way the real parser does. A probe that
+	// sees any variable every run sets (the switch, the desk loop, HOME) touches l.helpEnv.
 	write("deskread", "printf '%s\\n' \"deskread $*\" >> \""+l.log+"\"\n"+
 		"if [ \"$1\" = --help ]; then\n"+
+		"  if [ -n \"${ASSAY_TELEMETRY-}${DESK_LOOP-}${HOME-}\" ]; then : > \""+l.helpEnv+"\"; fi\n"+
 		"  if [ -f \""+l.old+"\" ]; then printf 'Usage: deskread <kind> [flags]\\n'; exit 0; fi\n"+
 		"  for f in "+strings.Join(perfChildFlags, " ")+"; do printf '  --%s string\\n' \"$f\"; done; exit 0\n"+
 		"fi\n"+
@@ -869,6 +873,12 @@ func TestSharedPhaseRecorderFlow(t *testing.T) {
 			t.Errorf("recording changed the --forge result:\n on  %d %q\n off %d %q", on.code, on.out, off.code, off.out)
 		}
 		parentLine = line
+		if !strings.Contains(l.execLog(t), "deskread --help") {
+			t.Errorf("the version gate never probed deskread; exec log:\n%s", l.execLog(t))
+		}
+		if _, err := os.Stat(l.helpEnv); err == nil {
+			t.Errorf("the --help probe inherited the caller's environment; it must run with none")
+		}
 		parent := decodeV3(t, line)
 		children := l.children(t)[len(offChildren):]
 		if ph := phaseNames(parent)["deskread"]; ph.N != int64(len(children)) || len(children) == 0 {

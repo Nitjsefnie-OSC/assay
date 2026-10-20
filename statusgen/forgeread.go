@@ -171,8 +171,9 @@ func (d deskreadReader) OpenIssues(repos []string) (map[string][]forgeIssue, []f
 		args = append(args, "--repo", r)
 	}
 	// The deskread phase times the child; perfChildArgs hands it this run's context (perfrecord.go).
+	argv := perfChildArgs(d.bin, args) // before the phase: the one-time probe is not the child's wait
 	leave := perfEnter("deskread")
-	out, err := exec.Command(d.bin, perfChildArgs(d.bin, args)...).Output()
+	out, err := exec.Command(d.bin, argv...).Output()
 	leave()
 	if err != nil {
 		detail := ""
@@ -264,8 +265,9 @@ type deskreadItemEnvelope struct {
 // a could-not-check NOTICE, and a zero value would read as "not blessed" / "nobody answered".
 func (d deskreadReader) readItem(kind, repo string, number int) (*deskreadItemEnvelope, int, error) {
 	target := fmt.Sprintf("%s#%d", repo, number)
+	argv := perfChildArgs(d.bin, []string{kind, "--issue", target}) // probe outside the phase
 	leave := perfEnter("deskread")
-	out, err := exec.Command(d.bin, perfChildArgs(d.bin, []string{kind, "--issue", target})...).Output()
+	out, err := exec.Command(d.bin, argv...).Output()
 	leave()
 	var env deskreadItemEnvelope
 	jerr := json.Unmarshal(out, &env)

@@ -420,8 +420,9 @@ var perfProbed sync.Map // deskread binary -> whether its help lists every perfC
 // deskreadTakesPerf is the version gate for the context hand-off: it asks the resolved deskread
 // binary, once per process, whether its help lists every flag perfChildArgs would pass. A build
 // that predates them (it would refuse an unknown flag, changing statusgen's result) or that
-// cannot answer gets no flags. The probe runs with an empty environment and a bound, so it
-// can reach no credential, record nothing and never hang a run.
+// cannot answer gets no flags. The probe runs with an empty environment and a bound (plus a
+// WaitDelay, so an inherited pipe cannot stretch it), so it can reach no credential, record
+// nothing and never hang a run. Callers run it before entering the deskread phase.
 func deskreadTakesPerf(bin string) bool {
 	if v, ok := perfProbed.Load(bin); ok {
 		return v.(bool)
@@ -430,6 +431,7 @@ func deskreadTakesPerf(bin string) bool {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "--help")
 	cmd.Env = []string{}
+	cmd.WaitDelay = time.Second // a grandchild holding the pipe cannot outlast the bound
 	out, _ := cmd.CombinedOutput()
 	ok := len(out) > 0
 	for _, name := range perfChildFlags {
