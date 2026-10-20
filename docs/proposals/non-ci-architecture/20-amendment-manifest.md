@@ -266,3 +266,23 @@ statusgen/26 and performance-collection/01–09 are amended; completed /61 stays
 The target, future-state bindings, storage/recovery and runtime handoff carry the same
 context/consent/coverage contract. This supersedes earlier v2-only future measurement intent,
 not historical v1/v2 facts, Evidence or the collection stream's parked state.
+
+## Write-policy and pickup amendment — 18 October 2026
+
+| Obligation | Owning plan / candidate change | Proof and limits |
+|---|---|---|
+| One reusable local write evaluator and command adapter | New desktools-v2/66 (writeguard keeps its current parser; the /31 port is withdrawn) | Library/built-hook parity, effect boundary, source-bound consumers and external-module builds; other guards keep independent owners |
+| Future/guideline recheck at implementation pickup | statusgen/20–21 amended; current spec and worker-kit instructions use the manual procedure | /20 scoped guideline/target discovery; /21 actual dispatch hold/continue behavior and shipped-version citation; no resolver/activation claimed |
+| Managed workspace consumers | Consumer plans must bind allocation observations, hook profile and sandbox roots; qualification consumes exact producer versions | Public contracts stand alone; adopter tracking/rollout and active-worker acknowledgments remain in their own venue |
+
+Inspected base: `c3d073572f41e09bedcac05944f9a202c3267353`. Historical accounts and
+completed Evidence remain unchanged. Live claims/PRs were not read in this local
+authoring pass: these candidate amendments require the existing affected-work
+checkpoint/reconciliation before dispatch and never silently rebind a running worker.
+
+Active-plan inspection, 18 October 2026: 52 open public PRs were enumerated through
+the worker identity. medici-finance/assay#3409 (since merged) withdrew /31; medici-finance/assay#3429 (since
+merged) also changed the brief specification.
+This amendment keeps /66 independent and adds graph-execution/22 as its target
+consumer. Reconcile source revisions at merge/pickup; no running worker is rebound
+and no competing proposal is treated as approved. Dispatch refs were not read.
