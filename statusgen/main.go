@@ -36,6 +36,10 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// leak its drive section into the next board).
 	activeDriveStatuses = nil
 	activeDriveHeartbeat = ""
+	// Stage timings for the opt-in perf record (perfrecord.go): no-ops when it is off.
+	var ph perfStage
+	defer ph.done()
+	ph.enter("parse")
 	// One git object reader + read memo for this run, closed when it returns
 	// (gitbatch.go) — so no answer outlives the run that read it.
 	defer beginGitReadSession()()
@@ -105,6 +109,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// affects: known-stream validation resolves against the FULL edge universe
 	// (active + archived) so a single-product PR never falsely flags a finding
 	// referencing another product's — or an archived — stream as "unknown stream".
+	ph.enter("lint")
 	problems, notices := checkScoped(checkStreams, edgeStreams, findings)
 	// Stream WIP cap + parked lane (attention-budget/04). Both run against the FULL
 	// per-root stream set — the active-stream cap is a per-root property, not a
@@ -207,9 +212,11 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// out-of-scope, paused, or archived stream is not falsely reported "unknown
 	// stream". Mirrors the checkScoped(checkStreams, edgeStreams, findings) split
 	// above.
+	ph.enter("briefs")
 	briefProblems, briefNotices := checkBriefFiles(checkStreams, edgeStreams)
 	problems = append(problems, briefProblems...)
 	notices = append(notices, briefNotices...)
+	ph.enter("lint")
 	// Split-flag conservation: a child brief may not carry a weaker gate/risk flag
 	// than the brief it was split from (splitflags.go). checkStreams is the scoped
 	// child set; edgeStreams resolves the parent even when scoping dropped its
@@ -247,7 +254,9 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// unencoded gate surfaces as a worklist NOTICE instead of silently dispatching
 	// a worker past it. NOTICE severity this phase (§6.3 Phase A) — flips to
 	// PROBLEM once `gates:`/`feathers:` exist for authors to reach for.
+	ph.enter("ordering")
 	notices = append(notices, orderingGateNotices(checkStreams)...)
+	ph.enter("lint")
 	// Eligibility evaluator could-not-check surface (graph-execution/01 Task
 	// item 4): a gates:/feathers: edge (or an unsatisfied depends:) the
 	// evaluator cannot resolve offline — an unregistered/unpublished alias, an
@@ -367,9 +376,11 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// with no .git, exactly like the reconciliation above; every other
 	// unreachable input reports could-not-check by name rather than clean.
 	if !hasNoGitDir(root) {
+		ph.enter("evidence")
 		eaProblems, eaNotices := evidenceActorGate(root, checkStreams)
 		problems = append(problems, eaProblems...)
 		notices = append(notices, eaNotices...)
+		ph.enter("lint")
 	}
 	// `repo:` frontmatter validation: form + one-repo-per-
 	// root agreement. Runs on the FULL stream set, not the scoped subset — repo
@@ -613,6 +624,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	waProblems, waNotices := witnessAbsenceGateChecks(root, checkStreams)
 	problems = append(problems, waProblems...)
 	notices = append(notices, waNotices...)
+	ph.enter("links")
 	// Dead-link lint. BLOCKING: docFiles(root) is CLAUDE.md plus every
 	// *.md under docs/**, so its inputs INCLUDE every stream README and brief
 	// file. It is also the only check that catches a README row whose brief file
@@ -668,6 +680,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	rp, rn := registerRefProblems(root, docs)
 	problems = append(problems, rp...)
 	notices = append(notices, rn...)
+	ph.enter("lint")
 	// Point-quality (I-08): unbacked verified/done
 	// rows are a NOTICE, never a hard problem — this is a rendering/
 	// visibility gap-closer, not a new lifecycle gate.
@@ -768,6 +781,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// Build the generated view now — this also exercises applyFindings/nextUp/
 	// emit, so --lint is a true superset of generation minus the STATUS.md byte
 	// compare: a PR that would crash main's post-merge regen fails here instead.
+	ph.enter("view")
 	applyFindings(streams, findings)
 	// The critical tier's reviewer-finding arm reads the same findings (phase 3).
 	// Set explicitly every run so a prior invocation's value can never leak in; nil
@@ -794,7 +808,9 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// claim set is could-not-check, rendered as itself through the same degraded
 	// notice a failed read produces; it never decides the lint verdict (every
 	// PROBLEM is counted above, before this line).
+	ph.enter("claims")
 	claimed, claimSource := lintClaims(root, mode, streams)
+	ph.enter("view")
 	// Per-brief staleness clock: read each brief's own
 	// last recorded transition from the historian so aging measures from the
 	// brief's history, not the stream's git touch. A missing/unreadable log just
@@ -958,7 +974,9 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	activeDriveStatuses = driveStatuses(activeDriveSet, streams, claimed, nowFunc())
 	activeDriveHeartbeat = driveHeartbeatLine(root)
 
+	ph.enter("render")
 	out := emit(streams, findings, nu, ages, gateAges, intakeAlarmResult, briefTouch, rootRepoName)
+	ph.done()
 	if mode == "lint" {
 		// The PR-side gate is UNCHANGED: off-board problems still fail --lint,
 		// with the same count and the same exit code as before this split. Lint
@@ -969,6 +987,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		}
 		return 0 // sources valid + view builds; STATUS.md never read or written
 	}
+	ph.enter("write")
 	if mode == "record" {
 		// single-writer append; never reached from --lint. The append happens
 		// (the board sources passed every check that reads them), and the run

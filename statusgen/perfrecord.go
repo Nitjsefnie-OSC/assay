@@ -1,28 +1,38 @@
 package main
 
-// perfrecord.go — statusgen's side of the opt-in, LOCAL-ONLY perf-v1 record (#3101).
+// perfrecord.go — statusgen's side of the opt-in, LOCAL-ONLY perf record (#3101), written in
+// perf-v2: the same session format the desk tools write (perfrec.Begin/Phase/Finish).
 //
 // With ASSAY_TELEMETRY exactly "1", every statusgen process that exits through exitProcess
-// appends one perf-v1 line (tool "statusgen", verb = the mode that ran, wall and CPU
-// milliseconds, exit and result) to the same <state dir>/perf/ day files the desk tools write,
-// so `deskperf report --tool statusgen` reads them. Unset or any other value, nothing is
-// created and nothing changes.
+// appends one perf-v2 line to the same <state dir>/perf/ day files the desk tools write, so
+// `deskperf report --tool statusgen` reads them:
 //
-// The writer — schema, day-file layout, 7-day retention, install id, CPU reading — is the
-// shared perfrec module, the one implementation the desk tools use too; this file owns only
-// what is statusgen's: the verb roster and the exit wrapper. It is unrelated to
-// telemetry.go's network payload, which keeps its own double opt-in and is untouched.
+//   - wall and CPU from perfrec's process-init mark to the exit, one boundary;
+//   - per-stage phase timings (perfPhases, in pipeline order), so the wall time has a
+//     breakdown: board parse, source lint, link lint, the forge claim read, the view build,
+//     render, the STATUS.md write or compare, and --corroborate's forge corroboration;
+//   - the `http` counter: every direct HTTP attempt at statusgen's forge seams (the GitHub
+//     REST and GraphQL clients, the GitLab client, and the telemetry sender), counted at the
+//     call, so it is MEASURED even when it is zero. The other counters are listed
+//     unavailable: statusgen's many `gh`/`git` child processes have no shared seam to count.
 //
-// NO FREE TEXT: the verb is always a member of the rosters below, never any part of argv.
-// NEVER LOAD-BEARING: a record that cannot be written is dropped silently; the exit code and
-// output are exactly what they were without the switch.
+// Unset or any other value, nothing is created and nothing changes: the session is nil and
+// every phase call is a no-op. The writer — schema, day-file layout, 7-day retention, install
+// id, CPU reading — is the shared perfrec module; this file owns only what is statusgen's: the
+// verb and phase rosters, the forge counter and the exit wrapper. It is unrelated to
+// telemetry.go's network payload, which keeps its own double opt-in.
+//
+// NO FREE TEXT: the verb and every phase name are members of the rosters below, never any part
+// of argv. NEVER LOAD-BEARING: measuring adds no forge call, no output and no exit path; a
+// record that cannot be written is dropped silently; the exit code and output are exactly what
+// they were without the switch.
 
 import (
 	"errors"
 	"flag"
 	"os"
 	"strings"
-	"time"
+	"sync/atomic"
 
 	"github.com/medici-finance/assay/perfrec"
 )
@@ -90,21 +100,88 @@ func perfVerb(args []string) string {
 	return perfDefaultVerb
 }
 
-// perfStart is the clock's zero: package initialisation, which precedes main().
-var perfStart = time.Now()
+// perfPhases is statusgen's fixed phase roster, in pipeline order. perfrec writes phases in
+// roster order, so the record reads as the run did. A stage entered more than once (one run()
+// per root, the source lint resumed around its named sub-stages, the view build either side of
+// the claim read) accumulates into one entry whose n counts the entries. The sub-stages split
+// out of "lint" are the checks that each took more than ~5% of a full --lint/--check of this
+// repository; every other check stays inside "lint".
+var perfPhases = []string{
+	"parse",       // budget specs, stream and finding load, placeholders, archived streams
+	"lint",        // the per-stream/per-brief source checks not named below
+	"briefs",      // checkBriefFiles: every brief file's frontmatter and sections
+	"ordering",    // orderingGateNotices: README/brief prose that reads as an ordering gate
+	"evidence",    // evidenceActorGate: Evidence-row actors against git history
+	"links",       // the doc-tree block: fixture corpora, doc walk and the lints that read it
+	"claims",      // the claim read (a forge round-trip with --forge or on the write path)
+	"view",        // findings, next-up, history ages, drives: the board's model
+	"render",      // emit: the STATUS.md bytes
+	"write",       // record / check-compare / write of STATUS.md and the register views
+	"corroborate", // --corroborate: forge corroboration of human stamps
+}
 
-// recordPerf appends this process's perf-v1 line when ASSAY_TELEMETRY=1. It returns nothing
+// perfSession measures this process: started at package initialisation from perfrec's
+// process-init mark when the switch is on, nil (every call a no-op) when it is off.
+var perfSession = perfBegin()
+
+func perfBegin() *perfrec.Session {
+	if !perfrec.Enabled() {
+		return nil
+	}
+	return perfrec.Begin(perfrec.SystemProbe(), perfrec.ProcessEntry(), perfPhases)
+}
+
+// perfPhase starts a timed stage and returns its stop (idempotent; a no-op when off).
+func perfPhase(name string) func() { return perfSession.Phase(name) }
+
+// perfStage times a sequence of non-overlapping stages: enter closes the open stage and opens
+// the next, done closes whichever is open. A function with many returns defers done once.
+type perfStage struct{ stop func() }
+
+func (p *perfStage) enter(name string) {
+	p.done()
+	p.stop = perfPhase(name)
+}
+
+func (p *perfStage) done() {
+	if p.stop != nil {
+		p.stop()
+		p.stop = nil
+	}
+}
+
+// perfHTTPCalls counts direct HTTP attempts at the forge seams, process-wide. It is
+// incremented unconditionally (an atomic add is cheaper than the branch that would skip it)
+// and read only when a record is built.
+var perfHTTPCalls atomic.Int64
+
+// perfCountHTTP records one direct HTTP attempt. Each forge seam calls it once, immediately
+// before its client's Do, so a retry, a 304 and a transport failure each count.
+func perfCountHTTP() { perfHTTPCalls.Add(1) }
+
+// perfSourceStamp is the ONE place the record's build stamp is read. perfrec.SourceSHA keeps a
+// commit-shaped stamp and records anything else (a release tag, "dev") as "unpinned".
+func perfSourceStamp() string { return statusgenVersion }
+
+// perfBuildRecord ends the session and builds this process's record; ok is false when the
+// switch is off.
+func perfBuildRecord(exit int) (perfrec.Record, bool) {
+	if perfSession == nil {
+		return perfrec.Record{}, false
+	}
+	perfSession.Add(perfrec.CounterHTTP, perfHTTPCalls.Load())
+	return perfSession.Finish(perfToolName, perfVerb(os.Args[1:]), perfrec.RoleNone, exit, perfSourceStamp()), true
+}
+
+// recordPerf appends this process's perf-v2 line when ASSAY_TELEMETRY=1. It returns nothing
 // and never prints: the record is not allowed to change what statusgen does.
 func recordPerf(exit int) {
 	if !perfrec.Enabled() {
 		return
 	}
-	rec := perfrec.New(perfToolName, perfVerb(os.Args[1:]), perfrec.RoleNone,
-		time.Since(perfStart), exit, statusgenVersion, time.Now())
-	if ms, ok := perfrec.CPUMillis(); ok {
-		rec.CPUMs = &ms
+	if rec, ok := perfBuildRecord(exit); ok {
+		perfrec.Append(rec)
 	}
-	perfrec.Append(rec)
 }
 
 // exitProcess is the ONE way main() ends the process: it records the perf line (a no-op when

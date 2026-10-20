@@ -1,8 +1,9 @@
 package main
 
-// perfrecord_test.go — #3101: with ASSAY_TELEMETRY=1 statusgen writes the same local perf-v1
+// perfrecord_test.go — #3101: with ASSAY_TELEMETRY=1 statusgen writes the same local perf-v2
 // record the desk tools write, through the shared perfrec module; with it unset it writes
-// nothing and behaves exactly as before.
+// nothing and behaves exactly as before. Phases and the forge counter: perfphases_test.go,
+// perfhttp_test.go.
 
 import (
 	"bytes"
@@ -134,8 +135,8 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 	if err := os.CopyFS(root, os.DirFS("testdata/goodrepo")); err != nil {
 		t.Fatal(err)
 	}
-	wantKeys := []string{"childProcs", "childWallMs", "exit", "forgeCalls", "install", "result", "role",
-		"schema", "sourceSHA", "tool", "ts", "verb", "wallMs"}
+	wantKeys := []string{"boundary", "counters", "cpu", "exit", "install", "phaseOverlap", "phases",
+		"result", "role", "schema", "sourceSHA", "tool", "ts", "unavailable", "verb", "wallMs"}
 	if runtime.GOOS != "windows" {
 		wantKeys = append(wantKeys, "cpuMs")
 	}
@@ -188,9 +189,9 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 			}
 			sort.Strings(keys)
 			if strings.Join(keys, ",") != strings.Join(wantKeys, ",") {
-				t.Errorf("perf-v1 key set drifted from the desk tools':\n got  %v\n want %v", keys, wantKeys)
+				t.Errorf("perf-v2 key set drifted from the desk tools':\n got  %v\n want %v", keys, wantKeys)
 			}
-			for field, want := range map[string]any{"schema": "perf-v1", "tool": "statusgen", "verb": c.verb,
+			for field, want := range map[string]any{"schema": "perf-v2", "tool": "statusgen", "verb": c.verb,
 				"role": "none", "result": c.result, "exit": float64(c.exit), "sourceSHA": "unpinned"} {
 				if rec[field] != want {
 					t.Errorf("%s = %v, want %v", field, rec[field], want)

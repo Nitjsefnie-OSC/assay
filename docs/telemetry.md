@@ -100,8 +100,9 @@ only meaningful mode, and it is purely local.
 The desk tools (`tools/desk/`) keep a separate, **local-only** performance log under the
 same promise and the same environment variable. With `ASSAY_TELEMETRY=1` exported, the
 67 operational desk commands each append one `perf-v2` record per completed invocation to
-`~/.config/assay/perf/<YYYY-MM-DD>.jsonl`; `deskboot` boot steps, `cellctl desk` launch steps
-and `statusgen` still append the legacy `perf-v1` record. `deskperf report` and
+`~/.config/assay/perf/<YYYY-MM-DD>.jsonl`, and so does `statusgen`, with one phase per pipeline
+stage; `deskboot` boot steps and `cellctl desk` launch steps still append the legacy `perf-v1`
+record. `deskperf report` and
 `deskperf boot` read both back (see [Two schemas](#two-schemas-perf-v1-and-perf-v2)).
 Day files are kept for 7 UTC days and pruned on write. With the variable unset — or set to
 anything other than exactly `1` — nothing is created: no directory, no file, no install id.
@@ -183,7 +184,11 @@ is the versioned `perf-v2` record below, and it adds no consent or sender either
 ### Two schemas: perf-v1 and perf-v2
 
 Since desktools-v2/61, `deskkit.PerfRun` — the wrapper around every operational desk
-command — writes `perf-v2`. Boot and launch step records and `statusgen` keep writing
+command — writes `perf-v2`, and `statusgen` writes it too: its phases are its pipeline
+stages (`parse`, `lint` and the heaviest lint checks `briefs`, `ordering` and `evidence`,
+`links`, `claims`, `view`, `render`, `write`, `corroborate`), and its `http` counter counts
+each direct HTTP attempt at its forge seams; its `gh`/`git` child processes have no shared
+seam, so `subprocess` is listed unavailable. Boot and launch step records keep writing
 `perf-v1`. Both live in the same day files; a reader groups by `schema` and never merges the
 two, because their `wallMs` is measured over different boundaries. A `perf-v2` record carries
 exactly these fields:

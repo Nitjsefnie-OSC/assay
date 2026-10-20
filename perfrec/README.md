@@ -20,7 +20,8 @@ the install id each exist once.
 ## Versioned schemas
 
 - `perf-v1` (`Schema`, built by `New`) is the legacy record, frozen: its fields
-  and meanings never change. Boot and launch steps and `statusgen` still write it.
+  and meanings never change. Boot and launch steps still write it; `statusgen`
+  writes `perf-v2`.
 - `perf-v3` (`SchemaV3`, explicit selected profile) adds bounded local attribution and request observations. See [the frozen contract and API](V3.md).
 - `perf-v2` (`SchemaV2`, built by a `Session`) measures wall and CPU over one
   declared boundary and records counters with explicit coverage. The desk
