@@ -11,6 +11,8 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Workflow attribution exposes local work linkage; review the implemented field, consent and propagation boundary before acceptance."
 decision-trigger: spec
 decision-issue: 3536
+ruling: "https://github.com/medici-finance/assay/issues/3536#issuecomment-6278971374"
+design: DR-perf-v3-local
 issues: []
 schema: brief-v3
 version: 2
@@ -93,6 +95,9 @@ Options:
 Default if no answer: none — blocks until answered
 
 Acceptance waits for concrete implementation evidence.
+
+Decision recorded 2026-10-19: the mapped human selected option 1, accepting the bounded implementation. The design record transcribes that ruling; independent review and verification remain required.
+https://github.com/medici-finance/assay/issues/3536#issuecomment-6278971374
 
 ## Ground rules
 
