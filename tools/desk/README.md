@@ -464,7 +464,7 @@ counter descriptions below remain the perf-v1/perf-v2 contract.
 The audit ledger records WHAT a verb did; it records nothing about how long it took. With
 `ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
 desk commands append ONE `perf-v2` line per completed invocation to a local day file
-(boot and launch steps, and `statusgen`, still write the legacy `perf-v1` line).
+(boot and launch steps still write the legacy `perf-v1` line; `statusgen` writes `perf-v2` too).
 All 67 operational commands are wrapped, including deskfile, deskreply, scanloop, issueboard,
 reviewloop, verifyloop and the supervisor. `deskperf` is excluded so reading a report cannot
 change its input; `muhar` is a developer mutation harness with separate execution accounting.

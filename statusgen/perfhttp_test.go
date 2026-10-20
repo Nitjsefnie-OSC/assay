@@ -73,6 +73,19 @@ func TestPerfHTTPCountsEachCall(t *testing.T) {
 	if got := perfHTTPCalls.Load() - before; got != 1 {
 		t.Errorf("GraphQL seam: counter +%d for 1 call, want 1", got)
 	}
+
+	// Telemetry sender (telemetry.go): empty in every shipped build, so point it at the
+	// local server for this one call. A redirect followed inside the client is one attempt.
+	savedEndpoint := telemetryEndpoint
+	t.Cleanup(func() { telemetryEndpoint = savedEndpoint })
+	telemetryEndpoint = srv.URL
+	before = perfHTTPCalls.Load()
+	if err := sendTelemetry(TelemetryPayload{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := perfHTTPCalls.Load() - before; got != 1 {
+		t.Errorf("telemetry seam: counter +%d for 1 call, want 1", got)
+	}
 }
 
 // The counted forge calls must land in the record as a measured http counter.

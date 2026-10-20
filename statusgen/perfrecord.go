@@ -8,9 +8,11 @@ package main
 // `deskperf report --tool statusgen` reads them:
 //
 //   - wall and CPU from perfrec's process-init mark to the exit, one boundary;
-//   - per-stage phase timings (perfPhases, in pipeline order), so the wall time has a
-//     breakdown: board parse, source lint, link lint, the forge claim read, the view build,
-//     render, the STATUS.md write or compare, and --corroborate's forge corroboration;
+//   - per-stage phase timings (perfPhases, written in roster order), so most of the wall time
+//     has a breakdown: board parse, source lint, link lint, the forge claim read, the view
+//     build, render, the STATUS.md write or compare, and --corroborate's forge corroboration.
+//     The phases do not sum to the wall time: process start before the first stage and the
+//     exit after the last one fall inside the wall time but outside every phase;
 //   - the `http` counter: every direct HTTP attempt at statusgen's forge seams (the GitHub
 //     REST and GraphQL clients, the GitLab client, and the telemetry sender), counted at the
 //     call, so it is MEASURED even when it is zero. The other counters are listed
@@ -100,12 +102,14 @@ func perfVerb(args []string) string {
 	return perfDefaultVerb
 }
 
-// perfPhases is statusgen's fixed phase roster, in pipeline order. perfrec writes phases in
-// roster order, so the record reads as the run did. A stage entered more than once (one run()
-// per root, the source lint resumed around its named sub-stages, the view build either side of
-// the claim read) accumulates into one entry whose n counts the entries. The sub-stages split
-// out of "lint" are the checks that each took more than ~5% of a full --lint/--check of this
-// repository; every other check stays inside "lint".
+// perfPhases is statusgen's fixed phase roster. perfrec writes phases in roster order, which
+// is the order a run first enters them except for one pair: the view build is entered before
+// the claim read and resumed after it, yet "claims" is listed before "view". A record's phase
+// order is therefore the roster's, never a trace of the run. A stage entered more than once
+// (one run() per root, the source lint resumed around its named sub-stages, the view build
+// either side of the claim read) accumulates into one entry whose n counts the entries. The
+// sub-stages split out of "lint" are the checks that each took more than ~5% of a full
+// --lint/--check of this repository; every other check stays inside "lint".
 var perfPhases = []string{
 	"parse",       // budget specs, stream and finding load, placeholders, archived streams
 	"lint",        // the per-stream/per-brief source checks not named below
@@ -156,7 +160,8 @@ func (p *perfStage) done() {
 var perfHTTPCalls atomic.Int64
 
 // perfCountHTTP records one direct HTTP attempt. Each forge seam calls it once, immediately
-// before its client's Do, so a retry, a 304 and a transport failure each count.
+// before its client's Do, so a retry, a 304 and a transport failure each count; a redirect
+// the client follows inside that Do is part of the same attempt and does not count again.
 func perfCountHTTP() { perfHTTPCalls.Add(1) }
 
 // perfSourceStamp is the ONE place the record's build stamp is read. perfrec.SourceSHA keeps a

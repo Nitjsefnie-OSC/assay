@@ -1,12 +1,13 @@
 package main
 
 // perfphases_test.go — statusgen's perf record is perf-v2, the format the desk tools write:
-// per-stage phase timings in pipeline order, the `http` forge counter as a measured counter,
+// per-stage phase timings in roster order, the `http` forge counter as a measured counter,
 // and a run whose stdout, stderr, exit code and written files are the same with the switch on
 // as with it off.
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,11 +20,32 @@ import (
 // as "{root}". It returns the run, the root and the HOME.
 func perfFixtureRun(t *testing.T, bin string, on bool, args ...string) (perfRun, string, string) {
 	t.Helper()
+	return perfFixtureRunIn(t, bin, on, false, args...)
+}
+
+// perfFixtureRunIn is perfFixtureRun with the fixture optionally made a one-commit git
+// repository (the git-history stages only run on a root with a .git).
+func perfFixtureRunIn(t *testing.T, bin string, on, git bool, args ...string) (perfRun, string, string) {
+	t.Helper()
 	root := t.TempDir()
 	if err := os.CopyFS(root, os.DirFS("testdata/goodrepo")); err != nil {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
+	if git {
+		env := append(perfTestEnv(home, filepath.Dir(root)), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		for _, a := range [][]string{
+			{"init", "-q", "-b", "main"},
+			{"add", "-A"},
+			{"-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"},
+		} {
+			cmd := exec.Command("git", append([]string{"-C", root}, a...)...)
+			cmd.Env = env
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", a, err, out)
+			}
+		}
+	}
 	dir := filepath.Join(home, ".config", "assay")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -49,21 +71,25 @@ func TestPerfV2PhasesInOrder(t *testing.T) {
 	bin := buildPerfBinary(t)
 	for _, c := range []struct {
 		name   string
+		git    bool
 		args   []string
 		exit   int
 		phases []string
 	}{
-		{"lint", []string{"--lint", "--root", "{root}"}, 0,
+		{"lint", false, []string{"--lint", "--root", "{root}"}, 0,
 			[]string{"parse", "lint", "briefs", "ordering", "links", "claims", "view", "render"}},
-		{"regen", []string{"--root", "{root}"}, 0,
+		// The Evidence-actor stage reads git history, so it only runs on a root with a .git.
+		{"lint in git", true, []string{"--lint", "--root", "{root}"}, 0,
+			[]string{"parse", "lint", "briefs", "ordering", "evidence", "links", "claims", "view", "render"}},
+		{"regen", false, []string{"--root", "{root}"}, 0,
 			[]string{"parse", "lint", "briefs", "ordering", "links", "claims", "view", "render", "write"}},
 		// No git remote in the scratch working directory: corroboration stops before any
 		// forge read, and the stage is still timed.
-		{"corroborate", []string{"--corroborate", "--pr", "1"}, 1,
+		{"corroborate", false, []string{"--corroborate", "--pr", "1"}, 1,
 			[]string{"corroborate"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			run, _, home := perfFixtureRun(t, bin, true, c.args...)
+			run, _, home := perfFixtureRunIn(t, bin, true, c.git, c.args...)
 			if run.code != c.exit {
 				t.Fatalf("exit %d, want %d\nstdout: %s\nstderr: %s", run.code, c.exit, run.out, run.errOut)
 			}
@@ -89,7 +115,7 @@ func TestPerfV2PhasesInOrder(t *testing.T) {
 				}
 			}
 			if strings.Join(got, ",") != strings.Join(c.phases, ",") {
-				t.Errorf("phases = %v, want %v (pipeline order)", got, c.phases)
+				t.Errorf("phases = %v, want %v (roster order)", got, c.phases)
 			}
 			if rec["phaseOverlap"] != false {
 				t.Errorf("phaseOverlap = %v, want false: stages never nest", rec["phaseOverlap"])

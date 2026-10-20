@@ -187,8 +187,12 @@ Since desktools-v2/61, `deskkit.PerfRun` — the wrapper around every operationa
 command — writes `perf-v2`, and `statusgen` writes it too: its phases are its pipeline
 stages (`parse`, `lint` and the heaviest lint checks `briefs`, `ordering` and `evidence`,
 `links`, `claims`, `view`, `render`, `write`, `corroborate`), and its `http` counter counts
-each direct HTTP attempt at its forge seams; its `gh`/`git` child processes have no shared
-seam, so `subprocess` is listed unavailable. Boot and launch step records keep writing
+each direct HTTP attempt at its forge seams (a redirect the HTTP client follows inside one
+attempt is not counted again); its `gh`/`git` child processes have no shared
+seam, so `subprocess` is listed unavailable. Its phases are listed in roster order, not
+first-entry order (the view build is entered before the claim read but listed after it), and
+they do not sum to `wallMs`: process start and the exit after the last stage fall inside
+`wallMs` but outside every phase. Boot and launch step records keep writing
 `perf-v1`. Both live in the same day files; a reader groups by `schema` and never merges the
 two, because their `wallMs` is measured over different boundaries. A `perf-v2` record carries
 exactly these fields:
