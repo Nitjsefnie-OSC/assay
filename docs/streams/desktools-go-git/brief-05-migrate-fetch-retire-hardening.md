@@ -166,7 +166,7 @@ RISK-VALUE: DERIVED — deniedTransportExec without "upload-pack" @ tools/desk/c
 | 5 | `test -d tools/desk/cmd/deskgit && { grep -rnE -e 'upload-pack' -e 'refmap' tools/desk/cmd/deskgit/ \|\| [ $? -eq 1 ]; } \| wc -l` | pass exit=0 sandbox=container-netns | sha256:9a271f2a916b | 2026-10-20 | assay-verifier-app[bot] @ 331aba8f343c (on-behalf-of human:ian) (forge-identity) |
 | 6 | `bash docs/streams/desktools-go-git/reproduce-05-counts.bash` | pass exit=0 sandbox=container-netns | sha256:f64281ad113a | 2026-10-20 | assay-verifier-app[bot] @ 331aba8f343c (on-behalf-of human:ian) (forge-identity) |
 
-Verification-Attestation: medici-finance/assay#3664 run=8ccd70a8454a1dd32398c0a34fc1d8fec10e0733f6f4326b9507ccf27b61614a source=331aba8f343c828763a1fae23c4cba26abff7560
+Verification-Attestation: medici-finance/assay#3664 run=8ccd70a8454a1dd32398c0a34fc1d8fec10e0733f6f4326b9507ccf27b61614a source=331aba8f343c828763a1fae23c4cba26abff7560 brief=docs/streams/desktools-go-git/brief-05-migrate-fetch-retire-hardening.md model=claude-opus-5-5 tier=strong
 
 Re-wake Evidence at merged main 331aba8f343c, attested by the dispatcher binding above. The witness table above was produced by statusgen verifyrun with sandbox=container-netns in a local docker container: image assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie, git 2.47.3), started with --network none and the engine's default seccomp profile, GOPROXY=off. Every row was also run separately on darwin/arm64 (Go 1.27.2, git 2.56.0, throwaway HOME). The runner choice follows the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker).
 
