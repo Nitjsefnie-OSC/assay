@@ -54,7 +54,7 @@ Operations admission remains a blocker for /25; the verifier runtime does not wa
 | 18 | [`--scan-issues`: print a notice when an open issue derives `gate: human` and its placeholder reads `gate: model` (detect only, no write)](brief-18-gate-mismatch-notice.md) | 2 | S | todo | — | — |
 | 19 | [Context handoff contracts and synthetic fixtures](brief-19-context-handoff-contracts.md) | 1 | M | verified | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | 20 | [Offline future-state resolver with receipt and amendment validation](brief-20-offline-context-resolver.md) | 2 | L | todo | — | — |
-| 21 | [Author skills consume the shared context handoff](brief-21-author-skill-handoff.md) | 4 | M | todo | — | — |
+| 21 | [Author skills consume the shared context handoff](brief-21-author-skill-handoff.md) | 4 | L | todo | — | — |
 | 22 | [Product target records and compatible requirement parsing](brief-22-product-target-records-and-compatible-requirement-parsing.md) | 1 | M | verified | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | 23 | [Product target binding and context drift assessment](brief-23-product-target-binding-and-context-drift-assessment.md) | 3 | M | todo | — | — |
 | 24 | [Portfolio allocation and capacity accounting](brief-24-portfolio-allocation-and-capacity-accounting.md) | 2 | M | todo | — | — |
@@ -292,3 +292,11 @@ text, no silent new security exception, no automatic tag, merge, infrastructure
 probe or workflow activation. Operational decision-issue catch-up belongs to the
 consumer's existing filer, including its trigger/ripeness and dedupe semantics;
 it must not schedule two marker families for the same human decision.
+
+## Pickup/context amendment — 18 October 2026
+
+/20 includes applicable engineering guidelines and planned owners in the existing
+scoped receipt recheck; /21 (effort L) integrates author/worker and dispatcher pickup
+using that interface. Current manual instructions do not claim an automated gate.
+Dependencies remain /19 → /20 → /23 → /21; no implementation is blocked waiting for
+this automation when its authorized bounded bootstrap applies.

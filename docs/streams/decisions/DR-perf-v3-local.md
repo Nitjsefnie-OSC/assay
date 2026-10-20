@@ -4,7 +4,7 @@ date: "2026-10-19"
 title: "Accept bounded local perf-v3 attribution with explicit workflow consent"
 consequence: major
 decided-by: "human:ian"
-ruling: "https://github.com/medici-finance/assay/issues/3536#issuecomment-6278971374"
+ruling: "https://github.com/medici-finance/assay/issues/3536#issuecomment-6282045526"
 alternatives:
   - "Hold for correction of a field, lifecycle or failure boundary: this was the second offered option; the human selected acceptance instead."
   - "Collect workflow linkage in tool-only or implicit legacy records: excluded by the accepted profile and consent boundary."
@@ -19,7 +19,7 @@ accepted:
 This record transcribes the human's option 1 comment on the closed decision issue.
 It records an existing decision and makes no new approval or verification claim.
 
-https://github.com/medici-finance/assay/issues/3536#issuecomment-6278971374
+https://github.com/medici-finance/assay/issues/3536#issuecomment-6282045526
 
 The accepted local contract is described in
 [performance attribution](../../performance-attribution-spec.md) and implemented
