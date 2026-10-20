@@ -47,7 +47,8 @@ usage:
       per-phase distributions. A forge-calls section follows, per tool and per
       release build (sourceSHA): runs, unavailable runs, total forge calls, calls
       per run p50 / p90 / max, share of all forge calls, the busiest UTC hour's
-      calls and that hour and the p90 run as a share of the 5000/hour App budget.
+      calls and that hour and the p90 run as a share of the 5000/hour App budget
+      floor (pooled over every tool and installation: a gauge, not a bound).
       It pools legacy forgeCalls and the perf-v2 http counter (one budget); a run
       whose counter is unavailable prints as unavailable, never as zero
   deskperf boot [--days N] [--role R] [--json]

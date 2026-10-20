@@ -9,8 +9,14 @@ package deskkit
 // (docs/telemetry.md), so unlike wall time they are added together: the budget is spent by a
 // call whichever schema recorded it. A perf-v2 record whose `http` counter is UNAVAILABLE was
 // not observed and is never read as zero; nor is the perf-v1 0 of a tool documented as never
-// counting (perfForgeUncounted). Step records sit inside an invocation that has its
-// own record, and perf-v3 records are reported in their own section, so neither is read here.
+// counting (perfForgeUncounted), nor a negative count, which no counter can produce.
+// Step records sit inside an invocation that has its own record, and perf-v3 records are
+// reported in their own section, so neither is read here.
+//
+// The perf-v1 and perf-v2 readers do not re-check a record's tool or build stamp, so this view
+// keys its rows on perfrec.Label and perfrec.SourceSHA, as the perf-v3 reader does: a value
+// that is not a roster label or a hex stamp groups under "other" or "unpinned" and never
+// reaches the page. Every sum saturates at the int64 maximum rather than wrapping.
 
 import (
 	"math"
@@ -20,9 +26,11 @@ import (
 	"github.com/medici-finance/assay/perfrec"
 )
 
-// PerfForgeBudgetPerHour is the GitHub App installation's REST rate limit: requests per hour.
-// A forge count is HTTP attempts, not GraphQL quota points, so a cost against it is a request
-// count, not a quota reading.
+// PerfForgeBudgetPerHour is the floor of a GitHub App installation's REST rate limit, in
+// requests per hour; a larger installation is granted more. A forge count is HTTP attempts —
+// REST, GraphQL (which spends its own points budget), conditional 304s and other forges alike —
+// and the busiest hour pools every tool, whichever installation it ran as. So a percentage
+// against this floor is a rough gauge of pressure, not any one installation's measured draw.
 const PerfForgeBudgetPerHour = 5000
 
 // PerfForgeStats is one row of the forge section: a tool, or a release build stamp. Calls and
@@ -76,17 +84,18 @@ var perfForgeUncounted = map[string]bool{"statusgen": true}
 
 // forgeCount reads one record's forge count. ok is false for a record this view does not
 // read (a step, perf-v3, an unknown schema); measured is false for a perf-v2 record whose
-// `http` counter is unavailable, and for a perf-v1 record from a tool that never counts.
+// `http` counter is unavailable, for a perf-v1 record from a tool that never counts, and for a
+// negative count of either schema.
 func forgeCount(r PerfRecord) (calls int64, measured, ok bool) {
 	switch {
 	case IsPerfLegacyInvocation(r) && r.Schema == PerfSchema:
-		if perfForgeUncounted[r.Tool] {
+		if perfForgeUncounted[r.Tool] || r.ForgeCalls < 0 {
 			return 0, false, true
 		}
 		return r.ForgeCalls, true, true
 	case IsPerfV2(r):
 		v, has := r.Counters[perfrec.CounterHTTP]
-		return v, has, true
+		return v, has && v >= 0, true
 	}
 	return 0, false, false
 }
@@ -115,7 +124,7 @@ func SummarisePerfForge(recs []PerfRecord) PerfForgeSummary {
 		o := obs{calls: calls, measured: measured}
 		if measured {
 			s.Measured++
-			s.Calls += calls
+			s.Calls = satAdd(s.Calls, calls)
 			if r.Schema == PerfSchemaV2 {
 				s.FromV2++
 			} else {
@@ -123,15 +132,16 @@ func SummarisePerfForge(recs []PerfRecord) PerfForgeSummary {
 			}
 			if t, err := time.Parse(time.RFC3339, r.TS); err == nil {
 				o.hour = t.UTC().Format(perfForgeHour)
-				hours[o.hour] += calls
+				hours[o.hour] = satAdd(hours[o.hour], calls)
 			} else {
 				s.Unhoured++
 			}
 		} else {
 			s.Unavailable++
 		}
-		byTool[r.Tool] = append(byTool[r.Tool], o)
-		byRelease[r.SourceSHA] = append(byRelease[r.SourceSHA], o)
+		tool, release := perfrec.Label(r.Tool), perfrec.SourceSHA(r.SourceSHA)
+		byTool[tool] = append(byTool[tool], o)
+		byRelease[release] = append(byRelease[release], o)
 	}
 	s.PeakHour, s.PeakHourCalls = peakHour(hours)
 	s.PeakHourBudgetPct = budgetPct(s.PeakHourCalls)
@@ -147,10 +157,10 @@ func SummarisePerfForge(recs []PerfRecord) PerfForgeSummary {
 					continue
 				}
 				st.Measured++
-				st.Calls += o.calls
+				st.Calls = satAdd(st.Calls, o.calls)
 				per = append(per, o.calls)
 				if o.hour != "" {
-					hrs[o.hour] += o.calls
+					hrs[o.hour] = satAdd(hrs[o.hour], o.calls)
 				}
 			}
 			if len(per) > 0 {
@@ -187,6 +197,14 @@ func peakHour(hours map[string]int64) (string, int64) {
 		}
 	}
 	return best, most
+}
+
+// satAdd adds two non-negative counts, holding at the int64 maximum instead of wrapping.
+func satAdd(a, b int64) int64 {
+	if a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	return a + b
 }
 
 func budgetPct(calls int64) float64 {

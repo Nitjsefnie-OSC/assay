@@ -244,7 +244,8 @@ func v2Table(stdout io.Writer, v2 deskkit.PerfV2Summary, days int, tool, role st
 }
 
 // forgeTable renders the forge-call section: one header line with the totals and the busiest
-// hour against the App budget, then one table per tool and one per release build. A row with
+// hour against the App budget floor (PerfForgeBudgetPerHour says why that is a gauge, not a
+// bound), then one table per tool and one per release build. A row with
 // no measured run prints "-" for every figure — unavailable is not observed, never zero.
 func forgeTable(stdout io.Writer, f deskkit.PerfForgeSummary) error {
 	peak := "-"
@@ -252,10 +253,11 @@ func forgeTable(stdout io.Writer, f deskkit.PerfForgeSummary) error {
 		peak = fmt.Sprintf("%s %d call(s), %.2f%%", f.PeakHour, f.PeakHourCalls, f.PeakHourBudgetPct)
 	}
 	fmt.Fprintf(stdout, "forge calls — %d call(s) over %d run(s) (legacy forgeCalls %d, perf-v2 http %d, unavailable %d); "+
-		"busiest UTC hour %s of the %d/hour App budget\n",
+		"busiest UTC hour %s of the %d/hour App budget floor\n",
 		f.Calls, f.Runs, f.FromV1, f.FromV2, f.Unavailable, peak, f.BudgetPerHour)
-	fmt.Fprintln(stdout, "(HTTP attempts, lower bounds, not GraphQL points; unavailable = not observed, never zero; "+
-		"the budget is per App installation, so this machine's records are only part of its draw)")
+	fmt.Fprintf(stdout, "(HTTP attempts, not GraphQL points; unavailable = not observed, never zero; the hour pools every "+
+		"tool and App installation against one installation's %d/hour REST floor, so a percentage gauges pressure "+
+		"and is no installation's measured draw)\n", f.BudgetPerHour)
 	for _, g := range []struct {
 		head string
 		rows []deskkit.PerfForgeStats

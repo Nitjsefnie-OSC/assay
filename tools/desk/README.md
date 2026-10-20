@@ -541,7 +541,8 @@ code or its output. Per-invocation agent usage (tokens, cost) is the agent runne
   forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
   runs, unavailable runs, total forge calls, calls per run p50 / p90 / max, share of all forge
   calls, and the rate-limit cost — the busiest UTC hour's calls, and that hour and the p90 run
-  as a percentage of the 5000/hour App budget. It pools perf-v1 `forgeCalls` and the perf-v2
+  as a percentage of the 5000/hour App budget floor (pooled over every tool and installation:
+  a gauge, not a bound). It pools perf-v1 `forgeCalls` and the perf-v2
   `http` counter (one seam, one budget); a run whose counter is unavailable — or a
   `statusgen` record, whose 0 means "not counted" — prints as unavailable, never as zero.
   Rules: `docs/telemetry.md`.

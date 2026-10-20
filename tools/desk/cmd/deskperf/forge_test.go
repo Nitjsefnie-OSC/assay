@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,7 +145,7 @@ func TestForgeSectionFigures(t *testing.T) {
 	}
 	for _, line := range []string{
 		"forge calls — 21 call(s) over 7 run(s) (legacy forgeCalls 1, perf-v2 http 3, unavailable 3); busiest UTC hour " +
-			day1 + "T11:00Z 11 call(s), 0.22% of the 5000/hour App budget",
+			day1 + "T11:00Z 11 call(s), 0.22% of the 5000/hour App budget floor",
 		"deskboard 2 1 11 11 11 11 52.4 11 0.22 0.22",
 		"deskpr 3 0 10 4 6 6 47.6 10 0.20 0.12",
 		"deskclose 1 1 - - - - - - - -",
@@ -160,7 +161,7 @@ func TestForgeSectionFigures(t *testing.T) {
 	}
 }
 
-// TestForgeSectionCommittedFixture renders the forge section over the committed perf-v1
+// TestForgeSectionFixture renders the forge section over the committed perf-v1
 // fixture (the same files the deskkit aggregate test reads): the 0-call deskboot run is a
 // measured zero, the steps add nothing, and the out-of-window day never renders.
 // regression: deskperf-forge-report
@@ -200,6 +201,110 @@ func TestForgeSectionFixture(t *testing.T) {
 	rc, out, _ = runDeskperf("report")
 	if rc != deskkit.ExitOK || !strings.Contains(squash(out), "deskpr 4 0 20 3 12 12 74.1 20 0.40 0.24") {
 		t.Errorf("fixture report table lacks the deskpr forge row:\n%s", out)
+	}
+}
+
+// TestForgeHostileLabels plants perf-v1 records whose tool and sourceSHA are not roster
+// labels or build stamps — a URL with a query, a file path, and tab, newline and
+// terminal-escape bytes — and checks the forge section, text and JSON, prints none of it: the
+// rows fall under the "other" and "unpinned" placeholders the perf-v3 reader already uses.
+// regression: deskperf-forge-labels
+func TestForgeHostileLabels(t *testing.T) {
+	_, perfDir := seedHome(t)
+	if err := os.MkdirAll(perfDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	day := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	planted := []string{"PLANTED", "planted", "forge.example", "forged", "\x1b", "\t"}
+	rec := func(tool, sha string, forge int64) perfrec.Record {
+		return perfrec.Record{Schema: perfrec.Schema, TS: day + "T10:00:00Z", Tool: tool, Verb: "create", Role: "worker-desk",
+			WallMs: 100, ForgeCalls: forge, Result: perfrec.ResultForExit(0), Install: strings.Repeat("a", 32), SourceSHA: sha}
+	}
+	var lines []byte
+	for _, r := range []perfrec.Record{
+		rec("deskpr", "https://forge.example/build?sig=PLANTED", 3),
+		rec("deskpr", "../planted/src/build", 2),
+		rec("deskpr\tforged\n\x1b[31mPLANTED", "aaaa111", 4),
+		rec("deskpr", "aaaa111\tforged\nPLANTED", 1),
+	} {
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines = append(append(lines, b...), '\n')
+	}
+	if err := os.WriteFile(filepath.Join(perfDir, day+".jsonl"), lines, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rc, out, errOut := runDeskperf("report", "--json")
+	if rc != deskkit.ExitOK {
+		t.Fatalf("report rc %d stderr %q", rc, errOut)
+	}
+	var rep reportJSON
+	if err := json.Unmarshal([]byte(out), &rep); err != nil || rep.Forge == nil {
+		t.Fatalf("report --json unparseable or without a forge section: %v\n%s", err, out)
+	}
+	forgeJSON, _ := json.Marshal(rep.Forge)
+	var keys []string
+	for _, r := range append(append([]deskkit.PerfForgeStats{}, rep.Forge.Tools...), rep.Forge.Releases...) {
+		keys = append(keys, r.Key)
+	}
+	if got := strings.Join(keys, " "); got != "deskpr other unpinned aaaa111" {
+		t.Errorf("forge row keys = %q; want deskpr other unpinned aaaa111", got)
+	}
+	rc, out, _ = runDeskperf("report")
+	section := out[max(strings.Index(out, "forge calls —"), 0):]
+	for _, bad := range planted {
+		if strings.Contains(section, bad) || strings.Contains(string(forgeJSON), bad) {
+			t.Errorf("the forge section echoes a planted %q:\n%s\n%s", bad, section, forgeJSON)
+		}
+	}
+	if rc != deskkit.ExitOK || !strings.Contains(squash(section), "unpinned 3 0 6 2 3 3 60.0 6 0.12 0.06") {
+		t.Errorf("report rc %d; forge section lacks the unpinned row:\n%s", rc, section)
+	}
+}
+
+// TestForgeDistributionEdges pins what the hand-built histories above cannot: a row with
+// eleven measured runs, where p90 is not the max; a record whose timestamp does not parse,
+// counted in the totals and in no hour; an all-zero history, whose shares stay 0, never NaN;
+// a negative perf-v1 count, read as unavailable; and two counts whose sum would overflow.
+// regression: deskperf-forge-edges
+func TestForgeDistributionEdges(t *testing.T) {
+	rec := func(tool, ts string, http int64) deskkit.PerfRecord {
+		return deskkit.PerfRecord{Schema: perfrec.SchemaV2, TS: ts, Tool: tool, SourceSHA: "bbbb222",
+			Counters: map[perfrec.Counter]int64{perfrec.CounterHTTP: http}}
+	}
+	var recs []deskkit.PerfRecord
+	for i := int64(1); i <= 11; i++ {
+		recs = append(recs, rec("deskpr", "2026-10-11T"+[]string{"00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10"}[i-1]+":05:00Z", i))
+	}
+	recs = append(recs, rec("deskboard", "not-a-time", 100))
+	s := deskkit.SummarisePerfForge(recs)
+	rows := map[string]deskkit.PerfForgeStats{}
+	for _, r := range s.Tools {
+		rows[r.Key] = r
+	}
+	if r := rows["deskpr"]; r.P50PerRun != 6 || r.P90PerRun != 10 || r.MaxPerRun != 11 || r.P90RunBudgetPct != 0.2 {
+		t.Errorf("eleven-run row = %+v; want p50 6, p90 10, max 11, p90 run 0.20%%", r)
+	}
+	if r := rows["deskboard"]; s.Unhoured != 1 || s.Calls != 166 || r.Calls != 100 || r.PeakHour != "" || r.PeakHourCalls != 0 {
+		t.Errorf("unparseable timestamp: unhoured %d, calls %d, row %+v; want 1, 166, 100 calls in no hour", s.Unhoured, s.Calls, r)
+	}
+
+	zero := deskkit.SummarisePerfForge([]deskkit.PerfRecord{rec("deskpr", "2026-10-11T09:00:00Z", 0)})
+	if _, err := json.Marshal(zero); err != nil || zero.Tools[0].SharePct != 0 {
+		t.Errorf("all-zero history: share %v, JSON error %v; want 0 and a clean encode", zero.Tools[0].SharePct, err)
+	}
+
+	v1 := deskkit.PerfRecord{Schema: perfrec.Schema, TS: "2026-10-11T09:00:00Z", Tool: "deskpr", Verb: "create", SourceSHA: "aaaa111", ForgeCalls: -7}
+	if neg := deskkit.SummarisePerfForge([]deskkit.PerfRecord{v1}); neg.Measured != 0 || neg.Unavailable != 1 || neg.Calls != 0 {
+		t.Errorf("negative perf-v1 count = %+v; want one unavailable run, no calls", neg)
+	}
+	big := rec("deskpr", "2026-10-11T09:00:00Z", math.MaxInt64)
+	if o := deskkit.SummarisePerfForge([]deskkit.PerfRecord{big, big}); o.Calls != math.MaxInt64 || o.PeakHourCalls != math.MaxInt64 ||
+		o.Tools[0].Calls != math.MaxInt64 || o.Releases[0].Calls != math.MaxInt64 {
+		t.Errorf("overflowing sums = %d total, %d peak, %d tool, %d release; want each held at the int64 maximum",
+			o.Calls, o.PeakHourCalls, o.Tools[0].Calls, o.Releases[0].Calls)
 	}
 }
 

@@ -234,7 +234,7 @@ standalone tools.
 A forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
 runs, unavailable runs, total forge calls, calls per run (p50 / p90 / max, nearest rank), each
 row's share of all forge calls, and the rate-limit cost — the busiest UTC clock hour's calls
-and that hour and the p90 run as a percentage of the 5000-requests-per-hour App budget. Unlike
+and that hour and the p90 run as a percentage of the 5000-requests-per-hour App budget floor. Unlike
 wall time, the forge count is pooled across the two schemas: perf-v1 `forgeCalls` and the
 perf-v2 `http` counter are the same seam with the same lower-bound meaning, and a call spends
 the budget whichever schema recorded it. Its rules:
@@ -245,8 +245,17 @@ the budget whichever schema recorded it. Its rules:
   are unavailable runs too; perf-v1 has no unavailable state of its own.
 - Steps are never read (their calls belong to the invocation), and perf-v3 records stay in
   their own section.
-- The figures are HTTP attempts and lower bounds, not GraphQL quota points, and the budget is
-  per App installation: this machine's history is only part of what draws on it.
+- The figures are HTTP attempts, not GraphQL quota points. 5000 requests per hour is the floor
+  of an App installation's REST limit (a larger installation gets more), while the counted
+  attempts also include GraphQL calls (their own points budget), conditional 304s and other
+  forges, and the busiest hour pools every tool whichever installation it ran as. A
+  percentage therefore gauges pressure; it is neither a bound on nor a measure of any one
+  installation's draw.
+- A row is keyed on the record's tool label and build stamp only when they have the roster
+  and hex shapes (`perfrec.Label`, `perfrec.SourceSHA`); anything else groups under `other`
+  or `unpinned`, so a malformed or planted perf-v1/perf-v2 record cannot put a path, URL or
+  control byte on the page. A negative count reads as unavailable, and sums hold at the
+  int64 maximum instead of wrapping.
 
 Never recorded: argv, flag values, repo, PR or issue numbers, branch, path, title, body,
 error text, session tag, environment values, hostname, user name, or tokens. A test plants a
