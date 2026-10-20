@@ -190,6 +190,6 @@ func main() {
 				measurement.SelectContext(c)
 			}
 		}
-		return runSelected(a, sink), selected
+		return runMeasured(a, sink, measurement), selected
 	}))
 }
