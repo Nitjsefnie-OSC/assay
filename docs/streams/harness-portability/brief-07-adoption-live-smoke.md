@@ -43,7 +43,7 @@ files:
 - **amend** `docs/adopting-assay.md` — the Codex adoption path (install, fragment, config flag, degradation expectations)
 - **create** `docs/codex-smoke-protocol.md` (planned) — the scripted live-harness checklist
 - **amend** `freshness.yaml` — register `plugins/assay/references/codex.md`, `plugins/assay/references/claude-code.md` (binding files rot against vendor behaviour) — 45-day leash, same rationale as 01's matrix registration
-- **amend** the bundle's PARITY / RELEASE-NOTES — version bump + second-harness record
+- **amend** `plugins/assay/PARITY.md`, `plugins/assay/RELEASE-NOTES.md` — the bundle's PARITY / RELEASE-NOTES: version bump + second-harness record
 
 facts:
 - **CI cannot run Codex.** The verification split is: structural truth in CI
