@@ -92,10 +92,15 @@ func Run(c ToolCall) ToolRun {
 	if env == nil {
 		env = os.Environ()
 	}
+	resolvedContext := false
 	if c.Context != nil {
 		if pc, ok := PerfContext(c.Context); ok {
 			env = PerfContextEnv(env, pc, true)
+			resolvedContext = true
 		}
+	}
+	if !resolvedContext {
+		env = unknownPerfParentEnv(env)
 	}
 	cmd.Env = UnsurfacedEchoEnv(env)
 	var out, errb bytes.Buffer
