@@ -84,7 +84,15 @@ func configEchoStatePath() string {
 // EchoEffectiveConfig writes the P3 echo: the one-line digest by default, the full block when
 // any full-echo condition holds (see the file comment). Every tool that makes a trust decision
 // calls this once per run.
+//
+// A HELP request (HelpInvocation over os.Args[1:]) is not a run: it makes no trust decision, so
+// it gets EchoConfigHelpNotice instead — no resolved value, no digest recorded
+// (medici-finance/assay#3754).
 func EchoEffectiveConfig(w io.Writer) {
+	if HelpInvocation(os.Args[1:]) {
+		EchoConfigHelpNotice(w)
+		return
+	}
 	writeConfigEcho(w, EffectiveConfig(), configEchoStatePath())
 }
 
@@ -92,10 +100,37 @@ func EchoEffectiveConfig(w io.Writer) {
 // A tool whose stderr nobody sees on success calls it instead of EchoEffectiveConfig — a harness
 // hook (writeguard; the cellctl model-policy hook), whose stderr Claude Code does not show when it
 // exits 0. Recording there would mark a digest "seen" that nobody saw, and the next run someone
-// does see would print compact.
+// does see would print compact. A help request gets EchoConfigHelpNotice here too.
 func EchoEffectiveConfigUnsurfaced(w io.Writer) {
+	if HelpInvocation(os.Args[1:]) {
+		EchoConfigHelpNotice(w)
+		return
+	}
 	for _, l := range EffectiveConfig().EffectiveConfigLines() {
 		fmt.Fprintln(w, l)
+	}
+}
+
+// EchoConfigHelpNotice is the echo for a help screen. It prints no configured value — no login,
+// id, slug, repo or path — because help output is read, pasted and kept by whoever asked for it,
+// and nothing on the help path consults the configuration. A configuration that needs attention
+// is still never quieter than that: a refused configuration is reported by its problem count, and
+// an unrecognised key by its NAME. A clean configuration prints nothing. It neither reads nor
+// records the digest state, so the next real run shows a changed configuration in full.
+//
+// HelpInvocation covers the help shapes every tool shares. A tool whose own grammar recognises a
+// wider one (deskpost's `finish <lane> --help`) calls this directly for that shape.
+func EchoConfigHelpNotice(w io.Writer) {
+	writeConfigHelpNotice(w, EffectiveConfig())
+}
+
+func writeConfigHelpNotice(w io.Writer, c Config) {
+	if len(c.Problems) > 0 {
+		fmt.Fprintf(w, "assay-config: REFUSED — %d problem(s); values are not shown on a help screen, run the verb to see them\n",
+			len(c.Problems))
+	}
+	if len(c.UnknownKeys) > 0 {
+		fmt.Fprintf(w, "assay-config: unrecognised-keys=%s (IGNORED)\n", strings.Join(c.UnknownKeys, ","))
 	}
 }
 

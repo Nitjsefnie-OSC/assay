@@ -58,7 +58,15 @@ func main() {
 	// file, not in a diff — so the RUN is the only place a change to them becomes
 	// visible, and a NARROWING has to be as visible as a widening. Logins and paths
 	// only; never a token or a credential path.
-	deskkit.EchoEffectiveConfig(os.Stderr)
+	//
+	// A help screen is not a run: it prints no configured value (medici-finance/assay#3754).
+	// isHelpRequest is the SAME predicate run() answers with its usage screen, so the two
+	// cannot disagree about which invocation is help.
+	if isHelpRequest(os.Args[1:]) {
+		deskkit.EchoConfigHelpNotice(os.Stderr)
+	} else {
+		deskkit.EchoEffectiveConfig(os.Stderr)
+	}
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
@@ -78,18 +86,9 @@ func run(argv []string) int {
 		s, b := deskkit.Version()
 		fmt.Fprintf(stdout, "deskpost sourceSHA=%s builtAt=%s releaseTag=%s\n", s, b, deskkit.ReleaseTagOrDev())
 		return 0
-	case "help", "-h", "--help":
-		usage()
-		return 0
 	}
 
-	// TIER ONE of the help retrofit (deskkit/helprequest.go). A SUBCOMMAND help request —
-	// `deskpost <verb> --help` — is a request for a help screen, not an invocation of the
-	// verb, and it returns HERE, before Guard, writing no audit row. HelpOnly matches only
-	// the unambiguous single-token shape, so a `--help` that is another flag's VALUE cannot
-	// be mistaken for one; every wider spelling falls through to the verb's own parse, which
-	// hands flag.ErrHelp to parseFailCode (tier two): usage on stderr, exit 0, no audit row.
-	if deskkit.HelpOnly(argv) || (argv[0] == "finish" && deskkit.HelpOnly(argv[1:])) {
+	if isHelpRequest(argv) {
 		usage()
 		return 0
 	}
@@ -127,6 +126,27 @@ func run(argv []string) int {
 		usage()
 		return 2
 	}
+}
+
+// isHelpRequest reports whether argv is one of the help shapes deskpost answers with its usage
+// screen BEFORE Guard: a leading `help`, `-h` or `--help` (any arguments after it), and TIER ONE
+// of the help retrofit (deskkit/helprequest.go) — `deskpost <verb> --help`, plus the same form one
+// level down for `finish <lane> --help`. HelpOnly matches only the unambiguous single-token
+// shape, so a `--help` that is another flag's VALUE cannot be mistaken for one; every wider
+// spelling falls through to the verb's own parse, which hands flag.ErrHelp to parseFailCode
+// (tier two): usage on stderr, exit 0, no audit row.
+//
+// main() asks the same question to choose the config echo, so a help screen prints no
+// configured value (medici-finance/assay#3754).
+func isHelpRequest(argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	switch argv[0] {
+	case "help", "-h", "--help":
+		return true
+	}
+	return deskkit.HelpOnly(argv) || (argv[0] == "finish" && deskkit.HelpOnly(argv[1:]))
 }
 
 func cmdReview(argv []string) int {

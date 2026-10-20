@@ -83,6 +83,27 @@ func HelpOnly(args []string) bool {
 	return helpTokens[args[1]]
 }
 
+// HelpInvocation reports whether args — a tool's whole argument list, os.Args[1:] — is a request
+// for a help screen in one of the shapes that cannot be anything else: a LEADING `-h`, `-help` or
+// `--help` (the top-level form every verb's own dispatch answers with its usage), a lone `help`,
+// or HelpOnly's subcommand form. It is false for every wider spelling, for the reason HelpOnly
+// gives: a `--help` that may be another flag's value, or a positional, is left to the verb's own
+// parse. `help <topic>` is false too, because not every tool reads a leading `help` as help.
+//
+// The effective-config echo consults it (configecho.go, medici-finance/assay#3754): a help screen
+// makes no trust decision, so it prints no resolved configuration value. A false negative only
+// keeps the echo as it was; a false positive would hide the echo from a run that acts, which is
+// why the set stays this narrow.
+func HelpInvocation(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if helpTokens[args[0]] || (len(args) == 1 && args[0] == "help") {
+		return true
+	}
+	return HelpOnly(args)
+}
+
 // ErrHelpRequested is the sentinel a verb returns from its subcommand when `fs.Parse`
 // reported `flag.ErrHelp`. It carries ExitOK — a help screen is a successful read, not a
 // refusal — and verbs test for it with IsHelpRequest before writing any audit row.
