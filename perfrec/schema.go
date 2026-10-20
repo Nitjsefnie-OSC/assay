@@ -3,8 +3,8 @@ package perfrec
 // schema.go — the perf-v2 vocabulary and the JSON codec that keeps the two schemas apart.
 //
 // A day file may hold perf-v1 lines (older binaries, including older statusgen builds, and boot
-// and launch steps) and perf-v2 lines (Session, which statusgen now writes too) side by side. The codec is the one place that decides which fields a
-// line of each schema carries:
+// and launch steps) and perf-v2 lines (Session, which statusgen now writes too) side by side.
+// The codec is the one place that decides which fields a line of each schema carries:
 //
 //   - Marshal writes EXACTLY the named schema's field set and refuses a record that carries
 //     another schema's fields — a v1 record with a v2 field, or a v2 record with a legacy

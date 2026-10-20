@@ -248,14 +248,17 @@ environment value, and asserts none of them appears in the written bytes.
 ### statusgen writes the same local record
 
 `statusgen` appends to the same history. With `ASSAY_TELEMETRY=1` exported, each `statusgen`
-process writes one legacy `perf-v1` record on exit into the same `~/.config/assay/perf/` day files,
+process writes one `perf-v2` record on exit into the same `~/.config/assay/perf/` day files,
 with `tool` set to `statusgen`, `verb` the mode that ran (a positional sub-command such as
 `verifyrun`, else the first mode flag such as `--lint`, else `regen` for a plain run; a token
 outside that compiled-in roster is `other`), `exit` the process exit code and `result` its
-fixed word. `role` is `none`, `sourceSHA` is the build stamp when it is hex (a release tag or
-`dev` is `unpinned`), and the child and forge counters stay `0` ("not counted"), so
-`deskperf report --tool statusgen` reads it like any other tool. With the variable unset, or
-anything other than exactly `1`, `statusgen` creates nothing and behaves as it did before.
+fixed word. `role` is `none` and `sourceSHA` is the build stamp when it is hex (a release tag
+or `dev` is `unpinned`). Its phases are its pipeline stages, its `http` counter is measured
+(every direct HTTP attempt at its forge seams, so `0` means none was made), and `subprocess`
+is listed unavailable; see [Two schemas](#two-schemas-perf-v1-and-perf-v2) for the phase
+roster and how to read it. `deskperf report --tool statusgen` reads it like any other tool.
+With the variable unset, or anything other than exactly `1`, `statusgen` creates nothing and
+behaves as it did before.
 
 This is the same local file, not the network payload above: the payload still needs
 `--telemetry` as well, and nothing in this section sends anything. The record is written by

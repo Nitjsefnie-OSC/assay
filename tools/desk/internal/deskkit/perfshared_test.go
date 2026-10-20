@@ -2,8 +2,8 @@ package deskkit
 
 // perfshared_test.go — the perf writer (perf-v1 and perf-v2) exists ONCE, in the shared perfrec module, and every
 // recording tool calls it. #3101: statusgen records the same local perf line as the desk
-// tools (perf-v2 since its stage phases were added), and a second copy of the writer (day-file layout, retention, install id, schema) is
-// exactly the drift this guards against.
+// tools (perf-v2 since its stage phases were added), and a second copy of the writer
+// (day-file layout, retention, install id, schema) is exactly the drift this guards against.
 
 import (
 	"go/ast"

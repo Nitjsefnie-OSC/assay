@@ -28,9 +28,10 @@ type perfRun struct {
 }
 
 // perfTestEnv is the environment every child of these tests runs with: the caller's, minus
-// the perf switch, HOME, the desk loop, every forge credential and every GIT_* variable (so a
-// child can neither reach a forge with a real token nor resolve a repository the test did not
-// make), with HOME set to the throwaway one and git discovery stopped at ceiling.
+// the perf switch, HOME, the desk loop, every forge credential, the forge repo and gh/XDG config
+// locations, and every GIT_* variable (so a child can neither reach a forge with a real token
+// nor resolve a repository the test did not make), with HOME set to the throwaway one and git
+// discovery stopped at ceiling.
 func perfTestEnv(home, ceiling string) []string {
 	var env []string
 	for _, e := range os.Environ() {
@@ -40,7 +41,7 @@ func perfTestEnv(home, ceiling string) []string {
 			k == "ASSAY_TELEMETRY", k == "HOME", k == "USERPROFILE", k == "DESK_LOOP",
 			k == "GH_TOKEN", k == "GITHUB_TOKEN", k == "GH_ENTERPRISE_TOKEN",
 			k == "GITHUB_ENTERPRISE_TOKEN", k == "GITLAB_TOKEN", k == "STATUSGEN_GITLAB_TOKEN",
-			k == "CI_JOB_TOKEN":
+			k == "CI_JOB_TOKEN", k == "GITHUB_REPOSITORY", k == "GITHUB_GRAPHQL_URL", k == "GH_CONFIG_DIR", k == "XDG_CONFIG_HOME":
 			continue
 		}
 		env = append(env, e)
