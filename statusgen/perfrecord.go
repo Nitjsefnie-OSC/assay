@@ -1,6 +1,7 @@
 package main
 
-// perfrecord.go — statusgen's side of the opt-in, LOCAL-ONLY perf-v1 record (#3101).
+// perfrecord.go — statusgen's side of the opt-in, LOCAL-ONLY perf record (#3101; perf-v3
+// with a selected profile since statusgen/26, see the section at the end of this file).
 //
 // With ASSAY_TELEMETRY exactly "1", every statusgen process that exits through exitProcess
 // appends one perf-v1 line (tool "statusgen", verb = the mode that ran, wall and CPU
@@ -21,7 +22,10 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/medici-finance/assay/perfrec"
@@ -93,10 +97,14 @@ func perfVerb(args []string) string {
 // perfStart is the clock's zero: package initialisation, which precedes main().
 var perfStart = time.Now()
 
-// recordPerf appends this process's perf-v1 line when ASSAY_TELEMETRY=1. It returns nothing
-// and never prints: the record is not allowed to change what statusgen does.
+// recordPerf appends this process's perf line when ASSAY_TELEMETRY=1: the perf-v3 summary when
+// a profile is selected (recordV3), else the unchanged perf-v1 line. It returns nothing and
+// never prints: the record is not allowed to change what statusgen does.
 func recordPerf(exit int) {
 	if !perfrec.Enabled() {
+		return
+	}
+	if recordV3(exit) {
 		return
 	}
 	rec := perfrec.New(perfToolName, perfVerb(os.Args[1:]), perfrec.RoleNone,
@@ -119,12 +127,224 @@ func exitProcess(code int) {
 // command line's ExitOnError would call os.Exit inside the flag package on a usage error,
 // an exit path no record could see. Behaviour is the flag package's: -h/--help exits 0, any
 // other parse error exits 2, and the usage text is printed by the flag set as before.
+//
+// The shared --perf-* context flags are bound here, on the same flag set, so they are parsed by
+// the real parser (a malformed value is perf coverage, never a usage error). After a clean
+// parse the invocation's context is selected once and the residual "evaluate" phase opens.
 func parseMainFlags() {
 	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	perfBindFlags(flag.CommandLine)
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			exitProcess(0)
 		}
 		exitProcess(2)
 	}
+	perfSelect()
+	perfEnter("evaluate") // closed by recordPerf at exit
+}
+
+// --- perf-v3 (statusgen/26) ------------------------------------------------------------------
+//
+// An explicitly SELECTED profile (--perf-profile / ASSAY_PERF_PROFILE = tool | workflow, with
+// ASSAY_TELEMETRY=1) replaces the perf-v1 line with one perf-v3 process-summary record. No
+// profile — unset, "off", or any invalid value — keeps the perf-v1 line above byte-for-byte:
+// the legacy mode mapping, its key set and its boundary do not move.
+//
+// Two boundaries, stated because they differ: perf-v1's wallMs runs from perfStart, statusgen's
+// own package initialisation (unchanged, historical). perf-v3's runs from perfrec.ProcessEntry(),
+// the mark taken while the perfrec package initialises — it precedes every statusgen package
+// initialiser, so a v3 wallMs is never shorter than the v1 wallMs of the same run and the two
+// are not compared. Both end at exitProcess.
+
+// perfPhases is statusgen's fixed perf-v3 phase roster. Phases are EXCLUSIVE: entering one
+// pauses the phase it nests in, so phase ms never double count (phaseOverlap stays false for
+// sequential code) and n counts timed segments — a paused phase resumes as a new segment.
+//
+//	discover  enumerating stream, archive and findings sources (load.go)
+//	parse     reading + parsing a stream README, a findings file or a brief file
+//	evaluate  everything else after the command line parsed: checks, eligibility, coverage
+//	render    building the board text or a JSON view
+//	write     writing STATUS.md and the register views
+//	deskread  one deskread child, start to exit, as seen from statusgen (n = child starts)
+var perfPhases = []string{"discover", "parse", "evaluate", "render", "write", "deskread"}
+
+// perfNames are the shared --perf-* context flags (the desk tools' adapter registers the same
+// eight). statusgen binds them on its own flag set: it may not import the desk adapter.
+var perfNames = []string{"perf-profile", "perf-session-id", "perf-agent-id", "perf-parent-agent-id",
+	"perf-parent-invocation-id", "perf-desk-role", "perf-role", "perf-work"}
+
+// perfInput collects the parsed --perf-* values. Only the flag package writes it (Set below),
+// so values reach the resolver exactly as the real parser accepted them; it is never re-read
+// from argv.
+var perfInput perfrec.ContextInput
+
+type perfFlag struct{ name string }
+
+func (perfFlag) String() string { return "" }
+func (v perfFlag) Set(s string) error {
+	val := perfrec.Value{Value: s, Present: true}
+	switch v.name {
+	case "perf-profile":
+		perfInput.Profile = val
+	case "perf-session-id":
+		perfInput.SessionID = val
+	case "perf-agent-id":
+		perfInput.AgentID = val
+	case "perf-parent-agent-id":
+		perfInput.ParentAgentID = val
+	case "perf-parent-invocation-id":
+		perfInput.ParentInvocationID = val
+	case "perf-desk-role":
+		perfInput.DeskRole = val
+	case "perf-role":
+		perfInput.Role = val
+	case "perf-work":
+		perfInput.Work = append(perfInput.Work, s)
+		perfInput.WorkPresent = true
+	}
+	return nil // optional metadata never fails the parse; perfrec classifies it as coverage
+}
+
+// perfBindFlags registers the eight context flags on fs. It never rejects a value.
+func perfBindFlags(fs *flag.FlagSet) {
+	for _, name := range perfNames {
+		if fs.Lookup(name) == nil {
+			fs.Var(perfFlag{name}, name, "optional local performance context (never operational authority)")
+		}
+	}
+}
+
+var (
+	perfOnce    sync.Once
+	perfCtx     perfrec.Context
+	perfSession atomic.Pointer[perfrec.Session]
+)
+
+// perfSelect resolves this invocation's context ONCE (fresh invocation id per process) from
+// the parsed flags, then the documented environment keys. A selected profile starts the v3
+// session at the process-init mark. Sub-commands with their own parsers, help, version and
+// usage errors reach it first from recordPerf, so they resolve from the environment alone
+// (plus anything parsed before the error) and record the whole interval with no phases.
+func perfSelect() {
+	perfOnce.Do(func() {
+		perfCtx = perfrec.ResolveContext(perfInput)
+		if perfCtx.Profile() == "" {
+			return
+		}
+		perfSession.Store(perfrec.BeginSelected(perfrec.SystemProbe(), perfrec.ProcessEntry(), perfPhases, perfCtx))
+	})
+}
+
+type perfFrame struct {
+	name string
+	stop func() // nil while paused by a nested phase
+}
+
+var (
+	perfMu    sync.Mutex
+	perfStack []*perfFrame
+)
+
+// perfEnter opens phase name and returns its idempotent leave. With no v3 session it is a
+// no-op. Re-entering the phase already on top is a no-op too (the outer call times it).
+func perfEnter(name string) (leave func()) {
+	s := perfSession.Load()
+	if s == nil {
+		return func() {}
+	}
+	perfMu.Lock()
+	defer perfMu.Unlock()
+	if n := len(perfStack); n > 0 {
+		top := perfStack[n-1]
+		if top.name == name {
+			return func() {}
+		}
+		if top.stop != nil {
+			top.stop()
+			top.stop = nil
+		}
+	}
+	f := &perfFrame{name: name, stop: s.Phase(name)}
+	perfStack = append(perfStack, f)
+	var once sync.Once
+	return func() { once.Do(func() { perfLeave(s, f) }) }
+}
+
+func perfLeave(s *perfrec.Session, f *perfFrame) {
+	perfMu.Lock()
+	defer perfMu.Unlock()
+	i := len(perfStack) - 1
+	for ; i >= 0 && perfStack[i] != f; i-- {
+	}
+	if i < 0 {
+		return // already closed by recordPerf
+	}
+	if f.stop != nil {
+		f.stop()
+	}
+	if i != len(perfStack)-1 {
+		// Left out of order (a concurrent caller): drop this frame only; the top keeps timing.
+		perfStack = append(perfStack[:i], perfStack[i+1:]...)
+		return
+	}
+	perfStack = perfStack[:i]
+	if i > 0 && perfStack[i-1].stop == nil {
+		perfStack[i-1].stop = s.Phase(perfStack[i-1].name)
+	}
+}
+
+// perfCloseAll stops every open phase, innermost first, so Finish records them.
+func perfCloseAll() {
+	perfMu.Lock()
+	defer perfMu.Unlock()
+	for i := len(perfStack) - 1; i >= 0; i-- {
+		if perfStack[i].stop != nil {
+			perfStack[i].stop()
+		}
+	}
+	perfStack = nil
+}
+
+// recordV3 writes the perf-v3 process summary for a selected profile. It reports whether it
+// did, so recordPerf falls back to the unchanged perf-v1 line when no profile is selected.
+// Request coverage stays "missing": statusgen observes no forge request itself, and the
+// deskread child reports its own (a child that does not is a coverage gap, never a zero).
+func recordV3(exit int) bool {
+	perfSelect()
+	s := perfSession.Load()
+	if s == nil {
+		return false
+	}
+	perfCloseAll()
+	role := perfrec.RoleNone
+	if r := perfCtx.Data().Role; r != "" {
+		role = r
+	}
+	perfrec.Append(s.Finish(perfToolName, perfVerb(os.Args[1:]), role, exit, statusgenVersion))
+	return true
+}
+
+// perfChildEnv is the environment for one deskread child: with the switch armed it carries
+// this invocation's selected context (as the child's parent for the workflow profile), and
+// with no profile selected it strips any inherited ASSAY_PERF_* so an overridden or cleared
+// parent never hands its child a context it did not use. Off, the child inherits as before.
+func perfChildEnv() []string {
+	if !perfrec.Enabled() {
+		return nil
+	}
+	perfSelect()
+	return perfrec.ContextEnv(os.Environ(), perfCtx, true)
+}
+
+// deskreadOutput runs one deskread child — the ONLY online route statusgen has — inside the
+// "deskread" phase, with the context hand-off above. The child owns its provider, credential
+// and request observations; statusgen times only the start-to-exit it waited for.
+func deskreadOutput(bin string, args ...string) ([]byte, error) {
+	cmd := exec.Command(bin, args...)
+	if env := perfChildEnv(); env != nil {
+		cmd.Env = env
+	}
+	defer perfEnter("deskread")()
+	return cmd.Output()
 }

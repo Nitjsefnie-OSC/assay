@@ -958,7 +958,9 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	activeDriveStatuses = driveStatuses(activeDriveSet, streams, claimed, nowFunc())
 	activeDriveHeartbeat = driveHeartbeatLine(root)
 
+	leaveRender := perfEnter("render")
 	out := emit(streams, findings, nu, ages, gateAges, intakeAlarmResult, briefTouch, rootRepoName)
+	leaveRender()
 	if mode == "lint" {
 		// The PR-side gate is UNCHANGED: off-board problems still fail --lint,
 		// with the same count and the same exit code as before this split. Lint
@@ -1018,6 +1020,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		}
 		return 0
 	}
+	defer perfEnter("write")()
 	if err := os.WriteFile(statusPath, []byte(out), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "statusgen:", err)
 		return 1
@@ -1196,6 +1199,7 @@ func runGateScores(root string) int {
 			Repo:              repo,
 		})
 	}
+	defer perfEnter("render")()
 	out, err := json.Marshal(rows)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "statusgen:", err)
