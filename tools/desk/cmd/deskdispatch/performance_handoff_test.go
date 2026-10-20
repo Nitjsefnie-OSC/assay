@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,5 +89,47 @@ func TestPerfPrivateHandoff(t *testing.T) {
 	}
 	if writePerformanceHandoff(c) != "" {
 		t.Fatal("public directory accepted")
+	}
+}
+
+// Regression: a real instrumented claim child across the untyped runner boundary
+// must not inherit the dispatcher's own stale parent invocation.
+func TestPerfUntypedClaimChildParent(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "deskclaim")
+	build := exec.Command("go", "build", "-o", bin, "../deskclaim")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v %s", err, out)
+	}
+	home := t.TempDir()
+	stale := strings.Repeat("d", 32)
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "USERPROFILE=" + home, "ASSAY_TELEMETRY=1", "ASSAY_PERF_PROFILE=workflow", "ASSAY_PERF_AGENT_ID=" + strings.Repeat("a", 32), "ASSAY_PERF_PARENT_INVOCATION_ID=" + stale, "DESK_LOOP=worker-desk"}
+	before := strings.Join(env, "\n")
+	_ = runCmdEnv(home, env, bin, "list")
+	if strings.Join(env, "\n") != before {
+		t.Fatal("runner mutated caller environment")
+	}
+	files, _ := filepath.Glob(filepath.Join(home, ".config", "assay", "perf", "*.jsonl"))
+	found := false
+	for _, p := range files {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			var row perfrec.Record
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatal(err)
+			}
+			if row.Tool != "deskclaim" || row.Schema != perfrec.SchemaV3 {
+				continue
+			}
+			found = true
+			if row.V3.Attribution.ParentInvocationID != "" {
+				t.Fatal("untyped child inherited stale parent invocation")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("actual claim child did not record its invocation")
 	}
 }

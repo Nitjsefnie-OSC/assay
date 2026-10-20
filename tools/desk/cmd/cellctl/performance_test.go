@@ -60,7 +60,23 @@ func TestPerfV3RealDeskLaunch(t *testing.T) {
 			if string(operational) != "pr-review-desk" {
 				t.Fatal("performance attribution changed operational desk authority")
 			}
+			parentFiles, _ := filepath.Glob(filepath.Join(f.cellDir, ".config", "assay", "perf", "*.jsonl"))
+			var parentID string
+			for _, path := range parentFiles {
+				raw, err := os.ReadFile(path)
+				must(t, err)
+				for _, line := range strings.Split(strings.TrimSpace(string(raw)), nl) {
+					var row perfrec.Record
+					must(t, json.Unmarshal([]byte(line), &row))
+					if row.Tool == "cellctl" && row.Schema == perfrec.SchemaV3 {
+						parentID = row.V3.Attribution.InvocationID
+					}
+				}
+			}
 			r := records[0]
+			if parentID == "" || r.V3.Attribution.ParentInvocationID != parentID {
+				t.Fatal("child parent invocation does not name the recorded cellctl invocation")
+			}
 			if r.Schema != perfrec.SchemaV3 || r.V3.Attribution.AgentID == parent || r.V3.Attribution.AgentID == "" || r.V3.Attribution.SessionID == "" || r.V3.Attribution.SessionID == strings.Repeat("b", 32) || r.V3.Attribution.DeskRole != "worker-desk" || r.V3.Attribution.Role != "review" || r.V3.Attribution.ParentAgentID != parent || len(r.V3.Attribution.Work) != 0 {
 				t.Fatal("real launch lost identity, role or shared-work boundary")
 			}

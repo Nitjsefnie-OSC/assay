@@ -229,8 +229,6 @@ type envOtherRead struct {
 // entry declares. A new site, a renamed argument or a moved function is a new entry, so each one
 // is looked at once by a person; after that the entry is taken at its word.
 var envKeyOtherReads = map[string]envOtherRead{
-	"os.LookupEnv(k)@cobra.go:deskCmd": {keys: []string{"ASSAY_PERF_PROFILE", "ASSAY_PERF_SESSION_ID", "ASSAY_PERF_AGENT_ID", "ASSAY_PERF_PARENT_AGENT_ID", "ASSAY_PERF_PARENT_INVOCATION_ID", "ASSAY_PERF_ROLE", "ASSAY_PERF_WORK", "DESK_LOOP"},
-		why: "the shared perfrec resolver reads descriptive invocation context; telemetry consent is resolved by the cell instead"},
 	// ── keys built at run time, all of them in the registry ──
 	"Get(rvar)@model.go:resolveRoleModel": {prefixes: []string{"DESK_MODEL_", "CODEX_MODEL_", "CURSOR_MODEL_"},
 		why: "the per-role pin of the harness being resolved"},
@@ -1401,7 +1399,7 @@ func modelPinKeyList() []string {
 	return keys
 }
 
-// Regression: the dynamic callback's closed declaration follows the real resolver,
+// Regression: the shared library's declared inputs follow the real resolver,
 // including keys read only by the workflow profile. No file may persist them.
 func TestPerfContextEnvRegistry(t *testing.T) {
 	seen := map[string]bool{}
@@ -1417,7 +1415,12 @@ func TestPerfContextEnvRegistry(t *testing.T) {
 		}
 	}})
 	delete(seen, "ASSAY_TELEMETRY") // cell consent already has its own registered owner
-	want := append([]string(nil), envKeyOtherReads["os.LookupEnv(k)@cobra.go:deskCmd"].keys...)
+	var want []string
+	for _, entry := range envKeys {
+		if strings.HasPrefix(entry.key, "ASSAY_PERF_") || entry.key == "DESK_LOOP" {
+			want = append(want, entry.key)
+		}
+	}
 	sort.Strings(want)
 	var got []string
 	for key := range seen {
@@ -1429,6 +1432,6 @@ func TestPerfContextEnvRegistry(t *testing.T) {
 	}
 	sort.Strings(got)
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("resolver reads %v; registered dynamic site declares %v", got, want)
+		t.Fatalf("resolver reads %v; registered library inputs declare %v", got, want)
 	}
 }
