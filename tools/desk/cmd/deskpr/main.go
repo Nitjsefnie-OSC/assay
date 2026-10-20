@@ -213,7 +213,15 @@ func main() {
 	// Echo the effective roster once per run. Every tool that reads a configured
 	// control surface echoes it — a value that lives in settings rather than in a diff
 	// is only visible at RUN time, and a NARROWING must be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
+	//
+	// A help screen is not a run: it prints no configured value (medici-finance/assay#3754).
+	// deskpr OPTS IN with deskkit.UsageHelp, the SAME predicate run() answers with its usage
+	// screen before Guard, so the two cannot disagree about which invocation is help.
+	if deskkit.UsageHelp(os.Args[1:]) {
+		deskkit.EchoConfigHelpNotice(os.Stderr)
+	} else {
+		deskkit.EchoEffectiveConfig(os.Stderr)
+	}
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
@@ -227,12 +235,9 @@ func run(args []string) int {
 		fmt.Printf("deskpr sourceSHA=%s builtAt=%s releaseTag=%s\n", sha, built, deskkit.ReleaseTagOrDev())
 		return deskkit.ExitOK
 	}
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, usage)
-		if len(args) == 0 {
-			return deskkit.ExitRefused
-		}
-		return deskkit.ExitOK
+		return deskkit.ExitRefused
 	}
 
 	// TIER ONE of the help retrofit (deskkit/helprequest.go). A SUBCOMMAND help request —
@@ -243,7 +248,11 @@ func run(args []string) int {
 	// writes nothing. HelpOnly matches only the unambiguous single-token shape, so a `--help`
 	// that is another flag's VALUE cannot be mistaken for one; every wider spelling falls
 	// through to the subcommand's own parse, where flag.ErrHelp is recognised instead.
-	if deskkit.HelpOnly(args) {
+	//
+	// deskkit.UsageHelp is that form plus a leading `help`, `-h` or `--help` (any arguments after
+	// it). It is the predicate main() picks the echo with, so the echo and this answer cannot
+	// drift apart (medici-finance/assay#3754).
+	if deskkit.UsageHelp(args) {
 		fmt.Fprintln(os.Stderr, usage)
 		return deskkit.ExitOK
 	}

@@ -7,9 +7,10 @@ import (
 	"testing"
 )
 
-// The help-path echo tests (medici-finance/assay#3754). A help screen is not a run: it makes no
-// trust decision, so the effective-config echo must not print a resolved roster VALUE on it. The
-// roster here is synthetic and every value is distinctive, so a single substring hit is a leak.
+// The help-path echo tests (medici-finance/assay#3754). A help screen is not a run, so a verb that
+// OPTS IN through EchoConfigHelpNotice prints no resolved roster VALUE on it. A verb that does not opt in
+// keeps the full echo whatever its argv looks like. The roster here is synthetic and every value is
+// distinctive, so a single substring hit is a leak.
 
 // helpRosterValues are the distinctive synthetic values the help path must never print.
 var helpRosterValues = []string{"qzhelpbless", "9101", "qzhelptrust", "9102", "qz-help-bot", "9103", "qzorg/qzrepo", "qzknobvalue"}
@@ -34,51 +35,41 @@ func withArgs(t *testing.T, args ...string) {
 	t.Cleanup(func() { os.Args = prev })
 }
 
-// helpShapes are the invocations HelpInvocation recognises.
+// helpShapes are help-shaped argv lists. A verb that does not opt in may still act on any of them.
 var helpShapes = [][]string{
-	{"--help"}, {"-h"}, {"-help"}, {"help"}, {"--help", "finish"},
+	{"--help"}, {"-h"}, {"-help"}, {"help"}, {"--help", "finish"}, {"help", "create"},
 	{"finish", "--help"}, {"create", "-h"}, {"review", "-help"},
 }
 
-func echoBoth(t *testing.T) string {
-	t.Helper()
-	var b bytes.Buffer
-	EchoEffectiveConfig(&b)
-	EchoEffectiveConfigUnsurfaced(&b)
-	return b.String()
-}
-
-func assertNoHelpValues(t *testing.T, args []string, out string) {
+func assertNoHelpValues(t *testing.T, out string) {
 	t.Helper()
 	for _, v := range helpRosterValues {
 		if strings.Contains(out, v) {
-			t.Errorf("help request %q: the echo printed the roster value %q:\n%s", args, v, out)
+			t.Errorf("the help-screen echo printed the roster value %q:\n%s", v, out)
 		}
 	}
 }
 
 // regression: #3754
-func TestEchoHelpPrintsNoValues(t *testing.T) {
-	t.Setenv(EnvConfigEcho, "full") // the loudest form: a help request must still print no value
+func TestEchoForHelpPrintsNoValues(t *testing.T) {
+	t.Setenv(EnvConfigEcho, "full") // the loudest form: a help screen must still print no value
 	withRoster(t, helpRoster())
 	if !EffectiveConfig().Configured() {
 		t.Fatalf("fixture roster must load configured, or the echo carries no value to leak: %v",
 			EffectiveConfig().Problems)
 	}
-	for _, args := range helpShapes {
-		withArgs(t, args...)
-		out := echoBoth(t)
-		assertNoHelpValues(t, args, out)
-		// The diagnostic that remains names the KEY of the unrecognised entry, never its value.
-		if !strings.Contains(out, "QZ_HELP_KNOB") {
-			t.Errorf("help request %q: the keys-only diagnostic must still name the unrecognised key:\n%s", args, out)
-		}
+	var b bytes.Buffer
+	EchoConfigHelpNotice(&b)
+	assertNoHelpValues(t, b.String())
+	// The diagnostic that remains names the KEY of the unrecognised entry, never its value.
+	if !strings.Contains(b.String(), "QZ_HELP_KNOB") {
+		t.Errorf("the keys-only diagnostic must still name the unrecognised key:\n%s", b.String())
 	}
 }
 
 // regression: #3754
-func TestEchoHelpRefusedKeysOnly(t *testing.T) {
-	// A REFUSED roster is never quieter than it was: the help path still says so, by count.
+func TestEchoForHelpRefusedKeysOnly(t *testing.T) {
+	// A REFUSED roster is never quieter than it was: the help screen still says so, by count.
 	t.Setenv(EnvConfigEcho, "full")
 	vals := helpRoster()
 	vals["ASSAY_QZ_HELP_KNOB"] = "qzknobvalue"
@@ -86,38 +77,39 @@ func TestEchoHelpRefusedKeysOnly(t *testing.T) {
 	if len(EffectiveConfig().Problems) == 0 {
 		t.Fatal("fixture must carry a refused key")
 	}
-	for _, args := range helpShapes {
-		withArgs(t, args...)
-		out := echoBoth(t)
-		assertNoHelpValues(t, args, out)
-		if !strings.Contains(out, "REFUSED") {
-			t.Errorf("help request %q: a refused configuration must still be reported:\n%s", args, out)
-		}
+	var b bytes.Buffer
+	EchoConfigHelpNotice(&b)
+	assertNoHelpValues(t, b.String())
+	if !strings.Contains(b.String(), "REFUSED") {
+		t.Errorf("a refused configuration must still be reported:\n%s", b.String())
 	}
 }
 
 // regression: #3754
-func TestEchoNonHelpStillFull(t *testing.T) {
-	// The negative control: the help check must not swallow a real run's echo. Each of these
-	// is an invocation that ACTS (or may), including the shapes where `--help` is another
-	// flag's value or a positional after the terminator.
+func TestEchoIgnoresHelpArgv(t *testing.T) {
+	// The echo a verb calls WITHOUT opting in never reads argv. Some verbs act under a help-shaped
+	// argv (a hook that ignores argv, a verb that parses positionals), and hiding the echo there
+	// hides it from a run that acts. Only EchoConfigHelpNotice, called under the verb's own predicate, may
+	// leave the values out.
 	t.Setenv(EnvConfigEcho, "full")
 	withRoster(t, helpRoster())
-	for _, args := range [][]string{
-		nil, {"finish"}, {"create", "--title", "--help"}, {"create", "--", "--help"},
-		{"create", "--help", "--json"}, {"help", "create"},
-	} {
+	for _, args := range helpShapes {
 		withArgs(t, args...)
 		var b bytes.Buffer
 		EchoEffectiveConfig(&b)
-		if !isFullEcho(b.String()) {
-			t.Errorf("invocation %q is not a help request, so the full block is due:\n%s", args, b.String())
+		if !isFullEcho(b.String()) || !strings.Contains(b.String(), "qzhelptrust") {
+			t.Errorf("argv %q: EchoEffectiveConfig must keep the full block:\n%s", args, b.String())
+		}
+		b.Reset()
+		EchoEffectiveConfigUnsurfaced(&b)
+		if !strings.Contains(b.String(), "qzhelptrust") {
+			t.Errorf("argv %q: EchoEffectiveConfigUnsurfaced must keep the full block:\n%s", args, b.String())
 		}
 	}
 }
 
 // regression: #3754
-func TestHelpInvocationShapes(t *testing.T) {
+func TestUsageHelpShapes(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want bool
@@ -126,13 +118,16 @@ func TestHelpInvocationShapes(t *testing.T) {
 		{[]string{"--help"}, true},
 		{[]string{"-h", "x"}, true},
 		{[]string{"help"}, true},
-		{[]string{"help", "create"}, false},
+		{[]string{"help", "create"}, true},
+		{[]string{"-help"}, false},
 		{[]string{"finish", "--help"}, true},
 		{[]string{"finish", "review", "--help"}, false},
 		{[]string{"create", "--title", "--help"}, false},
+		{[]string{"create", "--", "--help"}, false},
+		{[]string{"create", "--help", "--json"}, false},
 	} {
-		if got := HelpInvocation(tc.args); got != tc.want {
-			t.Errorf("HelpInvocation(%q) = %t, want %t", tc.args, got, tc.want)
+		if got := UsageHelp(tc.args); got != tc.want {
+			t.Errorf("UsageHelp(%q) = %t, want %t", tc.args, got, tc.want)
 		}
 	}
 }

@@ -60,8 +60,8 @@ func main() {
 	// only; never a token or a credential path.
 	//
 	// A help screen is not a run: it prints no configured value (medici-finance/assay#3754).
-	// isHelpRequest is the SAME predicate run() answers with its usage screen, so the two
-	// cannot disagree about which invocation is help.
+	// deskpost OPTS IN with isHelpRequest, the SAME predicate run() answers with its usage
+	// screen before Guard, so the two cannot disagree about which invocation is help.
 	if isHelpRequest(os.Args[1:]) {
 		deskkit.EchoConfigHelpNotice(os.Stderr)
 	} else {
@@ -139,14 +139,7 @@ func run(argv []string) int {
 // main() asks the same question to choose the config echo, so a help screen prints no
 // configured value (medici-finance/assay#3754).
 func isHelpRequest(argv []string) bool {
-	if len(argv) == 0 {
-		return false
-	}
-	switch argv[0] {
-	case "help", "-h", "--help":
-		return true
-	}
-	return deskkit.HelpOnly(argv) || (argv[0] == "finish" && deskkit.HelpOnly(argv[1:]))
+	return deskkit.UsageHelp(argv) || (len(argv) > 0 && argv[0] == "finish" && deskkit.HelpOnly(argv[1:]))
 }
 
 func cmdReview(argv []string) int {
