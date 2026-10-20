@@ -257,3 +257,12 @@ its real producer closure. Public implementation has no private adopter dependen
 Semantic prerequisites: desk-improvement/01 consumes continuing-operations/01 (after
 statusgen/22); /03 consumes continuing-operations/02. These are explicit build gates,
 so generic source contracts are implemented once, before their assessment consumers.
+
+## Perf-v3 attribution and forge cost — requested amendment, 19 October 2026
+
+[Contract](../../performance-attribution-spec.md): new desktools-v2/63–65 own versioned local
+schema/readers, desk/agent/CLI propagation and own-request timing/points. Unfinished /62,
+statusgen/26 and performance-collection/01–09 are amended; completed /61 stays intact.
+The target, future-state bindings, storage/recovery and runtime handoff carry the same
+context/consent/coverage contract. This supersedes earlier v2-only future measurement intent,
+not historical v1/v2 facts, Evidence or the collection stream's parked state.

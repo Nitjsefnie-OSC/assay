@@ -113,6 +113,36 @@ RISK-VALUE: DERIVED — operational-reference kinds = "journey", "operational-wo
 
 Verification-Attestation: medici-finance/assay#3438 run=31eb8fda42e94edb8df9ea0774931a64c24621351cfe4488ded9dc08c569328c source=d8a4d0a941a1c312ebfbce16ecda782a5111eadb brief=docs/streams/statusgen/brief-22-product-target-records-and-compatible-requirement-parsing.md model=claude-opus-5-5 tier=strong
 
+### Container-netns execution witness — 2026-10-19, claude-opus-5-5 / assay-verifier-app[bot]
+
+Subject: merged main 4b15482af5c6c71b9312ca7df0f23b219de3f840; the delivery files from medici-finance/assay#3296 are byte-identical to the earlier subject d8a4d0a94 (only docs/contracts.md rows for other rules changed in the declared scope). Verifier is not the implementer. Runner: a local docker container started with `--network none`, GOPROXY=off, GOTOOLCHAIN=local, the engine's default seccomp profile, statusgen and the desk tools built from this tree inside the container, and `statusgen verifyrun --sandbox container-netns` run for real (go1.27.2 linux/arm64), per the driver's 2026-10-19 interim-runner ruling (recorded on the private house tracker). verifyrun exited 0 and wrote the witness table below; `verifyrun --check` in the container reported 3 pass, 0 fail of 3 Verify rows. Admission: `deskdispatch --check-verifier` exited 0 on the host before and after the container run, binding attestation run 264eac3beb7d (full binding on the Verification-Attestation line at the end of this subsection).
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `(cd statusgen && check_output=$(mktemp) && trap 'rm -f "$check_output"' 0 && GOWORK=off go test -count=1 -v -run "^TestProductIntentLegacyAndRevisionFlow$" . > "$check_output" && grep -F -- "--- PASS: TestProductIntentLegacyAndRevisionFlow " "$check_output")` | pass exit=0 sandbox=container-netns | sha256:4ad9581a91d6 | 2026-10-19 | assay-verifier-app[bot] @ 4b15482af5c6 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `(cd statusgen && check_output=$(mktemp) && trap 'rm -f "$check_output"' 0 && GOWORK=off go test -count=1 -v -run "^TestProductIntentApprovalAndUnknown$" ./productintent/ > "$check_output" && grep -F -- "--- PASS: TestProductIntentApprovalAndUnknown " "$check_output")` | pass exit=0 sandbox=container-netns | sha256:09bf6758cd27 | 2026-10-19 | assay-verifier-app[bot] @ 4b15482af5c6 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `(cd statusgen && check_output=$(mktemp) && trap 'rm -f "$check_output"' 0 && GOWORK=off go test -count=1 -v -run "^TestProductIntentSchemaParity$" ./productintent/ > "$check_output" && grep -F -- "--- PASS: TestProductIntentSchemaParity " "$check_output")` | pass exit=0 sandbox=container-netns | sha256:ad3bb01cdeaa | 2026-10-19 | assay-verifier-app[bot] @ 4b15482af5c6 (on-behalf-of human:ian) (forge-identity) |
+
+By-hand runs at 4b15482af5c6 on the host (go1.27.2 darwin/arm64), each Verify command run exactly as written, once plainly and once under a sandbox-exec profile that denies outbound network (control: curl to a public host under the same profile exited 6, could not resolve host).
+
+| # | Command | Expected | Observed | Date / runner |
+|---|---------|----------|----------|---------------|
+| 1 | `(cd statusgen && check_output=$(mktemp) && trap 'rm -f "$check_output"' 0 && GOWORK=off go test -count=1 -v -run "^TestProductIntentLegacyAndRevisionFlow$" . > "$check_output" && grep -F -- "--- PASS: TestProductIntentLegacyAndRevisionFlow " "$check_output")` | exit 0; named PASS; mutation overwrite-prior-target caught | host exit 0, `--- PASS: TestProductIntentLegacyAndRevisionFlow (0.01s)`; deny-network sandbox exit 0, same named PASS. Shipped mutation harness in a scratch clone at 4b15482af5c6: overwrite-prior-target CAUGHT (exit 1). | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 2 | `(cd statusgen && check_output=$(mktemp) && trap 'rm -f "$check_output"' 0 && GOWORK=off go test -count=1 -v -run "^TestProductIntentApprovalAndUnknown$" ./productintent/ > "$check_output" && grep -F -- "--- PASS: TestProductIntentApprovalAndUnknown " "$check_output")` | exit 0; named PASS; mutation trust-record-claim caught | host exit 0, `--- PASS: TestProductIntentApprovalAndUnknown (0.00s)`; deny-network sandbox exit 0, same named PASS. Mutation harness: trust-record-claim and return-stored-record both CAUGHT (exit 1). | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 3 | `(cd statusgen && check_output=$(mktemp) && trap 'rm -f "$check_output"' 0 && GOWORK=off go test -count=1 -v -run "^TestProductIntentSchemaParity$" ./productintent/ > "$check_output" && grep -F -- "--- PASS: TestProductIntentSchemaParity " "$check_output")` | exit 0; named PASS; mutation permit-missing-revision caught | host exit 0, `--- PASS: TestProductIntentSchemaParity (0.73s)`; deny-network sandbox exit 0, `--- PASS: TestProductIntentSchemaParity (0.75s)`. Mutation harness: permit-missing-revision, allow-case-alias and schema-missing-revision all CAUGHT (exit 1). | 2026-10-19 assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+
+Mutation harness: the shipped mutate.py under statusgen/productintent/testdata, run unmodified in a scratch clone at 4b15482af5c6 outside this tree: exit 0, 13/13 plants CAUGHT.
+
+Risk-bearing values: the risk fields are all present and all `no`; the delivery code is unchanged since the earlier subsection, and every literal it enumerated was re-read at 4b15482af5c6 at the same file:line. The two derived verdicts stand:
+
+RISK-VALUE: DERIVED — reqRE = `^REQ-[a-z0-9][a-z0-9-]{8,18}[a-z0-9]$` @ statusgen/productintent/decode.go:17 — identical to requirementIDRe @ statusgen/requirements.go:115 and the schema subject.requirement pattern, so the extension neither widens nor narrows the REQ id space.
+
+RISK-VALUE: DERIVED — operational-reference kinds = "journey", "operational-workflow", "practice" @ statusgen/productintent/decode.go:219 — matches spec registers-v1 line 450, which names exactly these three and refuses workflow-pattern and workflow-instance.
+
+**VERIFY: PASS** — 3/3 Verify rows pass in the container-netns witness (verifyrun rc 0, --check 3 pass) and by hand on the host and under deny-network, with 13/13 mutations caught.
+
+Verification-Attestation: medici-finance/assay#3486 run=264eac3beb7d2d4fbd252a37f5a057efd8e3069c56118dc5ef2f6d4aead29039 source=4b15482af5c6c71b9312ca7df0f23b219de3f840 brief=docs/streams/statusgen/brief-22-product-target-records-and-compatible-requirement-parsing.md model=claude-opus-5-5 tier=strong
+
 ## Review
 
 Gate: model; all risk answers no because this slice processes synthetic/explicit offline

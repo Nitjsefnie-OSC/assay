@@ -4,14 +4,14 @@ title: "Version shared performance boundaries and keep legacy reports comparable
 why: "Current desk wall time excludes entrypoint setup while CPU includes process lifetime, and readers cannot distinguish several command modes. A shared versioned measurement boundary makes the local records usable for comparing optimizations across desk tools and statusgen without treating missing measurements as zero."
 wave: 1
 depends: []
-unblocks: ["desktools-v2/62", "statusgen/26", "performance-collection/02"]
+unblocks: ["desktools-v2/63", "desktools-v2/62", "statusgen/26", "performance-collection/02"]
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
 outcome: none
-version: 1
+version: 2
 id: c01a7fef-514d-47ac-b39e-ede3f4e9d63a
 authored: 2026-10-16 by performance brief authoring
 sources:
@@ -203,6 +203,27 @@ RISK-VALUE: DERIVED — SchemaV2 = "perf-v2" @ perfrec/schema.go:26 — Schema =
 RISK-VALUE: DERIVED — labelPattern @ perfrec/schema.go:100 with len(s) <= 64 @ perfrec/schema.go:105 — the character class cannot match slash, dot, underscore, equals, space or uppercase, so paths, owner/repo slugs, underscored token prefixes, flag=value argv and spaced free text map to "other". The 64-byte cap only tightens the pattern's 83-byte maximum. Limit: the shape does admit a lowercase alphanumeric string of up to 40 characters that starts with a letter (for example a hex digest starting a–f). So the source comment's claim that "a token ... cannot pass it" holds only for tokens with an underscore or uppercase letters. The real gate is roster membership at the callers (deskkit's compiled rosters; perfrec Begin keeps only roster entries that pass Label).
 
 **VERIFY: PASS** — 5/5 rows. Rows 1–4 are by-hand under a deny-network sandbox (the witness could-not-run them on darwin) and row 5 passes in the witness. Row 5 gives 3 back-reference corroborations and 5 self-routed passes.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestInvocationBoundaryAndCPUParity$' ./... > "$out" && grep -F -- '--- PASS: TestInvocationBoundaryAndCPUParity ' "$out")` | pass exit=0 sandbox=container-netns | sha256:c198ed529693 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 2 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerformanceSchemaAndPrivacyCompatibility$' ./... > "$out" && grep -F -- '--- PASS: TestPerformanceSchemaAndPrivacyCompatibility ' "$out")` | pass exit=0 sandbox=container-netns | sha256:317e34e516cb | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 3 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestMixedSchemaReportBoundaries$' ./cmd/deskperf/ > "$out" && grep -F -- '--- PASS: TestMixedSchemaReportBoundaries ' "$out")` | pass exit=0 sandbox=container-netns | sha256:346457f3f5a2 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 4 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPublicRecorderConsumerBoundary$' ./... > "$out" && grep -F -- '--- PASS: TestPublicRecorderConsumerBoundary ' "$out")` | pass exit=0 sandbox=container-netns | sha256:5743fbce55a3 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+| 5 | `o=$(statusgen --consumers --root . --brief assay:assay:desktools-v2:61 --delivery 2013b8dc612842467d08330e298b5401ce855e5f --base 613cce8e72cb95ec21d3f63120be68585fc91899); s=$?; printf '%s\n' "$o"; test "$s" -eq 0 && case "$o" in *'summary: 8 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing'*) ;; *) exit 1;; esac` | pass exit=0 sandbox=container-netns | sha256:9845e86678a2 | 2026-10-19 | assay-verifier-app[bot] @ 0e661b6e15de (on-behalf-of human:ian) (forge-identity) |
+
+Re-wake verify, 2026-10-19. Subject revision: merged main 0e661b6e15de107efcf05ed7d8d0d21983eb3afa; delivering change 2013b8dc6128 with first parent 613cce8e72cb. The witness table above is the execution witness, a mechanical re-run of every Verify row exactly as written by statusgen verifyrun with sandbox=container-netns. Runner class: local docker container, image assay-verify:go1.27 (id sha256:955fd6c46c93, built FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e, git 2.47), started with --network none, the engine's default seccomp profile, GOPROXY=off, GOTOOLCHAIN=local, GOFLAGS=-count=1, KUBECONFIG=/dev/null; statusgen and the desk tools were built inside the container from the tree at the subject revision. This record follows the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). verifyrun exited 0 and its check reported 5 pass, 0 fail, 0 could-not-run of 5 Verify rows.
+Verification-Attestation: medici-finance/assay#3520 run=997aa4e942d1e62cf8c7ac41d30a0759d628785c4fd9374750bbba7753e39d01 source=0e661b6e15de107efcf05ed7d8d0d21983eb3afa brief=docs/streams/desktools-v2/brief-61-version-shared-performance-boundaries-and-keep-legacy-reports-comparable.md model=claude-opus-5-5 tier=strong
+
+The prior Evidence verdict was VERIFY: PASS on 2026-10-19 at e4d474af8bca. Since then the perfrec module, the deskkit perf and perfread sources and the deskperf command are unchanged; what changed is this brief's frontmatter (desktools-v2/63 added to unblocks, version 1 to 2), additive perf-v3 planning text in the telemetry doc and the desk README, and statusgen changes, which row 5 exercises with the tree-built statusgen.
+
+No row failed in the witness. Row 5 was also run by hand on the darwin host with the pinned statusgen v1.0.51: exit 0, printed summary: 8 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing. Per the row's own Expect, that is 3 back-reference corroborations (follow-ups routed to desktools-v2/62, statusgen/26 and performance-collection/02) and 5 self-routed passes, which corroborate nothing about the delivered paths; the 1 UNCHECKED entry is the out-of-scope qualgen and standalone tools entry, a review judgment and not a pass.
+
+Risk-bearing values: the trigger fires because the declared path tools/desk/internal/deskkit/perf.go matches the security-path trigger. No code under perfrec, deskkit perf or perfread, or deskperf changed between the delivery 2013b8dc6128 and the subject revision, and every literal named in the prior record still sits at its line at the subject revision: SchemaV2 = "perf-v2" @ perfrec/schema.go:26; MaxPhases = 16 @ perfrec/schema.go:94 (reversible, ranked last); labelPattern @ perfrec/schema.go:100 with len(s) <= 64 @ perfrec/schema.go:105; Schema = "perf-v1" @ perfrec/perfrec.go:44; RetentionDays = 7 @ perfrec/perfrec.go:50; modes 0o700 @ perfrec/perfrec.go:340 and 0o600 @ perfrec/perfrec.go:355 (pre-existing, not changed by the delivery).
+RISK-VALUE: DERIVED — SchemaV2 = "perf-v2" @ perfrec/schema.go:26 — Schema = "perf-v1" @ perfrec/perfrec.go:44 is frozen, and perf-v2 adds and drops fields, so a distinct tag is required; readers route by exact tag.
+RISK-VALUE: DERIVED — labelPattern = ^-{0,2}[a-z][a-z0-9-]{0,39}(:[a-z][a-z0-9-]{0,39})?$ @ perfrec/schema.go:100 with len(s) <= 64 @ perfrec/schema.go:105 — the character class cannot match slash, dot, underscore, equals, space or uppercase, so paths, owner/repo slugs, underscored token prefixes, flag=value argv and spaced free text map to "other"; the shape still admits a lowercase alphanumeric string of up to 40 characters, so the real gate stays roster membership at the callers, as the prior record noted.
+
+**VERIFY: PASS** — 5/5 rows pass with 0 fail in the network-off container witness at 0e661b6e15de, and no deliverable code changed since the prior PASS.
 
 
 ## Review

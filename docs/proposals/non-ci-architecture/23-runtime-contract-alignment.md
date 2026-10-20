@@ -194,3 +194,15 @@ remain authoritative. No AX task state, runner receipt or filesystem restoration
 work acceptance or renews authority. Existing R3/R4, celld and R7 activation obligations remain.
 
 Harness² follow-through adds agent-execution/07, an independent offline refinement-protocol experiment. Proposed harness bundles stay untrusted, immutable per invocation and subject to existing review/adoption; operator policy, enforced controls and acceptance cannot be optimized by the candidate. This changes no runtime owner.
+
+## Attributed performance adapter obligation — requested amendment, 19 October 2026
+
+Future runner/supervisor/forge-service adapters preserve the
+[perf-v3 lifecycle and request contract](../../performance-attribution-spec.md): the launcher
+owns logical session/agent identity and assigned role; each process owns fresh invocation
+identity, own CPU and actual requests. Parent links do not authorize work and inclusive
+parent timings never add to child/provider time as elapsed time. Preserve unknown coverage
+at unmanaged boundaries. Use explicit profiles and typed context; optional sink failure
+cannot change required process receipts, custody, budget accounting or recovery. Collection
+import aliases local qualified work before its separate storage/export. The /63–65 library
+and adapters precede optional remote collection, not operational runtime availability.
