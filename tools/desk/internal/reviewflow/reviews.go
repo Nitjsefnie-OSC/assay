@@ -11,8 +11,8 @@ type ReviewFact struct {
 type SecurityVerdict int
 
 // SecurityPassMarker is the literal line an App security-review verdict must carry for a
-// risk-classed PR to be flip-eligible (#216). It has one owner: the classifier's
-// SECURITY-REVIEW-REQUIRED notes and the commands that read the marker both reference it.
+// risk-classed PR to be flip-eligible (#216). This constant supplies classifier
+// notes; operational marker parsing remains with deskkit.
 const SecurityPassMarker = "Security-Review: pass"
 
 const (

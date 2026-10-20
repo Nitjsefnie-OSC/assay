@@ -23,6 +23,21 @@ tools/desk/
 Everything after that is the deep reference, one section per tool, and you do not need
 it on day one.
 
+## Review observation library contract
+
+The desk module's `internal/reviewflow` package provides a pure, typed
+[review-observation-v1](../../spec/review-observation-v1.md) boundary. It binds the
+full admitted population to provider/host/repository identity, exact revisions,
+independent lane facts, coverage and explicit freshness policy. Derived row totals
+are uncapped; incomplete reads cannot become an idle success. Observations and
+proposed verbs are advisory and do not grant claims or permission to write.
+
+`deskboard` shares classifier input assembly and `reviewloop plan` shares plan
+assembly with this API. Their existing flags and output remain compatible. The
+new contract has no collection command or observation-file CLI flag in this change;
+that handoff is desk-tools/40. The legacy idle cadence is unchanged; new library
+callers must supply their own policy revision, clock and oldest acceptable input.
+
 ## Review planner state contract
 
 `reviewloop plan` proposes review dispatches and draft-to-ready operations from the
