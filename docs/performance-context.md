@@ -63,3 +63,20 @@ profile; disable ASSAY_TELEMETRY to stop recording. A failed optional writer doe
 launch or change mandatory audit/accounting. No service protocol propagation
 is admitted here: client/server context remains unavailable until its service
 owner admits an explicit option with consent at both ends.
+
+Scrubbed `env -i` launches deliberately admit validated, bounded performance
+metadata from the launching shell as a descriptive exception to the ambient
+scrub. These values are invocation-only, never persistent cell/default levers
+or operational authority. Codex forwards its explicit environment policy via
+`-c` process arguments: local process inspection can expose these opaque IDs and
+work references. Do not put secrets in attribution; local-only storage is not a
+promise that attribution is hidden from other local process observers.
+
+Cell launches reuse the CLI's already selected, recorded invocation; they never
+resolve a second parent ID. Untyped tool boundaries clear inherited parent
+invocation IDs, because an inherited grandparent is not an observed parent.
+Protocol-option-off and unknown-service-context cases are not applicable until
+the service protocol owner admits that interface; local consent-off tests do not
+qualify those future service cases. Handoff expiry bounds permitted use; physical
+pruning requires a subsequent write. A hard deletion deadline is unqualified and
+remains subject to the existing human acceptance decision.

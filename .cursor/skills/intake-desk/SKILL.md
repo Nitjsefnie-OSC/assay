@@ -656,5 +656,10 @@ If your operational loop differs from the originating desk attribution, use the
 explicit --perf-desk-role flag on supported tool calls; never change operational
 identity for measurement. Keep local workflow references and handoffs private.
 See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
-and the producer's maintained-entrypoint inventory for supported boundaries; an
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
 unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-desk-role` for descriptive desk attribution; never alter `DESK_LOOP`.

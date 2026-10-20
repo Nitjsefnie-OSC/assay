@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"text/scanner"
 	"time"
 
 	"github.com/medici-finance/assay/perfrec"
@@ -399,4 +400,72 @@ func testForgeSample(t *testing.T, graphql bool) {
 		t.Fatal("measurement changed provider sends", sends)
 	}
 	t.Logf("matched fake-provider graphql=%v cycles n=20, requests/cycle=100, concurrency=1; off wall ns p50=%d p95=%d max=%d CPUtotalms=%d; on incl metadata/append wall ns p50=%d p95=%d max=%d CPUtotalms=%d; actual sends off=%d on=%d", graphql, samples[0][9], samples[0][18], samples[0][19], cpu[0], samples[1][9], samples[1][18], samples[1][19], cpu[1], sends[0], sends[1])
+}
+
+// The admitted compiled query subset is one operation with no trailing definition.
+// This pins the actual splice boundary without adding a production query parser.
+func TestPerfCostOperationShape(t *testing.T) {
+	queries := []string{ghOpenChangesQuery, ghListChangesQuery, ghReviewQueueQuery,
+		ghCommentsQuery, ghChangeCommentsWalkQuery, ghIssueCommentsQuery,
+		ghListIssuesQuery, ghIssueStateEventsQuery, IssueTrustQuery, PRTrustQuery, IssueEventsQuery, gitlabTrustQuery}
+	for i, query := range queries {
+		var scan scanner.Scanner
+		scan.Init(strings.NewReader(query))
+		scan.Error = func(_ *scanner.Scanner, msg string) { t.Errorf("query %d lexical shape: %s", i, msg) }
+		if scan.Scan() != scanner.Ident || scan.TokenText() != "query" {
+			t.Fatalf("query %d is outside the admitted operation shape", i)
+		}
+		depth, found := 0, false
+		for tok := scan.Scan(); tok != scanner.EOF; tok = scan.Scan() {
+			switch tok {
+			case '{':
+				depth++
+				found = true
+			case '}':
+				depth--
+				if depth < 0 {
+					t.Fatalf("query %d unmatched close", i)
+				}
+				if found && depth == 0 && scan.Scan() != scanner.EOF {
+					t.Fatalf("query %d has a trailing definition after the operation", i)
+				}
+			}
+		}
+		if !found || depth != 0 {
+			t.Fatalf("query %d incomplete operation", i)
+		}
+	}
+}
+
+func TestPerfTrustMetadataErrorFailsClosed(t *testing.T) {
+	t.Setenv("ASSAY_TELEMETRY", "1")
+	for _, provider := range []string{"github", "gitlab"} {
+		t.Run(provider, func(t *testing.T) {
+			session := flowSession(perfrec.ObservationProvider)
+			observer := RequestObserver{Sink: session, Origin: perfrec.OriginDirect}
+			sends := 0
+			client := &http.Client{Transport: observeRT(func(r *http.Request) (*http.Response, error) {
+				sends++
+				var input struct{ Query string }
+				if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(input.Query, "_assayPerf:") {
+					t.Fatal("fixture did not exercise the extended trust operation")
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"errors":[{"message":"unknown optional metadata field"}],"data":null}`))}, nil
+			})}
+			repo := ForgeRepo{Owner: "example", Name: "project"}
+			var payload *TrustPayload
+			var err error
+			if provider == "github" {
+				payload, err = (&GitHubForge{Token: "fixture", Observer: observer, Client: client}).IssueTrustEvents(repo, 1)
+			} else {
+				payload, err = (&GitLabForge{Token: "fixture", Observer: observer, Client: client}).IssueTrustEvents(repo, 1)
+			}
+			if err == nil || payload != nil || sends != 1 {
+				t.Fatalf("metadata rejection must remain could-not-check without recovery sends: payload=%v err=%v sends=%d", payload, err, sends)
+			}
+		})
+	}
 }

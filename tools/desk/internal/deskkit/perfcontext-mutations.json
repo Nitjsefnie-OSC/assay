@@ -1,5 +1,5 @@
 {
-  "test": "go test -timeout=120s -count=1 -run '^TestPerfV3LauncherChildFlow$|^TestPerfV3CLIContextPrecedence$|^TestPerfRunnerCI$|^TestPerfV3RealDeskLaunch$' ./internal/deskkit ./internal/clicontract ./cmd/cellctl",
+  "test": "go test -timeout=120s -count=1 -run '^TestPerfV3LauncherChildFlow$|^TestPerfV3CLIContextPrecedence$|^TestPerfRunnerCI$|^TestPerfV3RealDeskLaunch$|^TestPerfUntypedClaimChildParent$' ./internal/deskkit ./internal/clicontract ./cmd/cellctl ./cmd/deskdispatch",
   "control": {
     "name": "do not propagate typed child context",
     "file": "internal/deskkit/runtool.go",
@@ -54,6 +54,18 @@
       "file": "../../perfrec/lifecycle.go",
       "old": "d := c.Data()",
       "new": "d := c.Data(); out = append(out, \"DESK_LOOP=\"+d.DeskRole)"
+    },
+    {
+      "name": "resolve a second unrecorded launcher invocation",
+      "file": "cmd/cellctl/cobra.go",
+      "old": "in.Performance, _ = cli.PerformanceContext(cmd)",
+      "new": "in.Performance = perfrec.ResolveContext(cli.PerformanceInput(cmd))"
+    },
+    {
+      "name": "forward an inherited grandparent through an untyped tool boundary",
+      "file": "internal/deskkit/runtool.go",
+      "old": "env = unknownPerfParentEnv(env)",
+      "new": "_ = env"
     }
   ]
 }
