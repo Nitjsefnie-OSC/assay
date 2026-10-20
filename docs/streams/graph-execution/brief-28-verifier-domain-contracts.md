@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 2
+version: 5
 authored: 2026-10-13 by worker-desk (author-brief), non-CI architecture reconciliation
 sources:
   - docs/proposals/non-ci-architecture/16-delivery-sequence.md — package R1 (domain contracts and regression floor)
@@ -24,7 +24,13 @@ exec-tier-why: Cross-component contract (identity, acceptance binding, fact comp
 domain: complicated
 outcome: none
 consumers:
-  - "statusgen/domain, spec/verification-domain-v1.md, schemas/verification-domain-v1.json, docs/contracts.md: follow-up graph-execution/28"
+  - "statusgen/domain: fixed-here (shared pure records, assessment seam and offline failure controls)"
+  - "spec/verification-domain-v1.md: fixed-here (shared record and adapter contract)"
+  - "schemas/verification-domain-v1.json: fixed-here (wire shape consumed by the domain fixture tests)"
+  - "docs/contracts.md: fixed-here (S-verification-domain owner and consumer boundary)"
+  - "statusgen/contexthandoff/jsonschema_test.go: fixed-here (uses the shared statusgen/internal/testschema helper)"
+  - "docs/streams/desktools-v2/cli-migration.json: fixed-here (exact source-test route for statusgen/domain/mutate.py; read by the unchanged tools/desk/internal/clicontract inventory, research-replay and routing-mutation checks)"
+  - "tools/desk/cmd/deskwt/maintenancecustody_unix_test.go: fixed-here (CI fixture repair for medici-finance/assay#3736; publish the complete child PID atomically while preserving the crash and custody assertions)"
   - "workflow candidate record (spec/workflow-candidate-v1.md as planned by graph-execution/23): follow-up graph-execution/23"
   - "regression-floor adapters: follow-up graph-execution/29"
   - "statusgen/evaluation: out-of-scope (consumed unchanged through its exported API; statusgen/15 owns it)"
@@ -37,10 +43,24 @@ id: fefddc8e-4cd2-4438-8c26-965b24ffd5dc
 
 ## Context
 
-files: `spec/verification-domain-v1.md` (planned), `schemas/verification-domain-v1.json` (planned),
-`statusgen/domain/` (planned) (new pure package and its tests), `statusgen/testdata/domain/` (planned),
+files: `spec/verification-domain-v1.md`, `schemas/verification-domain-v1.json`,
+`statusgen/domain/` (new pure package, tests and mutation runner), `statusgen/testdata/domain/`,
+`statusgen/internal/testschema/schema.go`, `statusgen/contexthandoff/jsonschema_test.go`,
 `docs/contracts.md` (one new semantic-owner row), `docs/lifecycle.md`,
-`changelog/graph-execution-28-verifier-domain-contracts.md` (planned).
+`docs/streams/desktools-v2/cli-migration.json`, `changelog/k8s-verifier-domain-contracts.md`,
+`tools/desk/cmd/deskwt/maintenancecustody_unix_test.go` (test-only CI repair).
+
+CI shepherd repair (2026-10-20, medici-finance/assay#3736): the legacy crash fixture
+publishes its complete child PID through a same-directory rename. A deterministic
+test observes the create-before-write boundary; the existing crash reader, surviving-child
+witness, custody marker and refusal assertions remain unchanged. This repair changes
+no maintenance production code or verifier-domain semantics.
+
+Implementation routing (2026-10-20): `statusgen/domain/mutate.py` is this brief's
+source-only offline failure-control runner. `docs/streams/desktools-v2/cli-migration.json`
+routes that exact path as a test with this brief as owner in the reason. The
+`tools/desk/internal/clicontract` inventory, research-replay and routing-mutation checks
+consume the registry; no broader exclusion or operator CLI migration is introduced.
 
 facts (a435badbd, 2026-10-13):
 - `statusgen/evaluation` exists on main (statusgen/15): `EvaluateEligibility` and
@@ -140,6 +160,15 @@ The named tests are deliverables of this brief and do not exist at a435badbd. Ea
 production code with independent expected results; each +mutation row names a mutation that must
 turn its test red.
 
+For row 10, the independent verifier obtains the actual implementation delivery from the
+merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or a branch tip. Both commits must be available in the verification
+checkout; absent or unknown provenance fails closed. Record exact consumer result counts
+and resolve unchecked required consumers separately; zero disproofs alone is not complete
+flow coverage. A pre-merge PR-range check is local sanity only and is not row-10 delivery
+evidence. The writer of this brief does not assert post-merge verification here.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +mutation | `(cd statusgen && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run "^TestDomainPathIsNotIdentity$" ./domain/ > "$out" && grep -F -- "--- PASS: TestDomainPathIsNotIdentity " "$out")` | exit 0; named PASS; a renamed brief file keeps its qualified identity and two files claiming one identity are refused; mutation: derive identity from the file path — the test must fail |
@@ -151,6 +180,7 @@ turn its test red.
 | 7 | check:ci +mutation | `(cd statusgen && name=$(GOWORK=off go list -f '{{.Name}}' ./domain/) && test "$name" = domain && bad=$(GOWORK=off go list -f '{{range .Imports}}{{if or (eq . "os") (eq . "os/exec") (eq . "net") (eq . "net/http") (eq . "syscall") (eq . "io/ioutil") (eq . "path/filepath")}}{{.}} {{end}}{{end}}' ./domain/) && test -z "$bad")` | exit 0; the package exists and imports no filesystem, process or network package; mutation: add an `os` import to the package — the row must fail |
 | 8 | check:ci +dereference | `(cd statusgen && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run "^TestDomainSchemaFixtures$" ./domain/ > "$out" && grep -F -- "--- PASS: TestDomainSchemaFixtures " "$out")` | exit 0; named PASS; every fixture under `statusgen/testdata/domain/` (planned) validates (positive) or is refused (negative) against `schemas/verification-domain-v1.json` (planned), and the spec names each schema record |
 | 9 | check:ci +flow +mutation | `(cd statusgen && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run "^TestDomainStageSeparation$" ./domain/ > "$out" && grep -Fq -- "--- PASS: TestDomainStageSeparation " "$out")` | exit 0; named PASS; the three stage combinations remain distinct; mutation: map execution success directly to accepted — the test fails |
+| 10 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief graph-execution/28 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its actual first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required candidate-workspace, regression-adapter and durable-store consumers stay held; the unchanged evaluator and deferred runtime-controller exclusions remain reviewer judgments, and omitted consumers remain a review obligation |
 
 ## Pre-mortem
 
