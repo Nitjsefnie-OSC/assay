@@ -126,7 +126,7 @@ today's full read.
 ## Candidate-coverage proof (2026-10-20)
 
 [derived-board/10](brief-10-complete-candidate-coverage-for-partial-delivery-reconciliation.md)
-is a wave-0, bounded evidence-and-test follow-up for issue #2703. At 1fa39fa8c,
+is a wave-0, bounded evidence-and-test follow-up for issue #2703. At c8c4020d1,
 source fix c45ef4ec6 is merged through #3787: #735 is declared partial, while
 the regression still enumerates five hardcoded candidates. The remaining work
 independently establishes the candidate cohort and proves omission detection.
