@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/medici-finance/assay/perfrec"
 	"io"
 	"net/http"
 	"net/url"
@@ -294,7 +295,7 @@ func (g *GitHubForge) doJSONHeader(method, path string, in, out any) (http.Heade
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(resp.Body)
 	if capture != nil && capture.body != nil {
-		attachRequestPoints(capture.body, decodeRequestPoints(raw, "github-points"))
+		attachRequestPoints(capture.body, decodeRequestPoints(raw, perfrec.UnitGitHubPoints))
 	}
 	if readErr != nil {
 		return nil, Unverifiable(fmt.Sprintf("%s %s response body cut off mid-transfer (%d bytes arrived) — refusing to treat a partial answer as a complete one", method, path, len(raw)), readErr)

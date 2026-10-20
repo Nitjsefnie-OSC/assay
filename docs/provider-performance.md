@@ -100,3 +100,8 @@ Removing the observer argument or deselecting the optional profile restores the
 prior measurement path. There is no migration of stored legacy records, pin
 change, operational activation or release in this change. Independent verification
 still owns acceptance after shared prerequisites and this implementation land.
+
+Protocol labels currently recognize the native public GraphQL paths only. An
+enterprise or custom subpath can remain labelled REST even when its API uses
+GraphQL; its cost is still unknown, never inferred from that label. This is a
+coverage limitation rather than qualified enterprise protocol attribution.

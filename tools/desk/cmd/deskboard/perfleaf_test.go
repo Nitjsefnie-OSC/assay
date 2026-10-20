@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +16,7 @@ import (
 
 // regression: class perf-v3-composed-board-leaf
 func TestPerfLeafV3Report(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	installPerfLeafRoster(t)
 	t.Setenv("ASSAY_TELEMETRY", "1")
 	cache := t.TempDir()
 	oldCache := boardCacheDir
@@ -110,6 +112,7 @@ func TestPerfLeafV3Report(t *testing.T) {
 }
 
 func TestPerfLeafTransport(t *testing.T) {
+	installPerfLeafRoster(t)
 	cache := t.TempDir()
 	old := boardCacheDir
 	boardCacheDir = func() (string, error) { return cache, nil }
@@ -188,4 +191,23 @@ func TestPerfLeafTransport(t *testing.T) {
 		}
 		return deskkit.ExitRateLimited
 	})
+}
+
+// The isolated mutation workspace intentionally has no forge remote. Native
+// resolver fixtures must supply their own private roster instead of borrowing it.
+func installPerfLeafRoster(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	config := filepath.Join(home, ".config", "assay")
+	if err := os.MkdirAll(config, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(config, "roster.env"), []byte(fixtureRoster+"\nASSAY_REPO_FORGES=example-org/tracker=github\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("ASSAY_CONFIG_HOME", config)
+	deskkit.ReloadConfig()
+	t.Cleanup(deskkit.ReloadConfig)
 }
