@@ -252,6 +252,34 @@ RISK-VALUE: NAMED, NOT DERIVED — MaxWork = 8 @ perfrec/context.go:76, MaxWorkB
 
 **VERIFY: BLOCKED** — rows 1, 2 and 3 pass in the container witness and by hand, and every planted counterexample their Expect cells name is killed. Row 4 returns COULD-NOT-CHECK (exit 2) at 98763cb13757 because the committed Evidence had no Verification-Table marker naming the delivery; no routing claim was disproved. The marker is recorded in this run. Re-run the bare row 4 command once this Evidence has landed: the scratch-clone simulation with the marker gives exit 0, 10 corroborated, 0 disproved. Gate: human; status left unchanged.
 
+### Row 4 at the Evidence landing commit — 2026-10-20 at d34483321afd
+
+Verification-Attestation: medici-finance/assay#3770 run=56dc2c8dfe0c68b129e2c07c891a495b9ee71ad0b07defa118c7ccfe6f528a10 source=98763cb13757e9ad2fa9214501102788d2e60404 brief=docs/streams/desktools-v2/brief-63-define-perf-v3-attribution-profiles-and-compatible-local-readers.md model=claude-opus-5-5 tier=strong
+
+Subject revision: d34483321afd8079913f9cdadbfe9126db31aec7. Its single parent is the attested source 98763cb13757, and it changes only this brief's Evidence section: the run above, together with its Verification-Table marker. Bare Verify row 4 was re-run there through the same container witness as before. That witness run re-executes the whole Verify table, so all four rows are recorded below; rows 1 to 3 come from the same run, because the protected-table check reads every row's witness from the current run. Image assay-verify:go1.27, id sha256:955fd6c46c93ee746d8f560b4c90b172a759d2543337d8173cdaabcd2013bca4, --network none, GOPROXY=off, default seccomp, statusgen verifyrun --sandbox container-netns, KUBECONFIG=/dev/null. The witness clone pins origin/main to the subject revision. That is how the brief reads once this commit is on main.
+
+Verification-Table: delivery=3937f39ae2d00d150633f2c22568a79d1f5efb5a base=ff225b351d7d69de90567d37940077e0a1a16639 original=ff225b351d7d69de90567d37940077e0a1a16639
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3ContextAndConsent$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3ContextAndConsent ' "$out")` | pass exit=0 sandbox=container-netns | sha256:94ae9dfaafb6 | 2026-10-20 | assay-verifier-app[bot] @ d34483321afd (on-behalf-of human:ian) (forge-identity) |
+| 2 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3RecordToReportFlow$' ./internal/deskkit/ > "$out" && grep -F -- '--- PASS: TestPerfV3RecordToReportFlow ' "$out")` | pass exit=0 sandbox=container-netns | sha256:424d14182701 | 2026-10-20 | assay-verifier-app[bot] @ d34483321afd (on-behalf-of human:ian) (forge-identity) |
+| 3 | `(cd perfrec && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3IsolationAndOverhead$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3IsolationAndOverhead ' "$out")` | pass exit=0 sandbox=container-netns | sha256:9f725f0a243c | 2026-10-20 | assay-verifier-app[bot] @ d34483321afd (on-behalf-of human:ian) (forge-identity) |
+| 4 | `statusgen --root . --consumers --brief desktools-v2/63` | pass exit=0 sandbox=container-netns | sha256:5bbac2405598 | 2026-10-20 | assay-verifier-app[bot] @ d34483321afd (on-behalf-of human:ian) (forge-identity) |
+
+Output line: `summary: 10 corroborated, 0 disproved, 0 unchecked, 0 brief(s) claiming nothing`, over `base b787e831d0be847f1ca81cc48496c8c0deb01fe5..3937f39ae2d00d150633f2c22568a79d1f5efb5a (immutable delivered snapshot)`. Corroborated entries:
+
+- fixed-here: perfrec/ (13 changed paths), deskkit perf.go and perfread.go, cmd/deskperf/ (3 changed paths), docs/telemetry.md
+- follow-up: desktools-v2/64, /65 and /62, statusgen/26, performance-collection/01 and /02
+
+By hand on the host (statusgen v1.0.52), in a scratch clone at d34483321afd with origin/main pinned the same way, the same command exited 0 with the identical summary line.
+
+The same command was also run by hand in a scratch worktree at d34483321afd, where origin/main still points at a later main that does not contain this commit. There the exit is 0, but the output reads `summary: 0 corroborated, 0 disproved, 10 unchecked`. The reason: the branch's own diff from 98763cb13757 contains this brief, so the gate judges the branch's diff rather than the marked delivery. UNCHECKED is not a pass, so that run is no acceptance evidence. It is recorded so that a branch-context re-run is not mistaken for corroboration.
+
+Rows 1, 2 and 3 pass again in this witness run at d34483321afd, exit 0 each. Their substance stands on the run above: they pass in the container witness and by hand at 98763cb13757, with every planted counterexample their Expect cells name killed. d34483321afd changes no code, only this brief.
+
+**VERIFY: PASS** — 4/4 Verify rows pass in the container witness at d34483321afd (rows 1 to 3 also pass by hand at 98763cb13757, above). Row 4 exits 0 with 10 corroborated, 0 disproved, 0 unchecked. Gate: human; status left for the human gate to advance.
+
 ## Review
 
 Gate: human. Reject changed legacy meanings, guessed identity/cost, lost coverage or optional measurement that changes an operation.
