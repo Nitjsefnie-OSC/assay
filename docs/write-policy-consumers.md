@@ -198,16 +198,23 @@ created here, and a future named release still follows the normal release owner.
 Managed profile activation, observation authentication and sandbox qualification
 remain with graph-execution/22 and /27; source availability grants none of them.
 
-The unfiltered `.github/workflows/ci.yml` already runs the desk suite on all PR/push
-source changes, including the consumer/parity fixtures. Its module loop currently
-builds/vets deskcore but does not run deskcore tests. `.github/workflows/release.yml`
-runs the desk suite and builds from a full checkout; its desk leg also needs the
-core tests. The exact additive change is staged in
-[runsheets/write-policy-ci.diff](runsheets/write-policy-ci.diff), with the existing
-human landing procedure in [write-policy-ci.md](runsheets/write-policy-ci.md).
-No live workflow file, workflow permission, trigger or installed pin changes here.
-There is no staged twin of release.yml in this source tree. CI/release qualification
-of the core remains incomplete until that hunk is reviewed and landed.
+The unfiltered `.github/workflows/ci.yml` runs the desk suite on all PR/push
+source changes, including the consumer/parity fixtures, and now invokes the
+standalone deskcore suite in its module loop. `.github/workflows/release.yml`
+also invokes deskcore tests and vet in its desk-tools test leg. The human workflow
+owner landed those additions in the follow-up
+[#3793](https://github.com/medici-finance/assay/pull/3793); the recorded hunk and
+landing procedure remain in [write-policy-ci.diff](runsheets/write-policy-ci.diff)
+and [write-policy-ci.md](runsheets/write-policy-ci.md).
+
+`ci/staged-workflows/release.yml` is a declared identical twin of the live release
+workflow. It carries the same deskcore invocation; the release-image contract and
+staged-drift guard require byte equality, independently of the publication and
+approval checks. The historical `tools/release/release.yml.proposed` is a separate
+proposal, not a parity twin or a promotion source. No workflow permission, trigger
+or installed pin changes here. Landing the invocations does not prove their
+execution: current-head CI, the normal release lane and managed-consumer
+qualification retain their separate evidence requirements.
 
 The checked census scans production Go imports/declarations, skipping hidden,
 vendor, testdata and test sources. It catches known duplicate decision names and
