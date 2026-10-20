@@ -4,7 +4,7 @@ title: "Authenticated forge serving and role executor custody"
 why: "A shared cache increases the number of callers that can reach private forge data and write paths. Caller authentication, source admission and a separate role executor must be enforced at actual served boundaries so a cached answer or agent-supplied role cannot become authority."
 wave: 6
 depends: ["forge-neutral/39", "graph-execution/16", "desktools-v2/58", "desktools-v2/59"]
-unblocks: ["forge-neutral/41", "forge-neutral/42"]
+unblocks: ["forge-neutral/41", "forge-neutral/42", "cell-api/03"]
 effort: L
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
