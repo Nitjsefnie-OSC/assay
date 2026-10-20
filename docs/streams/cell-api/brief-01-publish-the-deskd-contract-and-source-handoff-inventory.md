@@ -11,13 +11,14 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Confirm the supported compatibility window, sanitized source and consumer inventory, and public protocol fields before consumers depend on them. Publication of private source or credential material is excluded."
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 id: 3dd33603-816a-4f85-9960-0ea8d18d1245
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
 exec-tier: strong
 exec-tier-why: Cross-component compatibility, privacy and authority boundaries require design judgment and independent negative controls.
 domain: complicated
+outcome: none
 sources:
   - docs/streams/cell-api/README.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md
@@ -46,7 +47,7 @@ consumers:
 
 ## Context
 
-files: `tools/desk/cellapi/`, `spec/cell-api-v1.md` (planned), `schemas/cell-api-v1.json` (planned), `tools/desk/testdata/cellapi/`, `docs/cell-api-handoff.md` (planned), `docs/contracts.md`, `docs/library-first.md`, `changelog/cell-api-contract.md` (planned)
+files: `tools/desk/cellapi/` (planned), `spec/cell-api-v1.md` (planned), `schemas/cell-api-v1.json` (planned), `tools/desk/testdata/cellapi/` (planned), `docs/cell-api-handoff.md` (planned), `docs/contracts.md`, `docs/library-first.md`, `changelog/cell-api-contract.md` (planned)
 
 facts:
 - pin: public main 15b60414f, inspected 2026-10-20; tools/desk/cellapi is absent.
@@ -56,7 +57,7 @@ facts:
 
 layering: Pure wire types and deterministic mappings, a separate explicit HTTP client and desk-module composition for internal cellop. Task 1–3 and Verify 1–2 pin legal imports and effects.
 
-single-point-of-failure: the service's claimed mapping from caller and subject to authorized result; independent store/executor enforcement and literal fixture oracles back that mapping. Verify bypasses the upper adapter and checks the owning boundary separately; a transport allowlist alone is insufficient.
+single-point-of-failure: the wire mapping can misstate cell identity, coverage or resync even when schema-valid. Verify 1 checks independent expected fixtures and Verify 2 checks an external import closure; these are detection oracles, not a second runtime authorization layer. This contract-only brief mounts no network service; 03 owns mounted authorization.
 
 design-fit:
   owner: R7 transport contract in tools/desk/cellapi; cell-op and forge meanings retain their owners
@@ -136,12 +137,21 @@ Only explicit disposable fixtures may open local listeners/databases. No product
 ambient kubeconfig is permitted. Real-profile qualification remains a separate operator
 act; offline passes do not establish it.
 
+For row 4, the independent verifier obtains the actual implementation delivery from its
+merged PR and records its full immutable SHA in `ASSAY_DELIVERY_SHA` and its actual
+first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither defaults to HEAD, origin/main or
+this authoring PR. Both commits and the fetched mainline must exist locally; the command
+requires the delivery to have landed on that mainline before checking its immutable
+snapshot. Missing, unknown, not-yet-landed or wrong-parent inputs fail closed. Record
+exact corroborated/disproved/unchecked counts; unchecked required consumers remain held
+and omitted consumers remain a review obligation. These are future delivery inputs.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellWireCompat$' ./cellapi/... > "$o" && grep -F -- '--- PASS: TestCellWireCompat ' "$o")` | exit 0; named PASS. Legacy/new fixtures cross real codecs/client; schema-valid wrong cell, false completeness and wrong resync fail the oracle. |
 | 2 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellClientBoundary$' ./cellapi/... > "$o" && grep -F -- '--- PASS: TestCellClientBoundary ' "$o")` | exit 0; named PASS. An external consumer builds; planted internal/credential import or ambient endpoint discovery fails. Explicit-input mapping has no hidden I/O. |
 | 3 | check:ci +dereference +neighbour +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestHandoffCoverage$' ./cellapi/... > "$o" && grep -F -- '--- PASS: TestHandoffCoverage ' "$o")` | exit 0; named PASS. Published dispositions resolve to public contracts plus source-owner receipt metadata; a planted second consumer or live source obligation prevents complete/retirable output. |
-| 4 | check:ci +dereference | `statusgen --root . --consumers --brief cell-api/01` | exit 0; routing corroborates the implementation diff; exclusions remain review judgments. |
+| 4 | check:ci +dereference | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && git merge-base --is-ancestor "$ASSAY_DELIVERY_SHA" refs/remotes/origin/main && statusgen --root . --consumers --brief cell-api/01 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed implementation delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers require review. |
 | 5 | check | `statusgen --root . --lint` | exit 0; no PROBLEM; no generated lifecycle cell or historical Evidence hand-edited. |
 
 ## Threat model and detection

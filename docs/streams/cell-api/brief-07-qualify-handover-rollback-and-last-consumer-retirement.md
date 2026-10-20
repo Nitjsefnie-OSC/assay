@@ -11,13 +11,14 @@ risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 gate-why: "Confirm one scoped handover and its independently demonstrated rollback, including complete consumer and credential inventory and preserved evidence. Actual source closure, capability retirement and durable-data disposition require the responsible human owner; no inventory entry authorizes deletion by itself."
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 id: f53b3589-27a7-4af6-ba9b-953e01597197
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
 exec-tier: strong
 exec-tier-why: Cross-component compatibility, privacy and authority boundaries require design judgment and independent negative controls.
 domain: complicated
+outcome: none
 sources:
   - docs/streams/cell-api/README.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md
@@ -45,7 +46,7 @@ consumers:
 
 ## Context
 
-files: `tools/desk/cmd/deskmigrate/`, `tools/desk/internal/cellapi/`, `tools/desk/testdata/cellapi/`, `migrations/`, `docs/cell-api-handoff.md` (planned), `docs/cell-api-retirement.md` (planned), `changelog/cell-api-handover.md` (planned)
+files: `tools/desk/cmd/deskmigrate/`, `tools/desk/internal/cellapi/` (planned), `tools/desk/testdata/cellapi/` (planned), `migrations/`, `docs/cell-api-handoff.md` (planned), `docs/cell-api-retirement.md` (planned), `changelog/cell-api-handover.md` (planned)
 
 facts:
 - pin: public main 15b60414f, inspected 2026-10-20; R7 migration is not delivered.
@@ -55,7 +56,7 @@ facts:
 
 layering: Extend the existing migration tool and receipt model; no new handover store or migration daemon. Task 1–4 and Verify 1–3 test real handover plans and lower authority fences.
 
-single-point-of-failure: the service's claimed mapping from caller and subject to authorized result; independent store/executor enforcement and literal fixture oracles back that mapping. Verify bypasses the upper adapter and checks the owning boundary separately; a transport allowlist alone is insufficient.
+single-point-of-failure: old-writer fence/revocation is the cutover control; restoring a service or database must not restore that authority. Verify 2 exercises the fenced incarnation against R2 incarnation and R4 role/epoch admission, with unknown effects held. Inventory completeness is a separate source-owner judgment checked by Verify 1 and 3, never inferred from a green fence test.
 
 design-fit:
   owner: R8 migration/retirement in composability/03, consuming R7 service and existing R2/R3/R4/R6 qualification
@@ -105,7 +106,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 
 2. Shadow authorized old/new reads using matched subjects, source frontiers, admission, workload and versions. Classify differences in coverage, state, freshness, acceptance and performance; do not hide an inaccessible source as empty. Selected client flows must use the same qualified API; unsupported clients retain a supported legacy path and block any claim that the old service has no consumers.
 
-3. Rehearse scoped handover in disposable fixtures: drain old work, reconcile pending/unknown external effects, fence/revoke old writer capability, record current incarnation/assignment and qualify the new service/clients/operator before switching. Preserve evidence, human decisions and history. SQL mirror or cache loss cannot mint authority. No actual live cutover, install, credential revoke or source deletion is performed by this implementation.
+3. Rehearse scoped handover in disposable fixtures: drain old work, reconcile pending/unknown external effects, fence/revoke old writer capability, record current incarnation/assignment and qualify the new service/clients/operator before switching. Dereference 05's service-specific network and database-identity receipt against the exact candidate image/profile/grants; desk-containers/29's desk/operator qualification cannot substitute for it. Missing, stale or mismatched evidence holds handover. Preserve evidence, human decisions and history. SQL mirror or cache loss cannot mint authority. No actual live cutover, install, credential revoke or source deletion is performed by this implementation.
 
 4. Rehearse rollback for failed cutover and later service failure. Stop/fence the new owner, reconcile possibly submitted effects, restore the recorded supported service/client/profile binding and obtain current operator authority before any writer returns. An old database/volume/backup does not restore credentials or unspent budgets. Where safe rollback cannot be established, hold; never run both writers.
 
@@ -137,12 +138,21 @@ Only explicit disposable fixtures may open local listeners/databases. No product
 ambient kubeconfig is permitted. Real-profile qualification remains a separate operator
 act; offline passes do not establish it.
 
+For row 4, the independent verifier obtains the actual implementation delivery from its
+merged PR and records its full immutable SHA in `ASSAY_DELIVERY_SHA` and its actual
+first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither defaults to HEAD, origin/main or
+this authoring PR. Both commits and the fetched mainline must exist locally; the command
+requires the delivery to have landed on that mainline before checking its immutable
+snapshot. Missing, unknown, not-yet-landed or wrong-parent inputs fail closed. Record
+exact corroborated/disproved/unchecked counts; unchecked required consumers remain held
+and omitted consumers remain a review obligation. These are future delivery inputs.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
-| 1 | check:ci +flow +mutation +neighbour | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellHandover$' ./cmd/deskmigrate/... > "$o" && grep -F -- '--- PASS: TestCellHandover ' "$o")` | exit 0; named PASS. Real migration plan/receipt flow uses scoped old/new snapshots and owner receipts; an unlisted consumer, active claim or missing independent acceptance blocks retirement. |
+| 1 | check:ci +flow +mutation +neighbour | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellHandover$' ./cmd/deskmigrate/... > "$o" && grep -F -- '--- PASS: TestCellHandover ' "$o")` | exit 0; named PASS. Real migration plan/receipt flow uses scoped old/new snapshots and owner receipts; an unlisted consumer, active claim or missing independent acceptance blocks retirement. Missing/stale/mismatched 05 image/profile/grants-bound service qualification blocks handover, including substitution of the desk-only qualification receipt. |
 | 2 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellRollback$' ./cmd/deskmigrate/... > "$o" && grep -F -- '--- PASS: TestCellRollback ' "$o")` | exit 0; named PASS. Disposable old/new executor fixture tests crashes before/after provider submission, unknown effects and restore; fenced old incarnation cannot write and rollback never produces dual authority. |
 | 3 | check:ci +dereference +mutation +neighbour | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellRetirement$' ./cmd/deskmigrate/... > "$o" && grep -F -- '--- PASS: TestCellRetirement ' "$o")` | exit 0; named PASS. Last-consumer decision dereferences every inventory disposition and retained-history receipt. A planted second image pin/consumer and stale credential receipt hold; eligibility cannot execute deletion. |
-| 4 | check:ci +dereference | `statusgen --root . --consumers --brief cell-api/07` | exit 0; routing corroborates the implementation diff; exclusions remain review judgments. |
+| 4 | check:ci +dereference | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && git merge-base --is-ancestor "$ASSAY_DELIVERY_SHA" refs/remotes/origin/main && statusgen --root . --consumers --brief cell-api/07 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed implementation delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers require review. |
 | 5 | check | `statusgen --root . --lint` | exit 0; no PROBLEM; no generated lifecycle cell or historical Evidence hand-edited. |
 
 ## Threat model and detection

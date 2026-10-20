@@ -4,7 +4,7 @@ title: Qualify the Kubernetes desk cell and operator recovery end to end
 why: Only a complete five-role and recovery proof can establish that the new Kubernetes profile preserves authority, useful work and the existing efficiency gains.
 wave: 11
 depends: ["desk-containers/28", "desk-containers/27", "desk-containers/18", "desk-containers/20"]
-unblocks: ["cell-api/07"]
+unblocks: ["cell-api/07", "cell-api/05"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}

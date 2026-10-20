@@ -109,7 +109,11 @@ stay intact, including verified work awaiting generated-board reconciliation.
 - Operator-controlled configuration selects cell, namespaces, endpoints, trusted issuer,
   audience, source admission and role bindings. It is outside evaluated workspaces.
   A request, header, environment field or a broader ingestion identity grants no role.
-- Query/service processes have only their admitted read capabilities. R4 executors keep
+- Query/service processes have only their admitted read capabilities. Brief 05 proposes
+  a separate per-cell read-only database identity, provisioned by the existing database
+  owner; the service never holds the cell owner/login role or an administrative credential.
+  Its grants, secret references and effective policy require independent proof and human
+  acceptance before exposure. R4 executors keep
   separate per-role publisher credentials; R3 keeps operator and candidate environments
   apart. No all-role broker, operator key on the service, or human credential at rest.
 - Initial network serving is read/plan-only. Human named actions remain a closed set
@@ -123,7 +127,7 @@ stay intact, including verified work awaiting generated-board reconciliation.
 ## Dependency waves and critical path
 
 The generator-derived wave values include external prerequisites. Within this set:
-`01 -> 02 -> 03 -> {04,05} -> 06 -> 07`; 07 joins 04 and 06.
+`01 -> 02 -> 03 -> 05 -> 06 -> 07` and `03 -> 04 -> 07`; 07 joins 04 and 06.
 
 - 01 consumes forge-neutral/39 and desk-containers/15: compatibility/source inventory
   and pure protocol work, with no running database prerequisite.
@@ -131,7 +135,10 @@ The generator-derived wave values include external prerequisites. Within this se
   (graph-execution/21), without recreating either.
 - 03 requires R5's complete verifier proof (graph-execution/18) and the qualified
   R3/R4 serving boundary (forge-neutral/40). This preserves the R5/R6 activation path.
-- 05 consumes the CNPG profile; 06 consumes the dedicated in-cluster operator profile.
+- 05 consumes the CNPG profile and desk-containers/29's existing qualification harness;
+  06 consumes the dedicated in-cluster operator profile.
+  05 owns the additive read-role/profile amendment and the service-specific disposable
+  network qualification; desk-containers/29 continues to qualify the desk/operator profile.
   04 is the bounded client migration, including the later thin cockpit connection.
 - 07 joins the Kubernetes cell qualification, forge-service qualification and R8
   migration tooling before any legacy last-consumer retirement.

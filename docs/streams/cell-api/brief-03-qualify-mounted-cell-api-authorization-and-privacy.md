@@ -11,13 +11,14 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Confirm the concrete issuer and caller mapping, entitlement and revocation bounds, and effective private-data isolation from the demonstrated design. Do not infer approval of a later draft authentication mechanism from an older architecture merge."
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 id: 16d1b169-2541-4b85-90cc-d0d42945e86c
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
 exec-tier: strong
 exec-tier-why: Cross-component compatibility, privacy and authority boundaries require design judgment and independent negative controls.
 domain: complicated
+outcome: none
 sources:
   - docs/streams/cell-api/README.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md
@@ -43,7 +44,7 @@ consumers:
 
 ## Context
 
-files: `tools/desk/internal/cellapi/`, `tools/desk/cmd/deskd/`, `tools/desk/testdata/cellapi/`, `docs/cell-api-security.md` (planned), `changelog/cell-api-ingress.md` (planned)
+files: `tools/desk/internal/cellapi/` (planned), `tools/desk/cmd/deskd/` (planned), `tools/desk/testdata/cellapi/` (planned), `docs/cell-api-security.md` (planned), `changelog/cell-api-ingress.md` (planned)
 
 facts:
 - pin: public main 15b60414f, inspected 2026-10-20; public mounted service is planned.
@@ -53,7 +54,7 @@ facts:
 
 layering: Authenticated adapter composes the existing admission/store boundaries; no second issuer or broker. Task 1–4 and Verify 1–3 exercise the production mux and bypass the upper layer.
 
-single-point-of-failure: the service's claimed mapping from caller and subject to authorized result; independent store/executor enforcement and literal fixture oracles back that mapping. Verify bypasses the upper adapter and checks the owning boundary separately; a transport allowlist alone is insufficient.
+single-point-of-failure: the mounted caller-to-subject authorization mapping can leak a result before projection filtering. Verify 1–2 test the actual mux and private/count/SSE results; Verify 3 bypasses ingress and meets independent store admission and R4 executor role/epoch checks. A route allowlist alone does not provide those lower checks.
 
 design-fit:
   owner: R7 mounted ingress; R3/R4 and forge-neutral/40 own capability and executor custody
@@ -133,12 +134,21 @@ Only explicit disposable fixtures may open local listeners/databases. No product
 ambient kubeconfig is permitted. Real-profile qualification remains a separate operator
 act; offline passes do not establish it.
 
+For row 4, the independent verifier obtains the actual implementation delivery from its
+merged PR and records its full immutable SHA in `ASSAY_DELIVERY_SHA` and its actual
+first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither defaults to HEAD, origin/main or
+this authoring PR. Both commits and the fetched mainline must exist locally; the command
+requires the delivery to have landed on that mainline before checking its immutable
+snapshot. Missing, unknown, not-yet-landed or wrong-parent inputs fail closed. Record
+exact corroborated/disproved/unchecked counts; unchecked required consumers remain held
+and omitted consumers remain a review obligation. These are future delivery inputs.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +flow +mutation +neighbour | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellMountedAuth$' ./cmd/deskd/... > "$o" && grep -F -- '--- PASS: TestCellMountedAuth ' "$o")` | exit 0; named PASS. Real mux rejects unauthenticated, forged operator, wrong audience/cell, expired/revoked and direct apply calls; inserting an unguarded sibling mount fails. |
 | 2 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellPrivateViews$' ./internal/cellapi/... > "$o" && grep -F -- '--- PASS: TestCellPrivateViews ' "$o")` | exit 0; named PASS. Two-cell/private fixtures filter counts, joins, errors, ETags and cached/SSE events before response; mid-stream revocation and false zero coverage fail independent expectations. |
 | 3 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellLowerBounds$' ./internal/cellapi/... > "$o" && grep -F -- '--- PASS: TestCellLowerBounds ' "$o")` | exit 0; named PASS. Bypassed ingress still meets store admission and separate executor role/epoch checks. Agent direct human-act calls, unsanitized terminal output and unavailable reader are refused. |
-| 4 | check:ci +dereference | `statusgen --root . --consumers --brief cell-api/03` | exit 0; routing corroborates the implementation diff; exclusions remain review judgments. |
+| 4 | check:ci +dereference | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && git merge-base --is-ancestor "$ASSAY_DELIVERY_SHA" refs/remotes/origin/main && statusgen --root . --consumers --brief cell-api/03 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed implementation delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers require review. |
 | 5 | check | `statusgen --root . --lint` | exit 0; no PROBLEM; no generated lifecycle cell or historical Evidence hand-edited. |
 
 ## Threat model and detection

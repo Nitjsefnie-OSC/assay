@@ -11,13 +11,14 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Confirm the demonstrated in-cluster operator binding and exact managed workload access. A working terminal or API plan must not grant apply authority, compatibility credential access or permission to replace an unknown running owner."
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 id: a97eaf30-7338-45eb-8f3a-832a07f4de84
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
 exec-tier: strong
 exec-tier-why: Cross-component compatibility, privacy and authority boundaries require design judgment and independent negative controls.
 domain: complicated
+outcome: none
 sources:
   - docs/streams/cell-api/README.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md
@@ -44,7 +45,7 @@ consumers:
 
 ## Context
 
-files: `tools/desk/cmd/cellctl/`, `tools/desk/internal/cellapi/`, `tools/desk/testdata/cellapi/`, `containers/k8s/components/operator/`, `docs/cell-api-operator.md` (planned), `changelog/cell-api-operator.md` (planned)
+files: `tools/desk/cmd/cellctl/`, `tools/desk/internal/cellapi/` (planned), `tools/desk/testdata/cellapi/` (planned), `containers/k8s/components/operator/` (planned), `docs/cell-api-operator.md` (planned), `changelog/cell-api-operator.md` (planned)
 
 facts:
 - pin: public main 15b60414f, inspected 2026-10-20; cellctl and internal/cellop exist.
@@ -54,7 +55,7 @@ facts:
 
 layering: Flat operator adapter uses cell-op-v1 and 01 client; trusted runner transport remains outside the service. Task 1–4 and Verify 1–3 prohibit lifecycle and custody shortcuts.
 
-single-point-of-failure: the service's claimed mapping from caller and subject to authorized result; independent store/executor enforcement and literal fixture oracles back that mapping. Verify bypasses the upper adapter and checks the owning boundary separately; a transport allowlist alone is insufficient.
+single-point-of-failure: the trusted transport binding of role, cell, Pod UID and generation can authorize the wrong target. Verify 2 bypasses the CLI and tests the transport itself; R3 runtime identity/isolation and R4 effect admission remain lower authorities. Verify 3 holds on ambiguous old-stop instead of assuming replacement is safe.
 
 design-fit:
   owner: Cell-operation CLI adapter; R7 serves projections and R2/R3 execute the existing qualified lifecycle
@@ -134,12 +135,21 @@ Only explicit disposable fixtures may open local listeners/databases. No product
 ambient kubeconfig is permitted. Real-profile qualification remains a separate operator
 act; offline passes do not establish it.
 
+For row 4, the independent verifier obtains the actual implementation delivery from its
+merged PR and records its full immutable SHA in `ASSAY_DELIVERY_SHA` and its actual
+first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither defaults to HEAD, origin/main or
+this authoring PR. Both commits and the fetched mainline must exist locally; the command
+requires the delivery to have landed on that mainline before checking its immutable
+snapshot. Missing, unknown, not-yet-landed or wrong-parent inputs fail closed. Record
+exact corroborated/disproved/unchecked counts; unchecked required consumers remain held
+and omitted consumers remain a review obligation. These are future delivery inputs.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellOperatorFlow$' ./cmd/cellctl/... > "$o" && grep -F -- '--- PASS: TestCellOperatorFlow ' "$o")` | exit 0; named PASS. Real operator CLI crosses mounted service and shared transport fixture; independently expected cell-op result/holds agree, no second supervisor is started. |
 | 2 | check:ci +flow +mutation +neighbour | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellOperatorBounds$' ./cmd/cellctl/... > "$o" && grep -F -- '--- PASS: TestCellOperatorBounds ' "$o")` | exit 0; named PASS. Bypassed CLI meets existing transport admission; stale UID/generation, foreign cell, agent-held operator intent and prohibited subresources are refused. A planted sibling fallback is detected. |
 | 3 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellOperatorRecovery$' ./cmd/cellctl/... > "$o" && grep -F -- '--- PASS: TestCellOperatorRecovery ' "$o")` | exit 0; named PASS. Disconnect, unavailable service and ambiguous old-stop produce zero replacement/launch and no ambient credential fallback; confirmed recovery uses the existing owner once. |
-| 4 | check:ci +dereference | `statusgen --root . --consumers --brief cell-api/06` | exit 0; routing corroborates the implementation diff; exclusions remain review judgments. |
+| 4 | check:ci +dereference | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && git merge-base --is-ancestor "$ASSAY_DELIVERY_SHA" refs/remotes/origin/main && statusgen --root . --consumers --brief cell-api/06 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed implementation delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers require review. |
 | 5 | check | `statusgen --root . --lint` | exit 0; no PROBLEM; no generated lifecycle cell or historical Evidence hand-edited. |
 
 ## Threat model and detection

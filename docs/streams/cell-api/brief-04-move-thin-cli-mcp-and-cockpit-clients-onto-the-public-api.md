@@ -11,13 +11,14 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Confirm the supported client matrix and selected read/status workflow, including explicit retained legacy consumers. Agent interfaces must not gain human acts or new ambient credentials."
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 id: 9ca7f67b-e213-452c-93b3-1e86eb234144
 authored: 2026-10-20 by cell-api authoring
 decision-trigger: spec
 exec-tier: strong
 exec-tier-why: Cross-component compatibility, privacy and authority boundaries require design judgment and independent negative controls.
 domain: complicated
+outcome: none
 sources:
   - docs/streams/cell-api/README.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md
@@ -34,6 +35,7 @@ consumers:
   - "tools/desk/cellapi/: follow-up cell-api/04"
   - "tools/desk/cmd/deskcli/: follow-up cell-api/04"
   - "tools/desk/internal/cellapi/mcp/: follow-up cell-api/04"
+  - "tools/desk/internal/cellapi/integration/: follow-up cell-api/04"
   - "tools/desk/testdata/cellapi/: follow-up cell-api/04"
   - "examples/cell-api-client/: follow-up cell-api/04"
   - "docs/cell-api-clients.md: follow-up cell-api/04"
@@ -45,7 +47,7 @@ consumers:
 
 ## Context
 
-files: `tools/desk/cellapi/`, `tools/desk/cmd/deskcli/`, `tools/desk/internal/cellapi/mcp/`, `tools/desk/testdata/cellapi/`, `examples/cell-api-client/`, `docs/cell-api-clients.md` (planned), `changelog/cell-api-clients.md` (planned)
+files: `tools/desk/cellapi/` (planned), `tools/desk/cmd/deskcli/` (planned), `tools/desk/internal/cellapi/mcp/` (planned), `tools/desk/internal/cellapi/integration/` (planned), `tools/desk/testdata/cellapi/` (planned), `examples/cell-api-client/` (planned), `docs/cell-api-clients.md` (planned), `changelog/cell-api-clients.md` (planned)
 
 facts:
 - pin: public main 15b60414f, inspected 2026-10-20; these public client paths are planned.
@@ -55,7 +57,7 @@ facts:
 
 layering: Flat CLI/MCP/presentation adapters consume the public client; meaningful policy stays server-side. Task 1–3 and Verify 1–3 check real client/server and transitive capability boundaries.
 
-single-point-of-failure: the service's claimed mapping from caller and subject to authorized result; independent store/executor enforcement and literal fixture oracles back that mapping. Verify bypasses the upper adapter and checks the owning boundary separately; a transport allowlist alone is insufficient.
+single-point-of-failure: MCP discovery can conceal a forbidden action while dispatch or a second adapter still exposes it. Verify 2 checks discovery and direct dispatch independently, then bypasses the client to exercise server refusal. Server authority from 03 remains the lower control; parity and reconnect tests do not replace it.
 
 design-fit:
   owner: R7 client adapters over the single public contract
@@ -107,7 +109,7 @@ keeps acceptance pending; it grants no time-based default or activation authorit
 
 3. Keep the agent tool set closed: enumerate actual MCP discovery and dispatch; neither desk__answer nor desk__adopt exists, including aliases/raw forwarding. Human named actions cannot be exposed through CLI query or MCP convenience wrappers. A direct call outside discovery must still fail at server authority.
 
-4. Prove CLI, MCP and the thin cockpit example display the same independent fixture results, distinguish execution/effects/acceptance and retain null coverage. Reconnecting cannot launch a model request, repeat an effect or grant a new lease. Mark migrated consumer receipts without retiring the old service; 07 owns that last-consumer decision. Update client/compatibility docs and generated artifacts.
+4. Prove CLI, MCP and the thin cockpit example display the same independent fixture results, distinguish execution/effects/acceptance and retain null coverage. Put the parity and end-to-end reconnect harness in the separate desk-module `internal/cellapi/integration/` test package: it starts the mounted server and invokes CLI/MCP/TypeScript consumers without adding those dependencies to the public `cellapi` package. Keep 01's external-import test on that public package. Reconnecting cannot launch a model request, repeat an effect or grant a new lease. Mark migrated consumer receipts without retiring the old service; 07 owns that last-consumer decision. Update client/compatibility docs and generated artifacts.
 
 ## Interface and acceptance contract
 
@@ -133,12 +135,21 @@ Only explicit disposable fixtures may open local listeners/databases. No product
 ambient kubeconfig is permitted. Real-profile qualification remains a separate operator
 act; offline passes do not establish it.
 
+For row 4, the independent verifier obtains the actual implementation delivery from its
+merged PR and records its full immutable SHA in `ASSAY_DELIVERY_SHA` and its actual
+first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither defaults to HEAD, origin/main or
+this authoring PR. Both commits and the fetched mainline must exist locally; the command
+requires the delivery to have landed on that mainline before checking its immutable
+snapshot. Missing, unknown, not-yet-landed or wrong-parent inputs fail closed. Record
+exact corroborated/disproved/unchecked counts; unchecked required consumers remain held
+and omitted consumers remain a review obligation. These are future delivery inputs.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
-| 1 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellClientParity$' ./cellapi/... > "$o" && grep -F -- '--- PASS: TestCellClientParity ' "$o")` | exit 0; named PASS. Real mounted fixture feeds CLI, MCP and generated TypeScript example; independently expected fields/unknowns match, and a stale generated client fails parity. |
+| 1 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellClientParity$' ./internal/cellapi/integration/... > "$o" && grep -F -- '--- PASS: TestCellClientParity ' "$o")` | exit 0; named PASS. Separate integration package drives real mounted fixture, CLI, MCP and generated TypeScript example; independently expected fields/unknowns match, and a stale generated client fails parity without broadening the public client's import closure. |
 | 2 | check:ci +flow +mutation +neighbour | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellAgentAbsences$' ./internal/cellapi/mcp/... > "$o" && grep -F -- '--- PASS: TestCellAgentAbsences ' "$o")` | exit 0; named PASS. Actual discovery and dispatch exclude answer/adopt and alias/raw human-act paths; planted second registration is rejected and server independently refuses direct calls. |
-| 3 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellClientReconnect$' ./cellapi/... > "$o" && grep -F -- '--- PASS: TestCellClientReconnect ' "$o")` | exit 0; named PASS. Dropped stream, expired cursor and revoked caller produce resync/refusal with zero new work/effect/model launches; a reconnect-triggered launch fails. |
-| 4 | check:ci +dereference | `statusgen --root . --consumers --brief cell-api/04` | exit 0; routing corroborates the implementation diff; exclusions remain review judgments. |
+| 3 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -timeout 90s -count=1 -v -run '^TestCellClientReconnect$' ./internal/cellapi/integration/... > "$o" && grep -F -- '--- PASS: TestCellClientReconnect ' "$o")` | exit 0; named PASS. Dropped stream, expired cursor and revoked caller produce resync/refusal with zero new work/effect/model launches; a reconnect-triggered launch fails. |
+| 4 | check:ci +dereference | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && git merge-base --is-ancestor "$ASSAY_DELIVERY_SHA" refs/remotes/origin/main && statusgen --root . --consumers --brief cell-api/04 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed implementation delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers require review. |
 | 5 | check | `statusgen --root . --lint` | exit 0; no PROBLEM; no generated lifecycle cell or historical Evidence hand-edited. |
 
 ## Threat model and detection
