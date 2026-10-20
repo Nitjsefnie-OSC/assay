@@ -126,11 +126,11 @@ func EchoConfigHelpNotice(w io.Writer) {
 
 func writeConfigHelpNotice(w io.Writer, c Config) {
 	if len(c.Problems) > 0 {
-		fmt.Fprintf(w, "assay-config: REFUSED — %d problem(s); values are not shown on a help screen, run the verb to see them\n",
+		_, _ = fmt.Fprintf(w, "assay-config: REFUSED — %d problem(s); values are not shown on a help screen, run the verb to see them\n",
 			len(c.Problems))
 	}
 	if len(c.UnknownKeys) > 0 {
-		fmt.Fprintf(w, "assay-config: unrecognised-keys=%s (IGNORED)\n", strings.Join(c.UnknownKeys, ","))
+		_, _ = fmt.Fprintf(w, "assay-config: unrecognised-keys=%s (IGNORED)\n", strings.Join(c.UnknownKeys, ","))
 	}
 }
 
