@@ -1,1 +1,1 @@
-- Plan complete candidate coverage for partial-delivery reconciliation, including independent cohort evidence and discriminating acceptance controls.
+- Plan independent candidate-cohort coverage for partial-delivery reconciliation after the missing #735 declaration repair, preserving merged source inputs and requiring discriminating acceptance controls.

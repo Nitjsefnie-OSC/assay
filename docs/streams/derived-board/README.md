@@ -123,19 +123,18 @@ today's full read.
 - Public-tree content is self-contained: no private issue numbers, internal slugs, or
   withheld-doc paths in bodies, comments, or docs.
 
-## Candidate-coverage repair (2026-10-20)
+## Candidate-coverage proof (2026-10-20)
 
 [derived-board/10](brief-10-complete-candidate-coverage-for-partial-delivery-reconciliation.md)
-is a wave-0, bounded source-and-evidence repair for issue #2703. Its existing
-admission reader is already present at 048ebfb8d; it does not wait for the
-uncompleted rollout or the optional witness-ledger work. The smallest next move
-is independent review and human merge of the design brief, then its separately
-reviewed source implementation. Editing a generated cell would leave the next
-older unsuitable witness eligible.
+is a wave-0, bounded evidence-and-test follow-up for issue #2703. At 1fa39fa8c,
+source fix c45ef4ec6 is merged through #3787: #735 is declared partial, while
+the regression still enumerates five hardcoded candidates. The remaining work
+independently establishes the candidate cohort and proves omission detection.
+It does not reapply the source fix or wait for the optional witness ledger.
 
-Critical path: design review and human merge → derived-board/10 source repair and
-independent review/human merge → legitimate board regeneration → fresh board
-trust admission, independent reviews and human merge → independent
-graph-execution/28 verification → graph-execution/29. The board and verifier
-gates are downstream operational preconditions, not claims that this brief
-implements those briefs. The generated table remains producer-owned.
+Its critical path is design review and human merge → cohort-proof implementation
+→ independent review and human merge. Separately, the repaired source's downstream
+chain remains legitimate board regeneration → fresh board trust admission,
+independent reviews and human merge → independent graph-execution/28 verification
+→ graph-execution/29. This proof neither supplies those receipts nor adds a new
+runtime gate. Existing generated lifecycle cells remain producer-owned.
