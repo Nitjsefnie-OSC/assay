@@ -52,8 +52,8 @@
     {
       "name": "help path makes a counted forge call",
       "file": "internal/deskkit/perf.go",
-      "old": "\tcode := run(args)\n\tchildren, childWall, forge",
-      "new": "\tperfCountForgeCall()\n\tcode := run(args)\n\tchildren, childWall, forge"
+      "old": "\tcode, ctx := run(args, sess)",
+      "new": "\tperfCountForgeCall()\n\tcode, ctx := run(args, sess)"
     },
     {
       "name": "perf-v2 record omits the subprocess counter",
