@@ -4,7 +4,7 @@ title: "Forge service fault simulation and scoped cutover qualification"
 why: "The service crosses caller, executor, provider, database and cache boundaries. A complete disposable journey with lost replies, revocation and reconstruction is needed before routing real desk writes through it or retiring any direct publisher."
 wave: 9
 depends: ["forge-neutral/38", "forge-neutral/41", "forge-neutral/43", "forge-neutral/44", "desk-tools/43", "desk-tools/44", "desktools-v2/62"]
-unblocks: []
+unblocks: ["cell-api/07"]
 effort: L
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
