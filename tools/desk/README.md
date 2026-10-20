@@ -7450,6 +7450,18 @@ it instead of the shell idiom the writeguard hook blocks. **Routing, filing, and
 (rows 4, 5, 9) remain the next adopters: closing waits on `deskclose` (#282), and filing
 composes with `deskfile` (#283).
 
+### Local audit receipts and write accounting
+
+Successful scan overrides emit `result: local`, from both writers (the standalone
+override and the outbound-write seam). They retain their surface digest,
+reason and identity, but consume no outward-write capacity and cannot reset a
+failure breaker. Readers treat `scan_override` / `ok` receipts written before this change
+(by either writer) the same way without rewriting the ledger. Unknown event/results still charge.
+
+`deskpr` records failures before a potentially mutating remote call as `unwritten`.
+Once a push, edit or label write has been attempted, an uncertain failure remains
+`unverifiable` and consumes capacity because the write may have reached the remote.
+
 ### PR creation budget
 
 `deskpr create` admits at most 20 new-PR attempts that succeeded or may have
