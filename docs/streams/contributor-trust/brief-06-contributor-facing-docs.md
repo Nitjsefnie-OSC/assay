@@ -252,7 +252,7 @@ the pull-request template and docs/contributor-trust.md; the concurrency figure 
 both and is outside scope):
 - RISK-VALUE: DERIVED — published tier set = `unknown`, `blessed-once`, `contributor`, `maintainer` ("four tiers") @ CONTRIBUTING.md:109 — it equals the implemented tier names in tools/desk/internal/deskkit/trusttier.go lines 67–73 and the published model in docs/contributor-trust.md line 11, so the page promises no tier the code lacks; a wrong name is reversible by an edit.
 
-Verification-Attestation: medici-finance/assay#3666 run=4c17dbe3936f45fe0ca7e47aab5f6b5d6963bbd406e1da1d67eaf13eddf78702 source=75cc11f1423301ea8ba0b111d48c8d5b8a303537
+Verification-Attestation: medici-finance/assay#3666 run=4c17dbe3936f45fe0ca7e47aab5f6b5d6963bbd406e1da1d67eaf13eddf78702 source=75cc11f1423301ea8ba0b111d48c8d5b8a303537 brief=docs/streams/contributor-trust/brief-06-contributor-facing-docs.md model=claude-opus-5-5 tier=strong
 
 **VERIFY: BLOCKED** — rows 1–10 pass at merged main; row 11's acceptance command cannot corroborate post-merge without a delivery marker (medici-finance/assay#1915), so its obligation has no admissible evidence.
 
