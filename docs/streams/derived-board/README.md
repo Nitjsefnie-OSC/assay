@@ -61,6 +61,7 @@ cells can be reconciled before the staged workflow patch lands.
 | 07 | [per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills](brief-07-rollout-backfill.md) | 4 | L | in-progress | — | — |
 | 08 | [witness ledger — the board writer records every merged-PR fact the fold reads, so a merged PR is read from the forge once, ever](brief-08-witness-ledger.md) | 2 | M | todo | — | — |
 | 09 | [incremental reconcile — forge reads scale with open PRs plus PRs changed since the last regen, never with total PR history](brief-09-incremental-reconcile.md) | 3 | M | todo | — | — |
+| 10 | [Complete candidate coverage for partial-delivery reconciliation](brief-10-complete-candidate-coverage-for-partial-delivery-reconciliation.md) | 0 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -121,3 +122,20 @@ today's full read.
   what the backfill in 07 will read).
 - Public-tree content is self-contained: no private issue numbers, internal slugs, or
   withheld-doc paths in bodies, comments, or docs.
+
+## Candidate-coverage repair (2026-10-20)
+
+[derived-board/10](brief-10-complete-candidate-coverage-for-partial-delivery-reconciliation.md)
+is a wave-0, bounded source-and-evidence repair for issue #2703. Its existing
+admission reader is already present at 048ebfb8d; it does not wait for the
+uncompleted rollout or the optional witness-ledger work. The smallest next move
+is independent review and human merge of the design brief, then its separately
+reviewed source implementation. Editing a generated cell would leave the next
+older unsuitable witness eligible.
+
+Critical path: design review and human merge → derived-board/10 source repair and
+independent review/human merge → legitimate board regeneration → fresh board
+trust admission, independent reviews and human merge → independent
+graph-execution/28 verification → graph-execution/29. The board and verifier
+gates are downstream operational preconditions, not claims that this brief
+implements those briefs. The generated table remains producer-owned.

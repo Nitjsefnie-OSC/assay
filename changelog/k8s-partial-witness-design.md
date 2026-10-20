@@ -1,0 +1,1 @@
+- Plan complete candidate coverage for partial-delivery reconciliation, including independent cohort evidence and discriminating acceptance controls.
