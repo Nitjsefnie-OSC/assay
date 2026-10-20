@@ -387,9 +387,9 @@ func pendingRun(f deskkit.Forge, repo deskkit.ForgeRepo, root string, it loopeng
 	// exact writer hash, leaving every other existing wake input untouched.
 	reader := pendingInputs{WakeInputs: inputs, brief: "file:" + b.Brief, digest: deskkit.Sha256Hex(content)}
 	p := map[string]string{}
-	var rows []int
-	for _, row := range parseVerifyRows(string(current)) {
-		rows = append(rows, row.Num)
+	var rows []deskkit.VerifyRowID
+	for _, row := range parseVerifyRowsIn(extractVerify(string(current))) {
+		rows = append(rows, row.ID)
 	}
 	deriveWakePayload(p, rec, rows, reader, issues, repo.Slug(), now)
 	switch p["wake_state"] {

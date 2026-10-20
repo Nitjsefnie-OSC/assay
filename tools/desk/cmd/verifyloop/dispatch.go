@@ -305,6 +305,12 @@ func renderDispatchPrompt(it loopengine.Item, tier loopengine.Tier) string {
 		// must NOT report a whole-brief PASS, so the held rows can never be closed by this run.
 		fmt.Fprintf(&b, "Rows still WAKE-HELD (unchanged blocker; record as explicitly UNRUN — do NOT re-run them, and do NOT report a whole-brief PASS): %s\n\n", held)
 	}
+	if rows := payloadValue(it, "wake_runnable_rows"); rows != "" {
+		fmt.Fprintf(&b, "Newly runnable row identities under the unchanged partial receipt: %s. Run only these rows within the admitted execution envelope.\n\n", rows)
+	}
+	if rows := payloadValue(it, "wake_passed_rows"); rows != "" {
+		fmt.Fprintf(&b, "Prior receipt PASS observations (do NOT re-run or relabel as fresh Evidence, and never infer a whole-brief PASS): %s\n\n", rows)
+	}
 	b.WriteString("You are NOT this brief's implementer (verifier != author). Fresh agent only.\n")
 	b.WriteString("Report back a STRUCTURED result: one Evidence row per Verify row (command, exit, output),\n")
 	b.WriteString("a clear verdict PASS|FAIL|BLOCKED, and your runner identity. Free-text verdicts are not accepted.\n")
