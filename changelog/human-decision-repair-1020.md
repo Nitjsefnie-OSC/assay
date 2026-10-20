@@ -1,2 +1,0 @@
-### Fixed
-- Two `gate: human` briefs (desktools-v2/63 and statusgen/06) carried `## Human decision` sections the decision-issue filer refuses — one held a bare URL, the other had no `Default if no answer:` line plus markdown links — so dispatch stopped at the decision gate. Both sections now pass; every ruling URL is kept in the brief's `ruling:` frontmatter or `sources:`, and no ruling's meaning changed.
