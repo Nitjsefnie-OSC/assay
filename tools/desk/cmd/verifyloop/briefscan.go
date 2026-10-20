@@ -211,7 +211,7 @@ func scanAwaitingPass(r deskkit.RootConfig, homeRepo, targetSHA string, reader d
 				" carries a ts more than the clock-skew tolerance ahead of now — could-not-check, never let win (#1803 SR-1803-2)"
 		}
 		if oc, ok := outcomes[br.Stream+"/"+br.Num]; ok {
-			if oc.wakeError != "" {
+			if oc.wakeError != "" && payload["could_not_check"] == "" {
 				payload["could_not_check"] = oc.wakeError
 			}
 			payload["sidecar_outcome"] = oc.Outcome
@@ -305,7 +305,7 @@ func readVerifyOutcomeRecords(root string) (outcomes map[string]outcomeRow, rece
 			}
 			if json.Unmarshal(rec.Raw, &header) == nil && header.Schema == deskkit.SchemaWakeV1 {
 				row := outcomes[brief]
-				row.wakeError = "latest wake receipt for " + brief + " could not decode row identities — could-not-check, never fall back to an older receipt"
+				row.wakeError = "latest wake receipt for " + brief + " could not decode — could-not-check, never fall back to an older receipt"
 				outcomes[brief] = row
 			}
 		}
@@ -507,13 +507,25 @@ func holdOrPartial(payload map[string]string, rec deskkit.WakeReceipt, verifyRow
 		payload["wake_reason"] = reason + " — row coverage could-not-check: " + err.Error()
 		return
 	}
+	// Derive prior PASS before excluding deferred rows: deferred is never PASS.
+	excluded := heldRowSet(rec.Rows)
+	for _, id := range remaining {
+		excluded[id] = true
+	}
+	passed := runnableRemainder(verifyRows, excluded)
+	deferred := map[deskkit.VerifyRowID]bool{}
+	// deferred_rows is generated locally by deriveContentSignals, not authored
+	// frontmatter. Match its exact identity prefix; never alias 6 and 6a.
+	for _, note := range strings.Split(payload["deferred_rows"], ";") {
+		id, _, ok := strings.Cut(strings.TrimSpace(note), ":")
+		if ok {
+			deferred[deskkit.VerifyRowID(id)] = true
+		}
+	}
+	remaining = runnableRemainder(remaining, deferred)
 	if len(rec.Rows) > 0 && len(remaining) > 0 {
 		payload["wake_runnable_rows"] = joinRowIDs(remaining)
-		excluded := heldRowSet(rec.Rows)
-		for _, id := range remaining {
-			excluded[id] = true
-		}
-		if passed := runnableRemainder(verifyRows, excluded); len(passed) > 0 {
+		if len(passed) > 0 {
 			payload["wake_passed_rows"] = joinRowIDs(passed)
 		}
 		payload["wake_state"] = "fire"

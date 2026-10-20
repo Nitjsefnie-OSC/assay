@@ -301,7 +301,11 @@ func renderDispatchPrompt(it loopengine.Item, tier loopengine.Tier) string {
 	if deferred := payloadValue(it, "deferred_rows"); deferred != "" {
 		// Per-row derivation (briefscan.go): these rows name an online lane or a longitudinal
 		// window in their Command cell. They are recorded as explicitly unrun — the rest run.
-		fmt.Fprintf(&b, "Rows to record as explicitly UNRUN (not runnable offline; run every other row): %s\n\n", deferred)
+		if payloadValue(it, "wake_runnable_rows") != "" {
+			fmt.Fprintf(&b, "Rows to record as explicitly UNRUN (not runnable offline): %s\n\n", deferred)
+		} else {
+			fmt.Fprintf(&b, "Rows to record as explicitly UNRUN (not runnable offline; run every other row): %s\n\n", deferred)
+		}
 	}
 	if held := payloadValue(it, "wake_held_rows"); held != "" {
 		// Wake partial (example-stream/16): a still-unchanged wake receipt holds these rows.

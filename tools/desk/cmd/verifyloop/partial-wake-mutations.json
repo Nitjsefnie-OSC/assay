@@ -1,6 +1,6 @@
 {
   "root": ".",
-  "test": "go test ./cmd/verifyloop ./internal/deskkit -run '^Test(PartialWake|VerifyRowID)' -count=1 -timeout 120s",
+  "test": "go test ./cmd/verifyloop ./internal/deskkit ./internal/verifycmd -run '^Test(PartialWake|VerifyRowID|CommandColumnLiftsViaLift)' -count=1 -timeout 120s",
   "control": {
     "name": "CONTROL: repeat completed rows",
     "file": "cmd/verifyloop/briefscan.go",
@@ -59,7 +59,7 @@
     {
       "name": "drop-malformed-latest-uncertainty",
       "file": "cmd/verifyloop/briefscan.go",
-      "old": "if oc.wakeError != \"\" {",
+      "old": "if oc.wakeError != \"\" && payload[\"could_not_check\"] == \"\" {",
       "new": "if false && oc.wakeError != \"\" {"
     },
     {
@@ -79,6 +79,66 @@
       "file": "cmd/verifyloop/dispatch.go",
       "old": "if payloadValue(it, \"wake_runnable_rows\") != \"\" {",
       "new": "if false && payloadValue(it, \"wake_runnable_rows\") != \"\" {"
+    },
+    {
+      "name": "reader-lift-omitted",
+      "file": "cmd/verifyloop/verifyrows.go",
+      "old": "verifycmd.Lift(cell(cmdCol))",
+      "new": "cell(cmdCol)"
+    },
+    {
+      "name": "reader-raw-comment-check-omitted",
+      "file": "cmd/verifyloop/verifyrows.go",
+      "old": "verifycmd.CommentLed(cell(cmdCol))",
+      "new": "\"\""
+    },
+    {
+      "name": "execution-lettered-admission",
+      "file": "cmd/verifyloop/verifyrows.go",
+      "old": "if numErr != nil {\n\t\t\t\t\tcontinue",
+      "new": "if false && numErr != nil {\n\t\t\t\t\tcontinue"
+    },
+    {
+      "name": "unparseable-inventory-omitted",
+      "file": "cmd/verifyloop/verifyrows.go",
+      "old": "if !exact && rawID == \"\" {",
+      "new": "if !exact && numErr != nil {"
+    },
+    {
+      "name": "overwrite-earlier-uncertainty",
+      "file": "cmd/verifyloop/briefscan.go",
+      "old": "if oc.wakeError != \"\" && payload[\"could_not_check\"] == \"\" {",
+      "new": "if oc.wakeError != \"\" {"
+    },
+    {
+      "name": "misleading-decode-reason",
+      "file": "cmd/verifyloop/briefscan.go",
+      "old": "could not decode \u2014",
+      "new": "could not decode row identities \u2014"
+    },
+    {
+      "name": "deferred-row-dispatched",
+      "file": "cmd/verifyloop/briefscan.go",
+      "old": "remaining = runnableRemainder(remaining, deferred)",
+      "new": "// omit deferred-row exclusion"
+    },
+    {
+      "name": "deferred-prompt-contradiction",
+      "file": "cmd/verifyloop/dispatch.go",
+      "old": "UNRUN (not runnable offline): %s",
+      "new": "UNRUN (not runnable offline; run every other row): %s"
+    },
+    {
+      "name": "writer-case-rows-key",
+      "file": "internal/deskkit/verifyoutcomejoin.go",
+      "old": "\"rows\", \"row_results\", \"dispatch_ref\",",
+      "new": "\"row_results\", \"dispatch_ref\","
+    },
+    {
+      "name": "writer-count-overlap",
+      "file": "internal/deskkit/verifyoutcomejoin.go",
+      "old": "if hasPassed && hasTotal && passed > total-len(heldRows) {",
+      "new": "if false && hasPassed && hasTotal && passed > total-len(heldRows) {"
     }
   ]
 }

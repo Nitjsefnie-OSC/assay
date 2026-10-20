@@ -191,11 +191,14 @@ Invariants the tests pin (`tools/desk/cmd/verifyloop/wake_test.go`, `tools/desk/
   compatibility downgrade may strip suffixes. This scheduling addition does not
   change the separate integer-only signed `verdict-v1` execution schema.
   Its historical `Atoi` numeric execution lexemes remain supported separately.
-  A noncanonical numeric cell in the scheduling inventory is retained and makes
+  Every nonempty noncanonical cell in the scheduling inventory is retained and makes
   partial reuse could-not-check; it is never omitted to manufacture full coverage.
   A malformed latest wake-v1 receipt stays visibly could-not-check for its brief;
   it cannot disappear into an unclassified run or an older hold. The writer also
-  refuses a held/PASS overlap whenever exact row results make it observable.
+  refuses noncanonical casing of row-list keys, exact held/PASS overlap, and counts
+  exceeding the non-held inventory. An earlier source or clock uncertainty retains
+  its original reason. Rows deferred by the current offline envelope stay explicitly
+  unrun and are excluded from newly runnable identities; exclusion never marks them PASS.
 
 - A duplicate `receipt_id` (the latest record per brief wins — the newest `ts`, never file or
   line position) does not create another event.

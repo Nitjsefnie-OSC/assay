@@ -89,10 +89,10 @@ func parseVerifyRowsMode(section string, scheduling bool) []verifyRow {
 			id, exact := deskkit.ParseVerifyRowID(rawID)
 			num, numErr := strconv.Atoi(rawID)
 			if scheduling {
-				if !exact && numErr != nil {
+				if !exact && rawID == "" {
 					continue
 				}
-				// Keep noncanonical numeric cells in the inventory. Reuse must surface
+				// Keep every nonempty noncanonical cell in the inventory. Reuse must surface
 				// them as could-not-check, never silently omit an original row.
 				if !exact {
 					id = deskkit.VerifyRowID(rawID)

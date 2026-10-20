@@ -49,3 +49,20 @@ func TestVerifyRowIDWriterRejectsHeldPassOverlap(t *testing.T) {
 		t.Fatal("writer accepted held row also claiming PASS")
 	}
 }
+
+// regression: #1731
+func TestVerifyRowIDWriterRejectsCaseVariantsAndCountOverlap(t *testing.T) {
+	for _, raw := range []string{
+		`{"Rows":[2],"rows_total":2,"rows_passed":1,"row_results":[{"row":1,"result":"could-not-run"},{"row":2,"result":"pass"}]}`,
+		`{"rows":[2],"rows_total":2,"rows_passed":1,"Row_Results":[{"row":1,"result":"could-not-run"},{"row":2,"result":"pass"}]}`,
+		`{"rows":[1,2],"rows_total":3,"rows_passed":2}`,
+		`{"rows":[1,2],"rows_total":1,"rows_passed":0}`,
+	} {
+		if _, err := ParseJoinInput([]byte(raw)); err == nil {
+			t.Errorf("writer accepted invalid overlap/casing: %s", raw)
+		}
+	}
+	if _, err := ParseJoinInput([]byte(`{"rows":[1,2],"rows_total":3,"rows_passed":1}`)); err != nil {
+		t.Fatalf("valid boundary refused: %v", err)
+	}
+}

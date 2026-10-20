@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
@@ -204,7 +205,7 @@ func TestPartialWakeLegacyRequiresUnchangedInputs(t *testing.T) {
 
 // regression: #1731
 func TestPartialWakeExecutionLexemesStayCompatible(t *testing.T) {
-	brief := "## Verify\n\n| # | Command | Expect |\n|---|---|---|\n| 1 | `one` | exit 0 |\n| 06 | `six` | exit 0 |\n| +7 | `seven` | exit 0 |\n| 0 | `zero` | exit 0 |\n| -1 | `minus` | exit 0 |\n"
+	brief := "## Verify\n\n| # | Command | Expect |\n|---|---|---|\n| 1 | `one` | exit 0 |\n| 06 | `six` | exit 0 |\n| +7 | `seven` | exit 0 |\n| 0 | `zero` | exit 0 |\n| -1 | `minus` | exit 0 |\n| 6a | `lettered` | exit 0 |\n"
 	rows := parseVerifyRows(brief)
 	want := []int{1, 6, 7, 0, -1}
 	if len(rows) != len(want) {
@@ -219,7 +220,7 @@ func TestPartialWakeExecutionLexemesStayCompatible(t *testing.T) {
 
 // regression: #1731
 func TestPartialWakeInvalidTableRowsAreNotOmitted(t *testing.T) {
-	for _, id := range []string{"0", "06", "+7", "-1"} {
+	for _, id := range []string{"0", "06", "+7", "-1", "2.1", "R2", "２"} {
 		t.Run(id, func(t *testing.T) {
 			brief := strings.Replace(planBriefRows(2), "| 2 |", "| "+id+" |", 1)
 			root := planFixtureRoot(t, map[string]string{"01": brief})
@@ -283,5 +284,73 @@ func TestPartialWakeCountBounds(t *testing.T) {
 				t.Fatalf("bad count accepted: %v (%s)", disp["example-stream/01"], why["example-stream/01"])
 			}
 		})
+	}
+}
+
+// regression: #1731
+func TestPartialWakeDeferredRowsNeverRunnable(t *testing.T) {
+	for _, allDeferred := range []bool{false, true} {
+		brief := strings.Replace(planBriefRows(4), "| 3 |", "| 6a |", 1)
+		rows := parseVerifyRowsIn(extractVerify(brief))
+		brief = strings.Replace(brief, rows[2].Command, "kubectl get pods", 1)
+		if allDeferred {
+			brief = strings.Replace(brief, rows[3].Command, "kubectl get nodes", 1)
+		}
+		root := planFixtureRoot(t, map[string]string{"01": brief})
+		rec := heldReceipt(holdTS)
+		if err := json.Unmarshal([]byte(`{"rows":[2],"rows_total":4,"rows_passed":1,"row_results":[{"row":1,"result":"pass"},{"row":2,"result":"could-not-run"},{"row":"6a","result":"deferred"},{"row":4,"result":"deferred"}]}`), &rec); err != nil {
+			t.Fatal(err)
+		}
+		writeReceipts(t, root, rec)
+		v := &VerifyLoop{Root: root, WakeReader: fakeWake{revs: map[string]string{"file:pkg/x.go": "rev1"}}, Issues: openIssues, Now: fixedClock("2026-09-20T12:00:00Z")}
+		items, err := v.SelectQueue()
+		if err != nil || len(items) != 1 {
+			t.Fatalf("select: %v %#v", err, items)
+		}
+		it := items[0]
+		tier, _ := v.TierPolicy(it)
+		disp, _ := classifyItem(it, tier)
+		if allDeferred {
+			if disp != dispWaitReceipt {
+				t.Fatalf("deferred-only remainder dispatched: %v %#v", disp, it.Payload)
+			}
+			continue
+		}
+		if disp != dispDispatch || it.Payload["wake_runnable_rows"] != "4" || it.Payload["wake_passed_rows"] != "1" {
+			t.Fatalf("deferred identity treated as runnable/PASS: %v %#v", disp, it.Payload)
+		}
+		prompt := renderDispatchPrompt(it, tier)
+		if strings.Contains(prompt, "run every other row") || !strings.Contains(prompt, "explicitly UNRUN (not runnable offline): 6a:") || !strings.Contains(prompt, "newly runnable identities") {
+			t.Fatalf("contradictory deferred prompt: %s", prompt)
+		}
+	}
+}
+
+// regression: #1731
+func TestPartialWakeMalformedReasonPreservesEarlierUncertainty(t *testing.T) {
+	root := planFixtureRoot(t, map[string]string{"01": planBriefRows(2)})
+	rec := heldReceipt(holdTS)
+	rec.Rows = []deskkit.VerifyRowID{"2"}
+	good, err := rec.MarshalLine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := strings.Replace(string(good), `"rows":[2]`, `"rows_total":"bad"`, 1)
+	future := strings.Replace(string(good), holdTS, time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339), 1)
+	path := filepath.Join(root, "docs/streams/verify-outcomes.jsonl")
+	v := &VerifyLoop{Root: root, WakeReader: fakeWake{revs: map[string]string{"file:pkg/x.go": "rev1"}}, Issues: openIssues, Now: fixedClock("2026-09-20T12:00:00Z")}
+	if err := os.WriteFile(path, []byte(bad+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	disp, why, _ := dispositionsOf(t, v)
+	if disp["example-stream/01"] != dispCouldNotCheck || !strings.Contains(why["example-stream/01"], "could not decode") || strings.Contains(why["example-stream/01"], "row identities") {
+		t.Fatalf("misleading decode reason: %v %#v", disp, why)
+	}
+	if err := os.WriteFile(path, []byte(bad+"\n"+future+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	disp, why, _ = dispositionsOf(t, v)
+	if disp["example-stream/01"] != dispCouldNotCheck || !strings.Contains(why["example-stream/01"], "clock-skew") {
+		t.Fatalf("earlier clock uncertainty overwritten: %v %#v", disp, why)
 	}
 }

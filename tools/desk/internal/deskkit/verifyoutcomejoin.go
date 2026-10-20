@@ -129,7 +129,7 @@ type JoinInput struct {
 // decode would have matched.
 var joinTopKeys = []string{
 	"prs", "prs_unknown_reason", "verifier_tier", "started", "finished", "rows_passed", "rows_total",
-	"row_results", "dispatch_ref", "dispatch_ref_sha256",
+	"rows", "row_results", "dispatch_ref", "dispatch_ref_sha256",
 }
 
 var prEntryKeys = []string{"repo", "number", "merge_sha", "withheld"}
@@ -365,6 +365,9 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 			seen[row] = true
 			heldRows[row] = true
 		}
+	}
+	if hasPassed && hasTotal && passed > total-len(heldRows) {
+		return Refused(fmt.Sprintf("refused: rows_passed %d exceeds non-held rows %d", passed, total-len(heldRows)))
 	}
 	if v, has := f["row_results"]; has {
 		var entries []json.RawMessage
