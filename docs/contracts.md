@@ -419,3 +419,13 @@ policy booleans. Issueboard retains classification, trust, escalation and closur
 deskkit retains provider reads, custody and identity. Deskinbox and the shell
 adapter consume the same human-inbox ordering without moving the ruling screen.
 See [projection and compatibility contracts](issue-projections.md).
+
+## Proposed write-policy semantic extraction — 18 October 2026
+
+The [write-policy contract](write-policy.md) proposes `S-write-policy`, currently
+implemented by writeguard's command-local checks. desktools-v2/66 delivers the
+importable `deskcore/writepolicy` owner, its versioned fixtures, implementation
+marker/census checks and consumer conformance together. Register the semantic row
+and its architecture-check baseline in that implementation, rather than assert a
+source-gated owner before its marker and consumer checks exist. Allocation and
+independent harness/OS enforcement retain their existing boundaries.

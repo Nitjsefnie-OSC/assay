@@ -120,6 +120,7 @@ is the one contract; /15–/17 own its foundation, rollout and completion.
 | 63 | [Define perf-v3 attribution, profiles and compatible local readers](brief-63-define-perf-v3-attribution-profiles-and-compatible-local-readers.md) | 2 | M | implemented | — | — |
 | 64 | [Propagate performance context through desks, agents and tool CLIs](brief-64-propagate-performance-context-through-desks-agents-and-tool-clis.md) | 3 | M | implemented | — | — |
 | 65 | [Measure own forge request timing and GraphQL cost](brief-65-measure-own-forge-request-timing-and-graphql-cost.md) | 3 | M | implemented | — | — |
+| 66 | [Extract shared write policy and make writeguard a hook adapter](brief-66-extract-shared-write-policy-and-make-writeguard-a-hook-adapter.md) | 1 | L | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -325,3 +326,17 @@ at 2e02111ed. /64 and /65 consume its fixtures independently. Final CLI qualific
 includes /64; existing CLI migrations adopt shared bindings without duplicating them.
 Collection/02 follows /01 and /63–65 in wave 4; it remains parked and never blocks local v3.
 The earlier 16 October schedule is historical; these amended dependencies control pickup.
+
+## Write-policy delivery — 18 October 2026
+
+[Contract](../../write-policy.md): /66 extracts `deskcore/writepolicy` and retains the
+writeguard command-hook adapter.
+/66 is independent of allocator completion and starts from current legacy behavior.
+Managed consumers separately bind allocation context and prove actual sandbox flow.
+Recheck current contracts and engineering guidelines at pickup under brief-v1 §4.1.1; no implementation is claimed here.
+
+Target-consumer clarification, 19 October 2026: graph-execution/22 directly consumes
+/66 for the local harness boundary and independent sandbox proof. desktools-v2/31's
+parser port is withdrawn (medici-finance/assay#3409 merged, ruled at
+medici-finance/assay#3420), so /66 has no parser-port edge: writeguard keeps its current
+parser, routed exempt, and /66 owns the hook adapter. The guard controls are not retired.
