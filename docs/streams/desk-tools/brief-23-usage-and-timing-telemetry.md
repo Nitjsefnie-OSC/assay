@@ -110,32 +110,21 @@ scan, no exit code and no refusal is read or written by any of it — rows 9, 12
 the mechanical evidence for that, and a reviewer who finds otherwise flips the answer.
 
 files:
-- `tools/desk/internal/deskkit/perf.go` (planned) (new) — `PerfRecord`, `PerfEnabled`,
-  `PerfRun`, `PerfStep`, `perfAppend`, `perfPrune`, `perfDir`, `perfInstallID`, the
-  `result`-from-exit mapper, and the child/forge counters' accessors.
+- `tools/desk/internal/deskkit/perf.go` (planned) (new) — `PerfRecord`, `PerfEnabled`, `PerfRun`, `PerfStep`, `perfAppend`, `perfPrune`, `perfDir`, `perfInstallID`, the `result`-from-exit mapper, and the child/forge counters' accessors.
 - `perfcpu_unix.go` (planned) and `perfcpu_windows.go` (planned), both new in the same
   package — the one platform-split call, modeled on `filelock_unix.go`/`filelock_windows.go`.
-- `perfread.go` (planned) (new, same package) — `LoadPerfDays`, `PerfSummary`,
-  `SummarisePerf`, `SummariseBootSteps` (the pure aggregation the read verb renders).
-- `perf_test.go` (planned), `perfread_test.go` (planned), `perfnopii_test.go` (planned) — all
-  new in the same package.
+- `perfread.go` (planned) (new, same package) — `LoadPerfDays`, `PerfSummary`, `SummarisePerf`, `SummariseBootSteps` (the pure aggregation the read verb renders).
+- `perf_test.go` (planned), `perfread_test.go` (planned), `perfnopii_test.go` (planned) — all new in the same package.
 - `perf-mutations.json` (planned) (new, same package) — the `muhar` spec for row 13.
-- `tools/desk/internal/deskkit/runtool.go` (existing) — `Run` increments the child counters
-  alongside its existing `traceRecord(r)` call. No other change.
-- `tools/desk/internal/deskkit/forge_github.go` and `forge_gitlab.go` (existing) — the
-  counting `http.RoundTripper` installed in `restClient()` / `client()`, so `forgeCalls` is
-  counted once per backend at the one place each already selects its transport.
-- `tools/desk/internal/deskkit/audittoolkey.go` (existing) — one line: `"deskperf": {}` in
-  `canonicalToolKeys`, without which `TestRegistryCoversCmdBinaries` goes red.
-- `tools/desk/cmd/deskperf/` (planned) (new) — `main.go`, `report.go`, `boot.go`, and their
-  tests.
+- `tools/desk/internal/deskkit/runtool.go` (existing) — `Run` increments the child counters alongside its existing `traceRecord(r)` call. No other change.
+- `tools/desk/internal/deskkit/forge_github.go` and `forge_gitlab.go` (existing) — the counting `http.RoundTripper` installed in `restClient()` / `client()`, so `forgeCalls` is counted once per backend at the one place each already selects its transport.
+- `tools/desk/internal/deskkit/audittoolkey.go` (existing) — one line: `"deskperf": {}` in `canonicalToolKeys`, without which `TestRegistryCoversCmdBinaries` goes red.
+- `tools/desk/cmd/deskperf/` (planned) (new) — `main.go`, `report.go`, `boot.go`, and their tests.
 - `tools/desk/cmd/deskboot/` (existing) — `boot.go` gains one `PerfStep` call per step.
 - First-wave `main()` wraps, one line each, under `tools/desk/cmd/`: `deskpr`, `deskpost`,
   `deskboard`, `desktoken`, `deskwt`, `deskdispatch`, `deskboot`.
 - `tools/desk/README.md` (existing) — a "Local performance history — `deskperf`" section.
-- `docs/telemetry.md` (existing) — one short subsection recording that desk-tools carries a
-  LOCAL-only perf log under the same promise and the same environment switch, and that the
-  two-switch rule binds any future remote send.
+- `docs/telemetry.md` (existing) — one short subsection recording that desk-tools carries a LOCAL-only perf log under the same promise and the same environment switch, and that the two-switch rule binds any future remote send.
 - `changelog/desk-tools-23-usage-telemetry.md` (planned) (new).
 
 facts (read at `48725dc0`, 2026-09-14):

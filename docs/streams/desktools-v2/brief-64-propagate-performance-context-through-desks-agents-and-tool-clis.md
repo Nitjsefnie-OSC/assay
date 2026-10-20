@@ -80,7 +80,7 @@ files:
 - `docs/performance-attribution-spec.md`
 - `docs/telemetry.md`
 - `tools/desk/README.md`
-- `changelog/perf-v3-propagation.md (planned)`
+- `changelog/perf-v3-propagation.md` (planned)
 
 facts (source and date in frontmatter):
 - Existing role comes from DESK_LOOP and the transport counters are process-local. Assigned agent work/function is not captured by perf-v2.

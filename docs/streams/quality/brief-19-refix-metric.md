@@ -41,8 +41,7 @@ files:
 - NEW `qualgen/regressionlink.go` (planned) + `regressionlink_test.go` (planned) — the
   pluggable `RegressionLinkage` seam and its reference adapter.
 - NEW `qualgen/refix.go` (planned) + `refix_test.go` (planned) — the re-fix join and metric.
-- `qualgen/report.go` — a `## Re-fix rate (regression-suite effectiveness)` section in
-  `renderReport`.
+- `qualgen/report.go` — a `## Re-fix rate (regression-suite effectiveness)` section in `renderReport`.
 - NEW `qualgen/testdata/refix/` (planned) — fixture DefectFix / DefectTrace records and
   brief files.
 - `changelog/<branch-slug>.md` — the per-PR fragment.

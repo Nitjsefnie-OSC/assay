@@ -53,8 +53,7 @@ files:
 - `tools/desk/internal/clicontract/testdata/mutations/desktools-v2-22.json` (planned) — muhar mutation spec for the owned commands.
 - `docs/streams/desktools-v2/cli-migration.json` — owned rows flip to migrated.
 - `changelog/cli-worktree.md` (planned).
-- `docs/deskwt-cli-compat.md` (planned) — source-pinned command/configuration inventory,
-  approved observable changes, and lifecycle follow-up boundaries.
+- `docs/deskwt-cli-compat.md` (planned) — source-pinned command/configuration inventory, approved observable changes, and lifecycle follow-up boundaries.
 
 facts:
 - deskwt verbs mutate local worktrees; help and parse failures must reach zero worktree operations.
