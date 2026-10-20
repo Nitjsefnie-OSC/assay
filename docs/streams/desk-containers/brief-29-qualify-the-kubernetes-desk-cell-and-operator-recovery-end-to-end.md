@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 3
+version: 4
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -117,6 +117,15 @@ Independent verification owns Evidence; no process exit or script success flips 
    a negative case and reject it before exposing the terminal. Verify default-deny
    ingress/no Service or Ingress on terminals, and denial of managed-agent API, metadata,
    CNPG and direct-forge egress, with only profile-declared destinations allowed.
+   Treat compatibility container logs as session transcripts. With synthetic markers,
+   prove `pods/log` and attach/exec/ephemeral-debug are limited to the relevant
+   key-custody principals; the managed operator and unrelated log readers must be denied.
+   Trace node log files and shipping: prove namespace exclusion, or prove every collector,
+   downstream store, export/backup and reader retains the same custody boundary and
+   retention/access controls. Plant a broader log grant or shared-log destination and
+   require rejection; unavailable collection evidence holds qualification. No real
+   credential is used in a transcript. These are obligations of the existing human-gated
+   real-profile row, not evidence supplied by offline render checks.
    Exercise separate publisher
    current-owner rejection. Use synthetic material, never production credentials.
 4. Rehearse permission denial, API partition/lost response, supervisor and operator failure,
@@ -156,7 +165,7 @@ coverage. These inputs are future implementation-verification evidence, not clai
 | 1 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite lifecycle` | exit 0; actual operator/adapter fixture proves five roles, immutable execution identity and disconnect/restart recovery; planted duplicate-launch/old-UID acceptance fails |
 | 2 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite authority-recovery` | exit 0; production-code fake-API paths hold missing/unknown authority and old execution; planted ambient-target fallback, stop-on-delete assumption or direct publisher bypass fails |
 | 3 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite efficiency` | exit 0; matched role fixtures preserve policy/coverage, zero idle/reconnect model calls and bounded work; duplicate usage, recursive finish scan or required-read removal fails |
-| 4 | gate:human +flow +mutation +dereference | `sh containers/k8s/qualify.sh --kubeconfig "$ASSAY_DISPOSABLE_KUBECONFIG" --context "$ASSAY_DISPOSABLE_CONTEXT" --allow-cluster-queries --suite real-profile` | exit 0 only with explicit authorization, kubeconfig/context, receipt-bound API/TLS identity and complete independent evidence; real terminal, hostile containment, reschedule, partition, CNPG restore and fenced rollback satisfy operator-declared objectives. Missing target/evidence holds; no production or default context contact |
+| 4 | gate:human +flow +mutation +dereference | `sh containers/k8s/qualify.sh --kubeconfig "$ASSAY_DISPOSABLE_KUBECONFIG" --context "$ASSAY_DISPOSABLE_CONTEXT" --allow-cluster-queries --suite real-profile` | exit 0 only with explicit authorization, kubeconfig/context, receipt-bound API/TLS identity and complete independent evidence; real terminal, transcript/API/node/downstream log custody (including denied readers and planted shared-log leakage), hostile containment, reschedule, partition, CNPG restore and fenced rollback satisfy operator-declared objectives. Missing target/evidence holds; no production or default context contact |
 | 5 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief desk-containers/29 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
 
 ## Pre-mortem

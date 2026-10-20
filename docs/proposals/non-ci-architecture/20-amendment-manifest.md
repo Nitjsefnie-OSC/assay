@@ -293,7 +293,7 @@ and no competing proposal is treated as approved. Dispatch refs were not read.
 
 | Obligation | Applied authoring change | Acceptance |
 |---|---|---|
-| Separately interactive role Pods | desk-containers/06 version 4 | Five workloads/PVCs; structured offline negative controls; compatibility custody disclosed |
+| Separately interactive role Pods | desk-containers/06 version 5 | Five workloads/PVCs; structured offline negative controls; compatibility custody disclosed |
 | Shared Kubernetes transport and managed standing profile | New agent-execution/09; /08 follows /09 | Current identity/stop/readiness checks, no workflow-store prerequisite; verifier privileges remain distinct |
 | In-cluster operator | New desk-containers/28 | Compiled cellctl through existing clients; scoped operator capability, reconnect never launches |
 | Whole-cell and optimization proof | New desk-containers/29 | Five-role flow, custody/recovery boundaries, bounded startup and zero idle model calls; separate real-profile witness |
