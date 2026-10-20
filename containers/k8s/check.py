@@ -87,7 +87,11 @@ def safe_file(path, home=HERE):
 def render():
     # Admit a deliberately small Kustomize base BEFORE invoking its renderer.
     # Remote bases, generators, plugins and Helm cannot perform hidden I/O.
-    path = HERE / 'kustomization.yaml'
+    wrapper = HERE / 'kustomization.yaml'
+    safe_file(wrapper)
+    need(yaml_docs(wrapper.read_bytes()) == [{'apiVersion': 'kustomize.config.k8s.io/v1beta1',
+         'kind': 'Kustomization', 'resources': ['base']}], 'root must select only the local base')
+    path = HERE / 'base/kustomization.yaml'
     safe_file(path)
     docs = yaml_docs(path.read_bytes())
     need(len(docs) == 1, 'one base kustomization required')
@@ -97,7 +101,7 @@ def render():
     expected = ['namespace.yaml', 'network.yaml'] + [r + '.yaml' for r in roles()]
     need(sorted(conf['resources']) == sorted(expected), 'base resource inventory differs')
     for name in conf['resources']:
-        safe_file(HERE / name)
+        safe_file(HERE / 'base' / name)
     version('kustomize')
     return success(run(['kustomize', 'build', str(HERE),
                         '--load-restrictor=LoadRestrictionsRootOnly']), 'render')
