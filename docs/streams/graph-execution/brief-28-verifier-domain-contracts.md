@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 4
+version: 5
 authored: 2026-10-13 by worker-desk (author-brief), non-CI architecture reconciliation
 sources:
   - docs/proposals/non-ci-architecture/16-delivery-sequence.md — package R1 (domain contracts and regression floor)
@@ -30,6 +30,7 @@ consumers:
   - "docs/contracts.md: fixed-here (S-verification-domain owner and consumer boundary)"
   - "statusgen/contexthandoff/jsonschema_test.go: fixed-here (uses the shared statusgen/internal/testschema helper)"
   - "docs/streams/desktools-v2/cli-migration.json: fixed-here (exact source-test route for statusgen/domain/mutate.py; read by the unchanged tools/desk/internal/clicontract inventory, research-replay and routing-mutation checks)"
+  - "tools/desk/cmd/deskwt/maintenancecustody_unix_test.go: fixed-here (CI fixture repair for medici-finance/assay#3736; publish the complete child PID atomically while preserving the crash and custody assertions)"
   - "workflow candidate record (spec/workflow-candidate-v1.md as planned by graph-execution/23): follow-up graph-execution/23"
   - "regression-floor adapters: follow-up graph-execution/29"
   - "statusgen/evaluation: out-of-scope (consumed unchanged through its exported API; statusgen/15 owns it)"
@@ -46,7 +47,14 @@ files: `spec/verification-domain-v1.md`, `schemas/verification-domain-v1.json`,
 `statusgen/domain/` (new pure package, tests and mutation runner), `statusgen/testdata/domain/`,
 `statusgen/internal/testschema/schema.go`, `statusgen/contexthandoff/jsonschema_test.go`,
 `docs/contracts.md` (one new semantic-owner row), `docs/lifecycle.md`,
-`docs/streams/desktools-v2/cli-migration.json`, `changelog/k8s-verifier-domain-contracts.md`.
+`docs/streams/desktools-v2/cli-migration.json`, `changelog/k8s-verifier-domain-contracts.md`,
+`tools/desk/cmd/deskwt/maintenancecustody_unix_test.go` (test-only CI repair).
+
+CI shepherd repair (2026-10-20, medici-finance/assay#3736): the legacy crash fixture
+publishes its complete child PID through a same-directory rename. A deterministic
+test observes the create-before-write boundary; the existing crash reader, surviving-child
+witness, custody marker and refusal assertions remain unchanged. This repair changes
+no maintenance production code or verifier-domain semantics.
 
 Implementation routing (2026-10-20): `statusgen/domain/mutate.py` is this brief's
 source-only offline failure-control runner. `docs/streams/desktools-v2/cli-migration.json`
