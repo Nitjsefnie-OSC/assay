@@ -21,7 +21,14 @@ import (
 func TestLegacyCrashHelper(t *testing.T) {
 	mode := os.Getenv("ASSAY_LEGACY_CRASH_MODE")
 	if len(os.Args) > 1 && os.Args[len(os.Args)-1] == "legacy-child" {
-		if err := os.WriteFile(os.Getenv("ASSAY_LEGACY_CHILD_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		pidPath := os.Getenv("ASSAY_LEGACY_CHILD_PID")
+		// Write beside the final path, then rename: a reader sees no file or the whole pid,
+		// never the empty file os.WriteFile leaves between its truncate and its write.
+		tmp := pidPath + ".tmp"
+		if err := os.WriteFile(tmp, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, pidPath); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(20 * time.Second)
