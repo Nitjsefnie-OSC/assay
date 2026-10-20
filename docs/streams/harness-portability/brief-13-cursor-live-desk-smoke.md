@@ -205,6 +205,84 @@ BLOCKED — the live run is the desk's, under the human gate's sanction.
 | 7 | README carries row 13 + gate-distribution line | 0 | row 13 present; "03, 07, 13 and 14 are `gate: human`" present (public tree) | 2026-09-07 | assay-worker-app[bot] opus-4.8[1m] |
 | 8 | first run log complete (live desk loop) | — | **BLOCKED-ON-HUMAN** — needs a live Cursor environment (`cursor-agent` CLI + IDE install + `<Ian-named scratch repo>`) Ian provides/sanctions; the desk runs it under that sanction. No run log exists by design — never greened from the protocol text alone (this stream's vacuous-green bar). | — | — |
 
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `test -f docs/cursor-smoke-protocol.md; echo $?` | pass exit=0 sandbox=container-netns | sha256:4355a46b19d3 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `s=$(grep -cE '^#### Step [0-9]+' docs/cursor-smoke-protocol.md); e=$(grep -cE '^Expect:' docs/cursor-smoke-protocol.md); echo "$s $e"; test "$s" -ge 8 -a "$s" -eq "$e"; echo $?` | pass exit=0 sandbox=container-netns | sha256:619068d93b13 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `grep -A3 -E '^#### Step 8' docs/cursor-smoke-protocol.md \| grep -qiE 'draft PR' && grep -A3 -E '^#### Step 8' docs/cursor-smoke-protocol.md \| grep -qiE 'pr-review-desk\|review'; echo $?` | pass exit=0 sandbox=container-netns | sha256:77a73a83be07 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 3a | `grep -qF 'draft-PR-no-such-token' docs/cursor-smoke-protocol.md; echo $?` | pass exit=0 sandbox=container-netns | sha256:b6c10bd5d596 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `docs/adopting-assay.md` | could-not-run exit=- — prose-led-command: not executed; the first span docs/adopting-assay.md is a .md file name, not a command. Mark the command with a cmd: code span | sha256: | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 4a | `grep -qF 'cursor-smoke-protocol-no-such-file.md' docs/adopting-assay.md; echo $?` | pass exit=0 sandbox=container-netns | sha256:4355a46b19d3 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `origin/main` | could-not-run exit=- — prose-led-command: not executed; the first span origin/main is a path or `owner/repo` / `stream/NN` reference, not a command. Mark the command with a cmd: code span | sha256: | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 6 | `V=$(jq -r .version plugins/assay/.claude-plugin/plugin.json); awk -v v="$V" '/^## v/{p = ($0 ~ ("v" v))} p' plugins/assay/RELEASE-NOTES.md \| grep -qiE 'cursor.*smoke\|smoke.*cursor'; echo $?` | pass exit=0 sandbox=container-netns | sha256:4355a46b19d3 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 7 | `docs/streams/harness-portability/README.md` | could-not-run exit=- — prose-led-command: not executed; the first span docs/streams/harness-portability/README.md is a .md file name, not a command. Mark the command with a cmd: code span | sha256: | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+| 8 | `ls docs/cursor-smoke-runs/ && f=$(ls docs/cursor-smoke-runs/ \| head -1) && grep -cE -e '^Result: PASS' -e '^Result: FAIL' -e '^Result: BLOCKED' "docs/cursor-smoke-runs/$f"` | fail exit=2 sandbox=container-netns | sha256:c6752e541103 | 2026-10-20 | assay-verifier-app[bot] @ a477d1dce0c1 (on-behalf-of human:ian) (forge-identity) |
+
+### Non-implementer verifier run: 2026-10-20 claude-opus-5-5 (verify-desk dispatch, gate:human Evidence pass)
+
+The execution witness above ran in a local docker container: image assay-verify:go1.27 (id
+sha256:955fd6c46c93, built FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e,
+git 2.47), with --network none, sandbox=container-netns and the engine's default seccomp
+profile. Every row was also run by hand on the host (darwin, git 2.56) in the admitted home.
+The source is merged main a477d1dce0c1fcd124f29ab9b6fc04557992d2eb, and the run follows the
+driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the
+private house tracker). This pass records Evidence only. The brief is gate: human (risk:
+regulatory no, customer no, irreversible no, sensitive-data no), so a model neither signs it
+off nor changes its status.
+
+The prior Evidence is the implementer's table of 2026-09-07 (commit d6059f7df), run partly in
+a private source tree, and no verifier verdict was ever recorded. Since then, the tool and
+method-text de-house that the re-home note waits on has landed in this repository for every
+sibling artifact: tools/harnessgen, the generated plugins/assay/cursor packaging, and the Codex
+smoke protocol with its run logs. The bundle version is now 1.0.53. The Cursor smoke protocol
+and its release-notes entry were not carried over.
+
+Witness accounting: the witness scores a row on process exit alone. Rows 1, 2, 3, 3a and 6
+end in "; echo $?", so the process exits 0 whatever the check found, and the witness records
+them as pass even when the printed value contradicts the Expect cell. For example, rows 1 and
+6 printed 1 (output hash sha256:4355a46b19d3 is the sha256 of "1" plus a newline) against an
+Expect of 0. The by-hand observations below govern those rows. This is the scored-on-exit
+class tracked at medici-finance/assay#1906. The witness marks rows 4, 5 and 7 could-not-run
+because each Command cell opens with a path code span (prose-led-command), so those three were
+executed by hand.
+
+By-hand observations at a477d1dce0c1, in this repository's tree:
+
+- Row 1 printed 1 (docs/cursor-smoke-protocol.md is absent), against an Expect of 0, so it fails.
+- Row 2 failed: grep reported "No such file or directory" twice, the echo printed a blank count pair, test errored, and the row printed 2.
+- Row 3 printed 1, so it fails for the same cause.
+- Row 3a printed 2 (the grep error on the missing file), against an Expect of 1, so it fails: the control cannot discriminate without the file.
+- Row 4 printed 0, so it passes as written. However, the string it matches is a bare backticked file name in the Cursor section of docs/adopting-assay.md (line 1847). That file does not exist in this repository, so the pointer adopters see leads nowhere.
+- Row 4a printed 1, so it passes.
+- Row 5 printed base=1.0.53 cur=1.0.53 and then 1, so it fails as written. It is classified as a stale row (a check-definition defect): after merge, origin/main is the verified tree, so base and current are always equal and the row can never pass at verify time. Separately, no Cursor-smoke version bump exists in this repository.
+- Row 6 printed V=1.0.53 and then 1, so it fails. This is a real gap: the v1.0.53 section of plugins/assay/RELEASE-NOTES.md, and the whole file, names no Cursor smoke.
+- Row 7 printed 0, so it passes.
+- Row 8 failed by hand (ls reported no such directory for docs/cursor-smoke-runs; rc 1) and in the witness (fail exit=2). This is the acceptance row, held for the human live run. The decision at medici-finance/assay#619 deferred that run to the week of 2026-09-14. That window has passed with no run log, and the decision issue is closed.
+
+Classification of rows 1, 2, 3, 3a and 6: a real deliverable defect at the target repository.
+Their Expect cells bind them to the private source tree "per the re-home note", and that note
+holds only "until the de-house lands". The de-house has landed here for every sibling
+artifact, and the Codex twin (brief 07) had its protocol rows run and pass in this tree, so
+the condition no longer holds. Under this admission the target is this repository's merged
+main, and the protocol is observed absent there. A supplemental read of the private source
+tree's copy of the protocol found 8 steps, 8 Expect lines, and a step 8 that names a draft PR
+and a review cycle. That read is supplemental only and discharges no row.
+
+Totals: 3 pass (4, 4a, 7) and 6 fail (1, 2, 3, 3a, 5, 6). Row 8 fails as observed and remains
+blocked on the human live run. That accounts for all 10 rows.
+
+Risk-bearing value: enumeration covered this brief's public diff (the Cursor-section sentence
+in docs/adopting-assay.md, and the README row 13 and gate-distribution line) and its
+Deliverables. It found one literal, the bundle version: version = 1.0.53 @
+plugins/assay/.claude-plugin/plugin.json:5. The release stamping set that value, not this
+brief. It ranks as a reversible label (an edit and a re-release undo it) and needs no
+derivation. The irreversible act this brief guards, publishing a third-harness parity claim,
+is held behind row 8 and the human gate.
+
+Verification-Attestation: medici-finance/assay#3690 run=504f8dcddcb3ed39e94bd48aabbd5c2ffaed6f2b7284c74d08249a4e1c06d15f source=a477d1dce0c1fcd124f29ab9b6fc04557992d2eb brief=docs/streams/harness-portability/brief-13-cursor-live-desk-smoke.md model=claude-opus-5-5 tier=strong
+
+**VERIFY: FAIL**: rows 1, 2, 3, 3a and 6 fail at merged main because the Cursor smoke protocol and its release-notes entry are absent from this repository, row 5 cannot pass after merge as written, and row 8 remains blocked on the human live run.
+
 ## Review
 
 Gate: **human** (from frontmatter). The human signs the run log: a real Cursor install, the
