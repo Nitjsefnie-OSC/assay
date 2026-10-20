@@ -405,9 +405,7 @@ func testForgeSample(t *testing.T, graphql bool) {
 // The admitted compiled query subset is one operation with no trailing definition.
 // This pins the actual splice boundary without adding a production query parser.
 func TestPerfCostOperationShape(t *testing.T) {
-	queries := []string{ghOpenChangesQuery, ghListChangesQuery, ghReviewQueueQuery,
-		ghCommentsQuery, ghChangeCommentsWalkQuery, ghIssueCommentsQuery,
-		ghListIssuesQuery, ghIssueStateEventsQuery, IssueTrustQuery, PRTrustQuery, IssueEventsQuery, gitlabTrustQuery}
+	queries := append(ghPointQueries[:], gitlabTrustQuery)
 	for i, query := range queries {
 		var scan scanner.Scanner
 		scan.Init(strings.NewReader(query))
@@ -453,7 +451,13 @@ func TestPerfTrustMetadataErrorFailsClosed(t *testing.T) {
 				if !strings.Contains(input.Query, "_assayPerf:") {
 					t.Fatal("fixture did not exercise the extended trust operation")
 				}
-				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"errors":[{"message":"unknown optional metadata field"}],"data":null}`))}, nil
+				data := `null`
+				if provider == "gitlab" {
+					// Non-null valid business data must not hide a rejected metadata
+					// selection behind the independent null-noteable refusal.
+					data = `{"project":{"issue":{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}},"activity":{"nodes":[],"pageInfo":{"hasPreviousPage":false}}}}}`
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"errors":[{"message":"unknown optional metadata field"}],"data":` + data + `}`))}, nil
 			})}
 			repo := ForgeRepo{Owner: "example", Name: "project"}
 			var payload *TrustPayload

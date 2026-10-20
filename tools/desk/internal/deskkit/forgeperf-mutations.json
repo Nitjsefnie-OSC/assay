@@ -1,7 +1,7 @@
 {
-  "test": "go test ./internal/deskkit ./cmd/desktoken ./cmd/deskboard -count=1 -timeout 120s -run '^(TestPerfV3ForgeAttemptTimingFlow|TestPerfV3ForgeObservationParity|TestPerfV3GraphQLCostCoverage|TestAuthInvocationRecord|TestPerfLeafV3Report)$'",
+  "test": "go test ./internal/deskkit ./cmd/desktoken ./cmd/deskboard -count=1 -timeout 120s -run '^(TestPerfV3ForgeAttemptTimingFlow|TestPerfV3ForgeObservationParity|TestPerfV3GraphQLCostCoverage|TestAuthInvocationRecord|TestPerfLeafV3Report|TestPerfCostOperationShape|TestPerfTrustMetadataErrorFailsClosed)$'",
   "control": {
-    "name": "CONTROL — drop every explicitly admitted request observer",
+    "name": "CONTROL \u2014 drop every explicitly admitted request observer",
     "file": "internal/deskkit/forgeobserve.go",
     "old": "return RequestObserver{Sink: sink, Origin: origin}",
     "new": "return RequestObserver{}"
@@ -57,6 +57,27 @@
       "old": "ctx = context.WithValue(ctx, pointCaptureKey{}, capture)",
       "new": "ctx = context.Background()",
       "test": "TestPerfV3GraphQLCostCoverage"
+    },
+    {
+      "name": "GitLab trust metadata errors ignored alongside non-null business data",
+      "file": "internal/deskkit/forge_gitlab.go",
+      "old": "\tif qerr != nil {\n\t\treturn nil, g.mapErr(http.MethodPost, gitlab.GraphQLAPIEndpoint, gitlabUnwrapGraphQLErr(qerr))\n\t}\n\tif len(env.Errors) > 0 {\n\t\tmsgs := make([]string, 0, len(env.Errors))\n\t\tfor _, e := range env.Errors {\n\t\t\tmsgs = append(msgs, e.Message)\n\t\t}\n\t\treturn nil, Unverifiable(fmt.Sprintf(\"could-not-check: %s for %s#%d \u2014 the GitLab GraphQL trust query returned errors: %s\",\n\t\t\top, repo.Slug(), number, strings.Join(msgs, \"; \")), nil)\n\t}",
+      "new": "\tif false && qerr != nil {\n\t\treturn nil, g.mapErr(http.MethodPost, gitlab.GraphQLAPIEndpoint, gitlabUnwrapGraphQLErr(qerr))\n\t}\n\tif false && len(env.Errors) > 0 {\n\t\tmsgs := make([]string, 0, len(env.Errors))\n\t\tfor _, e := range env.Errors {\n\t\t\tmsgs = append(msgs, e.Message)\n\t\t}\n\t\treturn nil, Unverifiable(fmt.Sprintf(\"could-not-check: %s for %s#%d \u2014 the GitLab GraphQL trust query returned errors: %s\",\n\t\t\top, repo.Slug(), number, strings.Join(msgs, \"; \")), nil)\n\t}",
+      "test": "TestPerfTrustMetadataErrorFailsClosed"
+    },
+    {
+      "name": "GitHub trust metadata error ignored",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "tp, err := trustFromEnvelope(env, pr)\n\tif err != nil {\n\t\treturn nil, Unverifiable(fmt.Sprintf(\"cannot read trust events for %s#%d\", repo.Slug(), number), err)\n\t}",
+      "new": "tp, err := trustFromEnvelope(env, pr)\n\tif false && err != nil {\n\t\treturn nil, Unverifiable(fmt.Sprintf(\"cannot read trust events for %s#%d\", repo.Slug(), number), err)\n\t}",
+      "test": "TestPerfTrustMetadataErrorFailsClosed"
+    },
+    {
+      "name": "admitted metadata operation gains a trailing definition",
+      "file": "internal/deskkit/forge_gitlab.go",
+      "old": "const gitlabTrustQuery = `query($path:ID!,$iid:String!){project(fullPath:$path){%s(iid:$iid){comments:notes(filter:ONLY_COMMENTS,first:100){pageInfo{hasNextPage} nodes{createdAt lastEditedAt author{id username bot}}} activity:notes(filter:ONLY_ACTIVITY,last:100){pageInfo{hasPreviousPage} nodes{body createdAt}}}}}`",
+      "new": "const gitlabTrustQuery = `query($path:ID!,$iid:String!){project(fullPath:$path){%s(iid:$iid){comments:notes(filter:ONLY_COMMENTS,first:100){pageInfo{hasNextPage} nodes{createdAt lastEditedAt author{id username bot}}} activity:notes(filter:ONLY_ACTIVITY,last:100){pageInfo{hasPreviousPage} nodes{body createdAt}}}}} fragment extra on Query { __typename }`",
+      "test": "TestPerfCostOperationShape"
     }
   ]
 }

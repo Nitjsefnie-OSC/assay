@@ -10,13 +10,20 @@ import (
 // Only compiled read operations on the documented public provider schemas are
 // admitted. Enterprise and custom schemas retain explicit unknown cost; there
 // is no capability probe, fallback send, or change to business selections.
+// One closed compiled inventory owns both admission and the operation-shape guard.
+// It is never extended by provider data or runtime configuration.
+var ghPointQueries = [...]string{
+	ghOpenChangesQuery, ghListChangesQuery, ghReviewQueueQuery,
+	ghCommentsQuery, ghChangeCommentsWalkQuery, ghIssueCommentsQuery,
+	ghListIssuesQuery, ghIssueStateEventsQuery, IssueTrustQuery, PRTrustQuery, IssueEventsQuery,
+}
+
 func ghPointQuery(query string) string {
-	switch query {
-	case ghOpenChangesQuery, ghListChangesQuery, ghReviewQueueQuery,
-		ghCommentsQuery, ghChangeCommentsWalkQuery, ghIssueCommentsQuery,
-		ghListIssuesQuery, ghIssueStateEventsQuery, IssueTrustQuery, PRTrustQuery, IssueEventsQuery:
-		end := strings.LastIndex(query, "}")
-		return query[:end] + ` _assayPerf:rateLimit{cost}` + query[end:]
+	for _, admitted := range ghPointQueries {
+		if query == admitted {
+			end := strings.LastIndex(query, "}")
+			return query[:end] + ` _assayPerf:rateLimit{cost}` + query[end:]
+		}
 	}
 	return query
 }
