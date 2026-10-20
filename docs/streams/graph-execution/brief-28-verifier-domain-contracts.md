@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 authored: 2026-10-13 by worker-desk (author-brief), non-CI architecture reconciliation
 sources:
   - docs/proposals/non-ci-architecture/16-delivery-sequence.md — package R1 (domain contracts and regression floor)
@@ -25,6 +25,7 @@ domain: complicated
 outcome: none
 consumers:
   - "statusgen/domain, spec/verification-domain-v1.md, schemas/verification-domain-v1.json, docs/contracts.md: follow-up graph-execution/28"
+  - "tools/desk/internal/clicontract inventory, research replay and routing-mutation checks: fixed-here (exact source-test route for statusgen/domain/mutate.py in docs/streams/desktools-v2/cli-migration.json)"
   - "workflow candidate record (spec/workflow-candidate-v1.md as planned by graph-execution/23): follow-up graph-execution/23"
   - "regression-floor adapters: follow-up graph-execution/29"
   - "statusgen/evaluation: out-of-scope (consumed unchanged through its exported API; statusgen/15 owns it)"
@@ -41,6 +42,12 @@ files: `spec/verification-domain-v1.md` (planned), `schemas/verification-domain-
 `statusgen/domain/` (planned) (new pure package and its tests), `statusgen/testdata/domain/` (planned),
 `docs/contracts.md` (one new semantic-owner row), `docs/lifecycle.md`,
 `changelog/graph-execution-28-verifier-domain-contracts.md` (planned).
+
+Implementation routing (2026-10-20): `statusgen/domain/mutate.py` is this brief's
+source-only offline failure-control runner. `docs/streams/desktools-v2/cli-migration.json`
+routes that exact path as a test with this brief as owner in the reason. The
+`tools/desk/internal/clicontract` inventory, research-replay and routing-mutation checks
+consume the registry; no broader exclusion or operator CLI migration is introduced.
 
 facts (a435badbd, 2026-10-13):
 - `statusgen/evaluation` exists on main (statusgen/15): `EvaluateEligibility` and
