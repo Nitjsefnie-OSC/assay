@@ -1,2 +1,0 @@
-### Added
-- `statusgen` can now write the shared perf-v3 record: with local performance recording on and a `tool` or `workflow` profile selected, each run records how long it spent discovering, parsing, evaluating, rendering, writing and waiting on its `deskread` child, links that child to the run under the workflow profile, and leaves output, exit codes and the offline credential boundary unchanged.

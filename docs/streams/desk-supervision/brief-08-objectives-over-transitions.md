@@ -16,6 +16,9 @@ effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
+delivery:
+  - {in: "assay#1266", covers: partial, note: "kit, fixtures and both arms' run artifacts only; the arms carry no observer log, so Task 3's wedge counts and Task 4's decision line remain owed (tracked in assay#2816)"}
+  - {in: "assay#3239", covers: partial, note: "repairs the Verify commands and withdraws the unsupported wedge counts and adoption conclusion; Task 3 and Task 4 remain owed until observer-backed runs exist"}
 schema: brief-v2
 authored: 2026-09-02 by desk-supervision authoring session
 sources:

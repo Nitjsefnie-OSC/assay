@@ -77,9 +77,12 @@ func runPerfBinary(t *testing.T, bin, home string, set bool, val string, args ..
 	return perfRun{so.String(), se.String(), code}
 }
 
-func buildPerfBinary(t *testing.T) string {
+// buildPerfBinary builds statusgen with any extra `go build` flags. The plain form passes
+// -buildvcs=false: a binary with no VCS information is the one whose record must stay
+// "unpinned", whether or not the test runs inside a git checkout.
+func buildPerfBinary(t *testing.T, flags ...string) string {
 	t.Helper()
-	return buildPerfBinaryWith(t)
+	return buildPerfBinaryWith(t, flags...)
 }
 
 // buildPerfBinaryWith builds statusgen with extra `go build` flags (an -ldflags stamp).
@@ -87,6 +90,9 @@ func buildPerfBinaryWith(t *testing.T, flags ...string) string {
 	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain unavailable")
+	}
+	if len(flags) == 0 {
+		flags = []string{"-buildvcs=false"}
 	}
 	bin := filepath.Join(t.TempDir(), "statusgen")
 	args := append(append([]string{"build"}, flags...), "-o", bin, ".")
@@ -107,7 +113,7 @@ func TestPerfHostileStampDropped(t *testing.T) {
 		"path": "build/src/assay",
 	} {
 		t.Run(name, func(t *testing.T) {
-			bin := buildPerfBinaryWith(t, "-ldflags", "-X main.statusgenVersion="+stamp)
+			bin := buildPerfBinaryWith(t, "-buildvcs=false", "-ldflags", "-X main.statusgenVersion="+stamp)
 			run, _, home := perfFixtureRun(t, bin, true, "--lint", "--root", "{root}")
 			if run.code != 0 {
 				t.Fatalf("exit %d\nstdout: %s\nstderr: %s", run.code, run.out, run.errOut)
@@ -280,6 +286,51 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(home, ".config", "assay", "perf", "install-id")); err != nil {
 				t.Errorf("install-id file missing: %v", err)
+			}
+		})
+	}
+}
+
+// TestPerfRecordRevision: a statusgen built the way the release builds it — inside a git
+// checkout, with only the release tag stamped (-X main.statusgenVersion) — records the commit
+// it was built from as sourceSHA, not "unpinned". `--version` still prints the release tag.
+// Both writers are held to it: the perf-v2 line and the perf-v3 line a selected profile writes.
+// regression: F-release-binary-unpinned
+func TestPerfRecordRevision(t *testing.T) {
+	head, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Skipf("not a git checkout (git rev-parse HEAD: %v) — no VCS information to embed", err)
+	}
+	want := strings.TrimSpace(string(head))[:12]
+	bin := buildPerfBinary(t, "-buildvcs=true", "-ldflags", "-X main.statusgenVersion=v9.9.9")
+	for _, c := range []struct{ name, schema, profile string }{
+		{"perf-v2", "perf-v2", ""},
+		{"perf-v3", "perf-v3", "tool"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command(bin, "--version")
+			cmd.Dir = t.TempDir()
+			cmd.Env = append(perfTestEnv(home, filepath.Dir(cmd.Dir)), "ASSAY_TELEMETRY=1")
+			if c.profile != "" {
+				cmd.Env = append(cmd.Env, "ASSAY_PERF_PROFILE="+c.profile)
+			}
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("run --version: %v", err)
+			}
+			if strings.TrimSpace(string(out)) != "v9.9.9" {
+				t.Errorf("--version = %q, want the stamped release tag v9.9.9", out)
+			}
+			recs := perfRecords(t, home)
+			if len(recs) != 1 {
+				t.Fatalf("one run wrote %d records, want exactly 1", len(recs))
+			}
+			if sch := recs[0]["schema"]; sch != c.schema {
+				t.Fatalf("schema = %v, want %s (the test must exercise that writer)", sch, c.schema)
+			}
+			if sha := recs[0]["sourceSHA"]; sha != want {
+				t.Errorf("sourceSHA = %v, want %s (the build's vcs.revision) — a release-tag-only stamp must not record unpinned", sha, want)
 			}
 		})
 	}
