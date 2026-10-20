@@ -92,12 +92,13 @@ func buildPerfBinaryWith(t *testing.T, flags ...string) string {
 
 // A build stamp is free text set at link time. Only a commit-shaped stamp may reach the record:
 // a stamp carrying a URL with a credential-looking query, or a builder's path, must not appear
-// anywhere in the written line, and the record's sourceSHA reads "unpinned".
+// anywhere in the written line, and the record's sourceSHA reads "unpinned". The path stamp is
+// relative because the public tree carries no absolute machine paths.
 // regression: #3101
 func TestPerfHostileStampDropped(t *testing.T) {
 	for name, stamp := range map[string]string{
 		"url":  "https://forge.invalid/rel?token=fake-stamp-token",
-		"path": "/home/builder/src/assay",
+		"path": "build/src/assay",
 	} {
 		t.Run(name, func(t *testing.T) {
 			bin := buildPerfBinaryWith(t, "-ldflags", "-X main.statusgenVersion="+stamp)
@@ -117,7 +118,7 @@ func TestPerfHostileStampDropped(t *testing.T) {
 			if len(bytes.TrimSpace(raw)) == 0 {
 				t.Fatal("switch on wrote no perf line")
 			}
-			for _, leak := range []string{stamp, "fake-stamp-token", "forge.invalid", "/home/builder"} {
+			for _, leak := range []string{stamp, "fake-stamp-token", "forge.invalid", "build/src"} {
 				if bytes.Contains(raw, []byte(leak)) {
 					t.Errorf("perf line carries %q from the build stamp: %s", leak, raw)
 				}
