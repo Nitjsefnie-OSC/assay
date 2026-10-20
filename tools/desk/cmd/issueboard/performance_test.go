@@ -23,6 +23,32 @@ func TestProjectionV3ActualRecorder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	plantFixtureRoster(t, home)
+	config := filepath.Join(home, ".config", "assay")
+	if err := os.MkdirAll(config, 0700); err != nil {
+		t.Fatal(err)
+	}
+	rawRoster, err := os.ReadFile(filepath.Join(config, "roster.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var forges []string
+	for _, line := range strings.Split(string(rawRoster), "\n") {
+		if allowed, ok := strings.CutPrefix(line, "ASSAY_ALLOWED_REPOS="); ok {
+			for _, entry := range strings.Split(allowed, ",") {
+				repo, _, _ := strings.Cut(entry, ":")
+				forges = append(forges, repo+"=github")
+			}
+		}
+	}
+	if len(forges) == 0 {
+		t.Fatal("fixture has no allowed repositories")
+	}
+	if err := os.WriteFile(filepath.Join(config, "roster.env"), append(rawRoster, []byte("\nASSAY_REPO_FORGES="+strings.Join(forges, ",")+"\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ASSAY_CONFIG_HOME", config)
+	deskkit.ReloadConfig()
+	t.Cleanup(deskkit.ReloadConfig)
 	t.Setenv("ASSAY_TELEMETRY", "1")
 	t.Setenv("DESK_TOOLS_DISABLED", "")
 	oldMint, oldRole, oldBase, oldTransport := mintTokenFn, sessionRoleFn, forgeAPIBase, http.DefaultTransport
@@ -129,4 +155,8 @@ func TestProjectionV3ActualRecorder(t *testing.T) {
 
 func projectionStable(s string) string {
 	return regexp.MustCompile(`cutoff=[^;]+;`).ReplaceAllString(s, "cutoff=<invocation>;")
+}
+
+func measured(args []string, stdout, stderr io.Writer, pre func(io.Writer) int) int {
+	return deskkit.PerfRunMeasured("issueboard", perfVerbs, args, performanceCallback(stdout, stderr, pre))
 }

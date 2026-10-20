@@ -2187,8 +2187,15 @@ check "$([[ "$RC" -eq 0 && "$OUT" == "$legacy_out" && -s "$w/argv.log" ]] && ech
 : > "$w/deskinbox.argv"
 : > "$w/argv.log"
 DESK_LOOP= ASSAY_INBOX_READER=auto ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" --no-screen example-org/tracker
-check "$([[ "$RC" -eq 0 && "$OUT" == "$legacy_out" && ! -s "$w/deskinbox.argv" && -s "$w/argv.log" ]] && echo 0 || echo 1)" \
-  "human auto mode keeps ambient legacy identity before any typed discovery" "exit=$RC stdout=$OUT stderr=$ERR"
+check "$([[ "$RC" -eq 6 && "$ERR" == *"loop identity"* && ! -s "$w/deskinbox.argv" && ! -s "$w/argv.log" ]] && echo 0 || echo 1)" \
+  "auto without loop identity refuses before typed or ambient discovery" "exit=$RC stdout=$OUT stderr=$ERR"
+
+DESK_LOOP='   ' ASSAY_INBOX_READER=auto ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" --no-screen example-org/tracker
+check "$([[ "$RC" -eq 6 && ! -s "$w/deskinbox.argv" && ! -s "$w/argv.log" ]] && echo 0 || echo 1)" \
+  "whitespace loop identity refuses before collection" "exit=$RC stderr=$ERR"
+DESK_LOOP= ASSAY_INBOX_READER=legacy ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" --no-screen example-org/tracker
+check "$([[ "$RC" -eq 0 && "$OUT" == "$legacy_out" && -s "$w/argv.log" ]] && echo 0 || echo 1)" \
+  "explicit legacy remains the only ambient read without a loop identity" "exit=$RC stderr=$ERR"
 
 : > "$w/argv.log"
 DESK_LOOP=worker-desk ASSAY_INBOX_READER=auto ASSAY_DESKINBOX="$w/deskinbox" run_case "$w" --no-screen example-org/tracker

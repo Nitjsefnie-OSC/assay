@@ -71,15 +71,15 @@ Flow section alone does not redden the exit — see plugins/assay/commands/inbox
 var perfVerbs = []string{"table", "walk", "html", "flow", "discovery", "version", "--version", "--help", "-h"}
 
 func main() {
-	os.Exit(measured(os.Args[1:], os.Stdout, os.Stderr, time.Now(), startup))
+	os.Exit(deskkit.PerfRunMeasured("deskinbox", perfVerbs, os.Args[1:], performanceCallback(os.Stdout, os.Stderr, time.Now(), startup)))
 }
 
-func measured(args []string, stdout, stderr io.Writer, now time.Time, pre func(io.Writer) int) int {
-	return deskkit.PerfRunMeasured("deskinbox", perfVerbs, args, func(a []string, session *perfrec.Session) (int, perfrec.Context) {
+func performanceCallback(stdout, stderr io.Writer, now time.Time, pre func(io.Writer) int) func([]string, *perfrec.Session) (int, perfrec.Context) {
+	return func(a []string, session *perfrec.Session) (int, perfrec.Context) {
 		selected := perfrec.ResolveContext(perfrec.ContextInput{})
 		code := executeMeasured(a, stdout, stderr, now, pre, session, func(c perfrec.Context) { selected = c })
 		return code, selected
-	})
+	}
 }
 
 // startup is what every real run does first, after its command line parsed and its values

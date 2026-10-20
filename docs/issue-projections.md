@@ -29,7 +29,7 @@ Neither observation grants write, claim, admission or executor authority.
 | New plugin with matching producer | Check `issueboard --version` for `issue-projection-v1` before selecting projected forms. New source is qualified together in this PR; a released pin must contain this capability. |
 | New plugin with older producer | Use the documented legacy spellings before discovery, preserving manual readiness checks. Do not send an unsupported selector or retry after a partial projected read. |
 | Inbox script with compatible producer | With a nonempty desk-loop identity, auto mode checks `deskinbox --version` for `issue-discovery-v1` before any discovery. It runs exactly one typed listing per requested repository; no legacy label queries run in that arm. `ASSAY_DESKINBOX` selects a pinned executable. |
-| Human terminal without a desk-loop identity | Auto retains the legacy reader before any typed discovery, using the operator’s ambient `gh` identity. Explicit typed mode still fails closed if its canonical App role cannot resolve. |
+| Human terminal without a desk-loop identity | Auto refuses with could-not-check before either typed or ambient discovery. Choose explicit `ASSAY_INBOX_READER=legacy` for an ambient `gh` read. Explicit typed mode still requires the canonical App role. |
 | Inbox script with absent/older producer | Auto selects legacy before discovery. `ASSAY_INBOX_READER=typed` instead refuses before any discovery; use it to qualify the migrated arm without broad reads. |
 | Explicit rollback | `ASSAY_INBOX_READER=legacy` restores shell label discovery. Restore the previous plugin and producer pins together for worker/intake. No live pin, installation or executor switch is performed here. |
 

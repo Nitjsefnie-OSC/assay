@@ -90,15 +90,15 @@ Exit codes: 0 ok · 3 disabled · 5 refused (bad arguments) · 6 unverifiable.`
 var perfVerbs = []string{"board", "issues", "intake", "version", "--version", "help", "--help", "-h"}
 
 func main() {
-	os.Exit(measured(os.Args[1:], os.Stdout, os.Stderr, startup))
+	os.Exit(deskkit.PerfRunMeasured("issueboard", perfVerbs, os.Args[1:], performanceCallback(os.Stdout, os.Stderr, startup)))
 }
 
-func measured(args []string, stdout, stderr io.Writer, pre func(io.Writer) int) int {
-	return deskkit.PerfRunMeasured("issueboard", perfVerbs, args, func(a []string, session *perfrec.Session) (int, perfrec.Context) {
+func performanceCallback(stdout, stderr io.Writer, pre func(io.Writer) int) func([]string, *perfrec.Session) (int, perfrec.Context) {
+	return func(a []string, session *perfrec.Session) (int, perfrec.Context) {
 		selected := perfrec.ResolveContext(perfrec.ContextInput{})
 		code := executeMeasured(a, stdout, stderr, pre, session, func(c perfrec.Context) { selected = c })
 		return code, selected
-	})
+	}
 }
 
 // startup is what every real run does first, after its command line parsed and its values
@@ -228,6 +228,7 @@ func executeMeasured(args []string, stdout, stderr io.Writer, pre func(io.Writer
 			if session != nil {
 				session.SelectContext(c)
 				// Every own forge read below uses the explicit native observer.
+				// Other lanes make zero requests; a new reader must extend this inventory.
 				// Credential-minter subprocess work remains child-owned.
 				session.ObserveRequests()
 			}

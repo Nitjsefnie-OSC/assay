@@ -20,7 +20,19 @@ func (f perfWire) RoundTrip(r *http.Request) (*http.Response, error) { return f(
 
 // regression: class issue-projection-v3-composition
 func TestDiscoveryV3ActualRecorder(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config := filepath.Join(home, ".config", "assay")
+	if err := os.MkdirAll(config, 0700); err != nil {
+		t.Fatal(err)
+	}
+	rawRoster := []byte("ASSAY_ALLOWED_REPOS=example-org/tracker:ci:private\n")
+	if err := os.WriteFile(filepath.Join(config, "roster.env"), append(rawRoster, []byte("\nASSAY_REPO_FORGES=example-org/tracker=github\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ASSAY_CONFIG_HOME", config)
+	deskkit.ReloadConfig()
+	t.Cleanup(deskkit.ReloadConfig)
 	t.Setenv("ASSAY_TELEMETRY", "1")
 	t.Setenv("DESK_TOOLS_DISABLED", "")
 	oldMint, oldRole, oldBase, oldTransport := mintTokenFn, sessionRoleFn, forgeAPIBase, http.DefaultTransport
@@ -156,4 +168,8 @@ func TestDiscoveryV3ActualRecorder(t *testing.T) {
 			t.Fatal("operational text leaked", private)
 		}
 	}
+}
+
+func measured(args []string, stdout, stderr io.Writer, now time.Time, pre func(io.Writer) int) int {
+	return deskkit.PerfRunMeasured("deskinbox", perfVerbs, args, performanceCallback(stdout, stderr, now, pre))
 }

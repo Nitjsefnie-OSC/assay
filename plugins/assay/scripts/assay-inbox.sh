@@ -546,7 +546,8 @@ use_typed=0
 # producer still performs its canonical role resolution and fails closed.
 reader_loop="${DESK_LOOP:-}"
 if [[ "$INBOX_READER" == auto && -z "${reader_loop//[[:space:]]/}" ]]; then
-  INBOX_READER=legacy
+  echo "assay-inbox: auto discovery requires a loop identity; queue could-not-check. Select explicit legacy mode for an ambient read." >&2
+  exit 6
 fi
 if [[ "$INBOX_READER" != legacy ]]; then
   producer_version=""
