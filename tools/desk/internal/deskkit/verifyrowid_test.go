@@ -66,3 +66,26 @@ func TestVerifyRowIDWriterRejectsCaseVariantsAndCountOverlap(t *testing.T) {
 		t.Fatalf("valid boundary refused: %v", err)
 	}
 }
+
+// regression: #1731
+func TestVerifyRowIDWriterBoundsHeldInventory(t *testing.T) {
+	for _, raw := range []string{
+		`{"rows":[9],"rows_total":2,"row_results":[{"row":1,"result":"pass"},{"row":2,"result":"pass"}]}`,
+		`{"rows":[7,8],"rows_total":3}`,
+		`{"rows":["6a"],"rows_total":2}`,
+	} {
+		if _, err := ParseJoinInput([]byte(raw)); err == nil {
+			t.Errorf("held row outside inventory accepted: %s", raw)
+		}
+	}
+	for _, raw := range []string{
+		`{"rows":["6a"],"rows_total":2,"row_results":[{"row":6,"result":"pass"},{"row":"6a","result":"could-not-run"}]}`,
+		`{"rows":[6],"rows_total":2,"row_results":[{"row":6,"result":"could-not-run"},{"row":8,"result":"pass"}]}`,
+		`{"rows":[2],"rows_total":2}`,
+		`{"rows":[9]}`,
+	} {
+		if _, err := ParseJoinInput([]byte(raw)); err != nil {
+			t.Errorf("exact/legacy inventory refused: %s: %v", raw, err)
+		}
+	}
+}

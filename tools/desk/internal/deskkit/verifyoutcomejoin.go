@@ -414,6 +414,20 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 		if hasPassed && pass != passed {
 			return Refused(fmt.Sprintf("refused: row_results holds %d pass rows but rows_passed is %d", pass, passed))
 		}
+		for row := range heldRows {
+			if !seen[row] {
+				return Refused("refused: held row " + string(row) + " is absent from row_results inventory")
+			}
+		}
+	} else if hasTotal {
+		// Without exact results, only the declared contiguous numeric inventory
+		// 1..total is known. Never infer a suffix or a foreign held identity.
+		for row := range heldRows {
+			n, err := strconv.Atoi(string(row))
+			if err != nil || n > total {
+				return Refused("refused: held row " + string(row) + " is outside count-only inventory 1..rows_total")
+			}
+		}
 	}
 	return nil
 }

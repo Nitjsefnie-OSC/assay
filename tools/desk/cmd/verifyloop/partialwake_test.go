@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
 )
 
 // The same complete partial-hold receipt must not spend another verifier slot
@@ -352,5 +353,72 @@ func TestPartialWakeMalformedReasonPreservesEarlierUncertainty(t *testing.T) {
 	disp, why, _ = dispositionsOf(t, v)
 	if disp["example-stream/01"] != dispCouldNotCheck || !strings.Contains(why["example-stream/01"], "clock-skew") {
 		t.Fatalf("earlier clock uncertainty overwritten: %v %#v", disp, why)
+	}
+}
+
+// regression: #1731
+func TestPartialWakePendingDeferredMatchesScan(t *testing.T) {
+	for _, allDeferred := range []bool{false, true} {
+		brief := strings.Replace(planBriefRows(4), "| 3 |", "| 6a |", 1)
+		brief = strings.Replace(brief, "go test -run T3", "kubectl get pods", 1)
+		if allDeferred {
+			brief = strings.Replace(brief, "go test -run T4", "kubectl get nodes", 1)
+		}
+		v, f, r, p := pendingSetupPlan(t, brief)
+		pendingRecord(t, v, f, r, p, func(w *deskkit.WakeReceipt) {
+			w.Rows = []deskkit.VerifyRowID{"2"}
+			w.RowsTotal = 4
+			w.RowsPassed = 1
+			w.RowResults = []deskkit.RowResult{{Row: "1", Result: deskkit.RowPass}, {Row: "2", Result: deskkit.RowCouldNotRun}, {Row: "6a", Result: deskkit.RowDeferred}, {Row: "4", Result: deskkit.RowDeferred}}
+		})
+		commitIn(t, v.Root, "unrelated")
+		want := "dispatch"
+		if allDeferred {
+			want = "awaiting-merge"
+		}
+		for sweep := 0; sweep < 2; sweep++ {
+			var it loopengine.Item
+			// Exercise the actual admitted forge path, not just a hand-built payload.
+			items, err := v.SelectQueue()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range items {
+				if item.ID == "example-stream/01" {
+					it = item
+				}
+			}
+			tier, _ := v.TierPolicy(it)
+			disp, why := classifyItem(it, tier)
+			if disp.String() != want {
+				t.Fatalf("allDeferred=%v sweep%d: got%s (%s), want%s", allDeferred, sweep, disp, why, want)
+			}
+		}
+	}
+}
+
+// regression: #1731
+func TestPartialWakeOutcomeProducerExample(t *testing.T) {
+	root := planFixtureRoot(t, map[string]string{"01": planBriefRows(3)})
+	it := selectOne(t, root, "example-stream/01")
+	tier, _ := (&VerifyLoop{}).TierPolicy(it)
+	prompt := renderDispatchPrompt(it, tier)
+	_, tail, ok := strings.Cut(prompt, "Outcome row metadata example: ")
+	if !ok {
+		t.Fatal("producer row contract missing")
+	}
+	raw, _, _ := strings.Cut(tail, "\n")
+	if _, err := deskkit.ParseJoinInput([]byte(raw)); err != nil {
+		t.Fatalf("producer guidance violates writer contract: %v", err)
+	}
+	var record deskkit.WakeReceipt
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Rows) != 1 || record.Rows[0] != "2" || record.RowsTotal != 3 || record.RowsPassed != 2 || len(record.RowResults) != 3 || record.RowResults[2].Row != "6a" {
+		t.Fatalf("producer lost held/covered identity distinction: %#v", record)
+	}
+	if !strings.Contains(prompt, "never list every covered row in rows") || !strings.Contains(prompt, "verified record omits rows") {
+		t.Fatal("producer semantics missing")
 	}
 }

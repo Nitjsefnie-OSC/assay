@@ -196,7 +196,10 @@ Invariants the tests pin (`tools/desk/cmd/verifyloop/wake_test.go`, `tools/desk/
   A malformed latest wake-v1 receipt stays visibly could-not-check for its brief;
   it cannot disappear into an unclassified run or an older hold. The writer also
   refuses noncanonical casing of row-list keys, exact held/PASS overlap, and counts
-  exceeding the non-held inventory. An earlier source or clock uncertainty retains
+  exceeding the non-held inventory. When an inventory is reported, held IDs must
+  appear in the exact `row_results`, or lie within the count-only numeric range
+  `1..rows_total`. Legacy receipts without either inventory remain readable.
+  An earlier source or clock uncertainty retains
   its original reason. Rows deferred by the current offline envelope stay explicitly
   unrun and are excluded from newly runnable identities; exclusion never marks them PASS.
 

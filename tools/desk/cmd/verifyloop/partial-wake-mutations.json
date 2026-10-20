@@ -139,6 +139,30 @@
       "file": "internal/deskkit/verifyoutcomejoin.go",
       "old": "if hasPassed && hasTotal && passed > total-len(heldRows) {",
       "new": "if false && hasPassed && hasTotal && passed > total-len(heldRows) {"
+    },
+    {
+      "name": "writer-held-inventory-subset",
+      "file": "internal/deskkit/verifyoutcomejoin.go",
+      "old": "if !seen[row] {",
+      "new": "if false && !seen[row] {"
+    },
+    {
+      "name": "writer-held-count-inventory",
+      "file": "internal/deskkit/verifyoutcomejoin.go",
+      "old": "if err != nil || n > total {",
+      "new": "if false && (err != nil || n > total) {"
+    },
+    {
+      "name": "pending-deferred-context-omitted",
+      "file": "cmd/verifyloop/pending.go",
+      "old": "deriveContentSignalsRows(&signals, parsedRows)",
+      "new": "// deferred context omitted"
+    },
+    {
+      "name": "producer-covered-rows-example",
+      "file": "cmd/verifyloop/dispatch.go",
+      "old": "`{\"rows\":[2],\"rows_total\":3,\"rows_passed\":2,",
+      "new": "`{\"rows\":[1,2,\"6a\"],\"rows_total\":3,\"rows_passed\":2,"
     }
   ]
 }

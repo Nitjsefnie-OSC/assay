@@ -703,7 +703,10 @@ func relTo(root, path string) string {
 // names an online lane / a window is bucketed as a whole. A Verify section with no parseable
 // Command column derives nothing (there is no command cell to read) and stays dispatchable.
 func deriveContentSignals(fm *briefFrontmatter, verifyText string) {
-	rows := parseVerifyRowsIn(verifyText)
+	deriveContentSignalsRows(fm, parseVerifyRowsIn(verifyText))
+}
+
+func deriveContentSignalsRows(fm *briefFrontmatter, rows []verifyRow) {
 	if len(rows) == 0 {
 		return
 	}
