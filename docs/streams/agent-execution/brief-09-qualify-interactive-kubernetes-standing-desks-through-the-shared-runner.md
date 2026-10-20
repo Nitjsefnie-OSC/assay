@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -31,15 +31,15 @@ consumers:
   - "loopadmin/adapters/kubernetes verifier profile: follow-up agent-execution/08"
   - "tools/desk/cmd/cellctl/: follow-up desk-containers/28"
 
+outcome: none
+
 ---
 
 # Brief 09 — Interactive Kubernetes standing desks through the shared runner
 
 ## Context
 
-files: `loopadmin/adapters/kubernetes/` (planned shared API transport and standing profile),
-`loopadmin/testdata/kubernetes/` (planned), `loopadmin/supervisor/` (profile binding),
-`containers/entrypoint.sh`, `containers/secrets.md`, `docs/kubernetes-desk-profile.md` (planned), `changelog/kubernetes-standing-desks.md` (planned).
+files: `loopadmin/adapters/kubernetes/` (planned shared API transport and standing profile), `loopadmin/testdata/kubernetes/` (planned), `loopadmin/supervisor/` (profile binding), `containers/entrypoint.sh`, `containers/secrets.md`, `docs/kubernetes-desk-profile.md` (planned), `changelog/kubernetes-standing-desks.md` (planned).
 
 facts: Inspected Assay main d8687cab6, 20 October 2026. The runner protocol exists;
 the Kubernetes adapter, shared supervisor and manifests remain planned. The current image
@@ -76,12 +76,18 @@ design-fit:
 
 ## Human decision
 
-At pickup, present the concrete Pod, credential, transport and network boundary with its
-negative-path evidence. Recommended: separate preinstalled role Pods, a trusted transport
-identity and credential-free agent/candidate containers. Alternative: retain the explicitly
-labelled compatibility images until the managed boundary can be proven. The decision must
-name what terminal access and model authentication permit, including their limits.
-No response means no adoption. Implementation fixtures do not select a production cluster.
+At pickup, present the concrete credential, transport and network boundary with its
+negative-path evidence. Terminal access to a credential-bearing compatibility desk gives
+transitive access to that desk's signing and model credentials. The managed profile must
+keep those privileges outside the agent workload; this choice does not select a cluster.
+
+Options:
+1. **Managed standing desks (recommended)** — qualify separate preinstalled role Pods,
+   an attach-only trusted operator and credential-free agent/candidate workloads before adoption.
+2. **Retain compatibility** — keep the existing trusted credential-bearing desk profile;
+   do not enable the managed operator component or claim managed custody isolation.
+
+Default if no answer: none — blocks until answered
 
 ## Ground rules
 
@@ -112,6 +118,12 @@ and human gates remain in force. Refresh claims/active PRs before implementation
    automount, and cannot obtain the adapter's credential or call operator lifecycle APIs.
    Bind model authentication through the already qualified custody owner; if unavailable,
    hold rather than invent a broker or mount an App PEM. Missing/unknown profile refuses.
+   Operator terminal access is attach-only to named managed desk Pods. Deny exec,
+   port-forward and ephemeral/debug subresources for every verb, including
+   get/create/patch/update. Refuse a compatibility binding: its terminal is transitive
+   signing/model-key custody. Require default-deny ingress and a qualified managed-agent
+   egress allowlist excluding API, metadata, CNPG and direct forge; allow only declared
+   model/executor endpoints and DNS.
    Document actual enforcement and residual trust; never infer isolation from containers.
 4. Factor Kubernetes identity, API observation and unknown-outcome transport primitives so
    /08 consumes them from this package. Keep Job and standing profile allowlists distinct:
@@ -141,8 +153,9 @@ run (zero skips) and fail under its stated mutation. Run from repository root.
 |---|---|---|---|
 | 1 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestStandingIdentity$' > "$o" && grep -F -- '--- PASS: TestStandingIdentity ' "$o")` | exit 0, named PASS; actual supervisor/adapter maps all five roles; duplicate up/attach makes one owner and zero extra model calls; accepting another Pod UID makes it fail |
 | 2 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestStandingRecovery$' > "$o" && grep -F -- '--- PASS: TestStandingRecovery ' "$o")` | exit 0, named PASS; lost reply/partition/unknown stop holds replacement; paused state, effects and budgets survive transport/operator restart; treating delete submission as stopped fails |
-| 3 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestKubeProfileIsolation$' > "$o" && grep -F -- '--- PASS: TestKubeProfileIsolation ' "$o")` | exit 0, named PASS; wrong credential/profile and missing opt-in make zero calls, agent cannot reach operator/executor custody with upper caller bypassed, verifier never gains terminal authority; swapping profile capability fails |
+| 3 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestKubeProfileIsolation$' > "$o" && grep -F -- '--- PASS: TestKubeProfileIsolation ' "$o")` | exit 0, named PASS; wrong credential/profile and missing opt-in make zero calls, agent cannot reach operator/executor custody with upper caller bypassed, verifier never gains terminal authority; operator rejects compatibility bindings and all exec/port-forward/debug verbs (including get/create/patch/update); forbidden network endpoint or swapped capability fails |
 | 4 | check +flow +neighbour | `(cd loopadmin && GOWORK=off go test -count=1 ./runner/conformance/... ./adapters/kubernetes/...)` | exit 0, no skipped required profile cases; shared runner negotiation, existing local behavior and legacy image preflight preserved; actual image compatibility checks included by adapter tests |
+| 5 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
 
 ## Pre-mortem
 

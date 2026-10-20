@@ -13,24 +13,26 @@ authored: 2026-08-22 by desk-containers scoping session
 sources:
   - "medici-finance/assay#64 — the request (tmux and equivalents as a cheap way to control all the desks; win32 as well as mac; the aim is to fire up the docker/k8s pods)"
   - "docs/streams/desk-containers/spec.md — multi-desk control layer section + open question 8"
-  - "containers/desk-run.sh (brief 04) — the per-desk launch path each pane invokes"
-  - "freshness-checked 2026-08-22 @ b3a2067 — no control/multiplexer config exists in the tree"
+  - "docs/streams/desk-containers/brief-28-package-in-cluster-cellctl-and-bind-the-interactive-desk-profile.md — single attach path"
+  - "docs/proposals/non-ci-architecture/28-interactive-kubernetes-desks.md — Linux operator cohort"
+  - "freshness-checked 2026-10-20 @ 65f16f4a6b94 (fetched main; layout remains planned)"
 why: A single Linux operator terminal should expose five independent desk sessions without requiring native Windows or adding another launcher.
-version: 2
+version: 3
 id: cbf80c98-0c5e-4309-836b-89bced9ffae5
 exec-tier: strong
 exec-tier-why: Terminal presentation must preserve remote session and lifecycle ownership.
 consumers:
   - "containers/control/: follow-up desk-containers/07"
   - "docs/docker.md: follow-up desk-containers/07"
+outcome: none
+
 ---
 
 # Brief 07 — Optional Linux operator terminal layout
 
 ## Context
 
-files: `containers/control/EVALUATION.md` (planned), `containers/control/desks.yaml` (planned), `containers/control/check.sh` (planned), `docs/docker.md`,
-`changelog/linux-operator-layout.md` (planned).
+files: `containers/control/EVALUATION.md` (planned), `containers/control/desks.yaml` (planned), `containers/control/check.sh` (planned), `docs/docker.md`, `changelog/linux-operator-layout.md` (planned).
 
 facts: The 20 October 2026 direction permits cellctl inside Kubernetes and removes Windows
 from this target. /28 is the single operator path. A multiplexer is optional presentation;
@@ -62,6 +64,10 @@ layout or output. Independent verification owns Evidence.
 1. Evaluate the smallest supported Linux terminal layout inside the operator image. Record
    actual tool/version and observed attach/detach behavior; direct one-role cellctl attachment
    remains the baseline. Do not implement native Windows, Docker orchestration or a service.
+   `check.sh --version-evidence` (planned) invokes the actual selected tool's version and
+   required local capabilities with literal argv, compares them to the recorded version/
+   capability manifest, and fails on a missing tool, mismatch or unsupported capability.
+   Include a mutation changing the recorded version and require the comparison to fail.
 2. Expose five named role attachments through /28, using configured role aliases. Closing a
    pane/session never terminates its desk or starts a replacement; reconnect is idempotent.
    The layout composes no Pod specs and knows no Secret or credential values.
@@ -75,6 +81,8 @@ layout or output. Independent verification owns Evidence.
 |---|---|---|---|
 | 1 | check +flow +dereference | `sh containers/control/check.sh --offline` | exit 0; five role panes call the single attach path; closing/reopening the layout produces zero new model invocations or duplicate role owners |
 | 2 | check +mutation | `sh containers/control/check.sh --offline --self-test` | exit 0; planted start-on-attach, stop-on-pane-close and credential read all fail the fixture; no cluster contact |
+| 3 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 4 | check +dereference +mutation | `sh containers/control/check.sh --version-evidence --self-test` | exit 0; real selected tool version and local capabilities match EVALUATION.md; changed recorded version/capability fails; missing tool is could-not-check |
 
 ## Pre-mortem
 

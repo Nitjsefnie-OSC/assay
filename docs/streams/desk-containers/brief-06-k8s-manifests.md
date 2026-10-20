@@ -19,22 +19,22 @@ why: >-
   The second half of the request's secondary aim: run the same desk images on a
   cluster, with per-desk persistent volumes and credentials from k8s Secrets, so a desk
   can live on shared infrastructure instead of one person's desktop.
-version: 2
+version: 3
 id: 9ff1192a-c441-4dd3-b574-85b8cf85954e
 exec-tier: strong
 exec-tier-why: Per-role persistence, credential profiles and offline validation cross artifacts.
 consumers:
   - "containers/k8s/: follow-up desk-containers/06"
   - "docs/docker.md: follow-up desk-containers/06"
+outcome: none
+
 ---
 
 # Brief 06 — Kubernetes manifests for separately interactive desks
 
 ## Context
 
-files: `containers/k8s/` (planned namespace, five StatefulSets/PVCs, Kustomize base,
-placeholder-only secret example and `check.sh`), `docs/docker.md`,
-`changelog/kubernetes-desk-manifests.md` (planned).
+files: `containers/k8s/` (planned namespace, five StatefulSets/PVCs, Kustomize base, placeholder-only secret example and `check.sh`), `docs/docker.md`, `changelog/kubernetes-desk-manifests.md` (planned).
 
 facts: Assay main d8687cab6 inspected 20 October 2026; the five desk images exist but
 containers/k8s does not. Each configured desk gets its own Pod/container and PVC at /work,
@@ -69,7 +69,10 @@ Evidence. No credential value in manifests, layers or examples.
 
 1. Package namespace and one StatefulSet/PVC per configured current desk, stdin/tty true,
    pinned digest, declared resources, non-root, no privilege escalation, dropped capabilities
-   and explicit service-account token automount disabled for agent workloads. Preserve role
+   and explicit service-account token automount disabled for agent workloads. Require
+   default-deny ingress and no Service/Ingress exposing desk terminals. Compatibility
+   egress is explicitly allowed only to its qualified forge/model endpoints and DNS;
+   managed /09 owns its stricter API/metadata/CNPG/direct-forge denial. Preserve role
    names/image compatibility and independently retained work volumes. No hostPath, privileged
    container, Docker socket or hidden dependency on a desktop multiplexer.
 2. Document the **compatibility** profile's runtime Secret references and model configuration
@@ -77,10 +80,18 @@ Evidence. No credential value in manifests, layers or examples.
    are excluded from Kustomize resources; a build produces no credential Secret. Explicitly
    disclose that App-PEM-bearing legacy images do not satisfy the managed target's isolation.
    /09 and /28 own managed boot/overlay changes; do not pretend a manifest removes that custody.
+   Keep each independent role's App-PEM and model credential Secret references distinct;
+   the checker rejects a shared credential Secret between role workloads. Compatibility
+   terminal access is transitive key custody and cannot use the /28 managed operator.
 3. Supply offline render/schema and structured checks plus hostile manifest fixtures. Reject
    one workload hosting all roles, absent/duplicate role, missing PVC/tty, mutable image,
    privileged/host mounts, agent service-account credential or example Secret in the build.
-   Checks must fail on each planted defect and make zero API/discovery requests.
+   Checks must fail on each planted defect and make zero API/discovery requests. Extend
+   the same checker with `--source-secrets` to scan every committed manifest/example,
+   including unrendered Secret examples, using the existing pinned credential scanner.
+   Keep a synthetic positive control that is excluded from rendering yet still rejected.
+   Reject terminal Service/Ingress exposure, absent ingress deny and shared per-role
+   credential Secret references. The repository-wide credential scan remains independent.
 4. Update docs/docker.md with the operator-installed apply/attach workflow, explicit Pod and
    container selection, storage/Secret/profile limits and disconnect behavior. Distinguish
    attaching a retained session from creating a process. Link the future in-cluster operator
@@ -95,6 +106,8 @@ The script and fixtures below are implementation deliverables; checks are entire
 | 1 | check +flow +dereference | `sh containers/k8s/check.sh --base` | exit 0; pinned render/cached-schema validation and structured assertions prove five distinct interactive role workloads/PVCs, image pins and explicit identity; no API calls or credential Secret in rendered output |
 | 2 | check +mutation | `sh containers/k8s/check.sh --base --self-test` | exit 0; checker reports every hostile fixture rejected; removing a role, tty, PVC, image digest or token isolation fails; fixture containing an example Secret fails |
 | 3 | check +neighbour | `sh containers/scripts/layer-secret-scan.test.sh` | exit 0; current image credential-layer protections remain; coordinate any merged scan replacement rather than restoring a retired scanner |
+| 4 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 5 | check +mutation | `sh containers/k8s/check.sh --source-secrets --self-test` | exit 0; all committed manifests and unrendered examples are scanned; excluded-example synthetic credential is rejected independently of rendering |
 
 ## Definition of Done
 

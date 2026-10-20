@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -31,17 +31,15 @@ consumers:
   - "docs/cellctl.md: follow-up desk-containers/28"
   - "docs/docker.md: follow-up desk-containers/28"
 
+outcome: none
+
 ---
 
 # Brief 28 — In-cluster cellctl operator and interactive desk binding
 
 ## Context
 
-files: `containers/operator/Dockerfile` (planned), `containers/k8s/components/operator/`
-(planned), `containers/k8s/overlays/managed-desks/` (planned),
-`tools/desk/cmd/cellctl/` (existing CLI wiring and profile tests),
-`tools/desk/internal/cellop/` (existing typed result/plan boundary),
-`docs/cellctl.md`, `docs/docker.md`, `changelog/in-cluster-cellctl.md` (planned).
+files: `containers/operator/Dockerfile` (planned), `containers/k8s/components/operator/` (planned), `containers/k8s/overlays/managed-desks/` (planned), `tools/desk/cmd/cellctl/` (existing CLI wiring and profile tests), `tools/desk/internal/cellop/` (existing typed result/plan boundary), `containers/k8s/check.sh` (planned) (operator mode), `containers/operator/check.sh` (planned), `containers/operator/testdata/` (planned image/component hostile fixtures), `docs/cellctl.md`, `docs/docker.md`, `changelog/in-cluster-cellctl.md` (planned).
 
 facts: At Assay main d8687cab6, 20 October 2026, the current `k8s` kind launches locally;
 packaging it unchanged does not control five remote role Pods. /06 supplies workload
@@ -73,12 +71,19 @@ design-fit:
 
 ## Human decision
 
-At pickup, present the exact operator capability and terminal-access scope. Recommended:
-a dedicated operator Pod, preinstalled role workloads and explicit named resource access,
-without publisher keys, Secret reads, RBAC writes, database terminal access or arbitrary Pod
-creation. Alternative: use an external Linux operator terminal through the same qualified
-client. The human confirms custody, target binding and what convenience confirmation proves.
-No response means no profile activation. No production target is chosen in this brief.
+At pickup, present the exact operator capability and terminal scope with image and
+negative-path evidence. The in-cluster operator is for the managed profile only. Attaching
+to a compatibility desk exposes its signing and model credentials transitively; absence
+of a Secret-read permission does not prevent that access.
+
+Options:
+1. **Managed operator Pod (recommended)** — named-desk attach only, without exec,
+   port-forward, debug-container, Secret-read, publisher, database or workload-creation authority.
+   Enable it only after independent managed-profile qualification.
+2. **External Linux terminal** — retain the existing operator entry path until the managed
+   boundary is qualified; do not deploy the operator component against compatibility desks.
+
+Default if no answer: none — blocks until answered
 
 ## Ground rules
 
@@ -117,6 +122,27 @@ Current parked-profile and existing human activation gates remain.
    detach/reconnect/status/stop operator guide, compatibility limitations, and exact profile
    prerequisites in docs/cellctl.md and docs/docker.md. Publish no deployed-support claim.
 
+## Operator image and component acceptance
+
+Task 1 installs the operator component **only in the managed overlay**; compatibility
+references refuse during plan/check before any stream is granted. Operator RBAC allows
+only named-managed-desk attach (get/create as required by the pinned transport), not exec,
+port-forward or ephemeral/debug subresources for any verb (explicitly test get/create/
+patch/update). It has no access to compatibility desk terminals, database, executor or
+foreign-cell terminals. Default-deny ingress and no desk/operator Service or Ingress keep
+terminal transport on the authenticated API path; egress is the explicit control/API/DNS
+allowlist, without database/publisher routes.
+
+This brief owns extending /06's `containers/k8s/check.sh` (planned) with `--operator` and
+hostile component fixtures, and adding `containers/operator/check.sh` (planned) with
+`--image`. The source stage checks the actual Dockerfile and all committed component/
+example files, not only rendered output. The built-image stage inspects every layer and
+config for a non-root USER, digest-pinned base/release, no conductor/agent or Docker daemon,
+no host/socket mounts, and no credential-shaped material. Keep the existing layer-secret
+scan; use synthetic positive controls, including an unrendered example credential and a
+fixture operator image with a forbidden executable. Every planted property must fail the
+specific checker. This defines future checks; no image is built by the authoring change.
+
 ## Verify
 
 Named tests and scripts below are deliverables; no required case may silently skip.
@@ -125,8 +151,10 @@ Named tests and scripts below are deliverables; no required case may silently sk
 |---|---|---|---|
 | 1 | check +flow +dereference | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -count=1 -v ./cmd/cellctl -run '^TestKubeCellLifecycle$' > "$o" && grep -F -- '--- PASS: TestKubeCellLifecycle ' "$o")` | exit 0, named PASS; compiled CLI drives actual adapter against fake API for five roles; repeated up, attachment loss and operator restart retain one owner per role without local launches |
 | 2 | check +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -count=1 -v ./cmd/cellctl -run '^TestKubeOperatorScope$' > "$o" && grep -F -- '--- PASS: TestKubeOperatorScope ' "$o")` | exit 0, named PASS; missing opt-in/target/profile makes zero contacts; wrong namespace/UID/generation refuses; bypassing CLI still cannot reach database or publisher; widening named scope fails |
-| 3 | check +mutation | `sh containers/k8s/check.sh --operator --self-test` | exit 0; offline render and cached schema/structured checks reject planted wildcard RBAC, Secret reads, database attach/exec, PEM mount, privileged container and unpinned image; no API/discovery calls |
+| 3 | check +mutation | `sh containers/k8s/check.sh --operator --self-test` | exit 0; offline render and cached schema/structured checks reject planted wildcard RBAC, Secret reads, any exec/port-forward/debug verb on desk Pods (including get/create/patch/update), compatibility attach, database attach, PEM mount, Service/Ingress, missing ingress deny, privileged container and unpinned image; no API/discovery calls |
 | 4 | check +flow | `(cd tools/desk && GOWORK=off go test -count=1 ./cmd/cellctl/... ./internal/cellop/...)` | exit 0; existing cell-op JSON/plan and host/compatibility registration behavior remain; docs examples are replayed against fake transport by the named lifecycle test |
+| 5 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 6 | check +flow +mutation | `sh containers/operator/check.sh --dockerfile containers/operator/Dockerfile --component containers/k8s/components/operator --image "$ASSAY_OPERATOR_TEST_IMAGE" --self-test` | exit 0 only with the identified locally built candidate image; actual USER/base/config/layers/executable inventory and component pass, all forbidden-image, mount, credential and RBAC fixtures fail; absent image/tool is could-not-check, never PASS |
 
 ## Pre-mortem
 

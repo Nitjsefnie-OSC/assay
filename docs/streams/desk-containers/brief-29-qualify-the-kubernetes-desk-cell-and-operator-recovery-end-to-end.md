@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -29,15 +29,15 @@ consumers:
   - "docs/docker.md: follow-up desk-containers/29"
   - "operator adoption: out-of-scope (separate authorized R8 cutover after qualification)"
 
+outcome: none
+
 ---
 
 # Brief 29 — Kubernetes desk cell, efficiency and recovery qualification
 
 ## Context
 
-files: `containers/k8s/qualify.sh` (planned), `containers/k8s/testdata/qualification/`
-(planned), `docs/kubernetes-desk-qualification.md` (planned), `docs/docker.md`,
-`docs/cellctl.md`, `changelog/kubernetes-desk-qualification.md` (planned).
+files: `containers/k8s/qualify.sh` (planned), `containers/k8s/testdata/qualification/` (planned), `docs/kubernetes-desk-qualification.md` (planned), `docs/docker.md`, `docs/cellctl.md`, `changelog/kubernetes-desk-qualification.md` (planned).
 
 facts: Inspected Assay main d8687cab6, 20 October 2026. /28 supplies the in-cluster
 operator and /27 the CNPG database profile. Existing graph-execution/26–27 owns startup,
@@ -70,12 +70,18 @@ exercise the lower boundary even with the upper operator CLI bypassed.
 
 ## Human decision
 
-Before a real-profile run, the operator selects a disposable target, authorized identities,
-image/profile versions, matched workload, capacity limits and recovery objectives.
-Recommended: an isolated disposable cluster and synthetic forge/model fixtures, followed
-only after acceptance by a separately approved scoped cohort. Alternative: remain offline
-and report that effective Kubernetes execution is unqualified. No reply means no cluster
-contact or adoption. Production credentials and existing contexts are never implicit inputs.
+Before a real-profile run, select the disposable target, explicit credential configuration,
+expected server identity, authorized identities, image/profile versions, matched workload,
+capacity limits and recovery objectives. Production and ambient contexts are excluded.
+
+Options:
+1. **Disposable qualification (recommended)** — authorize the identified run-owned cluster
+   and synthetic forge/model fixtures, then consider a separately approved scoped cohort
+   only after complete independent evidence.
+2. **Remain offline** — retain fixture evidence and report effective Kubernetes execution
+   as unqualified; perform no cluster contact or adoption.
+
+Default if no answer: none — blocks until answered
 
 ## Ground rules
 
@@ -90,6 +96,11 @@ Independent verification owns Evidence; no process exit or script success flips 
    production entrypoints. Offline is the default. A network-reaching mode requires an
    explicit target and opt-in, prints that target, verifies the disposable run's ownership
    receipt, and reports unavailable/error evidence as could-not-check rather than clean.
+   Require an explicit kubeconfig file and context; never use ambient KUBECONFIG/default
+   files. Resolve the endpoint and TLS trust/server identity offline and compare them to
+   the run-owned receipt before first network contact. Pin the expected identity on the
+   authenticated connection; a substituted file, endpoint or same-named context refuses
+   with zero operation calls. Fixtures must plant each mismatch.
    Missing evidence cannot satisfy the adoption gate. Pin tool/schema/image/profile versions.
 2. Prove five separately interactive desk Pods/PVCs plus one operator Pod. Check terminal
    I/O/resize/detach/reconnect and operator-Pod recreation; concurrent up and changed Pod UID
@@ -100,7 +111,13 @@ Independent verification owns Evidence; no process exit or script success flips 
 3. Verify effective credentials, service accounts, RBAC, admission and network from hostile
    workloads with upper callers bypassed. Agent Pods cannot reach operator/publisher keys,
    cluster API or privileged database identity; operator terminal capability cannot attach
-   or exec into database, executor or foreign-cell workloads. Exercise separate publisher
+   or exec into database, executor or foreign-cell workloads. For named desk Pods the
+   operator is attach-only: all verbs on exec/port-forward/ephemeral-debug subresources
+   (including get/create/patch/update) are denied. Attempt compatibility-desk attach as
+   a negative case and reject it before exposing the terminal. Verify default-deny
+   ingress/no Service or Ingress on terminals, and denial of managed-agent API, metadata,
+   CNPG and direct-forge egress, with only profile-declared destinations allowed.
+   Exercise separate publisher
    current-owner rejection. Use synthetic material, never production credentials.
 4. Rehearse permission denial, API partition/lost response, supervisor and operator failure,
    Pod reschedule with possible surviving old execution, database unavailable and database
@@ -131,7 +148,8 @@ cannot complete Kubernetes adoption. Test scripts are implementation deliverable
 | 1 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite lifecycle` | exit 0; actual operator/adapter fixture proves five roles, immutable execution identity and disconnect/restart recovery; planted duplicate-launch/old-UID acceptance fails |
 | 2 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite authority-recovery` | exit 0; production-code fake-API paths hold missing/unknown authority and old execution; planted ambient-target fallback, stop-on-delete assumption or direct publisher bypass fails |
 | 3 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite efficiency` | exit 0; matched role fixtures preserve policy/coverage, zero idle/reconnect model calls and bounded work; duplicate usage, recursive finish scan or required-read removal fails |
-| 4 | gate:human +flow +mutation | `sh containers/k8s/qualify.sh --context "$ASSAY_DISPOSABLE_CONTEXT" --allow-cluster-queries --suite real-profile` | exit 0 only with explicit authorization, ownership receipt and complete independent evidence; real terminal, hostile containment, reschedule, partition, CNPG restore and fenced rollback satisfy operator-declared objectives. Missing target/evidence holds; no production or default context contact |
+| 4 | gate:human +flow +mutation | `sh containers/k8s/qualify.sh --kubeconfig "$ASSAY_DISPOSABLE_KUBECONFIG" --context "$ASSAY_DISPOSABLE_CONTEXT" --allow-cluster-queries --suite real-profile` | exit 0 only with explicit authorization, kubeconfig/context, receipt-bound API/TLS identity and complete independent evidence; real terminal, hostile containment, reschedule, partition, CNPG restore and fenced rollback satisfy operator-declared objectives. Missing target/evidence holds; no production or default context contact |
+| 5 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
 
 ## Pre-mortem
 

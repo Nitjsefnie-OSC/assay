@@ -1,6 +1,6 @@
 # Interactive Kubernetes desks and an in-cluster operator
 
-**Status:** requested implementation direction, 20 October 2026; authoring amendment,
+**Status:** draft — implementation direction requested 20 October 2026; authoring amendment,
 not evidence of deployment or approval of a particular custody profile. The requester
 explicitly permits `cellctl` inside Kubernetes and removes native Windows from the
 required path. Earlier revision-bound approvals and activation gates retain their scope.
@@ -72,6 +72,10 @@ profile: the legacy PEM-required preflight remains for compatibility, while a ma
 boot validates its approved executor/profile binding and never silently falls back to a
 PEM or ambient credential. Shared images alone do not prove equivalent isolation.
 
+No /28 operator component is installed in the compatibility profile. Compatibility role
+Secrets remain role-specific; sharing a signing key or model credential across independent
+roles is not qualified by this plan. Check all committed examples as well as rendered output.
+
 The Kubernetes verifier profile in agent-execution/08 remains a separate, bounded Job
 profile with its existing controller/publication dependencies and stricter network floor.
 /09 first extracts reusable Kubernetes transport/identity/reconciliation mechanics;
@@ -90,10 +94,17 @@ conversation or process continuation. Confirm the old execution group stopped be
 replacement can act. A partitioned node with an old process is a held case.
 
 Installation/GitOps pre-creates approved workloads and RBAC; ordinary operator `up`
-selects a pinned binding rather than submitting arbitrary Pod specs. An operator identity
-allowed terminal access to desks is not allowed terminal access to PostgreSQL, executors,
-other cells or arbitrary debug containers. Explicitly map transport verbs and named
-resources. Do not grant wildcard RBAC, Secrets reads, impersonation or RBAC mutation.
+selects a pinned binding rather than submitting arbitrary Pod specs. The /28 operator component is **managed-overlay only** and refuses compatibility bindings.
+Its desk capability is `pods/attach` (`get`/`create` as needed by the pinned transport) on
+exact named managed desk Pods, with current UID/container/generation validation. Deny
+`pods/exec`, `pods/portforward` and `pods/ephemeralcontainers` for **all verbs**, including
+`get`, `create`, `patch` and `update`; a transport upgrade must not recover those powers.
+No operator attach/exec/port-forward/debug access reaches compatibility desks, PostgreSQL,
+executors or other cells. Any terminal access to a compatibility desk is transitive custody
+of its App PEM and model credentials; the table's credential-free operator boundary is a
+managed-profile property only. Never infer it from absent Secret-read permission.
+Explicitly map transport verbs and named resources. Do not grant wildcard RBAC, Secrets
+reads, impersonation or RBAC mutation.
 If a later design needs workload mutation, author its admission restrictions and prove it
 cannot select a more privileged service account or mount; no generic create privilege is
 inferred here. Keep the CNPG restore/admin identities separate from desk/operator identities.
@@ -106,6 +117,21 @@ pinned namespace/target, never ambient discovery as fallback. The
 subresource restrictions, while top-level create cannot be restricted by resourceNames.
 The [attach interface](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_attach/)
 selects Pod and container. Those are design inputs, not proof of effective cluster policy.
+Desk and operator Pods have default-deny ingress, no Service/Ingress exposing their
+interactive containers, and explicit profile-owned egress allowlists. The managed agent
+allowlist excludes the Kubernetes API, node/cloud metadata, CNPG and direct forge access;
+only declared model and narrow executor endpoints plus required DNS are admitted. The
+trusted operator/transport has only the declared API/control and DNS destinations; it is
+not a network route to database or publisher custody. Compatibility egress remains explicitly
+limited to its qualified forge/model endpoints and DNS. Effective policy is separately proven
+by /29, with denied endpoints tested from hostile workloads.
+
+The real-profile harness takes an explicit kubeconfig path, context and an ownership receipt
+binding the expected API endpoint and TLS trust/server identity. Resolve and compare those
+values locally before any network contact; do not use ambient KUBECONFIG or a same-named
+context from another file. The authenticated connection must validate that identity before
+an operation, and a mismatch makes zero operation calls.
+
 Offline render/schema checks never contact an API server; do not use `kubectl apply
 --dry-run=client` as a promise of offline validation.
 
