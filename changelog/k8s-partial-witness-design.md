@@ -1,1 +1,1 @@
-- Plan independent candidate-cohort coverage for partial-delivery reconciliation after the missing #735 declaration repair, preserving merged source inputs and requiring discriminating acceptance controls.
+- Plan independent candidate-cohort coverage for partial-delivery reconciliation after the missing #735 declaration repair, with bounded opt-in forge membership rechecks, hermetic omission controls and unchanged production inputs.
