@@ -165,7 +165,7 @@ func TestAuthoringAllDerivedStates(t *testing.T) {
 		mergedPull(2, "feat/b", "Brief: apstream/02\n"),
 	}, map[int][]map[string]any{1: deliveryFiles, 2: deliveryFiles}, nil)
 
-	code, stdout := runReconcileCaptured(t, "--apply", "--root", root, "--repo", "o/r", "--json")
+	code, stdout := runReconcileCaptured(t, "--root", root, "--repo", "o/r", "--json")
 	if code != reconcileOK {
 		t.Fatalf("exit %d:\n%s", code, stdout)
 	}
