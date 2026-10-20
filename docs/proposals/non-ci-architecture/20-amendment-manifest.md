@@ -293,11 +293,11 @@ and no competing proposal is treated as approved. Dispatch refs were not read.
 
 | Obligation | Applied authoring change | Acceptance |
 |---|---|---|
-| Separately interactive role Pods | desk-containers/06 version 3 | Five workloads/PVCs; structured offline negative controls; compatibility custody disclosed |
+| Separately interactive role Pods | desk-containers/06 version 4 | Five workloads/PVCs; structured offline negative controls; compatibility custody disclosed |
 | Shared Kubernetes transport and managed standing profile | New agent-execution/09; /08 follows /09 | Current identity/stop/readiness checks, no workflow-store prerequisite; verifier privileges remain distinct |
 | In-cluster operator | New desk-containers/28 | Compiled cellctl through existing clients; scoped operator capability, reconnect never launches |
 | Whole-cell and optimization proof | New desk-containers/29 | Five-role flow, custody/recovery boundaries, bounded startup and zero idle model calls; separate real-profile witness |
-| Optional fleet presentation | desk-containers/07 version 3 after /28 | Linux attachment layout; no native Windows gate or parallel launcher |
+| Optional fleet presentation | desk-containers/07 version 4 after /28 | Linux attachment layout; no native Windows gate or parallel launcher |
 | Storage and scheduled compatibility | /27 and /12 dated routing | CNPG profile consumes base directly; CronJobs cannot co-own interactive roles |
 | Shared runtime, roles and public migration | graph-execution/26–27 consumption; amendment 28 migration table | Existing R1–R8 semantics, exact-subject observations and perf-v3 counts retained; source handoff preserves history |
 

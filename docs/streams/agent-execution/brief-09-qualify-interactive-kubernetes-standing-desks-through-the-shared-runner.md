@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -149,13 +149,21 @@ Unknown observations hold. Existing conformance and extension negotiation remain
 Tests below are implementation deliverables, not existing PASS claims. Each named test must
 run (zero skips) and fail under its stated mutation. Run from repository root.
 
+For the consumer row, the independent verifier obtains the actual implementation delivery
+from the merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or this authoring PR. Both commits must be available in the verification
+checkout; absent/unknown provenance fails closed. Retain exact consumer result counts and
+resolve unchecked required consumers separately; zero disproofs alone is not complete flow
+coverage. These inputs are future implementation-verification evidence, not claims made here.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestStandingIdentity$' > "$o" && grep -F -- '--- PASS: TestStandingIdentity ' "$o")` | exit 0, named PASS; actual supervisor/adapter maps all five roles; duplicate up/attach makes one owner and zero extra model calls; accepting another Pod UID makes it fail |
 | 2 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestStandingRecovery$' > "$o" && grep -F -- '--- PASS: TestStandingRecovery ' "$o")` | exit 0, named PASS; lost reply/partition/unknown stop holds replacement; paused state, effects and budgets survive transport/operator restart; treating delete submission as stopped fails |
 | 3 | check +flow +mutation | `(cd loopadmin && o=$(mktemp) && GOWORK=off go test -count=1 -v ./adapters/kubernetes/... -run '^TestKubeProfileIsolation$' > "$o" && grep -F -- '--- PASS: TestKubeProfileIsolation ' "$o")` | exit 0, named PASS; wrong credential/profile and missing opt-in make zero calls, agent cannot reach operator/executor custody with upper caller bypassed, verifier never gains terminal authority; operator rejects compatibility bindings and all exec/port-forward/debug verbs (including get/create/patch/update); forbidden network endpoint or swapped capability fails |
-| 4 | check +flow +neighbour | `(cd loopadmin && GOWORK=off go test -count=1 ./runner/conformance/... ./adapters/kubernetes/...)` | exit 0, no skipped required profile cases; shared runner negotiation, existing local behavior and legacy image preflight preserved; actual image compatibility checks included by adapter tests |
-| 5 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 4 | check +flow +neighbour +dereference | `(cd loopadmin && GOWORK=off go test -count=1 ./runner/conformance/... ./adapters/kubernetes/...)` | exit 0, no skipped required profile cases; shared runner negotiation, existing local behavior and legacy image preflight preserved; actual image compatibility checks included by adapter tests |
+| 5 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief agent-execution/09 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
 
 ## Pre-mortem
 

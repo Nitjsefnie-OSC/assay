@@ -17,7 +17,7 @@ sources:
   - "docs/proposals/non-ci-architecture/28-interactive-kubernetes-desks.md — Linux operator cohort"
   - "freshness-checked 2026-10-20 @ 65f16f4a6b94 (fetched main; layout remains planned)"
 why: A single Linux operator terminal should expose five independent desk sessions without requiring native Windows or adding another launcher.
-version: 3
+version: 4
 id: cbf80c98-0c5e-4309-836b-89bced9ffae5
 exec-tier: strong
 exec-tier-why: Terminal presentation must preserve remote session and lifecycle ownership.
@@ -77,11 +77,19 @@ layout or output. Independent verification owns Evidence.
 
 ## Verify
 
+For the consumer row, the independent verifier obtains the actual implementation delivery
+from the merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or this authoring PR. Both commits must be available in the verification
+checkout; absent/unknown provenance fails closed. Retain exact consumer result counts and
+resolve unchecked required consumers separately; zero disproofs alone is not complete flow
+coverage. These inputs are future implementation-verification evidence, not claims made here.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check +flow +dereference | `sh containers/control/check.sh --offline` | exit 0; five role panes call the single attach path; closing/reopening the layout produces zero new model invocations or duplicate role owners |
 | 2 | check +mutation | `sh containers/control/check.sh --offline --self-test` | exit 0; planted start-on-attach, stop-on-pane-close and credential read all fail the fixture; no cluster contact |
-| 3 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 3 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief desk-containers/07 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
 | 4 | check +dereference +mutation | `sh containers/control/check.sh --version-evidence --self-test` | exit 0; real selected tool version and local capabilities match EVALUATION.md; changed recorded version/capability fails; missing tool is could-not-check |
 
 ## Pre-mortem

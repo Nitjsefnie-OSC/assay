@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -147,13 +147,21 @@ specific checker. This defines future checks; no image is built by the authoring
 
 Named tests and scripts below are deliverables; no required case may silently skip.
 
+For the consumer row, the independent verifier obtains the actual implementation delivery
+from the merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or this authoring PR. Both commits must be available in the verification
+checkout; absent/unknown provenance fails closed. Retain exact consumer result counts and
+resolve unchecked required consumers separately; zero disproofs alone is not complete flow
+coverage. These inputs are future implementation-verification evidence, not claims made here.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check +flow +dereference | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -count=1 -v ./cmd/cellctl -run '^TestKubeCellLifecycle$' > "$o" && grep -F -- '--- PASS: TestKubeCellLifecycle ' "$o")` | exit 0, named PASS; compiled CLI drives actual adapter against fake API for five roles; repeated up, attachment loss and operator restart retain one owner per role without local launches |
 | 2 | check +flow +mutation | `(cd tools/desk && o=$(mktemp) && GOWORK=off go test -count=1 -v ./cmd/cellctl -run '^TestKubeOperatorScope$' > "$o" && grep -F -- '--- PASS: TestKubeOperatorScope ' "$o")` | exit 0, named PASS; missing opt-in/target/profile makes zero contacts; wrong namespace/UID/generation refuses; bypassing CLI still cannot reach database or publisher; widening named scope fails |
 | 3 | check +mutation | `sh containers/k8s/check.sh --operator --self-test` | exit 0; offline render and cached schema/structured checks reject planted wildcard RBAC, Secret reads, any exec/port-forward/debug verb on desk Pods (including get/create/patch/update), compatibility attach, database attach, PEM mount, Service/Ingress, missing ingress deny, privileged container and unpinned image; no API/discovery calls |
 | 4 | check +flow | `(cd tools/desk && GOWORK=off go test -count=1 ./cmd/cellctl/... ./internal/cellop/...)` | exit 0; existing cell-op JSON/plan and host/compatibility registration behavior remain; docs examples are replayed against fake transport by the named lifecycle test |
-| 5 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 5 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief desk-containers/28 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
 | 6 | check +flow +mutation | `sh containers/operator/check.sh --dockerfile containers/operator/Dockerfile --component containers/k8s/components/operator --image "$ASSAY_OPERATOR_TEST_IMAGE" --self-test` | exit 0 only with the identified locally built candidate image; actual USER/base/config/layers/executable inventory and component pass, all forbidden-image, mount, credential and RBAC fixtures fail; absent image/tool is could-not-check, never PASS |
 
 ## Pre-mortem

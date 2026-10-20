@@ -10,7 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 authored: 2026-10-20 by Assay architecture authoring session
 sources:
   - https://github.com/medici-finance/assay/issues/3669
@@ -143,13 +143,21 @@ Independent verification owns Evidence; no process exit or script success flips 
 The real-profile row is deliberately a separate gate. An offline-only result is useful but
 cannot complete Kubernetes adoption. Test scripts are implementation deliverables.
 
+For the consumer row, the independent verifier obtains the actual implementation delivery
+from the merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or this authoring PR. Both commits must be available in the verification
+checkout; absent/unknown provenance fails closed. Retain exact consumer result counts and
+resolve unchecked required consumers separately; zero disproofs alone is not complete flow
+coverage. These inputs are future implementation-verification evidence, not claims made here.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite lifecycle` | exit 0; actual operator/adapter fixture proves five roles, immutable execution identity and disconnect/restart recovery; planted duplicate-launch/old-UID acceptance fails |
 | 2 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite authority-recovery` | exit 0; production-code fake-API paths hold missing/unknown authority and old execution; planted ambient-target fallback, stop-on-delete assumption or direct publisher bypass fails |
 | 3 | check +flow +mutation | `sh containers/k8s/qualify.sh --offline --suite efficiency` | exit 0; matched role fixtures preserve policy/coverage, zero idle/reconnect model calls and bounded work; duplicate usage, recursive finish scan or required-read removal fails |
-| 4 | gate:human +flow +mutation | `sh containers/k8s/qualify.sh --kubeconfig "$ASSAY_DISPOSABLE_KUBECONFIG" --context "$ASSAY_DISPOSABLE_CONTEXT" --allow-cluster-queries --suite real-profile` | exit 0 only with explicit authorization, kubeconfig/context, receipt-bound API/TLS identity and complete independent evidence; real terminal, hostile containment, reschedule, partition, CNPG restore and fenced rollback satisfy operator-declared objectives. Missing target/evidence holds; no production or default context contact |
-| 5 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 4 | gate:human +flow +mutation +dereference | `sh containers/k8s/qualify.sh --kubeconfig "$ASSAY_DISPOSABLE_KUBECONFIG" --context "$ASSAY_DISPOSABLE_CONTEXT" --allow-cluster-queries --suite real-profile` | exit 0 only with explicit authorization, kubeconfig/context, receipt-bound API/TLS identity and complete independent evidence; real terminal, hostile containment, reschedule, partition, CNPG restore and fenced rollback satisfy operator-declared objectives. Missing target/evidence holds; no production or default context contact |
+| 5 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief desk-containers/29 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
 
 ## Pre-mortem
 

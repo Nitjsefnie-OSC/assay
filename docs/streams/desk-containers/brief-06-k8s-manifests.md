@@ -19,7 +19,7 @@ why: >-
   The second half of the request's secondary aim: run the same desk images on a
   cluster, with per-desk persistent volumes and credentials from k8s Secrets, so a desk
   can live on shared infrastructure instead of one person's desktop.
-version: 3
+version: 4
 id: 9ff1192a-c441-4dd3-b574-85b8cf85954e
 exec-tier: strong
 exec-tier-why: Per-role persistence, credential profiles and offline validation cross artifacts.
@@ -101,12 +101,20 @@ Evidence. No credential value in manifests, layers or examples.
 
 The script and fixtures below are implementation deliverables; checks are entirely offline.
 
+For the consumer row, the independent verifier obtains the actual implementation delivery
+from the merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records that
+commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
+HEAD, origin/main or this authoring PR. Both commits must be available in the verification
+checkout; absent/unknown provenance fails closed. Retain exact consumer result counts and
+resolve unchecked required consumers separately; zero disproofs alone is not complete flow
+coverage. These inputs are future implementation-verification evidence, not claims made here.
+
 | # | Class | Command | Expect |
 |---|---|---|---|
 | 1 | check +flow +dereference | `sh containers/k8s/check.sh --base` | exit 0; pinned render/cached-schema validation and structured assertions prove five distinct interactive role workloads/PVCs, image pins and explicit identity; no API calls or credential Secret in rendered output |
 | 2 | check +mutation | `sh containers/k8s/check.sh --base --self-test` | exit 0; checker reports every hostile fixture rejected; removing a role, tty, PVC, image digest or token isolation fails; fixture containing an example Secret fails |
 | 3 | check +neighbour | `sh containers/scripts/layer-secret-scan.test.sh` | exit 0; current image credential-layer protections remain; coordinate any merged scan replacement rather than restoring a retired scanner |
-| 4 | check +flow | `statusgen --root . --consumers` | exit 0; no consumer-routing claim disproved by this branch; unchecked or omitted consumers retain their explicit review limits |
+| 4 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief desk-containers/06 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required consumers stay held and omitted consumers remain a review obligation |
 | 5 | check +mutation | `sh containers/k8s/check.sh --source-secrets --self-test` | exit 0; all committed manifests and unrendered examples are scanned; excluded-example synthetic credential is rejected independently of rendering |
 
 ## Definition of Done
