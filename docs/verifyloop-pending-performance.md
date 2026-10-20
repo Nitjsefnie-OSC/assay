@@ -61,12 +61,15 @@ HTTP write-attempt observer.
 | Attestation body-history requests | 39 | 31 |
 | Attestation label-history requests | 39 | 31 |
 | Measured GraphQL points | 42 | 34 |
-| Instrumented wall time, first matched pair | 78.590 s | 58.631 s |
+| Instrumented wall time, first pair (parent then reuse) | 78.590 s | 58.631 s |
+| Instrumented wall time, reverse-order repeat | 120.825 s | 299.382 s |
 
 The 93-request reduction is explained by 22 file reads, eight repeated five-operation
 attestation validations, and one issue read for each of 31 distinct validations.
-The first pair saved 25.4% wall time; live timing is not a universal production target.
-REST quota units remain unsupported, and no monetary saving is inferred.
+The first pair saved 25.4% wall time, but the reverse-order repeat was slower despite
+the same request reduction and identical plan. No stable live wall-time improvement is
+established by these samples. REST quota units remain unsupported, and no monetary
+saving is inferred.
 
 The total counter covers native provider/Git HTTP, credential-child HTTP and the real
 preflight GH identity probe. The normal credential cache was warm; no credential-child
@@ -89,6 +92,14 @@ DNS/connect/TLS time was about 0.2 seconds; 274 of 276 native requests reused a 
 CPU was 1.885 seconds. These observations do not identify whether remote service,
 network, contention or throttling caused the earlier latency swing. Goroutine wait
 profiles overlap and must not be summed into process wall time.
+
+The slow optimized repeat used 2.451 seconds of CPU in 299.382 seconds wall time. The
+runtime blocking profile attributes 201.02 seconds on the planning path to
+`net/http/internal/http2.transportResponseBody.Read` waiting on its data pipe, with
+`GitHubForge.doJSON` above it. The full observed provider-request duration was 290.198
+seconds; response-header time was a smaller part. This distinguishes response-body waits
+from CPU work and from merely waiting for headers. The root cause of those transfer
+stalls is unresolved. No HTTP protocol or transport default is changed by this PR.
 
 The optimization reduces the repeated work rather than introducing parallel provider
 traffic. Remaining distinct attestation/trust/stamp reads and distinct pending changes
