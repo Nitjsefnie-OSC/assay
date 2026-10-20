@@ -191,8 +191,14 @@ func dashOrValue(s string) string {
 
 // semantic: S-claim
 func cmdAcquire(id, owner, branch string) int {
+	if rc, stop := checkAliases(id, "pre"); stop {
+		return rc
+	}
 	switch store.CreateIfAbsent(id, claimMessage(id, owner, "claimed", branch, "")) {
 	case deskkit.ClaimWriteApplied:
+		if rc, stop := checkAliases(id, "post"); stop {
+			return rc
+		}
 		logf("acquired %s (owner=%s state=claimed) — %s/%s", id, owner, refPrefix, id)
 		return exitOK
 	case deskkit.ClaimWriteUnverifiable:
@@ -351,12 +357,14 @@ func cmdShow(id string) int {
 	switch status {
 	case deskkit.ClaimReadFree:
 		logf("FREE %s (no %s/%s in the repo)", id, refPrefix, id)
+		printAliasHeld(id)
 		return exitOK
 	case deskkit.ClaimReadUnverifiable:
 		errf("unverifiable: could not read the claim on %s%s", id, causeSuffix())
 		return exitUnverifiable
 	}
 	printHeld(id, ref)
+	printAliasHeld(id)
 	return exitOK
 }
 
