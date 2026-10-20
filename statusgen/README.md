@@ -218,6 +218,16 @@ detector's, not this one's. A partial claim whose alias cannot be resolved here
 (unknown, withheld, or no registry) makes the brief `unknown` and refuses
 `--apply`.
 
+Evidence-only and status-only PRs are excluded by the same diff classifier the
+approval/provenance resolver uses (`evidenceshape.go`): Evidence sections,
+verify-outcome records and status cells are bookkeeping, not implementation.
+A potentially Evidence-shaped change whose patch or head could not be read makes
+the brief `unknown` and refuses `--apply`. Every derived row passes admission,
+including completed rows used by the drift comparator; the write arm still moves
+only todo/in-progress rows. File lists and additional shape reads are cached per
+PR for the run and shared with backfill. Ordinary code PRs and declared partials
+need no additional shape read. A VERIFY FAIL alone never removes a delivery.
+
 ```bash
 # Online: read the repo's PRs over the REST API and derive.
 statusgen reconcile --root . --repo medici-finance/assay --json
