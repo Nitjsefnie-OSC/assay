@@ -1,8 +1,9 @@
 package main
 
-// perfrecord_test.go — #3101: with ASSAY_TELEMETRY=1 statusgen writes the same local perf-v1
+// perfrecord_test.go — #3101: with ASSAY_TELEMETRY=1 statusgen writes the same local perf-v2
 // record the desk tools write, through the shared perfrec module; with it unset it writes
-// nothing and behaves exactly as before.
+// nothing and behaves exactly as before. Phases and the forge counter: perfphases_test.go,
+// perfhttp_test.go.
 
 import (
 	"bytes"
@@ -26,21 +27,35 @@ type perfRun struct {
 	code        int
 }
 
-// runPerfBinary runs the built statusgen with a throwaway HOME and the given ASSAY_TELEMETRY
-// (set=false removes it), from a scratch working directory.
-func runPerfBinary(t *testing.T, bin, home string, set bool, val string, args ...string) perfRun {
-	t.Helper()
-	cmd := exec.Command(bin, args...)
-	cmd.Dir = t.TempDir()
+// perfTestEnv is the environment every child of these tests runs with: the caller's, minus
+// the perf switch, HOME, the desk loop, every forge credential, the forge repo and gh/XDG config
+// locations, and every GIT_* variable (so a child can neither reach a forge with a real token
+// nor resolve a repository the test did not make), with HOME set to the throwaway one and git
+// discovery stopped at ceiling.
+func perfTestEnv(home, ceiling string) []string {
 	var env []string
 	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "ASSAY_TELEMETRY=") || strings.HasPrefix(e, "HOME=") ||
-			strings.HasPrefix(e, "USERPROFILE=") || strings.HasPrefix(e, "DESK_LOOP=") {
+		key, _, _ := strings.Cut(e, "=")
+		switch k := strings.ToUpper(key); {
+		case strings.HasPrefix(k, "GIT_"),
+			k == "ASSAY_TELEMETRY", k == "HOME", k == "USERPROFILE", k == "DESK_LOOP",
+			k == "GH_TOKEN", k == "GITHUB_TOKEN", k == "GH_ENTERPRISE_TOKEN",
+			k == "GITHUB_ENTERPRISE_TOKEN", k == "GITLAB_TOKEN", k == "STATUSGEN_GITLAB_TOKEN",
+			k == "CI_JOB_TOKEN", k == "GITHUB_REPOSITORY", k == "GITHUB_GRAPHQL_URL", k == "GH_CONFIG_DIR", k == "XDG_CONFIG_HOME":
 			continue
 		}
 		env = append(env, e)
 	}
-	env = append(env, "HOME="+home, "USERPROFILE="+home)
+	return append(env, "HOME="+home, "USERPROFILE="+home, "GIT_CEILING_DIRECTORIES="+ceiling)
+}
+
+// runPerfBinary runs the built statusgen with a throwaway HOME and the given ASSAY_TELEMETRY
+// (set=false removes it), from a scratch working directory, in perfTestEnv.
+func runPerfBinary(t *testing.T, bin, home string, set bool, val string, args ...string) perfRun {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = t.TempDir()
+	env := perfTestEnv(home, filepath.Dir(cmd.Dir))
 	if set {
 		env = append(env, "ASSAY_TELEMETRY="+val)
 	}
@@ -59,14 +74,62 @@ func runPerfBinary(t *testing.T, bin, home string, set bool, val string, args ..
 
 func buildPerfBinary(t *testing.T) string {
 	t.Helper()
+	return buildPerfBinaryWith(t)
+}
+
+// buildPerfBinaryWith builds statusgen with extra `go build` flags (an -ldflags stamp).
+func buildPerfBinaryWith(t *testing.T, flags ...string) string {
+	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain unavailable")
 	}
 	bin := filepath.Join(t.TempDir(), "statusgen")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+	args := append(append([]string{"build"}, flags...), "-o", bin, ".")
+	if out, err := exec.Command("go", args...).CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	return bin
+}
+
+// A build stamp is free text set at link time. Only a commit-shaped stamp may reach the record:
+// a stamp carrying a URL with a credential-looking query, or a builder's path, must not appear
+// anywhere in the written line, and the record's sourceSHA reads "unpinned". The path stamp is
+// relative because the public tree carries no absolute machine paths.
+// regression: #3101
+func TestPerfHostileStampDropped(t *testing.T) {
+	for name, stamp := range map[string]string{
+		"url":  "https://forge.invalid/rel?token=fake-stamp-token",
+		"path": "build/src/assay",
+	} {
+		t.Run(name, func(t *testing.T) {
+			bin := buildPerfBinaryWith(t, "-ldflags", "-X main.statusgenVersion="+stamp)
+			run, _, home := perfFixtureRun(t, bin, true, "--lint", "--root", "{root}")
+			if run.code != 0 {
+				t.Fatalf("exit %d\nstdout: %s\nstderr: %s", run.code, run.out, run.errOut)
+			}
+			files, _ := filepath.Glob(filepath.Join(home, ".config", "assay", "perf", "*.jsonl"))
+			var raw []byte
+			for _, f := range files {
+				b, err := os.ReadFile(f)
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw = append(raw, b...)
+			}
+			if len(bytes.TrimSpace(raw)) == 0 {
+				t.Fatal("switch on wrote no perf line")
+			}
+			for _, leak := range []string{stamp, "fake-stamp-token", "forge.invalid", "build/src"} {
+				if bytes.Contains(raw, []byte(leak)) {
+					t.Errorf("perf line carries %q from the build stamp: %s", leak, raw)
+				}
+			}
+			recs := perfRecords(t, home)
+			if len(recs) != 1 || recs[0]["sourceSHA"] != "unpinned" {
+				t.Errorf("records = %v, want one with sourceSHA unpinned", recs)
+			}
+		})
+	}
 }
 
 func perfRecords(t *testing.T, home string) []map[string]any {
@@ -123,7 +186,7 @@ func TestPerfOffWritesNothing(t *testing.T) {
 	}
 }
 
-// TestPerfOnWritesOneRecord: ASSAY_TELEMETRY=1 appends exactly one perf-v1 line per process,
+// TestPerfOnWritesOneRecord: ASSAY_TELEMETRY=1 appends exactly one perf-v2 line per process,
 // in the desk tools' schema, for success, a usage error, and a real mode; exit code and
 // output are unchanged by recording.
 //
@@ -134,8 +197,8 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 	if err := os.CopyFS(root, os.DirFS("testdata/goodrepo")); err != nil {
 		t.Fatal(err)
 	}
-	wantKeys := []string{"childProcs", "childWallMs", "exit", "forgeCalls", "install", "result", "role",
-		"schema", "sourceSHA", "tool", "ts", "verb", "wallMs"}
+	wantKeys := []string{"boundary", "counters", "cpu", "exit", "install", "phaseOverlap", "phases",
+		"result", "role", "schema", "sourceSHA", "tool", "ts", "unavailable", "verb", "wallMs"}
 	if runtime.GOOS != "windows" {
 		wantKeys = append(wantKeys, "cpuMs")
 	}
@@ -188,9 +251,9 @@ func TestPerfOnWritesOneRecord(t *testing.T) {
 			}
 			sort.Strings(keys)
 			if strings.Join(keys, ",") != strings.Join(wantKeys, ",") {
-				t.Errorf("perf-v1 key set drifted from the desk tools':\n got  %v\n want %v", keys, wantKeys)
+				t.Errorf("perf-v2 key set drifted from the desk tools':\n got  %v\n want %v", keys, wantKeys)
 			}
-			for field, want := range map[string]any{"schema": "perf-v1", "tool": "statusgen", "verb": c.verb,
+			for field, want := range map[string]any{"schema": "perf-v2", "tool": "statusgen", "verb": c.verb,
 				"role": "none", "result": c.result, "exit": float64(c.exit), "sourceSHA": "unpinned"} {
 				if rec[field] != want {
 					t.Errorf("%s = %v, want %v", field, rec[field], want)
