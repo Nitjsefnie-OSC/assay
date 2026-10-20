@@ -195,9 +195,12 @@ def structured(docs):
                   'shareProcessNamespace', 'initContainers', 'ephemeralContainers']),
              'host namespaces and additional containers forbidden')
         sec = pod.get('securityContext', {})
-        need(sec.get('runAsNonRoot') is True and sec.get('runAsUser', 0) > 0
-             and sec.get('runAsGroup', 0) > 0 and sec.get('fsGroup', 0) > 0
-             and sec.get('seccompProfile') == {'type': 'RuntimeDefault'}, 'non-root sandbox required')
+        # The published v1.0.52 images resolve desk as 999:999. Recheck the actual
+        # pinned artifacts per README when updating images, not just a rebuild.
+        need(sec.get('runAsNonRoot') is True
+             and all(sec.get(k) == 999 for k in ['runAsUser', 'runAsGroup', 'fsGroup'])
+             and sec.get('seccompProfile') == {'type': 'RuntimeDefault'},
+             'non-root sandbox with image desk UID/GID/fsGroup 999 required')
         containers = pod.get('containers', [])
         need(len(containers) == 1, 'exactly one interactive role container per Pod')
         container = containers[0]

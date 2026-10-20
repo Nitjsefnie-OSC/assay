@@ -21,6 +21,19 @@ packaging review does not supply it. Agent-execution/09 owns managed boot and
 isolation; desk-containers/28 owns the managed operator; /29 owns real-profile
 qualification. A Running Pod does not acquire a role lease or authorize effects.
 
+Each desk's container log is also a session transcript: `tty: true` sends terminal
+output, including echoed input and anything a command prints, to the runtime log.
+Treat logs as compatibility key-custody material even if a session normally prints
+no secrets. On `assay-desks`, restrict `pods/log` together with `pods/attach`,
+`pods/exec` and `pods/ephemeralcontainers` to principals authorized for the relevant
+role's key custody; do not grant broader log-reader access. Protect node log files
+and their readers on the same basis. Exclude this namespace from node log shipping,
+or require every downstream collector, store, export/backup and reader to meet the
+same custody boundary and retention/access controls. A generic shared log pipeline
+that admits other readers is not an acceptable destination. NetworkPolicy and the
+absence of a terminal Service do not restrict these log paths. Qualify the actual
+logging configuration before installation; offline checks cannot establish it.
+
 ## Before installation
 
 Supply an adopter-owned overlay and review its complete render.
@@ -43,8 +56,8 @@ not measured capacity promises. Supply an approved storage class with suitable
 retention, backup and access controls. StatefulSet deletion and scale-down
 retain PVCs; namespace deletion or explicit PVC deletion can still destroy data.
 
-The process uses numeric UID/GID 1000, with fsGroup 1000 granting write access to
-`/work` and group read on the 0440 Secret volume. No privileged ownership-fix init
+The process uses the pinned images' `desk` account at UID/GID 999, with fsGroup 999
+granting write access to `/work` and group read on the 0440 Secret volume. No privileged ownership-fix init
 container is used. Validate CSI fsGroup handling and preflight readability before
 admitting a profile. Kubernetes Secret files otherwise default to root ownership;
 0400 alone would be unreadable to this non-root process. The mount remains
@@ -116,3 +129,44 @@ The node selector matches that published platform. To update, verify the new
 release asset against its published checksums, update all five references from
 that same release and repeat both offline checks. No registry lookup occurs
 inside `check.sh`; a well-formed digest is not a fresh image availability proof.
+
+### Image account verification
+
+On 20 October 2026, all five published v1.0.52 digests named in these manifests
+were checked in disposable local containers: the default account and explicit
+`999:999` both resolved to `desk` in passwd/group, `/work` was owned by `999:999`,
+and Node `os.userInfo()` and Python `pwd.getpwuid()` succeeded. A `1000:1000`
+negative control failed Node user lookup with `ENOENT` in every image. No model
+entrypoint, credentials, host mounts or container network were used. This verifies
+the pinned image account; it does not qualify CSI or live Secret permissions.
+
+The Dockerfile allocates a system account without a numeric pin. A rebuild or
+matching source line alone therefore does not prove the published artifact's
+identity. At each image update, acquire the exact reviewed digests explicitly,
+then run this local check for **every** role before adopting those references.
+`--pull never` makes a missing local artifact a failure, not an implicit download:
+
+```sh
+for manifest in containers/k8s/base/*-desk.yaml; do
+  image=$(awk '/^          image:/ { print $2 }' "$manifest")
+  test -n "$image" || exit 1
+  docker run --rm --pull never --platform linux/amd64 --network none \
+    --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --user 999:999 --entrypoint node "$image" -e '
+      const u = require("node:os").userInfo();
+      const fs = require("node:fs");
+      const work = fs.statSync("/work");
+      if (u.username !== "desk" || u.uid !== 999 || u.gid !== 999 ||
+          work.uid !== 999 || work.gid !== 999 || process.env.HOME !== "/work")
+        process.exit(1);
+      fs.accessSync("/work", fs.constants.W_OK);
+      fs.accessSync("/usr/local/bin/desk-entrypoint", fs.constants.X_OK);
+      console.log("checked-clean: " + process.env.ASSAY_DESK + " desk=999:999");
+    ' || exit 1
+done
+```
+
+Record each digest and the result. Missing artifacts or an account mismatch hold
+adoption. Update the manifests, the checker's identity invariant, fixtures and
+this procedure together if the image account changes. The static checker rejects
+a different UID, GID or fsGroup at every role; it does not inspect registry images.

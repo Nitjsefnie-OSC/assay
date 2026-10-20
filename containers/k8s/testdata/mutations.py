@@ -71,6 +71,16 @@ def cases(clean):
             else:
                 pods[1]['volumes'] = copy.deepcopy(pods[0]['volumes'])
         fixtures['shared-' + field + '-secret'] = share
+    # regression: F-k8s-uid-mismatch — plant each identity field at every role,
+    # including sites beyond the originally reported worker workload.
+    for workload in (d for d in clean if d['kind'] == 'StatefulSet'):
+        role = workload['metadata']['name']
+        for field in ['runAsUser', 'runAsGroup', 'fsGroup']:
+            def wrong_identity(ds, role=role, field=field):
+                target = next(d for d in ds if d['kind'] == 'StatefulSet'
+                              and d['metadata']['name'] == role)
+                target['spec']['template']['spec']['securityContext'][field] = 1000
+            fixtures['image-identity-' + role + '-' + field] = wrong_identity
     for name, change in fixtures.items():
         mutant = copy.deepcopy(clean)
         change(mutant)

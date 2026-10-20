@@ -19,13 +19,14 @@ why: >-
   The second half of the request's secondary aim: run the same desk images on a
   cluster, with per-desk persistent volumes and credentials from k8s Secrets, so a desk
   can live on shared infrastructure instead of one person's desktop.
-version: 4
+version: 5
 id: 9ff1192a-c441-4dd3-b574-85b8cf85954e
 exec-tier: strong
 exec-tier-why: Per-role persistence, credential profiles and offline validation cross artifacts.
 consumers:
   - "containers/k8s/: follow-up desk-containers/06"
   - "docs/docker.md: follow-up desk-containers/06"
+  - "docs/streams/desktools-v2/cli-migration.json: fixed-here"
 outcome: none
 
 ---
@@ -34,7 +35,7 @@ outcome: none
 
 ## Context
 
-files: `containers/k8s/` (planned namespace, five StatefulSets/PVCs, Kustomize base, placeholder-only secret example and `check.sh`), `docs/docker.md`, `changelog/kubernetes-desk-manifests.md` (planned).
+files: `containers/k8s/` (planned namespace, five StatefulSets/PVCs, Kustomize base, placeholder-only secret example and `check.sh`), `docs/docker.md`, `docs/streams/desktools-v2/cli-migration.json` (exact test-class routes for the source-only checker and YAML adapter), `changelog/kubernetes-desk-manifests.md` (planned).
 
 facts: Assay main d8687cab6 inspected 20 October 2026; the five desk images exist but
 containers/k8s does not. Each configured desk gets its own Pod/container and PVC at /work,
@@ -82,7 +83,9 @@ Evidence. No credential value in manifests, layers or examples.
    /09 and /28 own managed boot/overlay changes; do not pretend a manifest removes that custody.
    Keep each independent role's App-PEM and model credential Secret references distinct;
    the checker rejects a shared credential Secret between role workloads. Compatibility
-   terminal access is transitive key custody and cannot use the /28 managed operator.
+   terminal access and container session logs are transitive key custody and cannot use
+   the /28 managed operator. Document equivalent custody restrictions for `pods/log`,
+   node log files/shipping and downstream log readers; shared logging cannot widen access.
 3. Supply offline render/schema and structured checks plus hostile manifest fixtures. Reject
    one workload hosting all roles, absent/duplicate role, missing PVC/tty, mutable image,
    privileged/host mounts, agent service-account credential or example Secret in the build.

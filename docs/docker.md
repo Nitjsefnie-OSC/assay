@@ -198,7 +198,20 @@ compose stack, CronJob, workflow controller or desktop multiplexer.
 This is the **compatibility** credential profile under
 [`containers/secrets.md`](../containers/secrets.md), whose /02 human acceptance
 remains separate. Terminal users can read the mounted App PEM and model
-credentials: terminal access is transitive key custody. Legacy images do not
+credentials: terminal access is transitive key custody. Each desk's container log
+is also its session transcript: the TTY output stream includes echoed input and
+anything commands print, and Kubernetes captures it in the runtime log. The
+[Kubernetes logging architecture](https://kubernetes.io/docs/concepts/cluster-administration/logging/)
+exposes container logs through `pods/log` and node log collection. Restrict
+`pods/log` alongside `pods/attach`, `pods/exec` and `pods/ephemeralcontainers` on
+`assay-desks` to principals authorized for that role's key custody. Protect node
+log files and their readers accordingly. Exclude the namespace from node log
+shipping, or treat every downstream collector, log store, export/backup and reader
+as part of the same custody boundary, with appropriate retention and access
+controls. Do not send desk transcripts to a generic shared logging service whose
+readers lack that custody authority. The installation operator must qualify these
+paths before admitting the profile; neither NetworkPolicy nor offline rendering
+proves log isolation. Legacy images do not
 satisfy the managed target's isolation. Agent-execution/09 owns managed boot;
 [desk-containers/28](streams/desk-containers/brief-28-package-in-cluster-cellctl-and-bind-the-interactive-desk-profile.md)
 will provide the separate in-cluster `cellctl` operator and must refuse this
