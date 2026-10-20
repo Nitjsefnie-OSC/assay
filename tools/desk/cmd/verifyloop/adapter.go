@@ -116,14 +116,18 @@ func (v *VerifyLoop) Name() string { return "verify-desk" }
 // (implemented + empty Evidence) before tier-2 (free-closes / Evidence-present), oldest-first
 // within class. See briefscan.go.
 func (v *VerifyLoop) SelectQueue() ([]loopengine.Item, error) {
+	if source, ok := v.Issues.(interface{ beginPlanningPass() }); ok {
+		source.beginPlanningPass()
+	}
 	now := v.wakeNow()
 	var items []loopengine.Item
 	var err error
 	stopScan := v.performance.phase("queue-scan")
+	pass := deskkit.NewVerifierAssociationPass(v.performance.session)
 	if len(v.Roots) > 0 {
-		items, err = scanAwaitingRoots(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now)
+		items, err = scanAwaitingRootsPass(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
 	} else {
-		items, err = scanAwaitingIn(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now)
+		items, err = scanAwaitingPass(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
 	}
 	stopScan()
 	if err != nil {

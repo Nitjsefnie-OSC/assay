@@ -93,9 +93,13 @@ func scanAwaiting(root, targetSHA string) ([]loopengine.Item, error) {
 // is stable. A root whose streams cannot be read is an error naming the root, never a silent
 // omission: the whole point of the multi-root plan is that a repo's queue cannot vanish.
 func scanAwaitingRoots(roots []deskkit.RootConfig, targetSHA string, reader deskkit.WakeInputs, issues deskkit.IssueStateSource, now time.Time) ([]loopengine.Item, error) {
+	return scanAwaitingRootsPass(roots, targetSHA, reader, issues, now, deskkit.NewVerifierAssociationPass(nil))
+}
+
+func scanAwaitingRootsPass(roots []deskkit.RootConfig, targetSHA string, reader deskkit.WakeInputs, issues deskkit.IssueStateSource, now time.Time, pass *deskkit.VerifierAssociationPass) ([]loopengine.Item, error) {
 	var all []loopengine.Item
 	for _, r := range roots {
-		items, err := scanAwaitingIn(r, "", targetSHA, reader, issues, now)
+		items, err := scanAwaitingPass(r, "", targetSHA, reader, issues, now, pass)
 		if err != nil {
 			return nil, fmt.Errorf("root %s (%s): %w", r.Repo, r.Path, err)
 		}
@@ -124,6 +128,10 @@ func itemWorkClass(it loopengine.Item) int {
 // the repository a bare #N blocker_ref resolves in when the record names none and r.Repo is
 // empty. It never prefixes IDs — only r.Repo does.
 func scanAwaitingIn(r deskkit.RootConfig, homeRepo, targetSHA string, reader deskkit.WakeInputs, issues deskkit.IssueStateSource, now time.Time) ([]loopengine.Item, error) {
+	return scanAwaitingPass(r, homeRepo, targetSHA, reader, issues, now, deskkit.NewVerifierAssociationPass(nil))
+}
+
+func scanAwaitingPass(r deskkit.RootConfig, homeRepo, targetSHA string, reader deskkit.WakeInputs, issues deskkit.IssueStateSource, now time.Time, pass *deskkit.VerifierAssociationPass) ([]loopengine.Item, error) {
 	root := r.Path
 	streamsDir := filepath.Join(root, "docs", "streams")
 	entries, err := os.ReadDir(streamsDir)
@@ -134,7 +142,7 @@ func scanAwaitingIn(r deskkit.RootConfig, homeRepo, targetSHA string, reader des
 	// clock — both injectable in tests. The default is the OFFLINE, probe-free reader over this
 	// root's tree (content hashes + the tool version; it never observes an external action).
 	if reader == nil {
-		reader = deskkit.NewRootRevisionReader(root, deskkit.ReleaseTagOrDev())
+		reader = &planningRevisionReader{RootRevisionReader: deskkit.NewRootRevisionReader(root, deskkit.ReleaseTagOrDev()), revisions: map[string]planningRevision{}}
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -240,7 +248,7 @@ func scanAwaitingIn(r deskkit.RootConfig, homeRepo, targetSHA string, reader des
 		// Preserve the original unresolved/unreadable reason; there is no brief
 		// association to derive until that earlier could-not-check is resolved.
 		if payload["could_not_check"] == "" {
-			if associated, err := associateVerifierItem(item, root); err != nil {
+			if associated, err := associateVerifierItemIn(item, root, pass); err != nil {
 				payload["could_not_check"] = "verifier association: " + err.Error()
 			} else {
 				item = associated
