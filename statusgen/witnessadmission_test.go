@@ -212,3 +212,15 @@ func TestAdmissionCacheAndDelivery(t *testing.T) {
 		t.Fatalf("failed verification erased implementation: %+v", c)
 	}
 }
+
+// A second brief with an outcome-only PR exercises the untouched sibling path.
+// regression: #2703
+func TestOutcomeSecondInstance(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+	root := copyDesignGateFixture(t)
+	authoringServer(t, []map[string]any{mergedPull(2300, "verify/dg-05", "Brief: dg/05\n")}, map[int][]map[string]any{2300: {{"filename": "docs/streams/verify-outcomes/dg/05.json", "status": "added"}}}, nil)
+	code, out := runReconcileCaptured(t, "--apply", "--root", root, "--repo", "o/r", "--json")
+	if code != reconcileOK || cellOf(t, out, "dg/05").Cell != "todo" || len(appliedIDs(t, out)) != 0 {
+		t.Fatalf("second instance: outcome-only PR #2300 became an implementation witness: exit %d, cell %+v", code, cellOf(t, out, "dg/05"))
+	}
+}
