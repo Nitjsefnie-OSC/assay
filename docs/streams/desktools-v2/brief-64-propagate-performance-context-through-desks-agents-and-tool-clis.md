@@ -251,6 +251,51 @@ Ranked lower, reversible: perfrec NewID = 16 random bytes (32 hex) @ tools/desk/
 
 **VERIFY: FAIL** — row 2: TestPerfV3CLIContextPrecedence does not fail when any claim or token-custody entrypoint's parser exemption is flipped in the CLI migration registry. The row's Expect names that as a failing control, so this risk-bearing row does not discriminate. Row 4 is separately could-not-check until this marker lands.
 
+### Row 4 at the Evidence landing commit — 2026-10-20 at a570e840520a
+
+Verification-Attestation: medici-finance/assay#3771 run=4c27a0692c0233e6e2079a4cac3c3046200a59e6f670cee0ec68e8751a2de458 source=f3724a2d07a8ee8e3ac42f4e87300637e4e3153b brief=docs/streams/desktools-v2/brief-64-propagate-performance-context-through-desks-agents-and-tool-clis.md model=claude-opus-5-5 tier=strong
+
+Subject revision: a570e840520af3fe6e01f08fdda7cf07b7328b1a. Its single parent is the attested source f3724a2d07a8, and it changes only this brief's Evidence section: the run above, together with its Verification-Table marker (1 file, 65 insertions).
+
+Verify row 4 was re-run exactly as written in a scratch clone at that commit. The clone was never pushed and has a dead push URL. Its local origin/main is pinned to the subject revision, which is how the brief reads once this commit is on main.
+
+The row ran twice:
+- by hand on the host, with the pinned statusgen v1.0.52 shim and KUBECONFIG=/dev/null;
+- by hand inside a docker container (image assay-verify:go1.27, `--network none`, only loopback present, clone mounted read-only). The container used statusgen built from the attested source, which is unpinned.
+
+Both runs gave the same exit and summary, and the clone's status was clean afterwards. Rows 1 to 3 are carried forward from the first run at f3724a2d07a8 and labelled that way. a570e840520a changes no code, only this brief.
+
+The statusgen verifyrun container witness was not re-run. In the first run it could not complete, for an environment-only reason: its in-process admission must mint a forge credential, and the credential-free `--network none` container cannot do that by design.
+
+Verification-Table: delivery=4b7f4847f7f3531185fdfb23fbf978ae9551a242 base=b73d90d774fca8aec8974ef410da63ebcb10eece original=3d737b4871bf604e698c6c96427bb89c5e794db7
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3LauncherChildFlow$' ./internal/deskkit/ > "$out" && grep -F -- '--- PASS: TestPerfV3LauncherChildFlow ' "$out")` | pass exit=0 (carried forward from the run at f3724a2d07a8; host and container hand runs; all named plants killed) | sha256:4219e8e52f92 | 2026-10-20 | assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+| 2 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3CLIContextPrecedence$' ./internal/clicontract/ > "$out" && grep -F -- '--- PASS: TestPerfV3CLIContextPrecedence ' "$out")` | exit=0 named PASS, mutation obligation failed (carried forward from the run at f3724a2d07a8): a flipped parser exemption for deskclaim, deskclaim-ref, desktoken or deskboot in the CLI migration registry still passes | sha256:8af2549f2fdb | 2026-10-20 | assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+| 3 | `(cd loopadmin && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestPerfV3RunnerIdentityLifecycle$' ./... > "$out" && grep -F -- '--- PASS: TestPerfV3RunnerIdentityLifecycle ' "$out")` | pass exit=0 (carried forward from the run at f3724a2d07a8; host and container hand runs; 7 of 7 plants killed) | sha256:f2e42d58df1a | 2026-10-20 | assay-verifier-app[bot] @ f3724a2d07a8 (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+| 4 | `statusgen --root . --consumers --brief desktools-v2/64` | pass exit=0 (host); exit=0 in the `--network none` container | sha256:e3fb036a0321 | 2026-10-20 | assay-verifier-app[bot] @ a570e840520a (on-behalf-of human:ian) (claude-opus-5-5 dispatched verifier, hand run) |
+
+Output line: `summary: 13 corroborated, 0 disproved, 2 unchecked, 0 brief(s) claiming nothing`, over `base 9d4ae27f2d0dcf429b1ac2e82094464b6ba2a7a3..4b7f4847f7f3531185fdfb23fbf978ae9551a242 (immutable delivered snapshot)`. The container run printed the identical summary line.
+
+Corroborated entries:
+- fixed-here: perfrec/lifecycle.go; the CI workflow; deskkit citrigger_test.go and runtool.go; cmd/cellctl and deskdispatch; internal/cli/ and clicontract/; cmd/deskboard/, deskread/ and deskgitlab/; cmd/deskclaim-ref/, deskclaim/, deskboot/ and desktoken/; loopadmin/runner/; plugins/assay/skills/ and references/desk-shell.md
+- follow-up: desktools-v2/62 (deskboard and desktoken production observations), statusgen/26, performance-collection/02
+
+Unchecked entries. Both are out of scope; neither is an in-scope entry:
+- graph-execution/19 and /16, with forge-neutral/40 (future claim/token-custody replacements)
+- qualgen/ and the other standalone maintained entrypoints
+
+Their truth is a reviewer judgement that no diff can settle, so this is an exit 0 with only out-of-scope entries unchecked. Row 4 passes at the landing commit.
+
+The earlier row 4 result at f3724a2d07a8 was exit 2 COULD-NOT-CHECK, because no Verification-Table marker was on main. It is superseded by this run and kept above as history.
+
+Totals: 4 required rows. Rows 1, 3 and 4 pass. Row 2 exits 0 but fails its mutation obligation (the parser-exemption control does not discriminate). Unrun rows: 0.
+
+Raw outputs that print the role-context flag by name, roster echo lines and the full statusgen output are kept in the verifier's local scratch and not copied here.
+
+**VERIFY: FAIL** — row 2: TestPerfV3CLIContextPrecedence does not fail when a claim or token-custody entrypoint's parser exemption is flipped in the CLI migration registry. The row's Expect names that change as a failing control. Row 4 now passes at a570e840520a: exit 0, 13 corroborated, 0 disproved, 2 unchecked, both out of scope.
+
 ## Review
 
 Gate: human. Reject changed legacy meanings, guessed identity/cost, lost coverage or optional measurement that changes an operation.
