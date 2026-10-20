@@ -10,6 +10,9 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Workflow attribution exposes local work linkage; review the implemented field, consent and propagation boundary before acceptance."
 decision-trigger: spec
+decision-issue: 3536
+ruling: "https://github.com/medici-finance/assay/issues/3536#issuecomment-6282045526"
+design: DR-perf-v3-local
 issues: []
 schema: brief-v3
 version: 2
@@ -89,7 +92,12 @@ Options:
 1. **Accept the bounded implementation** — accept the demonstrated local disclosure and isolation; retain separate remote activation controls.
 2. **Hold for correction** — identify the field, lifecycle or failure boundary that needs correction.
 
-Default if no answer: none — acceptance waits for concrete implementation evidence.
+Default if no answer: none — blocks until answered
+
+Acceptance waits for concrete implementation evidence.
+
+Decision recorded 2026-10-19: the mapped human selected option 1, accepting the bounded implementation. The design record transcribes that ruling; independent review and verification remain required.
+https://github.com/medici-finance/assay/issues/3536#issuecomment-6282045526
 
 ## Ground rules
 

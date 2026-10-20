@@ -125,7 +125,7 @@ func readPerfDayFile(path string) ([]PerfRecord, int, error) {
 			continue
 		}
 		var r PerfRecord
-		if json.Unmarshal([]byte(line), &r) != nil || (r.Schema != PerfSchema && r.Schema != PerfSchemaV2) {
+		if json.Unmarshal([]byte(line), &r) != nil || (r.Schema != PerfSchema && r.Schema != PerfSchemaV2 && r.Schema != perfrec.SchemaV3) {
 			skipped++
 			continue
 		}
@@ -140,26 +140,29 @@ func readPerfDayFile(path string) ([]PerfRecord, int, error) {
 // IsPerfStep reports whether a record is a boot- or launch-step record: a legacy (non-perf-v2)
 // record with verb "step:<name>". perf-v2 records are invocations, never steps.
 func IsPerfStep(r PerfRecord) bool {
-	return r.Schema != PerfSchemaV2 && strings.HasPrefix(r.Verb, perfStepPfx)
+	return r.Schema != PerfSchemaV2 && r.Schema != perfrec.SchemaV3 && strings.HasPrefix(r.Verb, perfStepPfx)
 }
 
 // IsPerfLegacyInvocation reports whether a record belongs to the legacy perf-v1 invocation
 // group SummarisePerf reads: anything that is neither perf-v2 nor a step. (LoadPerfDays only
-// ever returns the two named schemas; a hand-built record without one reads as legacy.)
-func IsPerfLegacyInvocation(r PerfRecord) bool { return r.Schema != PerfSchemaV2 && !IsPerfStep(r) }
+// ever returns the three named schemas; a hand-built record without one reads as legacy.)
+func IsPerfLegacyInvocation(r PerfRecord) bool {
+	return r.Schema != PerfSchemaV2 && r.Schema != perfrec.SchemaV3 && !IsPerfStep(r)
+}
 
 // IsPerfV2 reports whether a record belongs to the perf-v2 invocation group SummarisePerfV2
 // reads.
 func IsPerfV2(r PerfRecord) bool { return r.Schema == PerfSchemaV2 }
 
-// FilterPerf keeps the records whose tool and role match (an empty filter matches all).
+// FilterPerf keeps matching tools and legacy roles. A legacy role filter excludes v3,
+// whose assigned role has different meaning and requires the workflow-aware ReduceV3 filter.
 func FilterPerf(recs []PerfRecord, tool, role string) []PerfRecord {
 	var out []PerfRecord
 	for _, r := range recs {
 		if tool != "" && r.Tool != tool {
 			continue
 		}
-		if role != "" && r.Role != role {
+		if role != "" && (r.Schema == perfrec.SchemaV3 || r.Role != role) {
 			continue
 		}
 		out = append(out, r)
