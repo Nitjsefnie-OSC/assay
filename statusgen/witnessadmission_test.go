@@ -157,13 +157,15 @@ func TestEvidenceDriftAndCost(t *testing.T) {
 }
 
 // Current corpus is the admission input, not a PR-number exception in code.
-// Public source scopes: #736 migration only; #945 backfill only; #1010 apply
-// only; #1194 rollout slice. All leave brief Task items 2–4 undelivered.
+// Public source scopes: #735 migration-blocking statusgen fixes only; #736
+// migration only; #945 backfill only; #1010 apply only; #1194 rollout slice.
+// All leave brief Task items 2–4 undelivered. #735 also carries the trailer,
+// so leaving it out lets it become the witness once the other four drop.
 // regression: #2703
 func TestRolloutSourceAdmission(t *testing.T) {
 	d := readDeclaredPartials("..", "medici-finance/assay")
 	prs := []PRRecord{}
-	for _, n := range []int{736, 945, 1010, 1194} {
+	for _, n := range []int{735, 736, 945, 1010, 1194} {
 		if !d.partial(n, "derived-board/07") {
 			t.Errorf("rollout PR #%d is not declared partial", n)
 		}
