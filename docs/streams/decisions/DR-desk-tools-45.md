@@ -39,7 +39,7 @@ itself that it "is a relay RECORD, not the ruling", and that "The design-approva
 issue rules on the design (read 2026-10-20).
 
 **Option labels.** The ruling and the decision issue call the accepted option "A". The brief's
-own Human decision lists numbered options instead: "1. Approve the concrete implementation
+pre-sweep Human decision text at commit `15b60414f` lists numbered options instead: "1. Approve the concrete implementation
 after independent verification", "2. Request corrections and keep the change pending" and
 "3. Hold the change", with "Default if no answer: hold." The ruling answers the decision
 issue's A, not the brief's option 1, and the independent verification that option 1 names has

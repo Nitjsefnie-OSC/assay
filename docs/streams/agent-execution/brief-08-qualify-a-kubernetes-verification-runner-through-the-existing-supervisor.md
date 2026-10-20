@@ -64,7 +64,10 @@ design-fit:
 
 ## Human decision
 
-Decision-trigger: spec. Recommended: one namespace-scoped verification executor profile,
+Decision-trigger: spec
+
+<!-- Pickup-time guidance; the executor authors the decision after the design step.
+Recommended: one namespace-scoped verification executor profile,
 digest-pinned images and credential-free candidate Jobs, with only the existing supervisor
 holding the narrow Kubernetes API capability. Alternative: retain the qualified local runner
 until an adequate isolation/recovery profile is available. Before activation, the operator
@@ -72,8 +75,7 @@ selects concrete cluster/namespace, API permissions, service accounts, effective
 runtime isolation, storage retention and recovery objectives, after reviewing the disposable
 qualification evidence. No response means no activation. No permission is inferred from a
 manifest, API success or a published verdict. This brief does not choose a production target.
-
-Default if no answer: none — blocks until answered.
+-->
 
 ## Task
 

@@ -35,11 +35,13 @@ facts: As inspected on 2026-10-16 at main `ec8d77e56627a7c2269f3d143ef6a31f3e41b
 
 ## Human decision
 
-Decision-trigger: spec. At pickup, prepare the concrete launcher/profile boundary and negative-path evidence, then author a self-contained options section and file the decision through the existing gate. The decision concerns adoption of the implemented launch boundary; no response permits no activation. Offline construction and fixture tests can proceed under the inherited ground rules.
+Decision-trigger: spec
+
+<!-- Pickup-time guidance; the executor authors the decision after the design step.
+At pickup, prepare the concrete launcher/profile boundary and negative-path evidence, then author a self-contained options section and file the decision through the existing gate. The decision concerns adoption of the implemented launch boundary; no response permits no activation. Offline construction and fixture tests can proceed under the inherited ground rules.
 
 Contract-consumption: agent-execution/01 supplies the qualified execution-profile types consumed here.
-
-Default if no answer: none — blocks until answered.
+-->
 
 ## Read first
 
