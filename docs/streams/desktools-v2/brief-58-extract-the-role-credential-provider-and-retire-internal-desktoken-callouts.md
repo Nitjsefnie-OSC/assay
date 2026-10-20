@@ -11,7 +11,7 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 issues: []
 schema: brief-v2
 outcome: none
-version: 2
+version: 3
 id: 8c796b94-21a4-4f83-94a0-e1954671972b
 authored: 2026-10-16 by performance brief authoring
 sources:
@@ -90,7 +90,7 @@ Options:
    compatibility; grant no new credential, role, endpoint or deployment authority.
 2. **Hold or narrow the change** — identify the unsupported boundary and revise it before acceptance.
 
-Default if no answer: none — acceptance remains pending. The implementer presents the concrete
+Default if no answer: none — blocks until answered. The implementer presents the concrete
 compatibility and negative-path results before this decision; authoring and offline fixtures
 do not activate the change.
 
