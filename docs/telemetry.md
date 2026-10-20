@@ -100,8 +100,9 @@ only meaningful mode, and it is purely local.
 The desk tools (`tools/desk/`) keep a separate, **local-only** performance log under the
 same promise and the same environment variable. With `ASSAY_TELEMETRY=1` exported, the
 67 operational desk commands each append one `perf-v2` record per completed invocation to
-`~/.config/assay/perf/<YYYY-MM-DD>.jsonl`; `deskboot` boot steps, `cellctl desk` launch steps
-and `statusgen` still append the legacy `perf-v1` record. `deskperf report` and
+`~/.config/assay/perf/<YYYY-MM-DD>.jsonl`, and so does `statusgen`, with one phase per pipeline
+stage; `deskboot` boot steps and `cellctl desk` launch steps still append the legacy `perf-v1`
+record. `deskperf report` and
 `deskperf boot` read both back (see [Two schemas](#two-schemas-perf-v1-and-perf-v2)).
 Day files are kept for 7 UTC days and pruned on write. With the variable unset — or set to
 anything other than exactly `1` — nothing is created: no directory, no file, no install id.
@@ -183,7 +184,15 @@ is the versioned `perf-v2` record below, and it adds no consent or sender either
 ### Two schemas: perf-v1 and perf-v2
 
 Since desktools-v2/61, `deskkit.PerfRun` — the wrapper around every operational desk
-command — writes `perf-v2`. Boot and launch step records and `statusgen` keep writing
+command — writes `perf-v2`, and `statusgen` writes it too: its phases are its pipeline
+stages (`parse`, `lint` and the heaviest lint checks `briefs`, `ordering` and `evidence`,
+`links`, `claims`, `view`, `render`, `write`, `corroborate`), and its `http` counter counts
+each direct HTTP attempt at its forge seams (a redirect the HTTP client follows inside one
+attempt is not counted again); its `gh`/`git` child processes have no shared
+seam, so `subprocess` is listed unavailable. Its phases are listed in roster order, not
+first-entry order (the view build is entered before the claim read but listed after it), and
+they do not sum to `wallMs`: process start and the exit after the last stage fall inside
+`wallMs` but outside every phase. Boot and launch step records keep writing
 `perf-v1`. Both live in the same day files; a reader groups by `schema` and never merges the
 two, because their `wallMs` is measured over different boundaries. A `perf-v2` record carries
 exactly these fields:
@@ -231,6 +240,35 @@ measured/unavailable counts with totals over measured records only, and per-phas
 distributions. The `perfrec` module's README documents the recorder API for other
 standalone tools.
 
+A forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
+runs, unavailable runs, total forge calls, calls per run (p50 / p90 / max, nearest rank), each
+row's share of all forge calls, and the rate-limit cost — the busiest UTC clock hour's calls
+and that hour and the p90 run as a percentage of the 5000-requests-per-hour App budget floor. Unlike
+wall time, the forge count is pooled across the two schemas: perf-v1 `forgeCalls` and the
+perf-v2 `http` counter are the same seam with the same lower-bound meaning, and a call spends
+the budget whichever schema recorded it. Its rules:
+
+- A perf-v2 record whose `http` counter is `unavailable` is an unavailable run: it adds no
+  calls and sits in no distribution, and a row with no measured run prints `-`, never `0`.
+- Older `statusgen` builds wrote perf-v1 with `forgeCalls` always `0`, meaning "not
+  counted", so a `statusgen` perf-v1 record is an unavailable run too; perf-v1 has no
+  unavailable state of its own. Current `statusgen` writes perf-v2, whose `http` counter is
+  read like any other perf-v2 record.
+- Steps are never read (their calls belong to the invocation), and perf-v3 records stay in
+  their own section.
+- The figures are HTTP attempts, not GraphQL quota points. 5000 requests per hour is the floor
+  of an App installation's REST limit (a larger installation gets more), while the counted
+  attempts also include GraphQL calls (their own points budget), conditional 304s and other
+  forges, and the busiest hour pools every tool whichever installation it ran as. A
+  percentage therefore gauges pressure; it is neither a bound on nor a measure of any one
+  installation's draw.
+- A row is keyed on the record's tool label and build stamp only when they have the roster
+  and hex shapes (`perfrec.Label`, `perfrec.SourceSHA`); anything else groups under `other`
+  or `unpinned`, so a malformed or planted perf-v1/perf-v2 record cannot put a path, URL or
+  control byte into this section. (The older tables on the same report still print the raw
+  `tool`.) A negative count reads as unavailable, and sums hold at the int64 maximum instead
+  of wrapping.
+
 Never recorded: argv, flag values, repo, PR or issue numbers, branch, path, title, body,
 error text, session tag, environment values, hostname, user name, or tokens. A test plants a
 repo slug, a PR number, a branch, an absolute path, a session tag and a token-shaped
@@ -239,14 +277,17 @@ environment value, and asserts none of them appears in the written bytes.
 ### statusgen writes the same local record
 
 `statusgen` appends to the same history. With `ASSAY_TELEMETRY=1` exported, each `statusgen`
-process writes one legacy `perf-v1` record on exit into the same `~/.config/assay/perf/` day files,
+process writes one `perf-v2` record on exit into the same `~/.config/assay/perf/` day files,
 with `tool` set to `statusgen`, `verb` the mode that ran (a positional sub-command such as
 `verifyrun`, else the first mode flag such as `--lint`, else `regen` for a plain run; a token
 outside that compiled-in roster is `other`), `exit` the process exit code and `result` its
-fixed word. `role` is `none`, `sourceSHA` is the build stamp when it is hex (a release tag or
-`dev` is `unpinned`), and the child and forge counters stay `0` ("not counted"), so
-`deskperf report --tool statusgen` reads it like any other tool. With the variable unset, or
-anything other than exactly `1`, `statusgen` creates nothing and behaves as it did before.
+fixed word. `role` is `none` and `sourceSHA` is the build stamp when it is hex (a release tag
+or `dev` is `unpinned`). Its phases are its pipeline stages, its `http` counter is measured
+(every direct HTTP attempt at its forge seams, so `0` means none was made), and `subprocess`
+is listed unavailable; see [Two schemas](#two-schemas-perf-v1-and-perf-v2) for the phase
+roster and how to read it. `deskperf report --tool statusgen` reads it like any other tool.
+With the variable unset, or anything other than exactly `1`, `statusgen` creates nothing and
+behaves as it did before.
 
 This is the same local file, not the network payload above: the payload still needs
 `--telemetry` as well, and nothing in this section sends anything. The record is written by

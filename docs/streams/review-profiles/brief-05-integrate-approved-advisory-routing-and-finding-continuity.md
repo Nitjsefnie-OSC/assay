@@ -56,7 +56,9 @@ Options:
 1. **Enable the bounded advisory scope** — use only the demonstrated profiles and limits, preserve existing required approvals and collect outcomes.
 2. **Hold activation** — keep current routing and address the missing evidence first.
 
-Default if no answer: none — no live routing or publication begins. Blocking status requires a separate decision.
+Default if no answer: none — blocks until answered.
+
+No live routing or publication begins. Blocking status requires a separate decision.
 
 ## Ground rules
 

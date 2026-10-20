@@ -89,7 +89,7 @@ changed or discarded.
 | `deskclaim` | `acquire`, `release`, `list`, `stale` — the flock-backed claimable-action lock | local-only (claims dir) | no |
 | `desksupervise` | `tick` (one classification sweep of every `state=dispatched` dispatch claim against `internal/loopengine`'s liveness taxonomy; `--claims-fixture`/`--observations-fixture` run it fully offline), `run --interval` (loop `tick` forever) — turns a wedged worker into a logged, minutes-scale reclaim (`RECLAIM-ELIGIBLE` / `BLOCKED-TIMEOUT`) instead of a silent hold on the 120-minute stale-claim backstop; fires the `after_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (logged, non-fatal) when it releases or lands a claim | read-mostly (probes read the audit trail, a branch's SHA, and a PR's `updated_at`) / outward write on a non-dry-run reclaim or blocked-timeout filing | no |
 | `opmetrics` | (no verbs) — operator-layer collector: reads transcripts/beacons/claims, writes one **aggregates-only** day-file | local-only (strictly read-only against every input) | no |
-| `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
+| `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest; forge calls per tool and per release against the App rate-limit budget), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
 | `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `maintain objects` inventories and compacts the common Git directory offline; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); inspection takes `--dry-run` | local-only | no |
 | `deskgit` | `fetch` (bare / `--prune` / `--pr <N>` / `--branch <B>`) — the only git verb | local-only (inbound refs) | no |
 | `desktoken` | `<role>` — mint/reuse an App installation token | local-only (token cache) | no |
@@ -464,7 +464,7 @@ counter descriptions below remain the perf-v1/perf-v2 contract.
 The audit ledger records WHAT a verb did; it records nothing about how long it took. With
 `ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
 desk commands append ONE `perf-v2` line per completed invocation to a local day file
-(boot and launch steps, and `statusgen`, still write the legacy `perf-v1` line).
+(boot and launch steps still write the legacy `perf-v1` line; `statusgen` writes `perf-v2` too).
 All 67 operational commands are wrapped, including deskfile, deskreply, scanloop, issueboard,
 reviewloop, verifyloop and the supervisor. `deskperf` is excluded so reading a report cannot
 change its input; `muhar` is a developer mutation harness with separate execution accounting.
@@ -537,7 +537,17 @@ code or its output. Per-invocation agent usage (tokens, cost) is the agent runne
   `perfV2`) whose total is labelled summed invocation wall, with boundary and CPU-state
   counts, the CPU distribution over measured records only, per-counter measured/unavailable
   coverage (totals over measured records only) and per-phase distributions. The two groups
-  are never summed, and no inclusive child or phase time is added to a wall total.
+  are never summed, and no inclusive child or phase time is added to a wall total. A
+  forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
+  runs, unavailable runs, total forge calls, calls per run p50 / p90 / max, share of all forge
+  calls, and the rate-limit cost — the busiest UTC hour's calls, and that hour and the p90 run
+  as a percentage of the 5000/hour App budget floor (pooled over every tool and installation:
+  a gauge, not a bound). It pools perf-v1 `forgeCalls` and the perf-v2
+  `http` counter (one seam, one budget); a run whose counter is unavailable — or a perf-v1
+  `statusgen` record from an older build, whose 0 means "not counted" — prints as
+  unavailable, never as zero. Current `statusgen` writes perf-v2, whose `http` count is
+  measured like any other.
+  Rules: `docs/telemetry.md`.
 - `deskperf boot [--days N] [--role R] [--json]` — `deskboot`'s per-step p50 / p90 / max, in
   boot order, and the summed boot cost per role.
 

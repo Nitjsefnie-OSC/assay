@@ -17,15 +17,18 @@ import (
 // reportJSON is `deskperf report --json`: the same aggregates as the table, one object.
 // Summary is the LEGACY perf-v1 group, unchanged in shape and meaning; PerfV2 is the perf-v2
 // group, present only when the window holds perf-v2 records. The two are never combined: their
-// walls are measured over different boundaries.
+// walls are measured over different boundaries. Forge is the forge-call view over both groups
+// (a forge call spends the same budget whichever schema recorded it), present only when the
+// window holds a perf-v1 or perf-v2 invocation record.
 type reportJSON struct {
-	Days    int                    `json:"days"`
-	Tool    string                 `json:"tool,omitempty"`
-	Role    string                 `json:"role,omitempty"`
-	Skipped int                    `json:"skipped"`
-	Summary deskkit.PerfSummary    `json:"summary"`
-	PerfV3  *perfrec.V3Summary     `json:"perfV3,omitempty"`
-	PerfV2  *deskkit.PerfV2Summary `json:"perfV2,omitempty"`
+	Days    int                       `json:"days"`
+	Tool    string                    `json:"tool,omitempty"`
+	Role    string                    `json:"role,omitempty"`
+	Skipped int                       `json:"skipped"`
+	Summary deskkit.PerfSummary       `json:"summary"`
+	PerfV3  *perfrec.V3Summary        `json:"perfV3,omitempty"`
+	PerfV2  *deskkit.PerfV2Summary    `json:"perfV2,omitempty"`
+	Forge   *deskkit.PerfForgeSummary `json:"forge,omitempty"`
 }
 
 func cmdReport(args []string, stdout, stderr io.Writer) error {
@@ -88,6 +91,7 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	}
 	sum := deskkit.SummarisePerf(recs, *top)
 	v2 := deskkit.SummarisePerfV2(recs, *top)
+	forge := deskkit.SummarisePerfForge(recs)
 	v3, err := perfrec.ReduceV3(recs, permission, *group, filter)
 	if err != nil {
 		return deskkit.Refused(err.Error())
@@ -106,6 +110,9 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 		if v2.Records > 0 {
 			rep.PerfV2 = &v2
 		}
+		if forge.Runs > 0 {
+			rep.Forge = &forge
+		}
 		return encodeErr(enc.Encode(rep))
 	}
 	if sum.Records > 0 {
@@ -120,6 +127,12 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 			fmt.Fprintln(stdout)
 		}
 		if err := v2Table(stdout, v2, *days, *tool, *role); err != nil {
+			return err
+		}
+	}
+	if forge.Runs > 0 {
+		fmt.Fprintln(stdout)
+		if err := forgeTable(stdout, forge); err != nil {
 			return err
 		}
 	}
@@ -228,6 +241,43 @@ func v2Table(stdout io.Writer, v2 deskkit.PerfV2Summary, days int, tool, role st
 		}
 	}
 	return slowestTable(stdout, v2.Slowest)
+}
+
+// forgeTable renders the forge-call section: one header line with the totals and the busiest
+// hour against the App budget floor (PerfForgeBudgetPerHour says why that is a gauge, not a
+// bound), then one table per tool and one per release build. A row with
+// no measured run prints "-" for every figure — unavailable is not observed, never zero.
+func forgeTable(stdout io.Writer, f deskkit.PerfForgeSummary) error {
+	peak := "-"
+	if f.PeakHour != "" {
+		peak = fmt.Sprintf("%s %d call(s), %.2f%%", f.PeakHour, f.PeakHourCalls, f.PeakHourBudgetPct)
+	}
+	fmt.Fprintf(stdout, "forge calls — %d call(s) over %d run(s) (legacy forgeCalls %d, perf-v2 http %d, unavailable %d); "+
+		"busiest UTC hour %s of the %d/hour App budget floor\n",
+		f.Calls, f.Runs, f.FromV1, f.FromV2, f.Unavailable, peak, f.BudgetPerHour)
+	fmt.Fprintf(stdout, "(HTTP attempts, not GraphQL points; unavailable = not observed, never zero; the hour pools every "+
+		"tool and App installation against one installation's %d/hour REST floor, so a percentage gauges pressure "+
+		"and is no installation's measured draw)\n", f.BudgetPerHour)
+	for _, g := range []struct {
+		head string
+		rows []deskkit.PerfForgeStats
+	}{{"TOOL", f.Tools}, {"RELEASE", f.Releases}} {
+		fmt.Fprintln(stdout)
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, g.head+"\tRUNS\tUNAVAILABLE\tCALLS\tP50/RUN\tP90/RUN\tMAX/RUN\tSHARE %\tPEAK HOUR CALLS\tPEAK HOUR %\tP90 RUN %")
+		for _, r := range g.rows {
+			figs := "-\t-\t-\t-\t-\t-\t-\t-"
+			if r.Measured > 0 {
+				figs = fmt.Sprintf("%d\t%d\t%d\t%d\t%.1f\t%d\t%.2f\t%.2f",
+					r.Calls, r.P50PerRun, r.P90PerRun, r.MaxPerRun, r.SharePct, r.PeakHourCalls, r.PeakHourBudgetPct, r.P90RunBudgetPct)
+			}
+			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", r.Key, r.Runs, r.Unavailable, figs)
+		}
+		if err := tw.Flush(); err != nil {
+			return deskkit.Unverifiable("cannot write the report", err)
+		}
+	}
+	return nil
 }
 
 // countList renders "a N · b M" over the known keys in order, then any other key by name.

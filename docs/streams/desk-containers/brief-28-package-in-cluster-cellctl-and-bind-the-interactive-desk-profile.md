@@ -4,7 +4,7 @@ title: Package in-cluster cellctl and bind the interactive desk profile
 why: An in-cluster Linux operator removes the native Windows dependency while giving the whole cell one qualified launch and reconnect path.
 wave: 10
 depends: ["desk-containers/06", "desk-containers/15", "agent-execution/09"]
-unblocks: ["desk-containers/29", "desk-containers/07"]
+unblocks: ["desk-containers/29", "desk-containers/07", "cell-api/06"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: yes}

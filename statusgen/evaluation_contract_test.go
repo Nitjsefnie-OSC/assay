@@ -875,7 +875,7 @@ func TestEvaluationExternalConsumer(t *testing.T) {
 		}
 	}
 	// The in-repository sibling modules the manifest requires (forgeread, and
-	// perfrec — the shared perf-v1 writer, #3101), served at the version the
+	// perfrec — the shared perf writer, #3101), served at the version the
 	// manifest names, as a release of each would be.
 	const siblingVersion = "v0.0.0-00010101000000-000000000000"
 	for _, sibling := range []string{"forgeread", "perfrec"} {

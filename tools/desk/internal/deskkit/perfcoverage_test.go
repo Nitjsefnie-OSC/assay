@@ -54,7 +54,7 @@ func TestEveryDeskCommandRecordsPerformance(t *testing.T) {
 				if sel.Sel.Name == "PerfRunSelected" {
 					wantArgs = 5
 				}
-				if len(call.Args) != wantArgs {
+				if len(call.Args) != wantArgs && !(sel.Sel.Name == "PerfRunMeasured" && len(call.Args) == 5 && call.Ellipsis.IsValid()) {
 					t.Errorf("%s: wrong performance entrypoint", name)
 					return true
 				}
