@@ -22,6 +22,14 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request supersedes the run on its previous head, so that
+# run is cancelled instead of finishing a verdict nobody reads. Push runs (main
+# only) are grouped by commit SHA, so each main commit has its own group: a main
+# run is never cancelled and never queued behind, or replaced by, a later one.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   GO_VERSION: "1.27.2"
 
