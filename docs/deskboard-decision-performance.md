@@ -73,7 +73,7 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`093503fdf65bebb7a54d8532d683727601100638`. The later performance-report commit changes documentation only. This cohort
+`093503fdf65bebb7a54d8532d683727601100638`. Subsequent report and mutation-anchor commits leave the measured Go source unchanged. This cohort
 includes the independent review repairs for exact spelling, typed selective lookup,
 classified safe diagnostics and stable GitHub paging.
 Both local test binaries carry their respective source stamp. Five independent

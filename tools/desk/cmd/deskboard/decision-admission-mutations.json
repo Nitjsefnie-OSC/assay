@@ -136,26 +136,26 @@
     {
       "name": "GitHub client missing-token cause lost",
       "file": "internal/deskkit/forge_github.go",
-      "old": "func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, missingForgeToken(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \"+\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\")\n\t}",
-      "new": "func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, Unverifiable(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \"+\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\", nil)\n\t}"
+      "old": "func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, missingForgeToken(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \" +\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\")\n\t}",
+      "new": "func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, Unverifiable(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \" +\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\", nil)\n\t}"
     },
     {
       "name": "GitHub diff missing-token cause lost",
       "file": "internal/deskkit/forge_github.go",
-      "old": "func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {\n\tif g.Token == \"\" {\n\t\treturn \"\", missingForgeToken(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \"+\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\")\n\t}",
-      "new": "func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {\n\tif g.Token == \"\" {\n\t\treturn \"\", Unverifiable(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \"+\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\", nil)\n\t}"
+      "old": "func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {\n\tif g.Token == \"\" {\n\t\treturn \"\", missingForgeToken(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \" +\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\")\n\t}",
+      "new": "func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {\n\tif g.Token == \"\" {\n\t\treturn \"\", Unverifiable(\"refusing to reach the GitHub forge without an explicitly minted token \u2014 \" +\n\t\t\t\"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity\", nil)\n\t}"
     },
     {
       "name": "GitLab client missing-token cause lost",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "func (g *GitLabForge) client() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, missingForgeToken(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \"+\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\")\n\t}",
-      "new": "func (g *GitLabForge) client() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, Unverifiable(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \"+\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\", nil)\n\t}"
+      "old": "func (g *GitLabForge) client() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, missingForgeToken(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \" +\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\")\n\t}",
+      "new": "func (g *GitLabForge) client() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, Unverifiable(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \" +\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\", nil)\n\t}"
     },
     {
       "name": "GitLab trigger-constructor missing-token cause lost",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, missingForgeToken(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \"+\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\")\n\t}",
-      "new": "func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, Unverifiable(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \"+\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\", nil)\n\t}"
+      "old": "func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, missingForgeToken(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \" +\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\")\n\t}",
+      "new": "func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {\n\tif g.Token == \"\" {\n\t\treturn nil, Unverifiable(\"refusing to reach the GitLab forge without an explicitly minted token \u2014 \" +\n\t\t\t\"this backend never falls back to an anonymous or ambient identity\", nil)\n\t}"
     },
     {
       "name": "missing minted token loses safe diagnostic label",
