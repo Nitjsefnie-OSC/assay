@@ -462,3 +462,14 @@ The [write-policy contract](write-policy.md) and [checked census](write-policy-c
 name the source owner, preserved legacy profile, separate managed admission contract,
 actual built-hook tests and outstanding release/workflow/activation qualification.
 A pure verdict grants no additional allocation, forge or filesystem authority.
+
+## Future JSON compatibility direction — 21 October 2026
+
+The [future architecture's extensible-contract amendment](proposals/non-ci-architecture/29-extensible-json-contracts.md)
+adds stable cores, independently versioned extensions and explicit required capabilities
+to the destination for JSON seams. Its pinned census distinguishes closed records,
+already additive-tolerant readers and runner extension negotiation. Perf-v4 is the first
+planned delivery; this paragraph does not change today's published schemas or validation.
+Keep the three-part source/consumer conformance pattern above for each migrated version
+and retain the existing semantic owners. Optional diagnostics must never override a
+required policy, acceptance, signature or effect contract.
