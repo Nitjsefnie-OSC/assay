@@ -8,13 +8,13 @@
 // Reads the local file at <repo-path>, BodyChecks it, fetches the
 // current file from GitHub on <branch> to get the tree SHA, checks
 // idempotency (same content at same head → noop), and commits via the
-// GitHub Contents API AS the verifier App. The commit author is
+// conditional forge API AS the verifier App. The commit author is
 // the verifier App because the API call uses the App's installation
 // token — unforgeable (a PAT commit would be example-org, which is the
 // whole point).
 //
 // The tool has NO push, no merge — commit only (weakest-verb). "Commit
-// only" does NOT mean the write is local: a Contents-API PUT carries the
+// only" does NOT mean the write is local: a forge commit carries the
 // branch, so the commit lands on the REMOTE branch as soon as the call
 // returns. There is nothing left to push and nothing to stage — including
 // on main. Because of that, main/master are refused unless VERIFIER_MAIN_OK
@@ -48,11 +48,19 @@ const usage = `deskevidence — commit Evidence rows as the verifier App (the ve
 USAGE:
   deskevidence <owner/repo> <branch> --evidence-file <repo-path> [--root <dir>]
                [--brief-path <repo-path>] [--append-only] [--allow-shrink]
+               [--row <NN> [--row <NN> ...]] [--acceptance-forge]
+  deskevidence flip --root <worktree> --brief <stream>/<NN> --sha <sha> [--base main] [--dry-run]
   deskevidence --version
 
+--acceptance-forge explicitly permits fresh read-only corroboration of protected
+acceptance transitions by every child statusgen audit, lint and flip. It supplies no
+approval verdict. Without it amended acceptance remains held; ordinary records
+retain their existing behavior. Each approval target is printed before contact.
+
 Commits the content of the local file at --evidence-file (a repo-relative path)
-to the same path on <branch> via the GitHub Contents API, using the verifier App
-installation token. Author = the verifier App.
+to the same path on <branch> through a conditional forge write, using the verifier
+credential. GitHub batches admission and destination reads, then commits only if
+the validated file revision is unchanged. GitLab retains its protected-branch MR path.
 
 --root <dir> resolves a repo-relative --evidence-file against <dir> (e.g. the verifier
 worktree) instead of the current working directory, so a stale cwd cannot read the wrong
@@ -61,6 +69,21 @@ checkout's copy (#1709). The path committed to the branch stays the repo-relativ
 --append-only refuses a commit that would leave FEWER rows than the remote already holds
 (a shrink is almost always a stale-base/wrong-file mistake). It is auto-enabled for .jsonl
 sidecars; --allow-shrink overrides it when a row reduction is genuinely intended.
+
+When the target's REMOTE content carries a generated Briefs table (the marker-wrapped
+<!-- statusgen:briefs:begin/end --> region a stream README's regenerated table lives in),
+--row <NN> (repeatable) is REQUIRED and names which row(s) this landing may touch. The
+committed content is REBASED onto the remote: only the named rows' lifecycle cells
+(Status / Verified / Reviewed) come from the local file — the named rows' authoring cells,
+every other row, and everything outside the markers come from the remote unchanged, so a
+stale local copy can never revert an unrelated row. A local row that disagrees with the
+remote outside the named set is reported (never written) as
+"stale-local: row <NN> differed and was NOT written". Refused: a named row absent from
+either table, a duplicated row key, a named row whose cell count differs from the header, a
+mid-line carriage return, and a stream README carrying a marker literal whose region does
+not parse. The write is conditional on the content re-fetched immediately before it, so a
+table change after that re-check is refused, not overwritten. A target with no such table
+is unaffected by any of this.
 
 When --brief-path is given, the evidence content (from --evidence-file) is appended
 to the brief file at --brief-path in the Evidence section, and THAT file is committed.
@@ -77,26 +100,55 @@ statusgen brief --check-verified (verified/done, dated stamp, passing witnesses)
 The brief and stream README must already match the target branch. Evidence-only
 implemented landings must not append verified outcomes; verify-fail is unchanged.
 
+flip (#2074) commits one gate: model brief's implemented → verified board flip, its
+stamp derived from the recorded strict **VERIFY: PASS**, as a LOCAL commit by the
+verifier App's bot identity on the worktree's branch — never main, never pushed
+(` + "`deskevidence flip --help`" + `).
+
 Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
 
 func main() {
-	// The roster class is an EXPLICIT declaration, never the zero value by accident
-	// (a correctness review found: SetToolClass had no caller anywhere,
-	// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
-	// the roster, so it is ciEligible=false: it reads the config-home file and never
-	// the environment, in CI as well as locally.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	// P3: echo the effective roster once per run. Every tool that reads a configured
-	// control surface echoes it — a value that lives in settings rather than in a diff
-	// is only visible at RUN time, and a NARROWING must be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
+	os.Exit(deskkit.PerfRun("deskevidence", nil, os.Args[1:], func([]string) int {
+		// The roster class is an EXPLICIT declaration, never the zero value by accident
+		// (a correctness review found: SetToolClass had no caller anywhere,
+		// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
+		// the roster, so it is ciEligible=false: it reads the config-home file and never
+		// the environment, in CI as well as locally.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		// P3: echo the effective roster once per run. Every tool that reads a configured
+		// control surface echoes it — a value that lives in settings rather than in a diff
+		// is only visible at RUN time, and a NARROWING must be as visible as a widening.
+		deskkit.EchoEffectiveConfig(os.Stderr)
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:])
+	}))
+}
+
+var acceptanceForge bool
+
+func acceptanceArgs(args ...string) []string {
+	if acceptanceForge {
+		return append(args, "--acceptance-forge")
 	}
-	os.Exit(run(os.Args[1:]))
+	return args
 }
 
 func run(args []string) int {
+	old := acceptanceForge
+	defer func() { acceptanceForge = old }()
+	acceptanceForge = false
+	filtered := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--acceptance-forge" {
+			acceptanceForge = true
+		} else {
+			filtered = append(filtered, a)
+		}
+	}
+	args = filtered
+
 	// --version / help are pure reads: no kill-switch gate, no audit line.
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "-version") {
 		sha, built := deskkit.Version()
@@ -108,6 +160,10 @@ func run(args []string) int {
 		if len(args) == 0 {
 			return deskkit.ExitRefused
 		}
+		return deskkit.ExitOK
+	}
+	if len(args) > 0 && args[0] == "flip" && deskkit.HelpOnly(args) {
+		fmt.Fprintln(os.Stderr, flipUsage)
 		return deskkit.ExitOK
 	}
 
@@ -136,6 +192,16 @@ func run(args []string) int {
 
 	// Running from source (go run / unstamped) is a drift risk — say so loudly.
 	deskkit.WarnIfUnpinned(stderr)
+
+	// `flip` (#2074) is a LOCAL commit on a branch — no forge write, so it takes
+	// no audit lock and no write budget; the PR that carries it does.
+	if args[0] == "flip" {
+		err := runFlip(args[1:])
+		if err != nil && !deskkit.IsHelpRequest(err) {
+			fmt.Fprintln(stderr, "deskevidence: "+err.Error())
+		}
+		return deskkit.ExitCodeOf(err)
+	}
 
 	// runOutward holds the flock across the whole write window and writes the
 	// single audit line (#227).

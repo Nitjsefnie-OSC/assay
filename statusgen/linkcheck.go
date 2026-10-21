@@ -461,6 +461,7 @@ type consumedFragmentIndex struct {
 	root    string
 	built   bool
 	ok      bool            // false ⇒ could-not-check (git history unreadable)
+	shallow bool            // the could-not-check is a SHALLOW clone, not a missing repo (#3364)
 	tracked map[string]bool // root-relative slash paths ever tracked under changelog/
 }
 
@@ -474,7 +475,11 @@ func (ix *consumedFragmentIndex) build() {
 	// silently wrong answer (#999). Detect it the same way evidenceactor.go does
 	// and treat it exactly like the git-log-errored case: could-not-check, never
 	// a false "this fragment was never tracked".
-	if shallow, err := exec.Command("git", "-C", ix.root, "rev-parse", "--is-shallow-repository").Output(); err != nil || strings.TrimSpace(string(shallow)) != "false" {
+	shallow, err := exec.Command("git", "-C", ix.root, "rev-parse", "--is-shallow-repository").Output()
+	if err != nil || strings.TrimSpace(string(shallow)) != "false" {
+		// Name the shallow case in the message: its remedy is the CI job's
+		// checkout depth, not the brief (#3364).
+		ix.shallow = err == nil && strings.TrimSpace(string(shallow)) == "true"
 		return // ok stays false — could-not-check: shallow or undetermined
 	}
 	out, err := exec.Command("git", "-C", ix.root, "log", "--pretty=format:", "--name-only", "--", changelogDir+"/").Output()
@@ -525,7 +530,7 @@ func linkProblems(root string, files []string) []string {
 	var problems []string
 	fragments := &consumedFragmentIndex{root: root}
 	for _, f := range files {
-		raw, err := os.ReadFile(f)
+		raw, err := readFileMemo(f)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", f, err))
 			continue
@@ -571,6 +576,13 @@ func linkProblems(root string, files []string) []string {
 		if !backtickPathScope(root, f) {
 			continue
 		}
+		// Record sections (`## Evidence`, `## Proof it can fail`) record what
+		// was true when they were written; a path they name that has since been
+		// moved or retired is not a broken reference. They are exempt from the
+		// EXISTENCE check below only — see recordsection.go for the heading set
+		// and the boundary.
+		records := recordSectionRanges(content)
+		lines := newLineIndex(content)
 		matches := backtickRe.FindAllStringSubmatchIndex(content, -1)
 		for _, match := range matches {
 			// match[0] and match[1] are start/end of full regex match
@@ -588,6 +600,11 @@ func linkProblems(root string, files []string) []string {
 			// Skip planned deliverables: closing backtick immediately followed
 			// by " (planned)" / " (new)" / " (future ...)".
 			if plannedRe.MatchString(content[fullMatchEnd:]) {
+				continue
+			}
+
+			// A path inside a record section is not existence-checked.
+			if records.contains(lines.line(match[0])) {
 				continue
 			}
 
@@ -621,6 +638,8 @@ func linkProblems(root string, files []string) []string {
 				switch {
 				case consumedFrag:
 					exists = true
+				case !checked && fragments.shallow:
+					unknownFragment = " — NOTE: this checkout is a SHALLOW clone, so the consumed-release-fragment exemption (#722) could NOT be evaluated for this path; that is could-not-check, not a verdict — run on full history (actions/checkout fetch-depth: 0, or GIT_DEPTH \"0\" on GitLab) before treating the path as an authoring defect"
 				case !checked:
 					unknownFragment = " — NOTE: this repo's git history was unreadable, so the consumed-release-fragment exemption (#722) could NOT be evaluated for this path; that is could-not-check, not a verdict"
 				}
@@ -723,7 +742,7 @@ func identifierDereferenceCheck(root string, files []string) (problems, notices 
 		if !backtickPathScope(root, f) {
 			continue // narrow scope: CLAUDE.md + docs/streams/** only, unchanged.
 		}
-		raw, e := os.ReadFile(f)
+		raw, e := readFileMemo(f)
 		if e != nil {
 			emit(fmt.Sprintf("%v: identifier dereference COULD-NOT-CHECK: %v", f, e))
 			continue

@@ -38,11 +38,11 @@ consumers:
   - "tools/desk/cmd/deskevidence: fixed-here"
   - "tools/desk/internal/deskkit/forge.go: fixed-here (WriteFile + ReadFile added to the frozen seam, both backends)"
   - "docs/streams/forge-gitlab/inventory.md: fixed-here (both ops inventoried, rows 21–22)"
-  - "tools/desk/cmd/deskpr: follow-on forge-neutral/04b (the gh-migration for deskpr/deskfile/deskclose; #509 ruled it a code-aware rescope that first adds the enumerated ops each still lacks, not a ratchet-number correction)"
-  - "tools/desk/cmd/deskfile: follow-on forge-neutral/04b"
-  - "tools/desk/cmd/deskclose: follow-on forge-neutral/04b"
+  - "tools/desk/cmd/deskpr: follow-up forge-neutral/13 (the gh-migration for deskpr/deskfile/deskclose; #509 ruled it a code-aware rescope that first adds the enumerated ops each still lacks, not a ratchet-number correction — the follow-on the amendment calls `04b` was authored as brief 13)"
+  - "tools/desk/cmd/deskfile: follow-up forge-neutral/13 (the same rescope follow-on as deskpr — the amendment's `04b`, authored as brief 13)"
+  - "tools/desk/cmd/deskclose: follow-up forge-neutral/13 (the same rescope follow-on as deskpr — the amendment's `04b`, authored as brief 13)"
   - "plugins/assay/skills/verify-desk/SKILL.md: follow-up forge-neutral/10 (the Evidence-landing lane gains a hop on a forge with no direct-default-branch push; the conformance round trip is where the loop shape is proved before the skill text is changed)"
-version: 1
+version: 3
 id: 929d765d-2ce6-4907-90c6-52e613f197cb
 ---
 
@@ -74,14 +74,25 @@ inline; GitHub's default branch is directly writable by the verifier App — no 
 The Task and Verify sections below are rewritten to this slice; the original four-verb text is
 preserved in the git history and in `docs/streams/forge-gitlab/inventory.md` rows 21–22.
 
+## Amendment (#1281 — row 11 decidable after merge)
+
+Verify row 11 as first authored (`statusgen --consumers --brief forge-neutral/04` with no
+`--base`) is undecidable on merged main: this brief's file and its deliverables never share a
+diff again after the implementing PR lands, so on a clean checkout of merged main the check
+exits 2 COULD-NOT-CHECK. Row 11 is re-authored with `--base` pinned to the parent of the commit
+that first added this brief file, the form #2257 established for the same defect. The same pass fixed three
+`consumers:` entries that no diff could ever corroborate: `deskpr`/`deskfile`/`deskclose` were
+routed `follow-on forge-neutral/04b`, but `follow-on` is not a routing token the gate
+recognizes and no `04b` brief exists — the follow-on shipped as `forge-neutral/13`, and the
+entries now say `follow-up forge-neutral/13`.
+
 ## Context
 files:
 - `tools/desk/cmd/deskpr/exec.go`, `tools/desk/cmd/deskpr/deskpr.go` — draft-change creation.
 - `tools/desk/cmd/deskfile/exec.go`, `tools/desk/cmd/deskfile/deskfile.go` — issue filing.
 - `tools/desk/cmd/deskclose/exec.go`, `tools/desk/cmd/deskclose/github.go`,
   `tools/desk/cmd/deskclose/authority.go` — issue/change closing and the authority read.
-- `tools/desk/cmd/deskevidence/github.go`, `tools/desk/cmd/deskevidence/deskevidence.go` —
-  the App mint and the Evidence write.
+- `tools/desk/cmd/deskevidence/github.go`, `tools/desk/cmd/deskevidence/deskevidence.go` — the App mint and the Evidence write.
 - `tools/desk/internal/forgeban/allowlist.go` — three permit rows removed, ceiling lowered.
 
 single-point-of-failure: for the three ambient-credential verbs the single control is WHICH
@@ -161,14 +172,14 @@ facts:
 | 1 | `cd tools/desk && go build ./... && go test ./...` | exit 0 |
 | 2 | `cd tools/desk && go test ./cmd/deskevidence/... -count=1` | exit 0 — the migrated suite is green |
 | 3 | *(amended, #509)* — no EXISTING assertion in a migrated test suite is weakened or deleted except gh-argv / hand-rolled-transport assertions replaced by their forge-op equivalents (the /03 precedent); new test files are expected. `deskevidence`'s install-id/JWT tests are gone WITH the code they pinned — the custody question they were about is now the resolver's (`tools/desk/internal/deskkit/forgeresolve_test.go`). | reviewer reads the diff |
-| 4 | `grep -n 'allowedInvocationCeiling' tools/desk/internal/forgeban/allowlist.go` | shows `= 16` — **untouched** (the migration removes no permit row) |
+| 4 | `git diff --quiet e032f6f0a^1 e032f6f0a -- tools/desk/internal/forgeban/allowlist.go && git show e032f6f0a:tools/desk/internal/forgeban/allowlist.go \| grep -c '^const allowedInvocationCeiling = 16$'` | `1` (exit 0) — **untouched**: this brief's merge commit changes nothing in `allowlist.go` (the migration removes no permit row), and the ceiling stood at `16` at that merge. Pinned to the merge commit so a later, separately-reviewed ceiling change cannot read as this brief's |
 | 5 | `cd tools/desk && go test ./internal/forgeban/... -count=1` | exit 0 — the ratchet passes at 16 |
 | 6 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestNoForgeCLIShellout\|TestForgeNoPassthrough' -count=1` | exit 0 — the seam grows two ops and stays closed (no generic/endpoint method, no extra exported backend method) |
 | 7 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestForgeGithubGolden\|TestForgeGitlabGolden\|TestForgeGitlabCoverage' -count=1` | exit 0 — `read_file` / `write_file*` golden cases pin both backends' wire, and coverage reconciles the seam against the inventory |
-| 8 | `grep -rn -e 'apiBaseURL' -e 'access_tokens' tools/desk/cmd/deskevidence --include='*.go' \| grep -v _test.go \| wc -l` | prints `0` — the hardcoded host and the hand-rolled installation exchange are gone, not merely unused |
+| 8 | `test -d tools/desk/cmd/deskevidence && { grep -rn -e 'apiBaseURL' -e 'access_tokens' tools/desk/cmd/deskevidence --include='*.go' \|\| [ $? -eq 1 ]; } \| { grep -v _test.go \|\| [ $? -eq 1 ]; } \| wc -l` | output is `0` — the hardcoded host and the hand-rolled installation exchange are gone, not merely unused. Re-written 2026-10-03 (#1862): every grep stage tolerates only the no-match status, so a missing path or a grep error fails the row instead of passing it. The `test -d` leg covers BSD grep, which stays silent on an absent directory under `--include`. |
 | 9 | `cd tools/desk && go test ./internal/deskkit/ -run TestWriteFileOpBothBackends -count=1 -v` | exit 0 — the new file ops run the same scenario names (including a `ReadFile` case) against both backends' recorded fixtures |
 | 10 | `cd tools/desk && go test ./cmd/deskevidence/... -run TestEvidenceLandsAsChangeWhenDefaultBranchClosed -count=1 -v` | **negative path**: with the resolved forge reporting the default branch not directly writable, the run opens a draft change and performs NO direct write to that branch — asserted by the recording fake forge showing zero writes to the default branch — and exits 0 with the change named on stdout |
-| 11 | `statusgen --root . --consumers --brief forge-neutral/04` | exit 0 — every `consumers:` routing claim is corroborated against this branch's own diff |
+| 11 | `statusgen --root . --consumers --brief forge-neutral/04 --base deae2479679242b1404e2edb4474b091eb38177e` | exit 0; output is `summary: 7 corroborated, 0 disproved, 0 unchecked, 0 brief(s) claiming nothing`. `--consumers` judges only briefs that sit inside the diff it reads, and `210f3ce4ff` is the commit that first added this brief file (with a six-entry `consumers:` list, rewritten to the slice-C entries in `fe05b33c0`), so pinning the base to that commit's parent (`deae247`), where the brief file is absent, keeps the brief in scope on merged main and leaves no entry inherited: all seven are judged — run without `--base` on merged main, the check reports COULD-NOT-CHECK because the brief is not in the diff (#1281). The three `fixed-here` entries are judged against that pinned diff: `deskevidence`, `forge.go` and the inventory all changed after the base (PR #532 and its fix-ups), so the claims stay corroborated on any later main. The four `follow-up` entries are judged against the CURRENT tree: each target must be a brief listed in its stream README and reference this brief back. An entry retargeted to a brief that does not exist, or a target dropped from its stream README, is DISPROVED (exit 1); a target that stops referencing this brief is UNCHECKED (exit 0), which the summary line above no longer matches — in that case the row fails on the summary line, not on the exit status, so read both. The diff runs from the pinned parent to the working tree, uncommitted edits included, so run the row on a clean checkout of merged main. Needs full history: a clone that cannot resolve `deae247` is COULD-NOT-CHECK. Re-authored per #1281 |
 
 ## Pre-mortem → detection map
 
@@ -216,6 +227,61 @@ Target: merged `origin/main` @ `13814ff8d84bab20bf2081f4e08a686bc90e2ac6` (two-p
 **Scope-traceability:** clean — all shipped work maps to Verify rows/Task items; deskpr/deskfile/deskclose correctly left on gh (04b); ceiling untouched by this brief; the #509 amendment (two-op WriteFile+ReadFile scope) accurately reflects delivery.
 
 **VERDICT: PASS** on rows 1–10; row 11 COULD-NOT-CHECK (tooling/isolation, corroborated manually) — **HELD at `implemented` (human sign-off owed via the verify-gate).** No open NAMED-NOT-DERIVED value; the human confirms (1) the custody/acting-identity decision and (2) the Evidence-lane side-branch+draft-change design.
+
+### Verify re-run — 2026-09-27, non-implementer dispatched verifier (opus-5.5[1m]-verifier, local) — gate: human, HELD at `implemented`
+
+Target: merged `main` @ `d034d39fe1c8f0a0a93ba1177f208c48b068a1d0` (confirmed against the forge with the verifier App token). Implementing change: PR #532 (merge `e032f6f0a`); runner is not the implementer. Witness: the pinned statusgen v1.0.27 darwin-arm64 binary (sha256 matches the pin), run directly (not through a wrapper), non-dry, under a network-denied macOS sandbox with loopback-only allowance, `PATH` restricted to system dirs plus `go` and the pinned statusgen, `GOFLAGS=-count=1`, `GOPROXY=off`, `GOTOOLCHAIN=local` (go1.27.1), `KUBECONFIG=/dev/null`, no forge credential in the environment. No row's first code span mints a credential or reaches a live forge; the sandbox is belt-and-braces. No row is `check:ci`-classed, so the darwin network-off gap (#1800) does not apply.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go test ./...` | fail exit=1 | sha256:308db05e6c9c | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test ./cmd/deskevidence/... -count=1` | pass exit=0 | sha256:16c2d1944bed | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `deskevidence` | could-not-run exit=127 — the shell could not execute the command (exit 127) | sha256:db9b13da93d9 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `grep -n 'allowedInvocationCeiling' tools/desk/internal/forgeban/allowlist.go` | pass exit=0 | sha256:e7e1daaf83f6 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./internal/forgeban/... -count=1` | pass exit=0 | sha256:55af7a016367 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestNoForgeCLIShellout\|TestForgeNoPassthrough' -count=1` | pass exit=0 | sha256:3dd607cfabb6 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestForgeGithubGolden\|TestForgeGitlabGolden\|TestForgeGitlabCoverage' -count=1` | pass exit=0 | sha256:98d30b1e5587 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 8 | `grep -rn -e 'apiBaseURL' -e 'access_tokens' tools/desk/cmd/deskevidence --include='*.go' \| grep -v _test.go \| wc -l` | fail exit=1 | sha256:4eff2db4bada | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 9 | `cd tools/desk && go test ./internal/deskkit/ -run TestWriteFileOpBothBackends -count=1 -v` | pass exit=0 | sha256:58e4450abbd5 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 10 | `cd tools/desk && go test ./cmd/deskevidence/... -run TestEvidenceLandsAsChangeWhenDefaultBranchClosed -count=1 -v` | pass exit=0 | sha256:6c32b829e582 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+| 11 | `statusgen --root . --consumers --brief forge-neutral/04` | fail exit=2 | sha256:577a71dc7037 | 2026-09-27 | assay-verifier-app[bot] @ d034d39fe1c8 (on-behalf-of human:ian) (forge-identity) |
+
+**Per-row observed output (witness above; notes only, no second table):**
+- Row 1 — witness `fail exit=1`. Targeted package tests, package by package (88 packages, same sandbox and env), isolate three failing tests, all in packages PR #532 did not touch (cellctl, commsgw, avatar); every package this brief touched (cmd/deskevidence, internal/deskkit, internal/forgeban) is `ok`. Each failure is environment-shaped, shown by re-running just that test: (a) cellctl `TestBashQuoteMatchesBash` — `bashQuote("~lead") = "\\~lead", bash says "~lead"` under the system bash 3.2 that the restricted PATH selects; `ok` with the Homebrew bash on PATH. (b) commsgw `TestBypassClientPreflight…` and `TestRefusalJournalSocket…` — `bind: operation not permitted` on a unix socket; the sandbox's network deny covers unix sockets; `ok` once unix sockets are allowed (still no IP reach beyond loopback). (c) avatar `TestGolden20px` — PNG strip differs from the golden under go1.27.1; `ok` under the CI-pinned go1.25.0 toolchain (GO_VERSION 1.25.0 in the workflows). The main CI `build-test` check at this SHA reports success. No failure is in this brief's scope; row 1 is recorded as the witness saw it.
+- Row 2 — `ok cmd/deskevidence` — migrated suite green.
+- Row 3 — prose, reviewer-read row: the witness executed its first code span (`deskevidence`, not on the restricted PATH) → could-not-run exit 127, which proves nothing. Read by this verifier instead: the PR's removed deskevidence tests are the JWT, installation-id, key-search-path and HTTP-client tests, gone with the code they pinned (custody now under the resolver's own suite). The one non-transport removal, the visibility-error fail-closed gate test, is replaced by a seam stub in deskevidence plus the fail-closed cases in the deskkit repovis suite. No surviving assertion was weakened. Reviewer-read: holds.
+- Row 4 — witness `pass exit=0` is VACUOUS: the grep prints `const allowedInvocationCeiling = 6`, not the `= 16` the Expect cell names. Stale-shaped: PR #532 does not touch the allowlist; later briefs (the 04b / write-verbs-C line) lowered the ratchet 16→9→6. The row's intent (this brief moves no permit row) holds.
+- Row 5 — `ok internal/forgeban` — ratchet passes at the current ceiling (6).
+- Row 6 — `ok internal/deskkit` — both no-shellout and no-passthrough tests pass.
+- Row 7 — `ok internal/deskkit` — GitHub and GitLab golden wire and GitLab coverage pass.
+- Row 8 — witness `fail exit=1`, but the pipeline PRINTS `0` (the expected output). The exit is the first grep's no-match status surfaced by the witness's pipefail shell, so the row is authored in a way that cannot pass under pipefail when its own expectation holds. Same class as #1699. Stale-shaped (check definition), not a defect: `apiBaseURL` and `access_tokens` are absent from deskevidence non-test sources.
+- Row 9 — `--- PASS: TestWriteFileOpBothBackends`, 7 scenarios incl. a `read_file…` content-and-id case and the `write_file…` default-branch probe, each across both backends.
+- Row 10 — `--- PASS` on the negative path (default branch closed → side-branch write + draft change, zero direct writes to the default branch).
+- Row 11 — COULD-NOT-CHECK on merged main by design: on a clean tree statusgen says `COULD-NOT-CHECK: assay:assay:forge-neutral:04 is not in the diff against d034d39fe1c8…, so this run carries no evidence about its claims`. Manual corroboration against PR #532's own diff: deskevidence, forge.go (plus both backends) and the gitlab inventory are in the diff (fixed-here holds). deskpr, deskfile, deskclose and the verify-desk skill are NOT in the diff, which matches their follow-on / follow-up routing. Inventory rows 21–22 are present and marked implemented.
+
+**Risk-bearing value (sensitive-data: yes) — ENUMERATE → RANK → DERIVE.** Enumerated over PR #532's non-test diff (deskevidence main + github files, deskkit forge.go and both backends) plus the Deliverables:
+- E1 `ForgeFor(fr, "verifier")` @ tools/desk/cmd/deskevidence/github.go:70 — resolver custody role.
+- E2 `execCommand("desktoken", "verifier", "--repo", repoSlug)` @ tools/desk/cmd/deskevidence/github.go:118 — mint role.
+- E3 `RoleAppLogin("verifier")` @ tools/desk/cmd/deskevidence/github.go:146 (also :175) — the attribution check's expected actor.
+- E4 GitHub backend `DefaultBranchNotWritable = false` on every path (never assigned) @ tools/desk/internal/deskkit/forge_github.go:2445 (carve-out stated :2441-2444).
+- E5 GitLab probe `p.DefaultBranch != "" && in.Branch == p.DefaultBranch` → `DefaultBranchNotWritable = true` @ tools/desk/internal/deskkit/forge_gitlab.go:3880-3881.
+- E6 shrink threshold `res.Rows < res.PriorRows` (row = non-blank line, forge.go:687) @ tools/desk/internal/deskkit/forge_github.go:2480 and forge_gitlab.go:3922.
+- E7 side branch `"evidence/" + … + "-" + dig[:8]` @ tools/desk/cmd/deskevidence/deskevidence.go:612; fallback component `"evidence"` and the commit-message literals — cosmetic.
+- Out of diff, listed for completeness: `allowedInvocationCeiling = 6` @ tools/desk/internal/forgeban/allowlist.go:84 (not introduced or changed by this brief).
+
+Ranked by irreversibility: E1–E3 first (an Evidence commit on a default branch under the wrong actor cannot be undone without a history rewrite, and the Evidence-actor check would believe it). Then E4 (a wrong value produces a server-side refusal, not a wrong write: reversible). Then E5 (a wrong value turns a direct write into a draft change: reversible). Then E6 (a same-count clobber passes, but git history keeps the prior content: reversible). E7 last (cosmetic).
+
+- `RISK-VALUE: DERIVED — E1–E3 role = "verifier" @ tools/desk/cmd/deskevidence/github.go:70,118,146 — one role key at the mint, the resolver custody hook and the actor check. It equals the pre-migration binding (the removed code already checked the verifier App login), so this brief does not change deskevidence's acting identity. The methodology assigns Evidence authorship to the non-implementer verifier, and a mismatch trips the independent attribution check (wrong author → refusal; missing author → could-not-check).`
+- `RISK-VALUE: NAMED, NOT DERIVED — E4 GitHub DefaultBranchNotWritable = false (never set) @ tools/desk/internal/deskkit/forge_github.go:2445 — whether the verifier App may write a GitHub default branch directly is a per-repo live branch-ruleset fact; the backend hard-codes "writable" with no probe. On this public repo the default branch is PR-required (the Evidence-by-PR lane was ruled on #742), so here the carve-out does not hold. A direct deskevidence write is refused server-side (fails loud, no wrong write) and is NOT rerouted to the draft-change lane the GitLab arm gets. Not derivable offline (reading live rulesets is out of envelope), and the correct per-repo value is a custody/lane decision.`
+- `RISK-VALUE: DERIVED — E5 GitLab default branch treated as closed @ tools/desk/internal/deskkit/forge_gitlab.go:3880 — from the GitLab pilot report D-8 (default branch push = No one for every identity, owner included). Erring toward the reviewable lane costs only an extra draft change. Edge: a project reporting an empty default branch falls through to a direct write.`
+- `RISK-VALUE: DERIVED — E6 shrink threshold strict "<" @ tools/desk/internal/deskkit/forge_github.go:2480 / forge_gitlab.go:3922 — append-only means the row count must not fall, so any reduction is refused and an equal count is allowed. Both backends share one row definition (forge.go:687), and git history retains any same-count overwrite.`
+- E7 is reversible and cosmetic; no derivation owed.
+
+**Open question for the human (carried verbatim from the NAMED, NOT DERIVED line):** E4 GitHub `DefaultBranchNotWritable = false` (never set) @ tools/desk/internal/deskkit/forge_github.go:2445. Should the GitHub backend probe branch protection / rulesets and return the sentinel, as the GitLab arm does, so deskevidence reroutes automatically on a PR-required GitHub default branch? Or is the operator-level Evidence-by-PR lane (#742) the intended design, with the hard-coded carve-out kept? The two gate-why confirmations also stay open: (1) the acting identity and custody, and (2) the side-branch + draft-change Evidence lane.
+
+**Observations:** (a) a commsloop test writes an untracked `mailbox/cell-a/worker-desk/x.json` into the source tree under tools/desk/cmd/commsloop during row 1: test pollution outside this brief. (b) The avatar 20px golden depends on the Go toolchain version: it passes on the pinned 1.25.0 and differs on 1.27.1, so it will go red when CI's Go pin moves. Neither is in this brief's scope.
+
+**VERIFY: BLOCKED** — no implementation defect found. Rows 2, 5, 6, 7, 9 and 10 are genuinely proven by the witness. Row 1 fails for environment reasons outside this brief's packages. Row 4 is a vacuous pass on a stale literal (16 vs the actual 6). Row 8 fails under pipefail while printing the expected `0`. Row 11 could not check on merged main by design and was corroborated manually. Row 3 is a reviewer-read row that holds. gate: human with `sensitive-data: yes`: Evidence only, status stays `implemented`, and human sign-off is owed, including the E4 open question above.
 
 ## Review
 Gate: **human** (from frontmatter — `sensitive-data: yes`). Reviewer records verdict + date in

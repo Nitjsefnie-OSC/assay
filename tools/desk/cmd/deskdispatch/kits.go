@@ -21,6 +21,7 @@ package main
 
 import (
 	"embed"
+	"io/fs"
 	"sort"
 	"strings"
 
@@ -28,7 +29,11 @@ import (
 )
 
 //go:embed references/*.md
-var kitFS embed.FS
+var embeddedKits embed.FS
+
+// kitFS is where every kit is read from: the embedded set. It is a variable so a test can
+// hand the pre-claim checks a kit they must refuse.
+var kitFS fs.ReadFileFS = embeddedKits
 
 // commonKitPath holds the clauses EVERY dispatched agent receives, whatever its class.
 //
@@ -89,4 +94,35 @@ func readKit(name, path string) (string, error) {
 			"clause set looks like a successful dispatch and is not one", nil)
 	}
 	return text, nil
+}
+
+// perfKitVerb shares the actual kit parser's normalization, then returns a
+// compiled constant. Neither an item key nor an unknown kit can be recorded.
+func perfKitVerb(operation, raw string) string {
+	kit := strings.ToLower(strings.TrimSpace(raw))
+	switch operation {
+	case "dispatch":
+		switch kit {
+		case "worker":
+			return "dispatch:worker"
+		case "worker-objective":
+			return "dispatch:worker-objective"
+		case "review":
+			return "dispatch:review"
+		case "verifier":
+			return "dispatch:verifier"
+		}
+	case "stamp-only":
+		switch kit {
+		case "worker":
+			return "stamp-only:worker"
+		case "worker-objective":
+			return "stamp-only:worker-objective"
+		case "review":
+			return "stamp-only:review"
+		case "verifier":
+			return "stamp-only:verifier"
+		}
+	}
+	return "other"
 }

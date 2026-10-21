@@ -10,14 +10,22 @@
 //     form error, not a head mismatch: see headFormError) — a verdict never lands on
 //     unreviewed code;
 //   - the ready flip happens ONLY when the App has APPROVED at the CURRENT head, CI is
-//     green, and (for risk-classed PRs) a Security-Review: pass verdict exists at head;
+//     green, (for risk-classed PRs) a Security-Review: pass verdict exists at head, and the
+//     desk-decided condition deskflip enforces holds (deskkit.DeskDecidedRefusal, #1694);
 //   - the security verdict is its own verb and its own REVIEW (`security-review`), because
 //     the flip gate reads reviews and never comments — a comment-shaped pass is invisible
 //     to it (#513 / #438);
 //   - ready = "ready for HUMAN review"; merge is always the owner's.
 //
+// `finish` (finish.go) posts no fourth kind of comment or review: it runs one of the two
+// verdict verbs and reads the verdict back. It does make one write the other verbs do not —
+// it releases the review-dispatch claim named by --claim, which must be this change's claim
+// for the lane whose verdict it just posted — and it writes a second audit line for that
+// release. It does not check who placed the claim.
+//
 // The tool has NO other verbs — no merge, close, un-ready, edit, or label.
-// Every invocation runs the deskkit kill switch first, audits exactly one line,
+// Every invocation runs the deskkit kill switch first, audits exactly one line (`finish`:
+// one for the post step and, when it reaches the release, one for the release),
 // and fails closed on anything it cannot positively verify.
 package main
 
@@ -32,6 +40,11 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
+// perfVerbs is deskpost's registered first-argument set for the opt-in local perf record
+// (deskkit.PerfRun): args[0] is recorded only when it is one of these, and as
+// "other" otherwise, so no argv text can reach the record.
+var perfVerbs = []string{"review", "security-review", "comment", "ready", "finish", "--version", "--help"}
+
 func main() {
 	// The roster class is an EXPLICIT declaration, never the zero value by accident
 	// (an earlier correctness review found SetToolClass had no caller anywhere
@@ -45,11 +58,19 @@ func main() {
 	// file, not in a diff — so the RUN is the only place a change to them becomes
 	// visible, and a NARROWING has to be as visible as a widening. Logins and paths
 	// only; never a token or a credential path.
-	deskkit.EchoEffectiveConfig(os.Stderr)
+	//
+	// A help screen is not a run: it prints no configured value (medici-finance/assay#3754).
+	// deskpost OPTS IN with isHelpRequest, the SAME predicate run() answers with its usage
+	// screen before Guard, so the two cannot disagree about which invocation is help.
+	if isHelpRequest(os.Args[1:]) {
+		deskkit.EchoConfigHelpNotice(os.Stderr)
+	} else {
+		deskkit.EchoEffectiveConfig(os.Stderr)
+	}
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("deskpost", perfVerbs, os.Args[1:], run))
 }
 
 func run(argv []string) int {
@@ -65,17 +86,9 @@ func run(argv []string) int {
 		s, b := deskkit.Version()
 		fmt.Fprintf(stdout, "deskpost sourceSHA=%s builtAt=%s releaseTag=%s\n", s, b, deskkit.ReleaseTagOrDev())
 		return 0
-	case "help", "-h", "--help":
-		usage()
-		return 0
 	}
 
-	// TIER ONE of the help retrofit (deskkit/helprequest.go). A SUBCOMMAND help request —
-	// `deskpost <verb> --help` — is a request for a help screen, not an invocation of the
-	// verb, and it returns HERE, before Guard, writing no audit row. HelpOnly matches only
-	// the unambiguous single-token shape, so a `--help` that is another flag's VALUE cannot
-	// be mistaken for one; every wider spelling falls through to the verb's own parse.
-	if deskkit.HelpOnly(argv) {
+	if isHelpRequest(argv) {
 		usage()
 		return 0
 	}
@@ -106,11 +119,27 @@ func run(argv []string) int {
 		return cmdComment(argv)
 	case "ready":
 		return cmdReady(argv)
+	case "finish":
+		return cmdFinish(argv)
 	default:
 		fmt.Fprintln(stderr, "deskpost: unknown subcommand "+argv[0])
 		usage()
 		return 2
 	}
+}
+
+// isHelpRequest reports whether argv is one of the help shapes deskpost answers with its usage
+// screen BEFORE Guard: a leading `help`, `-h` or `--help` (any arguments after it), and TIER ONE
+// of the help retrofit (deskkit/helprequest.go) — `deskpost <verb> --help`, plus the same form one
+// level down for `finish <lane> --help`. HelpOnly matches only the unambiguous single-token
+// shape, so a `--help` that is another flag's VALUE cannot be mistaken for one; every wider
+// spelling falls through to the verb's own parse, which hands flag.ErrHelp to parseFailCode
+// (tier two): usage on stderr, exit 0, no audit row.
+//
+// main() asks the same question to choose the config echo, so a help screen prints no
+// configured value (medici-finance/assay#3754).
+func isHelpRequest(argv []string) bool {
+	return deskkit.UsageHelp(argv) || (len(argv) > 0 && argv[0] == "finish" && deskkit.HelpOnly(argv[1:]))
 }
 
 func cmdReview(argv []string) int {
@@ -161,7 +190,10 @@ type verdictArgs struct {
 // 40- (or 64-) char SHA on both verbs — an abbreviated one is a form error, not a head mismatch
 // (#214): the two call for opposite responses, and a verdict that lands on a commit the
 // reviewer did not read is the failure the flag exists to prevent (#197).
-func parseVerdictArgs(verb, verdictValues string, argv []string) (verdictArgs, int, bool) {
+//
+// extra registers further flags on the same FlagSet (`finish` adds --claim), so a verb that
+// wraps a verdict verb parses its arguments HERE rather than in a second copy.
+func parseVerdictArgs(verb, verdictValues string, argv []string, extra ...func(*flag.FlagSet)) (verdictArgs, int, bool) {
 	var a verdictArgs
 	rest := argv[1:]
 	if len(rest) < 2 {
@@ -185,8 +217,11 @@ func parseVerdictArgs(verb, verdictValues string, argv []string) (verdictArgs, i
 	head := fs.String("head", "", "the reviewed head SHA — FULL 40- (or 64-) char lowercase hex, not abbreviated (required)")
 	bodyFile := fs.String("body-file", "", "path to the review body file (required)")
 	raw := addPostFlags(fs)
+	for _, add := range extra {
+		add(fs)
+	}
 	if err := fs.Parse(rest[2:]); err != nil {
-		return a, 2, false
+		return a, parseFailCode(err), false
 	}
 	opts, ok := raw.resolve()
 	if !ok {
@@ -247,18 +282,36 @@ pins the head itself.
 `, short(head), owner, name, pr, head, pr, owner, name, verdict, bodyFile)
 }
 
+// parseFailCode maps a verb's flag-parse error to the exit code to use. A help request
+// (`deskpost <verb> <owner/repo> <n> --help`, any spelling — TIER TWO, deskkit/helprequest.go)
+// is a successful read: it prints the verb screen and returns ExitOK, where every other
+// parse error is a usage error (exit 2). No verb has written an audit row by the time it
+// parses, so a help request leaves the ledger as it found it.
+func parseFailCode(err error) int {
+	if deskkit.IsHelpRequest(err) {
+		usage()
+		return deskkit.ExitOK
+	}
+	return 2
+}
+
 // postFlagVals holds the raw --dry-run / --wait / --explain values until fs.Parse has run.
 type postFlagVals struct {
 	dryRun  *bool
 	wait    *string
 	explain *bool
+	// applyOverride validates --force-scan-override and records the outbound-write check's
+	// context for this verb (deskkit.RegisterOutboundOverride).
+	applyOverride func() error
 }
 
 // addPostFlags registers the cross-verb modifiers on a verb's FlagSet. They are registered
 // identically on every mutating verb so a caller never has to remember which verb accepts
 // which — an unknown flag is a usage error (exit 2), not a silent ignore.
 func addPostFlags(fs *flag.FlagSet) postFlagVals {
+	apply, _ := deskkit.RegisterOutboundOverride(fs, "deskpost", fs.Name())
 	return postFlagVals{
+		applyOverride: apply,
 		dryRun: fs.Bool("dry-run", false,
 			"run every check and STOP before the write; exit 0, audited dryrun, charges neither meter"),
 		wait: fs.String("wait", "",
@@ -279,6 +332,10 @@ const maxWait = 90 * time.Minute
 
 func (v postFlagVals) resolve() (postOpts, bool) {
 	var o postOpts
+	if err := v.applyOverride(); err != nil {
+		fmt.Fprintln(stderr, "deskpost: "+err.Error())
+		return o, false
+	}
 	o.dryRun = *v.dryRun
 	o.explain = *v.explain
 	if *v.wait != "" {
@@ -360,7 +417,7 @@ func cmdComment(argv []string) int {
 		"have a match at this number; default resolves automatically")
 	raw := addPostFlags(fs)
 	if err := fs.Parse(rest[2:]); err != nil {
-		return 2
+		return parseFailCode(err)
 	}
 	opts, ok := raw.resolve()
 	if !ok {
@@ -415,7 +472,7 @@ func cmdReady(argv []string) int {
 	fs.SetOutput(stderr)
 	raw := addPostFlags(fs)
 	if err := fs.Parse(rest[2:]); err != nil {
-		return 2
+		return parseFailCode(err)
 	}
 	opts, ok := raw.resolve()
 	if !ok {
@@ -448,6 +505,7 @@ usage:
   deskpost security-review <owner/repo> <pr>     --verdict pass|fail              --head <full-40-or-64-char-sha> --body-file F
   deskpost comment         <owner/repo> <number> --body-file F [--head <full-40-or-64-char-sha>] [--kind issue|mr]
   deskpost ready           <owner/repo> <pr>
+  deskpost finish review|security-review <owner/repo> <pr> --verdict <…> --head <full-40-or-64-char-sha> --body-file F --claim <claim key>
   deskpost version
 
 the two verdict verbs (a risk-classed PR needs BOTH at the same head):
@@ -455,6 +513,8 @@ the two verdict verbs (a risk-classed PR needs BOTH at the same head):
                    Submitted as APPROVE / REQUEST_CHANGES. Refuses a body carrying a
                    'Security-Review:' line — that verdict goes through security-review,
                    so a security pass can never land as APPROVED.
+                   A finding about an encrypted file CITES it by path:line and
+                   describes it; a quoted sops footer or envelope is refused (#2060).
   security-review  the SECURITY verdict. Body carries
                    'Security-Review: pass|fail'. A PASS is submitted as a COMMENT-event
                    review — state COMMENTED, so `+"`ready`"+`'s gate (e) can read it while the
@@ -465,7 +525,11 @@ the two verdict verbs (a risk-classed PR needs BOTH at the same head):
                    (#513 / #438).
 
 targets:
-  comment        <number> may be a PULL REQUEST or an ISSUE — GitHub numbers both from one
+  comment        reviewer-role callers only: DESK_LOOP must resolve to reviewer.
+                 Other roles refuse before minting credentials or reaching the forge.
+                 Keep your own loop identity. Use deskfile attach --kind issue for issue
+                 comments under your role, or deskreply for your own PR.
+                 <number> may be a PULL REQUEST or an ISSUE — GitHub numbers both from one
                  per-repo sequence, so the number names exactly one object and deskpost
                  resolves which kind it is against the API before posting (no flag, no
                  guess). Both kinds get the same body checks, trust gate, budget, audit
@@ -479,6 +543,31 @@ targets:
   review, security-review, ready
                  pull requests ONLY. Given an issue number they refuse (exit 5) and name
                  `+"`comment`"+` — they never report it as unverifiable (exit 6).
+
+finishing a review (one command instead of three):
+  finish         `+"`finish review …`"+` / `+"`finish security-review …`"+` take that verb's arguments plus
+                 --claim <claim key> (the dispatch claim your assignment names). In order,
+                 stopping at the first step that does not succeed:
+                   1. post the verdict — the SAME checks, identity, budget and refusals as
+                      the verb it names, with that verb's exit code;
+                   2. confirm a review by the reviewer identity with this body is recorded
+                      at --head (exit 6 if it cannot be read back);
+                   3. release the dispatch claim (a claim already gone is not a failure)
+                      and write an audit line for the release.
+                 Then ONE line on stdout:
+                   deskpost finish: review=<link or id> state=<STATE> head=<sha> claim=released|already-released
+                 A stop names the step and what was and was not done; nothing after the
+                 failed step runs. Running the same command again does not post the verdict
+                 a second time: a review by the reviewer identity with this body at --head is
+                 found on the change and not re-posted, from this session or another. On a
+                 forge with a merge-hold that run still checks the hold against the recorded
+                 verdict before it exits 0: it re-arms the hold where the verdict requires
+                 one and never releases one (README, "deskpost finish"). The
+                 claim is released LAST because the post step needs it held. --claim must be
+                 a review claim of this change AND of this lane — a key with a "security"
+                 segment for "finish security-review", one without for "finish review" (exit
+                 2 otherwise, before anything is posted). Who placed the claim is not checked.
+                 With --dry-run only step 1 is rehearsed.
 
 modifiers (every mutating verb; both default off):
   --dry-run       run every check, then STOP before the write. Exit 0, audited 'dryrun' —

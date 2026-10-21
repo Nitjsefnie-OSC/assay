@@ -15,7 +15,9 @@ import (
 func withFetchDetail(t *testing.T, fn func(deskkit.ForgeRepo, int) issueDetail) {
 	t.Helper()
 	prev := fetchDetail
-	fetchDetail = fn
+	fetchDetail = func(repo deskkit.ForgeRepo, number int, _ ...deskkit.RequestObserver) issueDetail {
+		return fn(repo, number)
+	}
 	t.Cleanup(func() { fetchDetail = prev })
 }
 
@@ -107,19 +109,20 @@ func TestRunRepoFailureIsUnverifiableNotSilent(t *testing.T) {
 	}
 }
 
-func TestRunHTMLAndFlowAreRefusedNotSilentlyIgnored(t *testing.T) {
-	for _, flag := range []string{"--html", "--flow"} {
+func TestRunHTMLMode_UnknownFlagRefused(t *testing.T) {
+	// `--html`/`--flow` as bare FLAGS (the oracle's own spelling) are no longer valid: both
+	// are ported as subcommands (`html OUT.html`, `flow`) instead — see testdata/spec.md's
+	// "CLI shape diverges from the oracle" note. A stray `--html`/`--flow` flag under table/
+	// walk parsing is refused as an unknown flag (the command tree's parse error, which names
+	// the flag and points to --help, desktools-v2/45), never silently ignored.
+	for _, args := range [][]string{{"--html", "out.html"}, {"--flow"}} {
 		var stdout, stderr bytes.Buffer
-		args := []string{flag}
-		if flag == "--html" {
-			args = append(args, "out.html")
-		}
 		rc := run(args, &stdout, &stderr, time.Now())
 		if rc != deskkit.ExitRefused {
-			t.Errorf("%s: want refused (%d), got %d", flag, deskkit.ExitRefused, rc)
+			t.Errorf("%v: want refused (%d), got %d", args, deskkit.ExitRefused, rc)
 		}
-		if !strings.Contains(stderr.String(), "not yet ported") {
-			t.Errorf("%s: want a 'not yet ported' message naming the oracle fallback, got %q", flag, stderr.String())
+		if !strings.Contains(stderr.String(), "unknown flag: "+args[0]) {
+			t.Errorf("%v: want an 'unknown flag' refusal naming it, got %q", args, stderr.String())
 		}
 	}
 }

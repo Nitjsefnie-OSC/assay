@@ -103,8 +103,9 @@ never-autonomous escalation points below.
 - **macOS, Linux, or native Windows.** The statusgen binary acquisition is Unix-first via that
   HTTPS fetch; on a **native Windows** host follow the **[Windows adopters](#windows-adopters)**
   section — the pinned `statusgen-windows-<arch>.exe` is acquired through the PowerShell
-  bootstrap + Go-native `deskinstall` path (same sha256-verify-or-refuse control), with the
-  SessionStart-hook `bash`+`jq` workaround and the arm64-native-smoke caveat stated there.
+  bootstrap + Go-native `deskinstall` path (same sha256-verify-or-refuse control; a
+  `deskinstall` built from this tree also refuses any asset whose build attestation does not
+  verify — see that section), with the SessionStart-hook `bash`+`jq` workaround and the arm64-native-smoke caveat stated there.
 
 **What the skill does** — it DELEGATES every PRIMITIVE and every human-gate to the manual runbook
 below; the two are **one story with one mechanism**, not two implementations:
@@ -187,7 +188,7 @@ skill (*Per-forge prerequisites*); the entry grammar itself is defined once in
 the GitHub half:
 
 1. **The automation account** — the identity the fleet *runs as*: it authors PRs, pushes branches, runs CI, mints the reviewer-App token, and posts App reviews. In a solo setup this is one machine account plus the reviewer GitHub App it owns; in a larger setup, the set of role Apps. Everything an agent does, it does as this identity.
-2. **Your human account** — a *separate* personal GitHub account that is **you**, and whose credentials the automation never holds. It does the things only a human may: it is the `ASSAY_BLESS_LOGIN` (the authorization half of the trust gate — `configure-roster`), it posts the sign-off on a `gate:human` brief, it adds the 👍 reaction that clears a public-repo write, and it clicks **merge**.
+2. **Your human account** — a *separate* personal GitHub account that is **you**, and whose credentials the automation never holds. It does the things only a human may: it is the `ASSAY_BLESS_LOGIN` (the authorization half of the trust gate — `configure-roster`), it posts the sign-off on a `gate:human` brief, it decides which public repositories the desk may write to (the `:public` allowed-repos entry), and it clicks **merge**.
 
 **Why this is not optional.** Assay's gates separate *proposing* work (the agents) from *authorizing* it (a human). That separation is only real if the two are different principals on the forge. If the fleet runs as the same account that blesses, approves, and merges, the automation can bless, approve, and merge its *own* work — every human gate becomes self-satisfiable and the model is theater. Under one shared identity, bot-vs-human is undecidable: a verdict, a 👍, or a merge attributed to that account attributes to *both* (§1a). The human account is precisely what the automation must be unable to act as — that is what makes "a human approved this" a claim the fleet cannot forge.
 
@@ -258,9 +259,11 @@ finished `assay:install` run hands you a checklist rather than the impression th
    the protected branch's push-access list naming the board-writer service account, which
    `tools/create-fleet-gitlab.sh` sets and reads back.)
 6. **The ongoing human gates — not one-time.** The ready-flip is the desk's, but the **merge**, the
-   **push to `main`**, the **release tag**, any **history rewrite**, and the **👍 that clears a
-   public write** are yours *every time*, not just at install. The quick-reference table above is
-   the standing list.
+   **push to `main`**, the **release tag** and any **history rewrite** are yours *every time*, not
+   just at install. So is the decision to add a public repository to the allowed-repos set with
+   the `:public` token: it is a one-time, repository-scoped authorization that only you make,
+   and a repository you have not listed stays refused. The quick-reference table above is the
+   standing list.
 7. **Optionally acquire the desk-tools.** If you run the automated desk pipeline, install the pinned
    desk-tools binaries — see the **desk-tools acquisition** (`install-desk-tools` in §3). Without
    them the desk skills fall back to raw `gh`/`git`; with them you get the guards, write-budgets,
@@ -358,6 +361,7 @@ of these is done. Until they are, the honest sentence above is the whole of the 
 | **auditor GitHub App** | A dedicated **READ-ONLY** identity for `repohardenguard`'s repo-hardening reads (op 40 `RepoHardeningRead`) — `Metadata: read`, `Contents: read`, `Administration: read`, and **no write permission of any kind**. A write attempted with its token is refused by GitHub itself; the admin-gated rows it cannot see (`security_and_analysis.*`, ruleset `bypass_actors`) report `could-not-check` and are re-run by a repository admin — never bought back with a wider grant. Optional: only needed if you run `repohardenguard` | operator-provisioned (GitHub org/account), PEM at the config-home as `auditor-app.pem` | GitHub org/account settings — **not a repo file** |
 | **cell-issues GitHub App** | A narrower, per-purpose "write-issues" identity (`issues: write`) — the model the auditor role above follows (inventory delta D2: a per-purpose identity carries the narrowest grant that serves the purpose). Selectable only by NAME (`desktoken cell-issues --repo …`); it is never a loop's default identity. Optional: only needed if a cell files issues under a narrower identity than its loop's own role | operator-provisioned (GitHub org/account) | GitHub org/account settings — **not a repo file** |
 | **release-runner GitHub App** | A dedicated, single-purpose identity that `deskrun` starts workflow runs and clears deployment gates with. Dispatching needs **`Actions: write`** — which also grants cancelling runs, deleting run logs and disabling workflows repo-wide — which is exactly why it is its own App and never a worker/reviewer/verifier App repurposed (`deskrun` refuses a `release-runner` roster binding that shares another role's App). A repo is only automated when the roster binds it: `ASSAY_RUN_CREDENTIALS=<owner/name>=release-runner`; a repo bound `=human:<name>` stays a human action and `deskrun` refuses it. **`deskrun approve` on GitHub reports could-not-check under this App:** approving a pending deployment needs `Deployments: write`, and GitHub lets only an environment's required reviewers approve — required reviewers are users or teams, never an App — so the forge answers that the App may not approve and `deskrun` refuses before writing. Optional: only needed if you want a desk verb to dispatch runs | operator-provisioned (GitHub org/account), PEM at the config-home as `release-runner-app.pem`, minted by `desktoken release-runner --repo …` | GitHub org/account settings + the roster binding — **not a repo file** |
+| **workflow GitHub App** | The workflow App: the **single** identity holding **`workflows: write`** — a capability that stands beside the desk-role Apps, **not** a desk role and **not** a tier: it is no desk loop's default identity. Scope is exactly **`contents: write` + `workflows: write` + `pull_requests: write` + `metadata: read`**, subscribed to **zero** webhook events; **withheld**, and checked as absent: `administration`, `actions`, `checks`/`statuses: write`, `members`, and secrets/variables. Its duty is to author a workflow-only PR (a diff touching `.github/workflows/**` and its own changelog fragment, nothing else) — `pull_requests: write` is what lets it open that PR; a human merges it. **Sole-holder invariant:** no other App — worker, desk, reviewer, verifier, any inbound-lane or loop App, or any single-purpose App — holds `workflows: write`. Its credentialled path runs only under a human-initiated invocation — an operator/desk run or an explicit `workflow_dispatch` (DR accepted entry 6) — never from a trigger an outside contributor can fire. Neither a `workflow_dispatch` nor a desk run is by itself proof that a human started the run, and who holds the App's key is not yet ruled; the DR's note says where the human-initiated property has to be enforced. Optional: only needed if workflow changes should land as their own reviewable PR instead of a staged copy a maintainer hand-promotes. Scope, duties and checks: [`workflow-app-scope.md`](streams/desk-supervision/workflow-app-scope.md); design: [`DR-workflow-app-landing`](streams/decisions/DR-workflow-app-landing.md) | operator-provisioned (GitHub org/account) | GitHub org/account settings — **not a repo file** |
 | **automation identity** | The account (and/or role Apps) the fleet **runs as** — authors PRs, pushes branches, runs CI, mints tokens. Distinct from the human account (the two-accounts prerequisite). Minimum = one machine account plus the reviewer App it owns; larger fleets *optionally* split it into role Apps (worker / verifier / desk / loop) — a decomposition, **not** a requirement | operator-provisioned (GitHub org/account) | GitHub org/account settings — **not a repo file** |
 | **board-writer GitHub App** | Needed **only** if `main` is branch-protected (§3 `add-statusgen-ci`): a dedicated App with **`contents: write` only**, added to the branch's ruleset bypass so the push-to-main statusgen regen can commit `STATUS.md` past protection. Not needed when protection is off | CORE `add-statusgen-ci` (when protection is on) | GitHub org/account settings + the branch's ruleset bypass — **not a repo file** |
 | **.githooks main-guard** | `pre-commit` refusing `main` commits without `ASSAY_MAIN_COMMIT_OK` (worktree-isolation backstop) | parent-project hardening (not shipped in the toolkit) | `.githooks/pre-commit` + `core.hooksPath` |
@@ -393,12 +397,15 @@ the one an adopting team should actually run:
   above; the load-bearing rules are: match the **full** platform (os *and* arch, per the Verify
   below), refuse rather than guess when the line is absent, keep each pinned artifact name distinct
   from any CI-job name, and re-pin (never edit in place) on an upgrade so the bump shows in a diff.
-  **Also carry the bare line** — `statusgen <tag> <sha256>` (same tag; the digest of the platform
-  the desk runs on). It is the line the desk tools (`deskboard` and friends) read first; `statusgen
-  init` scaffolds it alongside the per-platform lines. When it is absent the desk tools fall back to
-  the host platform's `statusgen-<os>-<arch>` line (`.exe` on Windows), so a per-platform-only file
-  still resolves — but a malformed bare line refuses rather than falling back. CI keeps selecting
-  by platform with the trailing space, so the bare line changes no CI behaviour.
+  **Also carry the bare line** — `statusgen <tag> <sha256>` (same tag; the digest of the
+  `statusgen-linux-amd64` asset). Linux-amd64 is the CI-runner platform, so a CI that reads the
+  bare line verifies the right binary; `assay-install.sh pin` and `upgrade-assay` both fill it from
+  that asset by name, whatever host they run on. It is the line the desk tools (`deskboard` and
+  friends) read first; `statusgen init` scaffolds it alongside the per-platform lines. When it is
+  absent the desk tools fall back to the host platform's `statusgen-<os>-<arch>` line (`.exe` on
+  Windows), so a per-platform-only file still resolves — but a malformed bare line refuses rather
+  than falling back. The CI that `statusgen init` scaffolds selects by platform with the trailing
+  space, so for that CI the bare line is additive.
 
 **Verify:** the pin line for the **fully detected platform** exists — match os *and* arch, not the
 os family, or a `darwin-amd64`-only pin file passes on a `darwin-arm64` host while the install
@@ -432,7 +439,15 @@ Acquire the desk-role **binaries** — the tools the five desk-role skills drive
 you run the automated desk pipeline; the desk skills otherwise fall back to raw `gh`/`git`, which
 works but loses the guards. The mechanism is **channel-E, identical to `install-statusgen`** — a
 `.assay-versions` pin plus a sha256-verified download — differing only in that the artifact is a
-`.tar.gz` of binaries, not a single file:
+`.tar.gz` of binaries, not a single file.
+
+**Optional for the repo, required for a desk.** A statusgen-only `.assay-versions` stays a complete
+setup for an adopter that runs no desk. A desk role cannot boot on one: `deskboot`'s
+`first-sweep-prereqs` step refuses (exit 6) unless the nearest `.assay-versions` carries a
+`desk-tools` or `desk-tools-<os>-<arch>` line, or a `desk-tools-source` line with a full commit —
+the lines `deskboard`'s drift check reads. Matching statusgen lines on your branch and on main do
+not count. The one exemption is the source tree itself, where `refs/remotes/origin/main:tools/desk`
+resolves. So if you run desks, land this pin on main before the first boot:
 
 - resolve the paired tag + per-platform sha256 from `plugins/assay/paired-versions.yaml`'s
   `desk-tools:` section (the desk-tools and statusgen are cut from the **same release**, so they pin
@@ -451,7 +466,8 @@ Configuration is at the **config-home only** (`~/.config/assay/`) — the same r
 tools read everywhere (§3 `configure-roster`, failure mode 1); the environment is never a transport
 for a desk binary.
 
-**Verify:** the desk-tools pin line for the **fully detected platform** exists in `.assay-versions`;
+**Verify:** the desk-tools pin line for the **fully detected platform** exists in `.assay-versions`
+(`grep -E '^desk-tools(-[a-z0-9]+-[a-z0-9]+)? ' .assay-versions` prints it — a statusgen line is not it);
 `deskboard --version` prints `releaseTag=<the pinned tag>` (the binaries on `PATH` are the pinned
 set, not a stale one) and its `assay-config:` echo shows the roster present; a deliberately
 corrupted digest makes the install **fail** (proves the hash check is live).
@@ -583,6 +599,41 @@ identity* — plan for it before you turn protection on, not after the board sil
 > `STATUSGEN_ROSTER_ENV`, materialised into the config-home file — see
 > [`adopting-assay-gitlab.md`](adopting-assay-gitlab.md), section "Trust roster for CI".
 
+> **DECISION-GATE HOLD — the PR check, and the admin act that makes it bind
+> ([`lifecycle-v1.md`](../spec/lifecycle-v1.md) §4.5).** A `gate: human` brief may move to
+> `implemented`, `verified` or `done` only once a human has ruled on its decision issue. The hold
+> has two layers. **Layer one** is part of `statusgen --lint` and needs no network: a status
+> move on a `gate: human` brief whose frontmatter lacks a `decision-issue:` number and a
+> well-formed `ruling:` comment link is a PROBLEM. It checks only that a well-formed link is
+> there, never who wrote the comment. **Layer two** is `statusgen --decision-gate --pr <N>`. It
+> fetches the linked comment and refuses the change unless the comment sits on the brief's own
+> decision issue, was written by a human login in `ASSAY_HUMAN_LOGIN_MAP`, and names the brief by
+> its board id. `statusgen init` scaffolds layer two as the **`decision-gate`** job of the
+> workflow, with `issues: read`. Three things are yours:
+>
+> - **Make `decision-gate` a required status check** on the default branch (Settings > Rules or
+>   branch protection). Merging the workflow does not do that. Until a repository admin does it,
+>   the job reports but does not block a merge.
+> - **Set `ASSAY_HUMAN_LOGIN_MAP`** as an Actions variable (it is one of the five roster
+>   variables above). Unset, layer two cannot tell a human from a bot and refuses every
+>   `gate: human` status move. It fails closed, never open.
+> - **Pin a statusgen that has `--decision-gate`.** The scaffolded job errors on an older pin
+>   rather than passing silently.
+>
+> The check runs on the pull request that carries the status transition. It never runs at a
+> PR's ready-flip: a draft PR that delivers a `gate: human` brief is reviewed and readied as
+> usual, and only the board row's move waits on the ruling. `deskevidence` runs the same
+> `--decision-gate` check before a landing that bypasses pull requests, judging the board as the
+> target branch holds it (it reads the board files the branch changed since the landing
+> checkout's commit and never moves the checkout; a changed board file the branch holds as a
+> symbolic link or submodule, one whose served bytes are not shown to be the entry's own blob,
+> or a checkout whose commit is not an ancestor of the branch tip, stops the landing as
+> could-not-check), and `deskpr create`
+> prepends a banner naming the decision issue to such a PR's body. The banner informs; it blocks
+> nothing. On **GitLab**, layer two is not scaffolded, so the hold there is the well-formed-link
+> check of layer one alone; and because GitLab serves no ref compare, `deskevidence` reports
+> could-not-check (exit 6) on an evidence landing there.
+
 **Verify:** `grep -q 'skip-status-regen' …/statusgen.yml && grep -q 'STATUS.md is generated' …/statusgen.yml`; and `grep -F 'git status --porcelain -- STATUS.md' …/statusgen.yml` matches (bootstrap-safe). After first push to main, `STATUS.md` appears in one `[skip-status-regen]` commit; a PR editing `STATUS.md` fails lint. Roster: `grep -c 'vars.ASSAY_' …/statusgen.yml` is 5, and the regen job's log shows `role-bindings=` naming your `verifier=` binding rather than `(none bound)` — a `::notice::ASSAY_TRUSTED_BOT_SLUGS is not set` line in that log means the variables are not set yet.
 
 ### PRIMITIVE: install-desk-plugin
@@ -616,14 +667,21 @@ wider than the repo you are adopting into — read **§3a** before you install i
 
 **Applicability — probe, don't assume.** The roster machinery landed in a recent release; this primitive applies from the
 first `desk-tools` / `statusgen` release cut that carries it. On an older pin there is no roster
-and nothing here has an effect. The build tells you which you have — every roster-reading tool
-echoes its effective configuration to **stderr** on every run, including `--version`:
+and nothing here has an effect. Inspect the installed tool's roster support with a local
+configuration read, before configuring any board roots:
 
 ```bash
-deskboard --version 2>&1 | grep -q '^assay-config:' && echo "roster present" || echo "pre-roster pin — skip"
+ASSAY_CONFIG_ECHO=full deskroster repos --scope write
+echo "inspection exit=$?"
 ```
 
-At the toolkit versions current as this is written it prints `skip`.
+A supported build prints its `assay-config:` block to **stderr** and the effective write
+scope to stdout. An absent or malformed roster, or an empty write scope, exits 6 with a
+diagnostic; that means roster inspection could not succeed, not that this primitive can be
+skipped. If the command is unavailable or prints no configuration block, check the installed
+`desk-tools` pin and the diagnostic before deciding whether it predates roster support.
+`deskboard --version` reports only the build stamp and reads no configuration, so it cannot
+answer this applicability question.
 
 Who is trusted, which repos the tools may write to, and which paths force a security review are
 **adopter configuration**, deliberately held outside every ref the tools evaluate — so the pull
@@ -662,19 +720,35 @@ Two consequences worth stating before you debug them:
 - A stray unrecognised `ASSAY_*` key — a one-character typo — collapses the **whole**
   configuration to unconfigured and every tool refuses. Keys outside the `ASSAY_` namespace are
   echoed and ignored, so a co-tenant tool may share the file.
-- `ASSAY_HUMAN_LOGIN_MAP` is load-bearing for `statusgen --lint` itself — an absent or
-  wrong-shaped roster fails lint (`LINT: FAIL`), not just repo-scoped acting commands. Sequencing
-  matters: this primitive lands at Scenario 1 step 6, but step 4 (`add-statusgen-ci`) and step 9
-  (`first-board`) both Verify on `--lint` exiting 0. Land the CI `env:` passthrough
-  in the same change that adds the roster, or an adopter's CI turns
-  red on briefs the roster change never touched.
+- `ASSAY_HUMAN_LOGIN_MAP` is load-bearing for the trust-dependent checks in
+  `statusgen --lint`. A configuration the loader refuses now exits **5** before
+  evaluation, printing `LINT: REFUSED configuration; trust-dependent checks could-not-check`
+  rather than PASS. A parsed but incomplete CI roster retains the existing per-check
+  behavior; this does not require every reporting-mode roster to be fully configured.
+  Land the CI `env:` passthrough in the same change that adds the roster so checks
+  do not lose their human mapping.
+
+**Keep the pinned binary compatible with the shared roster's keys.** Source-checked
+examples: [v1.0.29's statusgen loader](https://github.com/medici-finance/assay/blob/v1.0.29/statusgen/rosterconfig.go)
+does not recognize `ASSAY_OS_USER_LOGIN_MAP`, while
+[v1.0.39's loader](https://github.com/medici-finance/assay/blob/v1.0.39/statusgen/rosterconfig.go)
+recognizes that desk-only key. These examples are not a complete minimum-version
+matrix. When an older binary refuses a newer roster key, deliberately re-pin to a
+release whose loader recognizes the keys you use, following the release/checksum
+procedure. Do not remove the key or substitute a reduced roster to obtain a green
+lint. The unknown-`ASSAY_*` refusal policy remains unchanged; its policy decision
+is tracked in [#1261](https://github.com/medici-finance/assay/issues/1261).
 
 **A bad TRUST value still refuses everything; a bad EXTENSION value now refuses only its own
-dependents.** The five fail-closed trust surfaces — `ASSAY_BLESS_LOGIN`, `ASSAY_TRUSTED_LOGINS`,
-`ASSAY_TRUSTED_BOT_SLUGS`, `ASSAY_ALLOWED_REPOS`, `ASSAY_HUMAN_LOGIN_MAP` — are unchanged: unset or
-malformed, every acting command refuses exactly as described above. The adopter-extension
+dependents.** The six fail-closed trust surfaces — `ASSAY_BLESS_LOGIN`, `ASSAY_TRUSTED_LOGINS`,
+`ASSAY_TRUSTED_BOT_SLUGS`, `ASSAY_ALLOWED_REPOS`, `ASSAY_HUMAN_LOGIN_MAP`, `ASSAY_RUN_CREDENTIALS` —
+refuse on a malformed value: every acting command refuses exactly as described above.
+`ASSAY_RUN_CREDENTIALS` is a trust surface because it chooses which credential a desk write runs
+as; a malformed entry refuses the whole roster, not only `deskrun` (unset stays valid: no repo is
+bound and `deskrun` dispatches nothing). The adopter-extension
 surfaces — `ASSAY_REPO_ALIASES`, `ASSAY_REPO_FORGES`, `ASSAY_RISK_CALLOUT`,
-`ASSAY_WRITEGUARD_CALLOUT`, `ASSAY_RELEASE_REPO`, `ASSAY_SCAN_REPOS`, `ASSAY_RUN_CREDENTIALS` — no longer collapse the
+`ASSAY_WRITEGUARD_CALLOUT`, `ASSAY_RELEASE_REPO`, `ASSAY_SCAN_REPOS`,
+`ASSAY_OS_USER_LOGIN_MAP` — no longer collapse the
 whole roster when one of them is malformed: the loader records the rejection against that ONE
 key, the key's own feature falls back to its shipped default (exactly the unset behaviour), and
 only the desk unit that actually declares a dependency on that key deactivates and reports why —
@@ -682,6 +756,13 @@ every unrelated acting command keeps running. This is the fix for the outage cla
 paragraph's typo bullet still describes for an **unrecognised** key name: a stray unrecognised
 `ASSAY_*` key still collapses the whole roster today (that bullet is unchanged), but a
 **recognised** extension key's own bad VALUE no longer does.
+
+`ASSAY_OS_USER_LOGIN_MAP` carries comma-separated `osuser:login` entries binding an OS
+account name to the roster login the scan-override audit row names (the desk tools'
+`OverrideIdentity`). The login half must be a trusted human of the same roster — one
+present in `ASSAY_TRUSTED_LOGINS`, never a configured App slug; anything else invalidates
+the key. An OS account name containing a list separator (space, comma, semicolon) cannot
+be expressed and always lands on the audit row's marked `os:<username>` fallback.
 
 #### Failure mode 2 — a PARTIAL roster looks like a normal board, not an empty one
 
@@ -701,7 +782,9 @@ it does **not** consider the repo set — so a roster carrying `ASSAY_BLESS_LOGI
 `ASSAY_TRUSTED_LOGINS` but no `ASSAY_ALLOWED_REPOS` reports `configured=true` and prints no
 refusal. The gap only surfaces later, when a repo-scoped acting command runs against a repo
 `ASSAY_ALLOWED_REPOS` never named. Fill every surface, and read the `assay-config:` echo rather
-than either the exit code or the board's contents.
+than either the exit code or the board's contents. Outside CI a desk tool prints that echo as one
+digest line once it has shown the current configuration; set `ASSAY_CONFIG_ECHO=full` to read
+every line, including the allowed-repo set.
 
 **The board's root set is separate configuration, not roster-derived.** `deskboard nextup`'s
 default roots (`defaultRoots`, same file) are compiled to a fixed default set of repos. Configuring the
@@ -711,8 +794,9 @@ populated from it — see below for why one entry is not enough). Skip this and 
 fails on a fresh adopter checkout with `exit=6`, `root .../assay for repo
 medici-finance/assay is not readable` — naming a repo that is not yours. **This
 primitive's own Verify below does not use `deskboard nextup` and does not need `DESK_ROOTS` at
-all** — it uses `deskboard --version`, which emits the identical `assay-config:` echo. Read on
-only once you are ready to stand up the actual cross-repo board.
+all** — it uses `deskroster repos --scope write`, which reads and prints the effective
+write scope and its `assay-config:` echo without resolving board roots or contacting a forge.
+Read on only once you are ready to stand up the actual cross-repo board.
 
 `DESK_ROOTS` is a **comma-separated list that replaces the defaults outright, not a single
 override** — and `deskboard nextup` unconditionally
@@ -743,9 +827,19 @@ ASSAY_TRUSTED_LOGINS=<login>:<id>
 ASSAY_TRUSTED_BOT_SLUGS=reviewer=<slug>:<bot-user-id>
 ASSAY_ALLOWED_REPOS=<owner>/<name>:ci:private
 ASSAY_HUMAN_LOGIN_MAP=<name>:<login>
+ASSAY_REPO_FORGES=<owner>/<name>=github
 EOF
 chmod 600 ~/.config/assay/roster.env
 ```
+
+`ASSAY_REPO_FORGES` names which forge serves each repo a desk boots on or sweeps — `=github` or
+`=gitlab`, one comma-separated `owner/name=<forge>` entry per repo. It is an extension key, so
+leaving it out refuses nothing at write time, which is why it is easy to miss. But desk stop
+inspection (`desksupervise status --stops`) resolves its endpoint from this key **alone**. It
+never falls back to the checkout's origin host: in a cross-repo sweep that host belongs to another
+repo, and guessing from it would choose the wrong credential. Without the entry, that read is exit
+6, and `deskboot` refuses at `first-sweep-prereqs` before you get there. Ask the operator to
+confirm the forge, as for every value here.
 
 The mode is enforced, not advisory: a group- or world-writable file **or directory**, or one owned
 by another user, is refused with the mode printed. Anything that can write that file names the
@@ -758,22 +852,42 @@ scaffolded jobs write to this file — see [`adopting-assay-gitlab.md`](adopting
 section "Trust roster for CI".
 
 **Verify:** every surface is present — the configured-check covers only two of them, so assert all
-five yourself:
+six yourself, and that the forge entry names YOUR repo (a key naming only other repos is the same gap):
 
 ```bash
 for k in ASSAY_BLESS_LOGIN ASSAY_TRUSTED_LOGINS ASSAY_TRUSTED_BOT_SLUGS \
-         ASSAY_ALLOWED_REPOS ASSAY_HUMAN_LOGIN_MAP; do
+         ASSAY_ALLOWED_REPOS ASSAY_HUMAN_LOGIN_MAP ASSAY_REPO_FORGES; do
   grep -q "^$k=." ~/.config/assay/roster.env || echo "MISSING: $k"
 done
+grep -qiE '^ASSAY_REPO_FORGES=(.*,)?<owner>/<name>=(github|gitlab)(,|$)' ~/.config/assay/roster.env \
+  || echo "MISSING: ASSAY_REPO_FORGES entry for <owner>/<name>"
 ```
 
-No output. Then the tools agree —
-`deskboard --version 2>&1 >/dev/null | grep -E 'configured=|role-bindings=|ASSAY_ALLOWED_REPOS='`
-shows `configured=true`, a **non-empty** `ASSAY_ALLOWED_REPOS=`, and every `role=` you rely on in
-`role-bindings=` (an unbound role refuses the check it exists for). This deliberately uses
-`--version`, not `nextup`: it needs no `DESK_ROOTS`, and it does not tempt you into widening your
-own `ASSAY_ALLOWED_REPOS` with the maintainer's repo just to get a command to exit 0 (see the caveat
-above).
+No output. Then inspect the effective values, retaining the inspection command's own exit
+status rather than the status of a filtering pipeline:
+
+```bash
+roster_echo=$(mktemp)
+ASSAY_CONFIG_ECHO=full deskroster repos --scope write 2>"$roster_echo"
+roster_status=$?
+grep -E 'configured=|role-bindings=|ASSAY_ALLOWED_REPOS=' "$roster_echo"
+printf 'inspection exit=%s\n' "$roster_status"
+```
+
+Require `inspection exit=0`, `configured=true`, a **non-empty** `ASSAY_ALLOWED_REPOS=`, and
+every `role=` you rely on in `role-bindings=` (an unbound role refuses the check it exists
+for). Compare the printed write scope with the repos you intend to authorize; exit 0 alone
+does not establish that every intended repo or role is present. On a nonzero exit, read the
+full diagnostic in `"$roster_echo"` and correct the configuration before proceeding. A partial
+roster with no allowed repos can still say `configured=true`; this inspection exits 6 for
+that empty write scope.
+
+This local scope read needs no `DESK_ROOTS` and does not contact a forge. It does not require
+widening your own `ASSAY_ALLOWED_REPOS` with the maintainer's repo to inspect configuration
+(see the caveat above). `deskboard` help and version remain offline and do not inspect the roster.
+`ASSAY_CONFIG_ECHO=full` makes the check print the whole echo on every run; without it, a
+run whose configuration was already shown prints only the one digest line, which carries no
+`role-bindings=` or `ASSAY_ALLOWED_REPOS=`. The forced form reads and writes no echo state.
 
 Finally, prove failure mode 2 is live rather than decorative — drop one surface and watch the tools
 stay quiet:
@@ -788,7 +902,7 @@ stay quiet:
 unset DESK_ROOTS
 cp ~/.config/assay/roster.env ~/.config/assay/roster.env.full
 grep -v '^ASSAY_ALLOWED_REPOS=' ~/.config/assay/roster.env.full > ~/.config/assay/roster.env
-deskboard nextup 2>&1 >/dev/null | grep -E 'configured=|ASSAY_ALLOWED_REPOS='   # configured=true, repos EMPTY
+ASSAY_CONFIG_ECHO=full deskboard nextup 2>&1 >/dev/null | grep -E 'configured=|ASSAY_ALLOWED_REPOS='   # configured=true, repos EMPTY
 deskboard nextup >/dev/null 2>&1; echo "exit=$?"                                # exit=0 — the silent state
 cp ~/.config/assay/roster.env.full ~/.config/assay/roster.env && rm ~/.config/assay/roster.env.full
 ```
@@ -797,7 +911,7 @@ If that printed `configured=true`, `ASSAY_ALLOWED_REPOS=` empty, and `exit=0`, y
 quiet a half-filled roster is: neither the echo's exit code nor `deskboard nextup`'s own output —
 which never lists repos in the first place — tells you a surface is missing. The gap only shows up
 later, when a repo-scoped acting command runs. If you have `DESK_ROOTS` set for your own day-to-day
-board usage outside this primitive, restore it now and re-run the five-surface check before moving
+board usage outside this primitive, restore it now and re-run the six-surface check before moving
 on. (This demo only reproduces from inside the primary suite, per the comment above. On a
 fresh, non-maintainer checkout the same steps do not reach this failure mode at all: with `DESK_ROOTS`
 unset — as the demo instructs — `deskboard nextup` refuses first with `exit=6`, `root
@@ -817,15 +931,29 @@ a label write on a PR fails). So the labels are a **one-off per repo**, created 
 (this primitive is the single home for that list; the operating skills point here rather than
 re-listing it).
 
-**Who creates them, per forge.** This is a human/admin act on either forge — no desk verb
-provisions the whole set yet (#1559):
+**Who creates them, per forge.** `deskfleet labels` (`windows-port/08`) is the **forge-neutral**
+verb that creates the whole set natively on either forge — no `gh`/`glab`, no shell script, and no
+Git-Bash/WSL, so it is also the Windows path:
+
+```
+deskfleet labels --forge github --repo <owner/repo>       --token-file <path> [--dry-run]
+deskfleet labels --forge gitlab --project <path-or-id>    --token-file <path> [--dry-run]
+```
+
+An existing label is a no-op; `--dry-run` enumerates every action with zero network calls. It is
+still a **human-run** act, holding a token that can write the repo's labels: it creates label
+*definitions* from a fixed list and applies none. Whether a desk role should run it on its own is
+the open decision in #1559. The
+GitHub-native equivalent (for a human who prefers `gh` directly, or is not running the desk tools)
+and the GitLab shell script remain as fallbacks:
 
 - **GitHub** — create each label below at the repo's *Settings → Labels* page (or with the REST
   call `POST /repos/{owner}/{repo}/labels`, one per label). The `gh label create` lines below are
   an **optional convenience** for a human who has `gh`; no install step requires it. Creating an
   existing label is a harmless "already exists".
 - **GitLab** — `tools/create-fleet-gitlab.sh` creates the same set, with the same names, colours
-  and descriptions, under `--project` ([`adopting-assay-gitlab.md`](adopting-assay-gitlab.md) §3).
+  and descriptions, under `--project` ([`adopting-assay-gitlab.md`](adopting-assay-gitlab.md) §3) —
+  bash + curl + jq, kept as a labelled fallback (#1646), not a prerequisite.
 
 On either forge `deskflip` also creates the PR-state pair on first use (the forge seam's label
 write ensures a missing label exists before applying it); `deskfile` only *probes* for the
@@ -1068,12 +1196,116 @@ Two honesty caveats travel with it, spelled out below: the SessionStart hooks ne
 Windows runner. Do not read "runs on Windows" as "every surface is native and CI-green" — read the
 specifics.
 
+### The three-command install (Cursor + GitLab, channel E)
+
+This is the **recommended route** for an adopter on Cursor, on the published release channel. It
+has **one open gap**: on a clean host no command in it installs `deskinstall` itself (see
+**[The first `deskinstall` on a clean host](#the-first-deskinstall-on-a-clean-host--an-open-gap)**
+below). Until that closes, it is three commands plus one interim step, not three commands as
+written. The full manual route survives complete below as the
+**[Manual appendix](#manual-appendix--the-fifteen-step-windows-path)**. It covers every one of the
+fifteen steps this collapses, and it is both the fallback for an adopter who cannot use the three
+commands and the reference for what each command below actually does.
+
+**1. Acquire.** Bootstrap the first binary, then pull the rest. The sha256 values come from the
+committed manifest, so nobody transcribes one by hand (`windows-port/06`):
+
+```powershell
+git clone https://github.com/medici-finance/assay.git; cd assay
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1 -Tag vX.Y.Z
+```
+
+`-Tag` must be the tag `plugins/assay/paired-versions.yaml` pins for `statusgen` on your
+`windows-<arch>` line. The script refuses any other tag. It writes `%LOCALAPPDATA%\Assay\bin` to
+your **user** PATH, which already-open shells do not see. Open a new shell, `cd` back into the
+clone, get a first `deskinstall` (see the gap below), then:
+
+```powershell
+deskinstall --manifest plugins/assay/paired-versions.yaml --dest $env:LOCALAPPDATA\Assay\bin
+```
+
+*What it proves:* in a new shell, `statusgen --version` prints the pinned tag. Each line refuses
+rather than warning and continuing on a sha256 mismatch, but they signal it differently:
+- The **bootstrap** throws a `REFUSED: …` error. It does this on a digest mismatch
+  (`scripts/bootstrap-windows.ps1:108`) and on every manifest-resolve failure (`:52-96`). Under
+  `powershell -File` that is a non-zero exit (not `5`), and nothing is placed.
+  `scripts/windows-bootstrap-hashcheck-smoke.ps1` asserts on that refusal's message text (for
+  example `sha256 mismatch`), not on the `REFUSED:` prefix.
+- **`deskinstall`** exits `5` (refused, nothing placed). A `deskinstall` built from this tree
+  runs a second check after the sha256 one: it downloads each asset's Sigstore build attestation
+  (`<asset>.sigstore.json`, from the same release) and refuses unless it verifies as SLSA
+  provenance for those exact bytes, signed by this repo's release workflow (run by the push of
+  the pinned tag, or by `workflow_dispatch` from `main`) and recorded in the public transparency
+  log. A missing or failing attestation is the same exit `5`, and no flag skips the check. A
+  `deskinstall` taken from an older release runs the checks that release shipped (sha256 only).
+
+#### The first `deskinstall` on a clean host — an open gap
+
+The bootstrap places only `statusgen`: `statusgen-windows-<arch>.exe` plus a `statusgen.exe` copy.
+`deskinstall.exe` ships only inside `desk-tools-windows-<arch>.tar.gz`, which is the asset
+`deskinstall --manifest` itself downloads. The release publishes no standalone `deskinstall` asset,
+and `statusgen` has no install verb. So on a clean host, step 1's second command and step 2 both
+need a `deskinstall` that nothing above has placed. #1693 tracks closing this. Until it does, get a
+first `deskinstall` **outside** `--dest`. It must be outside because `deskinstall` rewrites every
+file it places in `--dest`, and Windows does not let a running `.exe` overwrite itself. Two ways:
+
+- **With a Go 1.27 toolchain.** From the clone root, run
+  `go build -C tools/desk -o $env:TEMP\deskinstall.exe ./cmd/deskinstall`, then run step 1's
+  second command as `& $env:TEMP\deskinstall.exe --manifest …`. That run places the pinned,
+  sha256-verified release build of the whole toolchain, `deskinstall.exe` included, into `--dest`,
+  and that copy serves step 2. **Read before using this route:** a `deskinstall` built from the
+  current tree also requires each asset's build attestation, and **no release pinned today
+  publishes one**, so this build refuses every currently pinned release (exit `5`, the refusal
+  names the missing `.sigstore.json`). It works again once the release workflow uploads the
+  attestation bundles and the pins move to a release that carries them. Until then, use the
+  route below, or build from the pinned release's tag
+  (`git checkout <tag>` before `go build`), which builds the installer that release shipped.
+- **Without Go.** Download the asset for the pinned tag from
+  `https://github.com/medici-finance/assay/releases/download/<tag>/desk-tools-windows-<arch>.tar.gz`,
+  where `<tag>` and the sha256 are the `desk-tools:` block's `windows-<arch>` line in
+  `plugins/assay/paired-versions.yaml`. Check the digest with a comparison that throws, rather
+  than by eye (`Get-FileHash` prints uppercase hex and the manifest pins lowercase; `-ne` ignores
+  case):
+  `if ((Get-FileHash -Algorithm SHA256 <file>).Hash -ne '<sha256 from the manifest>') { throw 'REFUSED: sha256 mismatch' }`.
+  Stop if it throws. Unpack it into a scratch directory with Windows' bundled
+  `tar -xzf <file> -C <scratch>`, then run step 1's second command as
+  `& <scratch>\deskinstall.exe --manifest …`. This route brings back the operator-copied digest
+  that step 1 otherwise removes. That is why it is an interim route, not the recommended one.
+
+Neither route runs in CI today. Both are read from the tree (the bootstrap script, the release
+workflow's asset list, and `deskinstall`'s own install code), not observed on a Windows host.
+
+**2. Place the Cursor harness.** For a release that publishes the versioned bundle,
+use its exact tag (replace `vX.Y.Z`):
+
+```powershell
+deskinstall --harness cursor --release vX.Y.Z --forge gitlab --repo C:\src\myrepo --fetch --dry-run
+deskinstall --harness cursor --release vX.Y.Z --forge gitlab --repo C:\src\myrepo --fetch
+deskinstall --harness cursor --release vX.Y.Z --forge gitlab --repo C:\src\myrepo --fetch --check
+```
+
+The last command must exit 0. See [the Cursor install contract](#running-assay-on-cursor--a-second-first-class-harness)
+for offline materialization, integrity checks, ownership, upgrades, and the explicit
+source route for legacy releases without a bundle.
+
+**3. Run the turnkey install.** Invoke `assay:install` inside Cursor. It scaffolds
+(`statusgen init`), wires CI, and proves itself (`--lint == 0`, `--version` prints the pinned tag);
+every never-autonomous step (reviewer identity, permission grants, merge/push/tag, private-repo CI
+auth) still escalates to a human — see [`plugins/assay/skills/install/SKILL.md`](../plugins/assay/skills/install/SKILL.md).
+
+**No Git-Bash/WSL anywhere in this sequence.** GitLab **fleet provisioning** (the seven role
+service accounts and their tokens) is a separate, forge-scoped verb. It mints live credentials and
+is its own `gate: human` act; see **[GitLab fleet provisioning](#gitlab-fleet-provisioning-deskfleet)**
+below. It is not folded into the three commands above, because an adopter re-running the install
+against an already-provisioned fleet should not re-mint credentials by default. One GitLab
+operation still needs Git-Bash or WSL after install: **bulk PAT renewal**. See **Prerequisites**.
+
 ### Two install lanes — do not mix them
 
 | Lane | When | What you pin | Need Go? |
 |---|---|---|---|
 | **Channel E (release)** | Adopter wants the published tag (example: `v0.26.0`) | `statusgen-windows-<arch>.exe` + `desk-tools-windows-<arch>.tar.gz` **tag + sha256** in `.assay-versions` | **No.** Bootstrap + `deskinstall` download verified assets. |
-| **Channel D (source SHA)** | Adopter asked for `main` (or any commit that is **not** a release asset) | the assay commit SHA your CI clones and rebuilds — recorded in CI config, **not** as a `-source` `.assay-versions` line (see the channel-D lane below) | **Yes.** A Go 1.25 toolchain, `go build` of `statusgen` and the desk-tools, and CI that clones that SHA and rebuilds. Copying a release sha256 onto a source lane is a lie. |
+| **Channel D (source SHA)** | Adopter asked for `main` (or any commit that is **not** a release asset) | the assay commit SHA your CI clones and rebuilds — recorded in CI config, **not** as a `-source` `.assay-versions` line (see the channel-D lane below) | **Yes.** A Go 1.27 toolchain, `go build` of `statusgen` and the desk-tools, and CI that clones that SHA and rebuilds. Copying a release sha256 onto a source lane is a lie. |
 
 `gh` is not required to *install* either lane. GitHub-shaped *desk* work still wants `gh`; GitLab-shaped desk work wants `glab` / `--forge gitlab`, not a GitHub App PEM path.
 
@@ -1085,16 +1317,28 @@ specifics.
 - **Channel E:** **No Go toolchain and no `gh` are required to install.** The adopter downloads the
   *pinned release binary*, not a from-source build: the bootstrap fetches over `Invoke-WebRequest`
   and the Go-native installer over `net/http`.
-- **Channel D:** a **Go 1.25** toolchain on `PATH` (or a documented portable install) **is**
+- **Channel D:** a **Go 1.27** toolchain on `PATH` (or a documented portable install) **is**
   required. There is no checksummed Windows asset for an unpublished SHA.
 - **`git`** — needed to clone Assay (bootstrap script lives **in this repo**, not on a blank
   adopter machine) and to run desks. `gh` is GitHub-desk only.
-- **Git-Bash** (or WSL) — two different jobs, do not collapse them:
-  - Claude Code **SessionStart hooks** need `bash` + `jq` (see **Known gaps**). Cursor does **not**
-    use those hooks.
-  - GitLab **fleet provisioning** (`tools/create-fleet-gitlab.sh`) is bash + curl + jq. Native
-    PowerShell cannot run it. Token files on Windows are **copied**, not `ln -s` (see the GitLab
-    runbook).
+- **Git-Bash (or WSL, local dev only): not needed to install, but two jobs still need it.**
+  - Claude Code's **SessionStart hooks** need `bash` + `jq` (see **Known gaps**). **Cursor does not
+    use those hooks.**
+  - On GitLab, **bulk PAT renewal** needs it. Initial GitLab **fleet provisioning** is native Go
+    on every OS, Windows included: `deskfleet provision` / `deskfleet labels` (`windows-port/08`,
+    see **[GitLab fleet provisioning](#gitlab-fleet-provisioning-deskfleet)**). Routine per-role
+    rotation while the fleet runs is native too (`desktoken --forge gitlab <role>`). But
+    `deskfleet provision` mints a PAT only for an account it creates in that run, and the default
+    lifetime is 7 days (`--pat-expiry-days`). Re-minting PATs for accounts that already exist, for
+    example after an idle fleet's PATs expire, is
+    `tools/renew-fleet-gitlab-tokens.sh` (bash + `glab`, the GitLab runbook §2g). That script
+    has no native equivalent until `windows-port/16` ships `deskfleet renew`. A GitLab adopter on
+    Windows therefore still needs Git-Bash or WSL for renewal, **on either harness**.
+
+  `tools/create-fleet-gitlab.sh` is different. It survives only as a **labelled fallback** for
+  initial provisioning (#1646), run from Git-Bash or WSL, never as a prerequisite. It is now a bash
+  adapter onto the Go command `deskgitlab create`, which takes the same flags and runs natively.
+  On Windows, token files it mints are **copied**, not `ln -s`'d (see the GitLab runbook).
 
 ### Config home, PATH, and child processes (Windows-specific)
 
@@ -1112,8 +1356,18 @@ specifics.
   On native Windows the roster owner check is now **ACL-aware** (#640/#641) — it accepts a roster
   owned by the invoking user and writable by no principal but the owner (plus SYSTEM /
   Administrators) and refuses any foreign write-capable principal — and GitLab token custody uses
-  the same owner-only ACL evaluation (#667). Lock the roster and role-token files down with an
-  owner-only ACL.
+  the same owner-only ACL evaluation (#667), with read access held to the same bar as the Unix
+  `0600` rule: a token file must be readable and writable only by its owner (plus SYSTEM /
+  Administrators), so any other principal holding read access — a group such as Everyone,
+  Authenticated Users or Users, or a grant inherited from the parent folder — is refused too.
+  Lock the **folder** that holds the roster and role tokens (the config home, or your
+  `ASSAY_CONFIG_HOME`) with an owner-only ACL that files created in it inherit, e.g.
+  `icacls <dir> /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F"`, then lock each file already in
+  it the same way, e.g. `icacls <file> /inheritance:r /grant:r "%USERNAME%:F"`. The folder lock
+  is the part that lasts: the desk tools re-create credential files (a GitLab token rotation
+  replaces the file, and a GitHub App token is written fresh on first mint), and a new file takes
+  its folder's inheritable ACL, so a lock placed on the file alone is lost the next time the tool
+  re-creates it.
 
 ### Install path — the pinned, verify-or-refuse flow (channel E)
 The Windows **release** install mirrors the Unix acquire→verify→place flow, with the
@@ -1138,14 +1392,21 @@ places nothing; it never warns-and-continues.
 3. **Install the rest with the Go-native installer.** `deskinstall` resolves the pinned tag +
    per-platform sha256 from the plugin-shipped `paired-versions.yaml` (never a floating ref),
    downloads `statusgen-windows-<arch>.exe` and `desk-tools-windows-<arch>.tar.gz`, **verifies each
-   sha256 and refuses on any mismatch** (nothing placed on a bad hash), then installs the verified
-   binaries into a `PATH`-resolvable dir:
+   sha256 and refuses on any mismatch** (nothing placed on a bad hash), then — in a `deskinstall`
+   built from this tree — **verifies each asset's build attestation** (`<asset>.sigstore.json`
+   from the same release) **and refuses on any failure**, then installs the verified binaries
+   into a `PATH`-resolvable dir:
 
    ```powershell
    deskinstall --manifest paired-versions.yaml --dest $env:LOCALAPPDATA\Assay\bin
    ```
 
-   Exit `0` = installed & verified; exit `5` = refused (hash mismatch, absent pin, or bad input).
+   Exit `0` = installed & verified; exit `5` = refused (hash mismatch, missing or failing
+   attestation, absent pin, or bad input).
+   On a clean host nothing above has placed `deskinstall` itself (step 2 fetches only
+   `statusgen`). See
+   **[The first `deskinstall` on a clean host](#the-first-deskinstall-on-a-clean-host--an-open-gap)**
+   for the interim routes.
 
 The install fork — a **Go-native installer with a thin PowerShell bootstrap**, chosen over a pure
 PowerShell script — was a maintainer decision: it keeps the security-critical hash-verify in one
@@ -1200,16 +1461,31 @@ statusgen-windows-arm64.exe  v0.26.0  9b01f839841742634377dd1b8c70e07503fe905ed3
 like any other platform — the BLOCKED item below is only its *native smoke*, never its release
 asset.
 
-### CI-proven status — staged, pending promotion (not yet a live check)
-A Windows CI leg — `statusgen --lint` plus an **offline** `--version` smoke on `windows-latest` —
-is authored and **staged**: it lives at `ci/staged-workflows/windows-ci-leg.yml`, *not yet* under
-`.github/workflows/`. Promoting it into the live workflow set requires a **maintainer's
-workflow-scoped credential** — an agent credential cannot push a workflow file at all — so today
-the Windows leg is **pending promotion, not a live green check**. Until it is promoted, the "runs
-on Windows" claim rests on the cross-compiled, checksummed release assets and the local install
-path above; the CI leg is the corroboration that goes live when a maintainer promotes it. The
-**native `windows/arm64` smoke stays BLOCKED** pending an arm64 Windows runner, and is never
-greened from the amd64 result.
+### CI-proven status — the Windows leg is live
+
+A Windows CI leg is **live**, under `.github/workflows/windows-ci-leg.yml` (promoted by a
+maintainer's workflow-scoped credential; `windows-port/04` is `done` on this stream's board). It
+carries two running jobs — `windows-smoke` (`statusgen --lint` plus an **offline** `--version`
+smoke on `windows-latest`, and a fail-first demonstration that the leg genuinely reddens on a
+broken input) and `windows-bootstrap-smoke` (exercises `bootstrap-windows.ps1`'s sha256
+hash-verify at Windows runtime — a tampered checksum refuses, the pinned one installs) — plus one
+**held** job, `arm64-native-smoke` (`if: false`, by design, so it can never read as a passing
+arm64 result): the **native `windows/arm64` smoke stays BLOCKED** pending a `windows-11-arm`
+runner, and is never greened from the `windows-smoke` amd64 result. The `windows/arm64` release
+assets themselves still ship cross-compiled and checksummed regardless of that block.
+
+**When it runs.** "Live" means the workflow is installed, not that it gates every change. It
+triggers only on a `v*` **tag push** and on a manual **`workflow_dispatch`**
+(`.github/workflows/windows-ci-leg.yml`, `on:`). It is not a per-PR or per-push check. The
+fail-first step runs only on a dispatch with `failfirst: true` (`if: ${{ inputs.failfirst }}`).
+So the Windows claim is re-proven at each release tag, not on each PR.
+
+The earlier staged copy under `ci/staged-workflows/windows-ci-leg.yml` was not removed at
+promotion and still exists — but it is **not** a stale duplicate to clean up here: diffed against
+the live file, it carries additional not-yet-promoted jobs (a Windows PowerShell 5.1 parse check
+and the `verify-in-container` / `windows-verify-in-container` legs staged for `windows-port/10`).
+Retiring or promoting the rest of that staged content is a separate decision for whichever brief
+owns those jobs, not a side effect of this docs correction.
 
 ### Known gaps — documented workarounds
 The portability audit (`docs/streams/windows-port/portability-audit.md`) triaged every
@@ -1235,6 +1511,43 @@ real filesystem paths go through `filepath.Join`. The one adopter-facing surface
 The rest of the audit's `needs-port` rows were closed by the install path above (the
 `sudo make desk-install` POSIX install and the push-guard shim / `/opt` assumptions) or are
 internal to the desk pipeline, not surfaces an adopter touches directly.
+
+### GitLab fleet provisioning (deskfleet)
+
+`windows-port/08` replaced the bash+curl+jq `tools/create-fleet-gitlab.sh` dependency with a
+native Go verb for a Windows (or any-OS) adopter on GitLab — **`gate: human`**, because it mints
+and persists live credentials:
+
+```powershell
+deskfleet provision --group mygroup --prefix myorg --project mygroup/myproject `
+  --owner-token-file $env:USERPROFILE\.config\assay\gitlab-owner.token
+```
+
+Keep the group-owner PAT file in the **config home** (`%USERPROFILE%\.config\assay`, or your
+`ASSAY_CONFIG_HOME`), under the owner-only ACL described in **Config home, PATH, and child
+processes**. Never keep it in a repo checkout, where a stray `git add` can commit it. A bare
+relative `--owner-token-file gitlab-owner.token` resolves against the current directory.
+
+It creates the seven role service accounts, their group memberships, and — for each account this
+run created — one PAT, written **owner-only** to `gitlab-<role>.token` under `--out-dir` (default:
+the config home, exactly where `desktoken --forge gitlab <role>` reads it) — no `ln -s`/copy step,
+because the file already has the name the toolchain reads. With `--project` it also protects
+`main`, sets MR approvals, protects release tags, and sets the pipeline/discussion merge checks.
+`--dry-run` enumerates every action with zero network calls; always run it first. The label set is
+`deskfleet labels --forge gitlab …` (see **create-labels**, above) — the same verb also creates the
+GitHub set, forge-neutral. Requires `GITLAB_API_BASE` (the REST v4 base; no default host — see the
+GitLab runbook). Full reference, custody rules, and the tier ladder:
+[`adopting-assay-gitlab.md`](adopting-assay-gitlab.md).
+
+The two bash scripts do not have the same standing:
+- **`tools/create-fleet-gitlab.sh`** is a **labelled fallback** for initial provisioning, run from
+  Git-Bash or WSL (#1646). It is not a prerequisite for a Windows adopter, and not the path this doc
+  points a new adopter at.
+- **`tools/renew-fleet-gitlab-tokens.sh`** is **not** a fallback. It is the **only** bulk renewal
+  path today (bash + `glab`, the GitLab runbook §2g). `deskfleet` has no renew verb: a re-run of
+  `deskfleet provision` against accounts that already exist mints nothing new for them. So once the
+  fleet's PATs lapse (7 days by default), a Windows GitLab adopter re-mints them from Git-Bash or
+  WSL. That stays true until `windows-port/16` (`deskfleet renew`) lands.
 
 ### Channel D — from-source Windows (when there is no release asset)
 
@@ -1370,6 +1683,61 @@ code-signing certificate** held as a release secret and a change to `.github/wor
 — both human acts. Until such a certificate exists the release assets stay **unsigned**; this
 section does not pretend otherwise, and no pin claims a signature that is not there.
 
+### Manual appendix — the fifteen-step Windows path
+
+The **[three-command install](#the-three-command-install-cursor--gitlab-channel-e)** above is the
+recommended route. Every step below still works standalone — this is both the fallback for an
+adopter who cannot or does not want to run the three commands, and the reference for what each of
+those commands actually does underneath. Nothing here is retired by the collapse above.
+
+1. **Clone the repo.** `git clone https://github.com/medici-finance/assay.git; cd assay` —
+   `scripts/bootstrap-windows.ps1` is not a standalone gist; it lives in this checkout.
+2. **Bootstrap the first binary with a hand-copied sha256.** Copy the tag + sha256 for
+   `windows-amd64` out of `plugins/assay/paired-versions.yaml` yourself and pass them explicitly:
+   `powershell -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1 -Tag v0.26.0 -Sha256
+   <copied hash>` (the three-command route lets the script resolve both from the manifest
+   instead). The sha256-verify-or-refuse control is unchanged either way.
+3. **Put `%LOCALAPPDATA%\Assay\bin` on PATH by hand** (open a new shell after) — see **Config
+   home, PATH, and child processes** above.
+4. **Run `deskinstall` for the rest of the toolchain.** `deskinstall --manifest
+   plugins/assay/paired-versions.yaml --dest $env:LOCALAPPDATA\Assay\bin` — downloads and
+   sha256-verifies `desk-tools-windows-<arch>.tar.gz`, refusing on any mismatch, then (in a
+   `deskinstall` built from this tree) verifies its build attestation, refusing on any failure. Step 2 does not
+   place `deskinstall` itself. For how to get the first one, see
+   **[The first `deskinstall` on a clean host](#the-first-deskinstall-on-a-clean-host--an-open-gap)**.
+5. **Pin the Windows assets in `.assay-versions`** — see **Pin the Windows assets** above; one
+   line per platform, `<artifact> <tag> <sha256>`.
+6. **Install Git-Bash** for three things: the SessionStart hooks (Claude Code only), the GitLab
+   fleet script on this manual route (step 12), and GitLab bulk PAT renewal on either route
+   (`tools/renew-fleet-gitlab-tokens.sh`, until `windows-port/16`). See **Prerequisites** above.
+7. **Scaffold with `statusgen init`** (the CORE `first-board` primitive).
+8. **Copy `plugins/assay/skills/*` to `.cursor/skills/`** (or `.agents/skills/`) in the adopter
+   repo — Cursor's `deskinstall --harness cursor` automates steps 8-10.
+9. **Copy `plugins/assay/references/*.md`** alongside as a SIBLING of the skills root, so the
+   skills' `../../references/*.md` includes resolve — copying only `skills/` leaves them dead.
+10. **Write the `AGENTS.md` bindings** by hand (merge `plugins/assay/codex/AGENTS-assay.md`'s
+    fragment between stable `assay:bindings` delimiters, so a re-run replaces the block instead of
+    duplicating it), naming `glab`/`--forge gitlab` on GitLab, not bare `gh`.
+11. **Put the desk binaries on PATH again for Cursor** — the same `%LOCALAPPDATA%\Assay\bin` entry
+    step 3 wrote; Cursor does not add it for you.
+12. **Run `tools/create-fleet-gitlab.sh` from Git-Bash or WSL.** Native PowerShell cannot run
+    it (the bash adapter); `deskgitlab create` with the same flags runs natively. Read the owner PAT from its owner-only file in the config home, not typed inline, so it
+    stays out of shell history:
+    `GITLAB_TOKEN="$(cat <config-home>/gitlab-owner.token)" tools/create-fleet-gitlab.sh --group
+    mygroup --prefix myorg --project mygroup/myproject`. `deskfleet provision` (see **GitLab fleet
+    provisioning** above) replaces steps 12-14 in one native command. Step 15 still applies,
+    because `deskfleet` reads `GITLAB_API_BASE` too.
+13. **Copy each `<prefix>-<role>-bot.token` to `gitlab-<role>.token`** in the config home (no
+    `ln -s` on Windows) — see [`adopting-assay-gitlab.md`](adopting-assay-gitlab.md) §2.
+14. **Lock each token file to an owner-only ACL** — `icacls <file> /inheritance:r /grant:r
+    "%USERNAME%:F"` (and the folder that holds them, so a re-minted file inherits the lock) — see
+    **Config home, PATH, and child processes** above.
+15. **Export `GITLAB_API_BASE`** in the shell or session-bootstrap that invokes the desk verbs —
+    no default host, and it is not a `roster.env` key (see [`adopting-assay-gitlab.md`](adopting-assay-gitlab.md)).
+
+Plus the **create-labels** primitive (`deskfleet labels`, or the nine `gh label create` lines, or
+the GitLab script) — not numbered above because it is shared with every adopter, Windows or not.
+
 ## 3a. What the bundle delivers by itself — and what you still have to write
 
 The install leaves you with working skills and **two things that behave very differently**. Read
@@ -1416,23 +1784,59 @@ bindings: [`plugins/assay/references/cursor.md`](../plugins/assay/references/cur
 The in-editor agent is the path most adopters actually use; headless `cursor-agent` remains the
 automation/smoke surface (brief 13) and is **not** a prerequisite for copying skills.
 
-**Install (IDE agent):**
+**This is the authoritative account of the Cursor install.**
+[`plugins/assay/references/cursor.md`](../plugins/assay/references/cursor.md) § **Install** links
+back here rather than carrying a second copy of the steps (`windows-port/09`) — read that file for
+the capability bindings, this section for the install steps.
 
-1. From this repository's `plugins/assay/skills/` (or the plugin cache on a Claude host), copy the
-   skill directories into the **adopter repo** at `.cursor/skills/` (or `.agents/skills/`).
-2. Copy `plugins/assay/references/*.md` to `.cursor/references/` (or a sibling of `skills/` that
-   keeps the skills' `../../references/*.md` includes resolvable). Copying **only** `skills/`
-   leaves those includes dead.
-3. Bindings stay in the adopter `AGENTS.md` / `CLAUDE.md` stub from `statusgen init`. Optional:
-   `.cursor/rules/*.mdc`. Cursor does **not** run Assay's Claude `SessionStart` hooks; Git-Bash
-   is not required for Cursor resident rules.
-4. Put desk binaries on PATH (Windows: `%LOCALAPPDATA%\Assay\bin`). On GitLab, the desk verbs
-   resolve the forge from the repo (`desktoken` takes `--forge gitlab`); neither `gh` nor `glab` is
-   required (both are optional convenience CLIs), and skill text that says `gh` is GitHub-shaped
-   leftover, not a Cursor requirement.
-5. Generated `harnessgen cursor` / `plugins/assay/cursor/` output is **not** required for the copy
-   path above. If those artifacts are absent from the tree you cloned, do not block the install
-   on them.
+**Versioned install.** Releases that publish `cursor-bundle.tar.gz` support placement
+without an Assay checkout. Select a published umbrella version explicitly:
+
+```sh
+deskinstall --harness cursor --release vX.Y.Z --repo <repo> --forge github --fetch --dry-run
+deskinstall --harness cursor --release vX.Y.Z --repo <repo> --forge github --fetch
+deskinstall --harness cursor --release vX.Y.Z --repo <repo> --forge github --fetch --check
+```
+
+Use `--forge gitlab` for GitLab. Without `--fetch`, materialize the selected release's
+`checksums.txt` as `releases/vX.Y.Z.checksums.txt` and its bundle as
+`releases/vX.Y.Z.cursor-bundle.tar.gz`; `--releases <directory>` changes that location.
+Every network request is opt-in and announces its exact target before contact.
+The selected composition's SHA-256, the internal version, and a closed per-file
+manifest must all match before any adopter file is written. This proves integrity
+against that composition, **not build provenance**. Binary installation remains a
+separate operation with its existing mandatory Sigstore verification.
+
+Legacy releases without the bundle or its digest refuse; there is no fallback to a
+floating checkout. The source route remains available explicitly:
+`deskinstall --harness cursor --bundle <clone>/plugins/assay --repo <repo> --forge github`.
+That route uses local source, without claiming release verification. It permits a
+missing optional rule for older source trees; versioned bundles require the rule.
+Both routes run before `assay:install`, because they place that skill into Cursor.
+
+**Upgrade an existing adopter.** Use the existing version resolver and migration
+runner through `upgrade-assay --root <repo> --harness cursor --to vX.Y.Z --fetch --dry-run`.
+Inspect the plan, then apply the same command without `--dry-run`; finish with
+`--check`. A Cursor upgrade places the verified bundle before advancing
+`.assay-versions` and does not print Claude marketplace commands. `--check` is
+read-only and reports drift with exit 1; unavailable or unverifiable bundles refuse.
+A same-version upgrade still verifies the bundle and checks/repairs missing generated
+files. It never silently overwrites local edits.
+
+**Ownership.** `.cursor/skills/`, sibling `.cursor/references/`, and
+`.cursor/rules/assay.mdc` come from the canonical bundle. Generated text identifies
+its source. `.cursor/assay-managed.json` records owned file hashes; it is generated,
+not an authorization boundary against a writer who can change the repository.
+Sync retires only previously owned, unchanged files no longer in the source set.
+Unrelated files and bytes outside the bounded `AGENTS.md` bindings are preserved.
+Unmanaged collisions, edited owned files, malformed bindings, and symlinked paths
+refuse before placement. Keep repository-specific instructions outside that block.
+The operation is preflighted and retryable, not a cross-file transaction.
+
+**Desk binaries on PATH** are still required (Windows:
+`%LOCALAPPDATA%\Assay\bin`). Cursor does not need Claude's SessionStart hooks or
+Git-Bash for resident rules. Its native `AGENTS.md` and `.cursor/rules` channels
+carry them; `gh`/`glab` remain optional convenience CLIs.
 
 **Isolation** — Cursor's background agents run in isolated git worktrees, so parallel workers
 isolate natively there; on the headless CLI, worker isolation follows the same `git worktree`
@@ -1440,7 +1844,7 @@ discipline every harness uses, and where the sandbox cannot create a worktree th
 **refuses** rather than working in a shared checkout — the isolation floor never degrades.
 
 The one **parity** acceptance step is a live smoke run on a Cursor install, run against the
-scripted Cursor smoke protocol checklist (`cursor-smoke-protocol.md`) — a full desk loop
+scripted Cursor smoke protocol checklist ([`cursor-smoke-protocol.md`](./cursor-smoke-protocol.md)) — a full desk loop
 (dispatch → isolated worktree → draft PR → one review cycle) on both surfaces, headless-first,
 not just a single skill invocation. That step and its Verify rows are specified in
 [brief 13](./streams/harness-portability/brief-13-cursor-live-desk-smoke.md). Its signed run
@@ -1819,7 +2223,8 @@ That is where the write boundary lives, and it was already per-cell-shaped. The 
 stating plainly: **authorisation is config; stated topology is compiled.**
 
 **Running a cell on one machine** — the persistent `deskd`, a window per desk role, each resolving
-the cell's own roster and App keys — is `tools/cellctl/cellctl`; see `docs/cellctl.md`.
+the cell's own roster and App keys — is `cellctl`, the Go program in `tools/desk/cmd/cellctl`
+shipped in the desk-tools tarball; see `docs/cellctl.md`.
 
 ---
 
@@ -1836,7 +2241,7 @@ already carries streams, a legacy board, or in-flight work, use **Scenario 2** i
 3. **Run `scaffold-registers` + `scaffold-streams`.** Create `docs/streams/{FINDINGS,INTAKE,RETRO}.md` and **exactly one** stream dir. **Verify:** `ls docs/streams/` shows the three registers + one stream; `yq eval '.' docs/streams/<stream>/README.md >/dev/null`.
 4. **Run `add-statusgen-ci`.** Confirm `paths:` match your streams and the bootstrap-safe guard is present. **Verify:** both a `lint` (pull_request) and a `regen` (push→main) job exist; the porcelain guard is present.
 5. **Run `install-desk-plugin` + `install-main-guard`, then write the local bindings (§3a).** The plugin's `SessionStart` hook fires in every session in every project — take that trade knowingly, per **§3a**. Then fill your repo's own instruction file with the §3a checklist; the hook delivers the method, not your streams / pins / gate-holder / risk paths. **Verify:** `assay:adopt` and `assay:author-brief` resolve; `git config core.hooksPath` returns the hooks path; every §3a bullet except the review identity (which step 7 establishes) is answered or recorded as not-applicable.
-6. **Run `configure-roster`** — skip it only if the primitive's probe says your pin predates the roster. **ESCALATE** the values (blessing authority, trusted logins/Apps, allowed repos), then write `~/.config/assay/roster.env` and set the Actions variables. **Verify:** all five surfaces present; `configured=true` with a **non-empty** `ASSAY_ALLOWED_REPOS=` and every `role=` you rely on bound — `configured=true` with an empty repo set is the silent half-configured state, not a pass.
+6. **Run `configure-roster`** — skip it only if the primitive's probe says your pin predates the roster. **ESCALATE** the values (blessing authority, trusted logins/Apps, allowed repos), then write `~/.config/assay/roster.env` and set the Actions variables. **Verify:** all six surfaces present, including the `ASSAY_REPO_FORGES` entry for this repo; `configured=true` with a **non-empty** `ASSAY_ALLOWED_REPOS=` and every `role=` you rely on bound — `configured=true` with an empty repo set is the silent half-configured state, not a pass.
 7. **Run `setup-reviewer-app` — HUMAN-GATED.** **ESCALATE:** ask the operator to install the reviewer App on the new repo (and create the remote / grant access for a private repo). Report the exact repo + App name. Do not proceed to Step 10's ready-flip until the App can post a review.
 8. **Seed the FIRST stream + first brief.** Copy `docs/brief-template.md` → `brief-01-<slug>.md`; fill every field; add the README table row. Keep it **effort: S, wave: 0, gate: model** — trivial on purpose. A good seed nails four things (per `docs/brief-rules.md`): **why** (`sources:` names a real origin), **gate** (derived from the four `risk` answers; all `no` ⇒ `model`), **shared-value handling** (none, deliberately), **Verify** (literal commands runnable by a non-implementer). **Verify:** `yq eval '.schema' …brief-01-*.md` = `brief-v1`; the README row matches the frontmatter.
 9. **Run `first-board`.** **Verify:** `--lint` exits 0; local `STATUS.md` lists brief `01` in **Next up**; `git status` does NOT stage `STATUS.md` on your branch.
@@ -1966,7 +2371,8 @@ branch → draft-PR → review → verify loop (structure: scaffold-seam → mov
 ## 8. Upgrading after install — the `assay:upgrade-assay` skill
 
 Install and upgrade are **one story with one mechanism**: install writes the `.assay-versions` pin
-(the umbrella line plus the per-artifact tags), and upgrade moves it. The single supported upgrade
+(the per-artifact tags, plus the `assay <vX.Y.Z>` umbrella line when it pins a bare `vX.Y.Z` release
+and every per-artifact line pins that tag), and upgrade moves it. The single supported upgrade
 path is the **`assay:upgrade-assay`** skill (surfaced once the plugin is installed). Do **not**
 hand-edit pins against a release page — that is precisely the drift the pin/umbrella model removes.
 The distribution model this section implements is [`distribution.md`](distribution.md).
@@ -1983,7 +2389,11 @@ highest published bare `vX.Y.Z` release) or to a **named** umbrella version, dry
    for you to run; it never re-points the marketplace or edits the install cache itself.
 
 **What it refuses** (each a distinct exit): an **undetermined** current version (exit 6 — it never
-assumes latest), **inconsistent** records (exit 5 — it names the disagreeing pair), a
+assumes latest). When the only cause is a pin file with **no umbrella line**, as written by an
+install that predates the installer recording the line, re-run with `--adopt-umbrella-from-pins`.
+That flag adopts the release the per-artifact lines pin only after every pinned sha256 matches that
+release's published `checksums.txt`; a mismatch refuses with exit 5, and any other gap with exit 6
+([`distribution.md`](distribution.md) § Adopting the umbrella line). Also refused: **inconsistent** records (exit 5 — it names the disagreeing pair), a
 **per-artifact tag** where an umbrella version was required (exit 7 — the verb moves the whole
 umbrella, e.g. `--to v0.13.0`, never `statusgen/v0.13.0`), and a target that names **no published
 release** (exit 8 — never a nearest-match guess).
@@ -2016,7 +2426,11 @@ per-asset digests channel E pins — the same values you would copy from `checks
 the trust boundary is unchanged (the download is still hash-verified against the pin at install).
 Components you never installed (say, the quality report pack) are reported as *not pinned here*,
 not as a disagreement. Re-pinning rewrites your `<artifact>-<platform>` lines with **that asset's**
-digest, and the bare `statusgen` line with this host's; a line the composition cannot digest is
+digest, and each bare line (`statusgen`, `desk-tools`, …) — the CI-facing pin — with the
+`<artifact>-linux-amd64` asset's digest, chosen by asset name, whatever host you run it on. If the
+release's `checksums.txt` lists no `<artifact>-linux-amd64` asset for a bare line you carry, the
+verb refuses before migrating or writing anything; it never fills that line from another platform.
+A rewritten line keeps its trailing `# …` comment. A line the composition cannot digest is
 carried forward with a warning, never fabricated. "Latest stable" resolves from what is
 materialised under `releases/`, or — under `--fetch` — from the release the release home marks
 latest.

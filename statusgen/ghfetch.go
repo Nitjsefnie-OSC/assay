@@ -97,16 +97,27 @@ type ghRestReview struct {
 	} `json:"user"`
 }
 
+// fetchAllPullsMaxPages bounds the walk so a forge that never returns a short
+// page cannot spin it forever. It is a safety bound, not a size limit: at 100
+// pulls a page it is 100,000 pulls, and a walk that reaches it is reported as
+// a could-not-check, never as a complete list. A variable only so a test can
+// reach the bound without serving 1,000 pages.
+var fetchAllPullsMaxPages = 1000
+
 // fetchAllPulls pages through EVERY open-or-closed PR for repo and returns the
 // raw pulls, untouched by the trailer filter — the shared paging loop behind
 // both ListPRs (trailer-only, the normal derivation) and the declared
 // reconcile --backfill fallback (reconcilebackfill.go), which is the ONLY
 // caller allowed to look at a pull with no trailer. lookedAt is false with an
 // HTTP/transport reason on any failure.
+//
+// The walk ends only on a short page. It used to stop after 20 full pages and
+// return the 2,000 newest pulls as if they were all of them, so a repository
+// past 2,000 pull requests silently lost its oldest witnesses (#1969). Reaching
+// the safety bound is now a could-not-check with the count read so far.
 func (c *ghClient) fetchAllPulls(repo string) (pulls []ghPull, lookedAt bool, reason string) {
 	const perPage = 100
-	const maxPages = 20 // 2000 PRs; a hard bound so a bad Link loop cannot spin forever
-	for page := 1; page <= maxPages; page++ {
+	for page := 1; page <= fetchAllPullsMaxPages; page++ {
 		url := fmt.Sprintf("%s/repos/%s/pulls?state=all&per_page=%d&page=%d", c.base, repo, perPage, page)
 		body, status, err := c.get(url)
 		if err != nil {
@@ -121,10 +132,10 @@ func (c *ghClient) fetchAllPulls(repo string) (pulls []ghPull, lookedAt bool, re
 		}
 		pulls = append(pulls, batch...)
 		if len(batch) < perPage {
-			break // last page
+			return pulls, true, "" // a short page: the list is complete
 		}
 	}
-	return pulls, true, ""
+	return nil, false, fmt.Sprintf("the pull list was still returning full pages after %d pages (%d pulls), so it is not provably complete", fetchAllPullsMaxPages, len(pulls))
 }
 
 // ListPRs fetches every open-or-closed PR for repo and returns one PRRecord per
@@ -138,6 +149,13 @@ func (c *ghClient) ListPRs(repo string) (prs []PRRecord, lookedAt bool, reason s
 	if !lookedAt {
 		return nil, false, reason
 	}
+	return prRecordsFromPulls(pulls), true, ""
+}
+
+// prRecordsFromPulls is ListPRs' trailer filter over an already-fetched pull
+// list, so a caller that also needs the raw pulls (reconcile --backfill) pages
+// the list once instead of twice.
+func prRecordsFromPulls(pulls []ghPull) (prs []PRRecord) {
 	for _, p := range pulls {
 		ref, ok := singleBriefTrailer(p.Body)
 		if !ok {
@@ -160,12 +178,14 @@ func (c *ghClient) ListPRs(repo string) (prs []PRRecord, lookedAt bool, reason s
 		}
 		prs = append(prs, rec)
 	}
-	return prs, true, ""
+	return prs
 }
 
-// ReviewsAtHead reports whether pr carries an APPROVED review at headSHA — the
-// gate:model `done` witness (the same "approval must report at the merged head"
-// property autoflip.go enforces). lookedAt is false with a reason on any failure.
+// ReviewsAtHead reports whether pr carries an APPROVED review at headSHA. It is
+// NOT a gate:model `done` witness: it binds neither the reviewer identity nor the
+// delivering PR, so the reconcile fold decides `done` through autoflip.go's
+// decideModelFlip instead and never calls this. lookedAt is false with a reason
+// on any failure.
 func (c *ghClient) ReviewsAtHead(repo string, pr int, headSHA string) (approved, atHead, lookedAt bool, reason string) {
 	url := fmt.Sprintf("%s/repos/%s/pulls/%d/reviews?per_page=100", c.base, repo, pr)
 	body, status, err := c.get(url)
@@ -220,6 +240,7 @@ func (c *ghClient) get(url string) ([]byte, int, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	perfCountHTTP()
 	resp, err := c.doer.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("HTTP transport error: %v", err)

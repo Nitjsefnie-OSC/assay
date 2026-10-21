@@ -51,14 +51,36 @@ type PRRecord struct {
 	HeadSHA  string
 	MergeSHA string
 	Reopened bool
+	// Partial is set when the brief's own `delivery:` frontmatter declares this
+	// MERGED PR a partial delivery (`covers: partial`, and no `full` entry for the
+	// same PR). It is never read from the forge: admitPRWitnesses sets it from the
+	// tree (briefdelivery.go). A declared-partial merge is not a witness that the
+	// brief is implemented, so classifyPRs counts it as work in progress (#2703).
+	Partial bool
 }
 
 // WitnessInfo is the `verifyrun --check` result for a brief — the `verified`
 // witness. Version is the brief version the witness was run against; a mismatch
 // against the brief's current version is the stale-Verify demotion (spec §5).
+//
+// Released is the brief's evidence-coverage verdict (graph-execution/03,
+// coverage.go: Coverage.Released) — every mandatory claim resolves `pass` at the
+// item's revision. It demotes `verified` exactly as a Version mismatch does:
+// Passed alone (verifyrun's own three-state result for the rows it ran) says
+// nothing about a claim the pattern node ALSO declares mandatory, or about a
+// witness recorded against a different revision than the one now checked out —
+// coverage catches both. false is the safe default for a caller that does not
+// (yet) compute coverage — see the false-by-default note on deriveOne below;
+// existing callers/fixtures that never set this field keep their prior
+// behaviour ONLY once they are updated to pass Released explicitly, which
+// derived-board's own test fixtures now do.
 type WitnessInfo struct {
-	Passed  bool
-	Version int
+	Passed   bool
+	Version  int
+	Released bool
+	// Run names the recorded run the witness read (`<login> @ <sha>`), for the
+	// cell's witness column. Optional.
+	Run string
 }
 
 // ApprovalInfo is the App approval at head — the `done` witness for a gate:model
@@ -67,6 +89,9 @@ type WitnessInfo struct {
 type ApprovalInfo struct {
 	Approved bool
 	AtHead   bool
+	// Witness names the approval read (reviewer, PR and head), for the cell's
+	// witness column. Optional.
+	Witness string
 }
 
 // BriefIdent is the per-brief identity the fold needs: its id, its gate (which
@@ -80,15 +105,25 @@ type BriefIdent struct {
 // LifecycleInput is the complete witness set for one reconcile run. Maps are keyed
 // by brief ID. LookedAt is whether the PR fetch SUCCEEDED; when false, every
 // PR-derived cell is `unknown` with Reason.
+//
+// Rulings maps a gate:human brief to the human stamp read for it (non-empty =
+// ruled). Undecided names the briefs whose verified/done decision could not be
+// made (a read failed): such a brief's merged cell is `unknown` with the reason,
+// never the lower state the missing read would leave. LabelsUnread names the
+// briefs whose linked-issue labels could not be read: such a brief's
+// in-progress/todo cell is `unknown` with the reason, never a definite
+// not-blocked.
 type LifecycleInput struct {
-	Briefs      []BriefIdent
-	PRs         []PRRecord
-	Witnesses   map[string]WitnessInfo
-	Approvals   map[string]ApprovalInfo
-	Rulings     map[string]bool
-	IssueLabels map[string][]string
-	LookedAt    bool
-	Reason      string
+	Briefs       []BriefIdent
+	PRs          []PRRecord
+	Witnesses    map[string]WitnessInfo
+	Approvals    map[string]ApprovalInfo
+	Rulings      map[string]string
+	Undecided    map[string]string
+	LabelsUnread map[string]string
+	IssueLabels  map[string][]string
+	LookedAt     bool
+	Reason       string
 }
 
 // BriefCell is the derived lifecycle cell for one brief. Source names the witness
@@ -101,6 +136,10 @@ type BriefCell struct {
 	Witness string `json:"witness"`
 	Reason  string `json:"reason"`
 	Version int    `json:"version"`
+	// MergedPR names the merged PR the base cell rests on ("PR #N (merged
+	// <sha>)"), set whenever a merge is on record — also when a witness
+	// overlay replaced the cell's own Witness text.
+	MergedPR string `json:"mergedPR,omitempty"`
 }
 
 // blockingIssueLabels are the labels that overlay `blocked` on an in-progress or
@@ -139,10 +178,13 @@ func deriveOne(b BriefIdent, prs []PRRecord, in LifecycleInput) BriefCell {
 	// 1. PR-derived base. When the instrument could NOT look (offline, API error,
 	// rate-limit), the PR-derived cell is `unknown` with the reason — never a
 	// silent todo (the three-state invariant applied to the board). When it DID
-	// look: `implemented` at the LATEST merge; else `in-progress` for any open PR;
-	// else `todo` — and the todo carries the evidence the search ran. Witnesses
-	// (verified/done) still resolve below in BOTH cases, since a verify witness and
-	// an Evidence ruling are tree-readable and do not depend on the PR fetch.
+	// look: `implemented` at the LATEST merge; else `in-progress` for any open PR
+	// or declared-partial merge (#2703: a merge the brief itself says delivered
+	// only part of it is never the implementation); else `todo` — and the todo
+	// carries the evidence the search ran. The
+	// witnesses (verified/done) overlay only a merge on record (step 3): a verify
+	// witness attests an implementation, so with no merged PR read there is
+	// nothing for it to promote.
 	if !in.LookedAt {
 		c.Cell = "unknown"
 		c.Reason = in.Reason
@@ -152,20 +194,60 @@ func deriveOne(b BriefIdent, prs []PRRecord, in LifecycleInput) BriefCell {
 		case latestMerged != nil:
 			c.Cell = "implemented"
 			c.Witness = fmt.Sprintf("PR #%d (merged %s)", latestMerged.Number, shortSHA(latestMerged.MergeSHA))
+			c.MergedPR = c.Witness
 		case open != nil:
-			state := "ready"
-			if open.Draft {
-				state = "draft"
-			}
 			c.Cell = "in-progress"
-			c.Witness = fmt.Sprintf("PR #%d (%s %s)", open.Number, state, shortSHA(open.HeadSHA))
+			c.Witness = inProgressWitness(open)
 		default:
 			c.Cell = "todo"
 			c.Reason = "PR search ran; no open or merged PR carries this brief's trailer"
 		}
 	}
 
-	// 3. Verify witness overlay (verified / done), and its demotions.
+	// 2. A brief whose verified/done decision could not be made this run
+	// (Undecided: a witness, provenance, version or approval read failed) is
+	// `unknown` with the reason over ANY base the PR read produced — consulted
+	// before the merged-PR gate, because the read that failed is exactly what
+	// would have said whether a todo/in-progress base is contradicted by a
+	// passing run. A could-not-look base keeps its own reason.
+	if in.LookedAt {
+		if why, ok := in.Undecided[b.ID]; ok {
+			c.Cell = "unknown"
+			c.Source = "witness"
+			c.Reason = why
+			return c
+		}
+	}
+
+	// 3. Verify witness overlay (verified / done), and its demotions — over a
+	// merge on record only. A could-not-look base stays `unknown`. A todo or
+	// in-progress base with a passing witness is a contradiction the fold cannot
+	// settle (no merged PR carries the trailer, yet a run passed): `unknown` with
+	// the reason, never a promotion and never a definite lower state.
+	if c.Cell != "implemented" {
+		if w, ok := in.Witnesses[b.ID]; ok && w.Passed && (c.Cell == "todo" || c.Cell == "in-progress") {
+			c.Cell = "unknown"
+			c.Source = "witness"
+			c.Reason = passingWitnessNoMergeReason
+			return c
+		}
+		return deriveBlocked(b, c, in)
+	}
+	return overlayWitness(b, c, in)
+}
+
+// passingWitnessNoMergeReason is the reason a todo/in-progress base with a
+// passing verify witness derives `unknown`.
+const passingWitnessNoMergeReason = "a verify witness passed but no merged PR carries this brief's trailer"
+
+// overlayWitness is the verify-witness overlay over a merge on record: c is
+// an `implemented` cell whose MergedPR names that merge (a trailer PR, or the
+// declared --backfill branch/body match). It applies the stale-version and
+// coverage demotions, then `verified` and `done`. Shared by deriveOne and the
+// --backfill path, so a backfilled merge is overlaid by the same rule as a
+// trailer one. An Undecided brief never reaches it: step 2 of deriveOne has
+// already rendered it `unknown`.
+func overlayWitness(b BriefIdent, c BriefCell, in LifecycleInput) BriefCell {
 	if w, ok := in.Witnesses[b.ID]; ok {
 		if b.Version != 0 && w.Version != 0 && w.Version != b.Version {
 			// Stale-Verify demotion (spec §5): the witness was run against a
@@ -177,10 +259,34 @@ func deriveOne(b BriefIdent, prs []PRRecord, in LifecycleInput) BriefCell {
 			c.Witness = fmt.Sprintf("verifyrun --check witness for v%d, brief is v%d", w.Version, b.Version)
 			return c
 		}
+		if w.Passed && !w.Released {
+			// Coverage demotion (graph-execution/03, coverage.go): the ROW-level
+			// witness this brief's own Verify table produced passed, but the
+			// brief's evidence-coverage verdict is NOT released — some mandatory
+			// claim beyond that one witness (a pattern node's own declared claim,
+			// or this same witness read at the wrong revision) still holds. This
+			// is the SAME demotion shape as the stale-version case just above —
+			// "the record cannot support this claim" — read off a different
+			// signal (Coverage.Released, computed by evaluateCoverage) than a
+			// different component. Released's zero value is false (fail-closed,
+			// matching this file's own three-state-instrument discipline): a
+			// caller that populates Passed but has not yet wired coverage MUST
+			// set Released explicitly (true, if it stands by the witness alone)
+			// or its `verified`/`done` briefs demote to `unknown` here — which is
+			// why every existing fixture in lifecycle_test.go now sets it.
+			c.Cell = "unknown"
+			c.Source = "witness"
+			c.Reason = "verifyrun witness passed but evidence coverage is not released"
+			c.Witness = fmt.Sprintf("verifyrun --check pass (v%d), coverage NOT released", w.Version)
+			return c
+		}
 		if w.Passed {
 			c.Cell = "verified"
 			c.Source = "witness"
 			c.Witness = fmt.Sprintf("verifyrun --check pass (v%d)", w.Version)
+			if w.Run != "" {
+				c.Witness += " by " + w.Run
+			}
 			if done, why := isDone(b, in); done {
 				c.Cell = "done"
 				c.Witness = why
@@ -190,26 +296,53 @@ func deriveOne(b BriefIdent, prs []PRRecord, in LifecycleInput) BriefCell {
 		// Red witness: verify was RUN and FAILED → not verified. The cell falls
 		// back to the highest state still witnessed (the PR base above). No promotion.
 	}
+	return c
+}
 
-	// 4. Blocked overlay — in-progress / todo ONLY (spec §2). A merged/verified/done
-	// brief is not overlaid; a blocking label there is a data problem for another
-	// check, not a lifecycle demotion.
-	if c.Cell == "in-progress" || c.Cell == "todo" {
-		if label, blocked := blockingLabel(in.IssueLabels[b.ID]); blocked {
-			c.Cell = "blocked"
-			c.Source = "none"
-			c.Witness = fmt.Sprintf("linked issue label %q", label)
-			c.Reason = "linked issue carries a blocking label"
-		}
+// deriveBlocked is step 4, the blocked overlay — in-progress / todo ONLY (spec
+// §2). A merged/verified/done brief is not overlaid; a blocking label there is a
+// data problem for another check, not a lifecycle demotion. A brief whose
+// linked-issue labels could not be read is `unknown` with the reason: the
+// overlay cannot say it is not blocked.
+func deriveBlocked(b BriefIdent, c BriefCell, in LifecycleInput) BriefCell {
+	if c.Cell != "in-progress" && c.Cell != "todo" {
+		return c
+	}
+	if label, blocked := blockingLabel(in.IssueLabels[b.ID]); blocked {
+		c.Cell = "blocked"
+		c.Source = "none"
+		c.Witness = fmt.Sprintf("linked issue label %q", label)
+		c.Reason = "linked issue carries a blocking label"
+		return c
+	}
+	if why, ok := in.LabelsUnread[b.ID]; ok {
+		c.Cell = "unknown"
+		c.Source = "none"
+		c.Reason = why
 	}
 	return c
 }
 
+// inProgressWitness names the PR an `in-progress` cell rests on: an open PR by
+// its draft/ready state and head, a declared-partial merge by its merge.
+func inProgressWitness(pr *PRRecord) string {
+	if pr.State == prMerged && pr.Partial && !pr.Reopened {
+		return fmt.Sprintf("PR #%d (merged %s, a declared partial delivery)", pr.Number, shortSHA(pr.MergeSHA))
+	}
+	state := "ready"
+	if pr.Draft {
+		state = "draft"
+	}
+	return fmt.Sprintf("PR #%d (%s %s)", pr.Number, state, shortSHA(pr.HeadSHA))
+}
+
 // classifyPRs returns the latest non-reverted merged PR and the first open PR
 // among a brief's PRs. A merged-then-reopened (reverted) PR is NOT counted as a
-// merge — it is treated as open work, the reverted-merge demotion. "Latest" merge
-// is the highest PR number, a stable proxy for merge order across a deterministic
-// fixture set.
+// merge — it is treated as open work, the reverted-merge demotion. A merge the
+// brief declares a PARTIAL delivery (PRRecord.Partial) is not counted as a merge
+// either: part of the brief landed, the rest is still owed, so it is work in
+// progress (#2703). "Latest" merge is the highest PR number, a stable proxy for
+// merge order across a deterministic fixture set.
 func classifyPRs(prs []PRRecord) (latestMerged, open *PRRecord) {
 	sorted := make([]PRRecord, len(prs))
 	copy(sorted, prs)
@@ -218,7 +351,7 @@ func classifyPRs(prs []PRRecord) (latestMerged, open *PRRecord) {
 		pr := &sorted[i]
 		switch pr.State {
 		case prMerged:
-			if pr.Reopened {
+			if pr.Reopened || pr.Partial {
 				if open == nil {
 					open = pr
 				}
@@ -245,11 +378,14 @@ func isDone(b BriefIdent, in LifecycleInput) (bool, string) {
 	switch b.Gate {
 	case "model":
 		if a, ok := in.Approvals[b.ID]; ok && a.Approved && a.AtHead {
+			if a.Witness != "" {
+				return true, a.Witness
+			}
 			return true, "App approval at merged head"
 		}
 	case "human":
-		if in.Rulings[b.ID] {
-			return true, "human:<login> Evidence ruling"
+		if stamp := in.Rulings[b.ID]; stamp != "" {
+			return true, "human sign-off " + stamp
 		}
 	}
 	return false, ""

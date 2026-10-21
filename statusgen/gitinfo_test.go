@@ -15,23 +15,51 @@ func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = fixtureGitEnv(os.Environ())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
 
+// fixtureGitIdentity is the author/committer identity every fixture commit made
+// through runGitEnv carries by default. Without it a commit falls back to the
+// machine's git identity, and on a runner that has none (no global user.name /
+// user.email, no auto-detectable host email) `git commit` fails with "Author
+// identity unknown" — so the fixture would pass or fail by machine.
+var fixtureGitIdentity = []string{
+	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
+	"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid",
+}
+
 // runGitEnv is runGit with extra environment entries ("K=V"), so a test can pin
 // a commit's author/committer dates and get a fixed, machine-independent %ct.
+// It defaults a fixed fixture identity (fixtureGitIdentity) placed BEFORE env, so
+// a caller that passes its own GIT_AUTHOR_* / GIT_COMMITTER_* still wins.
 func runGitEnv(t *testing.T, dir string, env []string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(append(fixtureGitEnv(os.Environ()), fixtureGitIdentity...), env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+}
+
+// fixtureGitEnv removes caller Git controls that can change fixture setup or
+// positive controls. Tests that need a particular Git environment pass it
+// explicitly to runGitEnv; production row environments are tested separately.
+func fixtureGitEnv(env []string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if key == "GIT_NO_REPLACE_OBJECTS" || strings.HasPrefix(key, "GIT_CONFIG_") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 // fixedDate is deliberately expressed with a non-UTC offset (+05:30). git

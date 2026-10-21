@@ -7,15 +7,16 @@
 # fixture root each copy was given), and diffs stdout+stderr and the exit code. Any difference is
 # a divergence naming `<kind>/<harness>/<cockpit>/<verb>`, and the harness exits 1.
 #
-#   CELLCTL_A=tools/cellctl/cellctl CELLCTL_B=tools/desk/cellctl bash tools/cellctl/tests/parity.test.sh
+#   CELLCTL_A=tools/cellctl/testdata/cellctl-shell-oracle.sh CELLCTL_B=tools/desk/cellctl bash tools/cellctl/tests/parity.test.sh
 #
 # Both sides default to the bash oracle, so a bare run is the TRIVIAL pass that proves the harness
 # itself is wired up (the state Task step 2 of the brief asks for, before the port exists).
 #
 # Matrix: kinds {k8s, house, container, scrubbed} × harness {claude, codex} × cockpit
 # {tmux, herdr, orca} × verbs {check, desk, up, down, set, ls, smoke, status}, plus `new` per kind
-# × forge {github, gitlab}. `new` has no dry run — parity there is the byte-diff of the tree each
-# implementation scaffolds into its own CELLS_ROOT, mode bits included.
+# × forge {github, gitlab}, plus one nested-name `new` (`team/fresh`) per kind in NESTED_KINDS (empty since desk-containers/16).
+# `new` has no dry run — parity there is the byte-diff of the tree each implementation scaffolds
+# into its own CELLS_ROOT, mode bits included.
 #
 # `deskd` is DELIBERATELY absent: it has no DRY_RUN plan path in the oracle, so there is nothing
 # to diff, and giving it one would mean editing the oracle (which this brief forbids). Its port is
@@ -36,8 +37,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 abspath(){ case "$1" in /*) printf '%s\n' "$1";; *) printf '%s\n' "$PWD/$1";; esac; }
-CELLCTL_A="$(abspath "${CELLCTL_A:-$HERE/../cellctl}")"
-CELLCTL_B="$(abspath "${CELLCTL_B:-$HERE/../cellctl}")"
+CELLCTL_A="$(abspath "${CELLCTL_A:-$HERE/../testdata/cellctl-shell-oracle.sh}")"
+CELLCTL_B="$(abspath "${CELLCTL_B:-$HERE/../testdata/cellctl-shell-oracle.sh}")"
 [[ -x "$CELLCTL_A" ]] || { echo "parity: CELLCTL_A is not executable: $CELLCTL_A" >&2; exit 2; }
 [[ -x "$CELLCTL_B" ]] || { echo "parity: CELLCTL_B is not executable: $CELLCTL_B" >&2; exit 2; }
 
@@ -318,7 +319,10 @@ normalise(){
   # command lines print exactly that resolved form.
   local implreal; implreal="$(cd "$(dirname "$impl")" && pwd -P)/$(basename "$impl")"
   # The P3 effective-config echo is deskkit's, not cellctl's grammar. Every roster-reading main in
-  # tools/desk writes it to stderr once per run, and the Go port is one of those mains: it consults
+  # tools/desk writes it to stderr once per run — one `assay-config: … digest=sha256:…` line by
+  # default, the full block in CI, on a change, on a refusal or on ASSAY_CONFIG_ECHO=full; both
+  # forms carry the same prefix, so the one rule below drops either — and the Go port is one of
+  # those mains: it consults
   # the cell home's roster for `check`'s write-authorisation rows, so
   # TestEveryRosterReadingMainDeclaresClassAndEchoes requires the echo (the alternative — a name
   # that hides the read from that guard's detector — was ruled out). The shell oracle predates the
@@ -329,8 +333,15 @@ normalise(){
   # whether the two implementations agree on cellctl's own plans, refusals and verb output. It is
   # applied to BOTH sides, so it can only ever hide a line the oracle never prints; it cannot mask
   # a divergence in cellctl's own output, none of which is prefixed "assay-config: ".
+  #
+  # The `[defaults] created` line is the same case: the machine-wide defaults file exists only in
+  # the Go program, whose `new` writes it into a cells root that has none and says so in one
+  # line. The oracle has no such file and prints no such line, and the file itself sits beside
+  # the cells, outside the cell directory tree_manifest compares. What the file does is asserted
+  # by Go tests, not by this diff.
   sed \
     -e '/^assay-config: /d' \
+    -e '/^\[defaults\] created /d' \
     -e "s#$root#<root>#g" \
     -e "s#$implreal#<cellctl>#g" \
     -e "s#$impl#<cellctl>#g" \
@@ -426,9 +437,13 @@ cell_case(){
   rm -rf "$rootA" "$rootB"
 }
 
-# new_case <kind> <forge> — `new` has no dry run, so parity is the tree each side scaffolds.
+# new_case <kind> <forge> [<cell>] — `new` has no dry run, so parity is the tree each side
+# scaffolds. <cell> defaults to `fresh`; a NESTED name (`team/fresh`) is its own cell, because the
+# oracle makes a nested cell's parents with `mkdir -p` and a port that creates the cell directory
+# non-recursively refuses it — the tree diffed is then the top-level entry, parents included.
 new_case(){
-  local kind="$1" forge="$2" id="$kind/$forge/-/new"
+  local kind="$1" forge="$2" cell="${3:-fresh}" id="$1/$2/-/new"
+  [[ "$cell" == fresh ]] || id="$kind/$forge/-/new-nested"
   [[ -z "$ONLY" || "$id" == *"$ONLY"* ]] || return 0
   local rootA="$T/a/$cells" rootB="$T/b/$cells"
   mkdir -p "$rootA" "$rootB"
@@ -437,12 +452,12 @@ new_case(){
   fixture_ok "$id" "$rootA" "$rootB" || return 0
   local -a args=()
   case "$kind" in
-    k8s)       args=(new fresh --kind k8s --forge "$forge" --repo "REPO" --cells-yaml "ROOT/cells/cell/cells-cell.yaml")
+    k8s)       args=(new "$cell" --kind k8s --forge "$forge" --repo "REPO" --cells-yaml "ROOT/cells/cell/cells-cell.yaml")
                if [[ "$forge" == github ]]; then args+=(--orgs example-org --deskd-app-pem "ROOT/cells/cell/home/.config/assay/deskd-app.pem")
                else args+=(--group example-group); fi ;;
-    house)     args=(new fresh --kind house --repo "REPO" --roots "example-org/example-repo=REPO") ;;
-    container) args=(new fresh --kind container --repo example-org/example-repo --launcher "ROOT/bin/launcher") ;;
-    scrubbed)  args=(new fresh --kind scrubbed --repo "REPO" --repo-slug example-org/example-repo --roots "example-org/example-repo=REPO") ;;
+    house)     args=(new "$cell" --kind house --repo "REPO" --roots "example-org/example-repo=REPO") ;;
+    container) args=(new "$cell" --kind container --repo example-org/example-repo --launcher "ROOT/bin/launcher") ;;
+    scrubbed)  args=(new "$cell" --kind scrubbed --repo "REPO" --repo-slug example-org/example-repo --roots "example-org/example-repo=REPO") ;;
   esac
   # Two substitutions per argument, into a scalar, THEN appended. Never `arr[-1]=`: a negative
   # array subscript is bash 4.2+, and macOS ships bash 3.2 as /bin/bash — where that line is a
@@ -458,8 +473,8 @@ new_case(){
   done
   run_impl "$rootA" "$CELLCTL_A" "$T/outA" "${argsA[@]}"
   run_impl "$rootB" "$CELLCTL_B" "$T/outB" "${argsB[@]}"
-  tree_manifest "$rootA" "$CELLCTL_A" "$rootA/cells/fresh" >> "$T/outA"
-  tree_manifest "$rootB" "$CELLCTL_B" "$rootB/cells/fresh" >> "$T/outB"
+  tree_manifest "$rootA" "$CELLCTL_A" "$rootA/cells/${cell%%/*}" >> "$T/outA"
+  tree_manifest "$rootB" "$CELLCTL_B" "$rootB/cells/${cell%%/*}" >> "$T/outB"
   cells=$((cells+1))
   verdict "$id"
   rm -rf "$rootA" "$rootB"
@@ -471,12 +486,19 @@ HARNESSES="claude codex"
 COCKPITS="tmux herdr orca"
 VERBS="check desk up down set ls smoke status"
 FORGES="github gitlab"
+# No nested-name `new` cells (desk-containers/16): the port narrowed the cell-name rule to ONE
+# directory spelled [a-z0-9-] (the rule the cell-scoped stop flags name a cell by), so it now
+# REFUSES `team/fresh` for every kind where the frozen oracle still scaffolds it — an intended
+# divergence the oracle, which this brief forbids editing, cannot follow. The port's refusal is
+# held by its own tests (cmd/cellctl cellname_test.go). The list is kept, empty, so the matrix
+# count below stays derived from it.
+NESTED_KINDS=""
 # The count the matrix DECLARES, computed from the same lists the loops walk — never a literal,
 # which would drift the moment an axis grows.
 n_kinds=$(set -- $KINDS; echo $#); n_harn=$(set -- $HARNESSES; echo $#)
 n_cock=$(set -- $COCKPITS; echo $#); n_verbs=$(set -- $VERBS; echo $#)
-n_forges=$(set -- $FORGES; echo $#)
-EXPECTED_CELLS=$(( n_kinds * n_harn * n_cock * n_verbs + n_kinds * n_forges ))
+n_forges=$(set -- $FORGES; echo $#); n_nested=$(set -- $NESTED_KINDS; echo $#)
+EXPECTED_CELLS=$(( n_kinds * n_harn * n_cock * n_verbs + n_kinds * n_forges + n_nested ))
 
 echo "parity: A=$CELLCTL_A"
 echo "parity: B=$CELLCTL_B"
@@ -502,6 +524,11 @@ for kind in $KINDS; do
     # gitlab leg is the SAME call and proves the flag is refused/ignored identically.
     new_case "$kind" "$forge"
   done
+done
+# One nested-name `new` per kind in NESTED_KINDS (empty: the port refuses a nested name, the
+# frozen oracle does not — see NESTED_KINDS above).
+for kind in $NESTED_KINDS; do
+  new_case "$kind" github team/fresh
 done
 
 echo "parity: $cells cells, $divergent divergent"

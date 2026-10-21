@@ -3,19 +3,17 @@
 **Status:** approved — ruled 2026-09-21 on #1319.
 **Routes-to:** docs/streams/desktools-v2/
 
-Per `spec/lifecycle-v1.md` §8.2 a
-`draft` document is the plan of record for nothing and no downstream control watches it. The
-stream that cites it (`docs/streams/desktools-v2/README.md`) is therefore `status: parked`:
-its briefs are authored and kept, but shelved out of Next-up and never dispatched until a
-human rules this document `approved` (§8.4 `draft → approved` rides the ruling PR) and flips
-the stream `active`. `approved` is the human's call, not this session's.
+The stream was approved on 2026-09-21. The 2026-10-03 maintainer request in
+[#2111](https://github.com/medici-finance/assay/issues/2111) extends it with the
+Cobra/Viper CLI migration in §9. This is an additive migration within the same tool suite;
+the existing forge/custody commitments and implementation sign-off gates remain.
 
-> **Why `draft`, not the word "proposed".** `spec/lifecycle-v1.md` §8.1 defines the
-> machine-readable header states as exactly `draft | approved | routed`. A `**Status:**`
-> line whose first token is none of those leaves the document *unclassified* (legacy) and a
-> conforming detector ignores it. `draft` is the methodology's token for "a working proposal,
-> not yet ruled" — the thing "proposed" means in prose — so it is used here rather than an
-> unclassified literal. Nothing is faked `approved`.
+**Amendment, 2026-10-08 (ruled on #2395, recorded in
+[`DR-forge-neutral-36`](../decisions/DR-forge-neutral-36.md)):** library-first for offline and
+frozen inputs only, in §2 Principle 2 and commitment 3. statusgen may link a narrow module's
+offline and frozen packages; every online forge read stays on the read verb, `deskkit` stays
+internal, and no credential moves into a process that has none today. The 2026-09-14 direction
+in Principle 2 is amended in that part only; the rest of the approved text stands.
 
 ## 1. The problem — the forge abstraction leaks
 
@@ -123,6 +121,27 @@ migration:
   reads a real queue or reports could-not-check, never an empty one. `forge-neutral/18` is
   `gate: model` with every risk answer `no` and does not carry that proof.
 
+#### Amendment, 2026-10-08 — library-first for offline and frozen inputs only (`DR-forge-neutral-36`)
+
+`docs/library-first.md` sets out library-first reuse across modules. The driver ruled on #2395
+for option 1, recorded in [`DR-forge-neutral-36`](../decisions/DR-forge-neutral-36.md):
+library-first for offline and frozen inputs only. statusgen may link a narrow module's offline
+and frozen packages. Every online forge read stays on the `deskread` verb, `deskkit` stays
+internal, and no credential moves into a process that has none today. The 2026-09-14 direction
+above is amended in that part only; the rest of it stands. This is narrower than the withdrawn
+proposal: nothing here makes `deskkit` importable.
+
+- `forge-neutral/36` (human-gated) extracts a narrow `forgeread` module with the OpenIssues
+  slice. statusgen may link only its offline and frozen packages, never an authenticated read
+  adapter. `deskread` composes the credential and calls the adapters. The ruling makes /36
+  eligible for pick-up; it is not /36's sign-off, and /36 keeps its own human gate.
+- Retiring the `deskread` bridge for any online read is outside the ruling. It would need its
+  own human-gated brief and a driver ruling, and none is authored.
+- A CI read keeps `forge-neutral/34`'s explicit admission.
+
+One correction is independent of the ruling: `desktools-v2/08`'s final zero follows both
+`forge-neutral/18` and `/35`, because /18 deliberately leaves the control-feeding reads to /35.
+
 ### Principle 3 — PURPOSE-BUILT QUERIES (typed access-pattern operations)
 
 The v2 Forge library exposes typed **access-pattern** operations — e.g. *review-queue
@@ -154,11 +173,10 @@ This layer is `desktools-v2/09`.
 **v2 is the enforcement-and-native-client layer that makes reaching past the seam impossible,
 holds statusgen at zero once its sibling migration lands, migrates the unrouted leak sites,
 exposes purpose-built access-pattern queries, and puts one outbound-write check at the write
-seam (§8).** It is not a second fork of the tools
+seam (§8), and standardizes maintained command-line tools on Cobra and Viper (§9).** It is not a second fork of the tools
 and not a rewrite of the two backends — both are complete and stay.
 
-Six architectural commitments (the three principles, the two mechanics they need, and the
-outbound-write check of §8):
+Architectural commitments (including the additive CLI contract of §9):
 
 1. **ONE seam, and only the two backends may speak GitHub/GitLab.** Every transport, identity
    handoff, query construction, remote name, and subprocess name passes through
@@ -168,13 +186,19 @@ outbound-write check of §8):
    covers statusgen, which is not under `forgeban` today.
 3. **The cross-module boundary is a VERB, not a package.** A second module reaches the seam
    by running `deskread` and parsing its versioned envelope (Principle 2); `deskkit` stays
-   internal. v2 enforces that boundary, it does not replace it.
+   internal. v2 enforces that boundary, it does not replace it. (The 2026-10-08 amendment in
+   Principle 2, `DR-forge-neutral-36`, lets statusgen link a narrow module's offline and frozen
+   packages; every online forge read still crosses the verb.)
 4. **Custody-first native clients** (Principle 1): explicit minted-token, key-presence
    boundary, refuse-ambient — on the desk read path and on statusgen.
 5. **Incremental, tool-by-tool migration, with the old path REMOVED as each lands.**
 6. **One outbound-write check, at the one place every write already passes** (§8): what a
    deployment may write to a forge is enforced by the tools, keyed on the target's visibility,
    not remembered per verb or carried as prose in a skill.
+
+7. **Cobra command trees and Viper configuration for every maintained CLI** (§9), with
+   generated help and explicit configuration bindings. Existing domain gates and forge
+   seams remain below the command adapter; library adoption must not change authority.
 
 ## 4. Boundary with the sibling streams — no duplication
 
@@ -225,7 +249,10 @@ zero is a failing check**; every issue in §1's table is closed by a landed migr
 removed in the same change; the custody invariant (Principle 1) holds on the desktop as in a
 container; the access-pattern query layer serves at least the board/review-queue sweep as
 one measured, single-snapshot round-trip; and every outward write passes the one outbound
-check of §8, with the ban-lint proving no write path is constructed around it.
+check of §8, with the ban-lint proving no write path is constructed around it. The CLI
+migration is also complete: every maintained entrypoint in the source-derived inventory
+uses Cobra/Viper or has a delivered retirement, no tool is unowned, and the behavior and
+coverage gate runs in the actual PR CI path (§9, desktools-v2/17).
 
 ## 7. Open questions for the approver
 
@@ -349,3 +376,132 @@ takes the write guard's, since its question is the same yes/no (`desktools-v2/11
 span so the author can act. Nothing about a match — not the span, not a callout's reason
 text — is written to the forge, and the audit log records the rule id and a digest of the
 content, never the content.
+
+## 9. Standard command parsing, configuration and help — 2026-10-03
+
+Requested in [#2111](https://github.com/medici-finance/assay/issues/2111): use **Cobra**
+for command/subcommand trees, argument and flag parsing, and generated help; use **Viper**
+for explicitly declared configuration bindings and resolution. This applies to **all
+maintained command-line tools**, including cellctl, every desk binary, statusgen, qualgen,
+module-local maintenance/lint/generation tools and operator-facing launch scripts. Internal
+test fixtures and demos are distinguished by evidence, not silently counted as migrated.
+An operator script must either become a transparent adapter to a migrated Go command or
+have a bounded Go-port owner. A small tool is not an exception.
+
+### Command contract
+
+- Root and nested `--help`/`-h`, Cobra `help <command>` and release version output work
+  offline before required execution arguments, config/cell discovery, roster echo,
+  credential reads/mints, guards with effects, locks/worktrees, network or child execution.
+  Help must not require a valid cell or role. Actual execution retains every admission check.
+- Help/reference content is generated from the command definitions. One command tree owns
+  the flags, defaults and documentation; imported libraries wrapped around old parsing/help
+  do not satisfy the requirement.
+- Preserve deployed command names, documented aliases, existing flag/positional spellings,
+  machine stdout/stderr, exit codes and wrappers. Record deliberate corrections separately:
+  conventional help and flag handling may improve without silently changing an operational
+  result. The contract explicitly covers `--flag=value`, `--flag value`, `--`, repeated flags,
+  dash-leading values, required arguments, unknown flags and persistent flags.
+- No new runtime policy engine or mandatory config file is introduced. Each independent
+  module keeps its boundary; statusgen still uses deskread for forge access, never imports
+  internal deskkit for CLI reuse. Unrequested completion commands are disabled by default.
+
+### Configuration contract
+
+- Construct a fresh Viper instance per invocation and bind explicit allowed keys to Cobra
+  flags, permitted environment names, the existing config inputs and defaults. Typed options
+  must be obtained from those resolved values and demonstrably reach the handler. Tools with
+  flags/defaults only use those bindings; they do not gain invented config files or settings.
+- Preserve the existing **per-key** precedence and explicit-empty/unset semantics. Before
+  changing a parser, capture its actual resolution matrix. Viper's generic precedence is not
+  a ruling to let environment variables override a file whose authority was file-only.
+- Retain roster, identity, custody and policy validation in their existing owners. Do not
+  enable blanket AutomaticEnv, automatic home/current-directory config discovery, remote
+  config, credential values on argv or global mutable Viper state. Help and diagnostics
+  expose neither secret values nor resolved roster contents.
+- A compatibility decoder may read an existing data format, such as cell.env, without
+  executing it. It must not become a second configuration resolver. Persisted config changes
+  need documented round-trip/atomic behavior and explicit compatibility evidence.
+
+### Rollout and acceptance
+
+**Amendment, 2026-10-18.** Ratification of the target architecture at revision 23f655f5d: https://github.com/medici-finance/assay/issues/2500#issuecomment-6137853872
+The new-tool rule has no ruling of its own: it applies that ratification and the request in medici-finance/assay#2111.
+Under the target architecture, Cobra/Viper is a
+requirement for every **new** command and verb adapter and for every surviving CLI, not a
+port of every existing verb: ports of verbs whose domain retires are withdrawn and their
+entrypoints are `exempt` until retired. Normative text: [cli-contract.md §7](cli-contract.md#7-new-tools-and-retiring-tools--2026-10-18).
+The paragraphs below stand for the surviving tools.
+
+`desktools-v2/15` supplies the foundation, a source-derived complete inventory, and **authors
+bounded implementation briefs for every remaining tool in that same deliverable**. Each row
+names its existing implementation owner; no unassigned bucket or promise to plan later is
+acceptable. Keep a child at most five simple binaries or one complex CLI, all <= L.
+`desktools-v2/16` migrates cellctl as the reference implementation. Those newly authored
+children depend on the reference; `desktools-v2/17` must depend on all of them and may not
+complete with pending rows. The current /17 edge to /16 is extended by /15 before the
+foundation is complete, with inverse edges and waves recalculated together.
+
+The existing unfinished briefs /06, /08, /11 and /12 inherit this contract without taking
+ownership of a second CLI migration. They retain their original custody, forge-ban,
+callout and platform deliverables; the inventory routes their CLI consumers explicitly.
+In particular, /12 has compatibility guidance only and does not consume /15. All new CLI
+platform fixtures and executable checks belong to /15, /16, the migration children and
+/17; they cover both Windows/POSIX semantics regardless of whether /12 has landed.
+Completed/implemented briefs and their Evidence are not rewritten as if they already used
+Cobra/Viper. The regression floor of /14 remains binding; only explicit help differences
+are removed from obsolete shell-help comparisons, never unrelated behavior checks.
+
+Acceptance exercises actual binaries and config-to-handler flow, including missing and
+malformed configuration on help, per-platform source semantics, stable non-help outputs,
+independent domain admission and multiple invocations in one process. Negative controls
+must fail on an omitted tool, ignored Viper binding, effectful help, reintroduced custom
+parser or widened configuration source. A staged CI patch is not a live completion gate.
+
+## 10. Attributed performance — requested amendment, 19 October 2026
+
+The [perf-v3 contract](../../performance-attribution-spec.md) extends the future tool suite
+with qualified local brief/issue attribution, logical session and unique agent/invocation IDs,
+originating desk role and actual assigned role. Desks/launchers set explicit environment
+context; real CLI adapters accept validated overrides. Each subprocess records its own work
+and carries causal links. Measure actual forge attempts, request duration and attributable
+GraphQL points, preserving unknown/estimated coverage and preventing parent/child duplication.
+
+This is new versioned local workflow disclosure with an explicit additional profile. Preserve
+perf-v1/perf-v2, their defaults and tests; no existing opt-in authorizes new work linkage or
+remote transmission. perfrec stays the credential-free library and one local writer; future
+perfdata import owns aliased collection/export, storage and transport. No database/API is a
+prerequisite for local v3. Required audit, quota enforcement and custody are unaffected.
+
+Deliver through new /63 (schema/resolver/readers), /64 (launch and CLI/env context), /65
+(provider timing/cost), then unfinished /62 and statusgen/26. CLI migrations/new tools adopt
+this shared seam through cli-contract.md rather than duplicating parsers or stopping at v2
+collection. Preserve completed /61's implementation/Evidence; collection stays parked. The
+new implementation briefs carry their own disclosure gates; this authoring revision does
+not claim those gates passed or activate deployment.
+
+### Query/cache service observations
+
+The [same v3 contract](../../performance-attribution-spec.md#querycache-service-and-passthrough-boundaries)
+also covers service/client latency and per-handler cache/coalescing work, separately from
+actual provider sends, timing and cost. Shared refreshes count actual pages once; direct,
+service-passthrough, refresh, poll and repair origins remain visible. /63 freezes bounded
+kinds/reducer fixtures; /65 supplies provider observations and existing forge-neutral/37–45
+owns service implementation/qualification. Local v3 requires no unshipped service or database.
+No implicit diagnostic propagation, raw work locator forwarding or per-handler process-CPU
+attribution is permitted; missing service coverage is unknown.
+
+## 11. Shared write-policy extraction — 18 October 2026
+
+[Write policy](../../write-policy.md) is a proposed additive extraction into the
+existing deskcore module. /66 owns the evaluator, writeguard adapter and actual-consumer
+census; writeguard keeps its current CLI parser (the /31 port is withdrawn).
+Other guards keep their semantic owners. Managed consumers require allocation-bound
+inputs and separate sandbox/packaging qualification. Before pickup apply brief-v1
+§4.1.1 and current engineering guidelines; this amendment does not activate a hook.
+
+Target-consumer clarification, 19 October 2026: graph-execution/22 directly consumes
+/66 for the local harness boundary and independent sandbox proof. desktools-v2/31's
+parser port is withdrawn (medici-finance/assay#3409 merged, ruled at
+medici-finance/assay#3420), so /66 has no parser-port edge: writeguard keeps its current
+parser, routed exempt, and /66 owns the hook adapter. The guard controls are not retired.

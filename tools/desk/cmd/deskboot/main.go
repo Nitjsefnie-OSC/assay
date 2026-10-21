@@ -34,6 +34,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/medici-finance/assay/perfrec"
+
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -52,7 +54,10 @@ STEPS, in order. Each prints one line; the first red one stops the boot and NAME
   1 loop-identity     $DESK_LOOP is set and resolves to <role>'s loop class, so a
                       STOP.<name> flag a human is holding actually halts this session.
   2 worktree-prune    ` + "`deskwt prune`" + ` — bounded worktree growth. Only tracked-clean,
-                      fully-merged worktrees are removed; active work is left alone.
+                      fully-merged worktrees are removed; active work is left alone. The
+                      same sweep collects stale LOCAL branches whose content is provably
+                      on origin/main (merged, or every patch already landed); unique-patch
+                      branches, main/master, and anything checked out anywhere are kept.
   3 worktree-lock     locks THIS session's worktree so the prune supervisor cannot
                       reclaim it underneath a live desk. Refuses to boot in the shared
                       checkout — isolate first: the refusal names the exact fix,
@@ -77,15 +82,32 @@ STEPS, in order. Each prints one line; the first red one stops the boot and NAME
                       ` + "`git merge refs/remotes/origin/main`" + ` — merge, never rebase.
                       Read-only: it reports, it never merges for you (` + "`cellctl desk`" + `
                       merges at boot; this proves it did).
+  9 first-sweep-prereqs  proves the setup the role's first sweep reads exists:
+                      the roster's ASSAY_REPO_FORGES names a forge for <repo> (roster
+                      only — desksupervise's stop inspection never takes the origin host),
+                      and desk-tools provenance resolves — a desk-tools (or
+                      desk-tools-<os>-<arch>) pin line, a full-commit desk-tools-source
+                      line, or the in-tree refs/remotes/origin/main:tools/desk. A
+                      statusgen-only pin file is not provenance, however well it matches
+                      main's. Refuses (exit 6) naming every gap and its remedy. Read-only.
 
 --dry-run prints the plan (every step, its command, and the derived role/repo) and stops
 before step 2 — nothing is pruned, locked, registered, minted or fetched.
 --quiet suppresses the per-step OK lines; failures and the summary always print.
 
 Exit: 0 boot complete · 3 disabled · 5 refused (caller precondition) · 6 unverifiable
-(a step ran and could not be proven green — including a worktree behind origin/main).`
+(a step ran and could not be proven green — including a worktree behind origin/main, or a
+setup missing what the first sweep reads).`
+
+// perfVerbs is deskboot's registered first-argument set for the opt-in local perf record
+// (deskkit.PerfRun): the role names it boots (the compiled roster knownRoles
+// derives) plus --version/--help. args[0] is recorded only when it is one of these, and as
+// "other" otherwise, so no argv text can reach the record.
+func perfVerbs() []string { return append(knownRoles(), "--version", "--help") }
 
 func main() {
+	selected := perfrec.ResolveContext(perfrec.ContextInput{})
+
 	// Explicit roster class: deskboot ACTS on the roster (it registers a role and
 	// resolves the repo set), so ciEligible=false — it reads the config-home file and
 	// never the environment, in CI as well as locally.
@@ -96,10 +118,20 @@ func main() {
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRunMeasured("deskboot", perfVerbs(), os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		return runSelected(a, sink), selected
+	}))
 }
 
-func run(args []string) int {
+func run(args []string) int { return runSelected(args, nil) }
+
+func runSelected(args []string, sink func(perfrec.Context)) int {
 	// --version / help are pure reads: no kill-switch gate, no audit line.
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "-version") {
 		sha, built := deskkit.Version()
@@ -128,7 +160,7 @@ func run(args []string) int {
 	// Running from source (go run / unstamped) is a drift risk — say so loudly.
 	deskkit.WarnIfUnpinned(os.Stderr)
 
-	err := cmdBoot(args)
+	err := cmdBoot(args, sink)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 	}

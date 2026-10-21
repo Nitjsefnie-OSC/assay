@@ -341,7 +341,32 @@ func (s *Store) ReadCoupling() ([]CouplingRecord, error) {
 // it to this tracking root's metrics table (frozen contract: brief 08 and
 // brief 09's shared features.go both read it by this method).
 func (s *Store) ReadDefectDensity() ([]DefectMetricRecord, error) {
-	return readFamily[DefectMetricRecord](s, map[string]bool{MetricDefectDensity: true})
+	records, err := readFamily[DefectMetricRecord](s, map[string]bool{MetricDefectDensity: true})
+	if err != nil {
+		return nil, err
+	}
+	run, err := s.latestM2Run()
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		started, err := s.m2Started()
+		if err != nil || started {
+			return nil, err
+		}
+		return records, nil
+	} // library-written artifacts remain readable
+	stale, err := s.m2Stale(run)
+	if err != nil || stale {
+		return nil, err
+	}
+	var current []DefectMetricRecord
+	for _, record := range records {
+		if record.MinedAt.Equal(run.MinedAt) {
+			current = append(current, record)
+		}
+	}
+	return current, nil
 }
 
 // ReadReferenceValidity reads the instruction reference-validity trend family
@@ -354,6 +379,12 @@ func (s *Store) ReadReferenceValidity() ([]ReferenceValidityRecord, error) {
 // ReadDocCodeStaleness reads the doc↔code co-change staleness family (spec §4.6).
 func (s *Store) ReadDocCodeStaleness() ([]DocCodeStalenessRecord, error) {
 	return readFamily[DocCodeStalenessRecord](s, map[string]bool{MetricDocCodeStaleness: true})
+}
+
+// ReadRefix reads the re-fix trend family (brief quality/19) — one record per
+// measured window, appended by WriteRefix (refix.go).
+func (s *Store) ReadRefix() ([]RefixRecord, error) {
+	return readFamily[RefixRecord](s, map[string]bool{MetricRefix: true})
 }
 
 // streamRawJSONL streams a JSONL file's non-empty lines as raw bytes, one call

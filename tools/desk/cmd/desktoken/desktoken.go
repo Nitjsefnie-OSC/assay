@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -94,6 +96,12 @@ func (a *auditCtx) log(result, detail string) {
 
 // finalize maps the terminal error (or success) to exactly one audit result.
 func (a *auditCtx) finalize(err error) {
+	// A help screen is not an invocation of the verb, so it appends NO row. The ledger this
+	// would land in is append-only, never rotated, and counted per tool for the write budget
+	// and the circuit breaker (deskkit/audit.go, ratelimit.go) — see helprequest.go.
+	if deskkit.IsHelpRequest(err) {
+		return
+	}
 	if err == nil {
 		if a.suppress {
 			return // a cache reuse performed no act — see auditCtx.suppress
@@ -198,7 +206,7 @@ type installationInfo struct {
 // signed JWT and returns the installation ID whose account.login matches
 // owner. Returns an error if no match is found — fails closed on any
 // ambiguity.
-func resolveInstallID(jwt, owner string) (string, error) {
+func resolveInstallID(jwt, owner string, clients ...*http.Client) (string, error) {
 	url := deskkit.GitHubAPIBase + "/app/installations"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -208,7 +216,7 @@ func resolveInstallID(jwt, owner string) (string, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := httpClient.Do(req)
+	resp, err := authHTTP(clients).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("GET installations: %w", err)
 	}
@@ -371,7 +379,7 @@ var errInstallationGone = errors.New("installation not found")
 // exchangeJWT POSTs the signed JWT to GitHub's installation access_tokens
 // endpoint and returns the result. The token value is the response's `token`
 // field; it is written to the cache file and never printed.
-func exchangeJWT(jwt, installID string) (*tokenResult, error) {
+func exchangeJWT(jwt, installID string, clients ...*http.Client) (*tokenResult, error) {
 	url := fmt.Sprintf("%s/app/installations/%s/access_tokens", deskkit.GitHubAPIBase, installID)
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -381,7 +389,7 @@ func exchangeJWT(jwt, installID string) (*tokenResult, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := httpClient.Do(req)
+	resp, err := authHTTP(clients).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("POST access_tokens: %w", err)
 	}
@@ -537,6 +545,59 @@ func printTokenPath(path string) {
 	fmt.Fprintln(os.Stderr, tokenPathNotice)
 }
 
+// beforeTokenCacheRename is a test seam: when set, writeTokenCacheAtomic calls it after the
+// new token is fully written and synced to the temp file and before the rename that publishes
+// it, so a test can observe the cache path at the one instant a torn write would be visible.
+var beforeTokenCacheRename func()
+
+// writeTokenCacheAtomic publishes token at path (0600) so a concurrent reader sees either the
+// previous contents or the new token, never an empty or partial file.
+//
+// The cache path is shared by every process minting for the same role and installation on the
+// host, and consumers read it with `cat "$(desktoken ...)"` and hand the result to a client as
+// its token. A truncate-then-write publishes an empty file in between, and an empty token makes
+// that client fall back to the host's stored login, so the read runs under the wrong identity
+// instead of failing. The token is therefore written to a temp file in the SAME directory
+// (rename is atomic only within one filesystem), synced, and renamed over the path — the same
+// shape writeVerifyGitLabToken uses for the GitLab custody file. A symlink at path is replaced,
+// not written through; the cache is desktoken's own regular file and the reuse check already
+// refuses a link there.
+func writeTokenCacheAtomic(path, token string) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp in %s: %w", dir, err)
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup of the temp if we bail before the rename lands (a no-op after it).
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write([]byte(token)); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	// os.CreateTemp already makes the file 0600; assert it before it becomes the credential.
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if beforeTokenCacheRename != nil {
+		beforeTokenCacheRename()
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename temp over %s: %w", path, err)
+	}
+	syncDir(dir)
+	return nil
+}
+
 // writePerms records the granted permission map next to the token cache, 0600
 // (it names an App's capability surface — not a secret, but not world-readable
 // either). A failure to record is NOT fatal to the mint: the token is the
@@ -600,7 +661,11 @@ func checkPrivateKeyMode(pemPath string, mode os.FileMode) error {
 // --- main entry point -----------------------------------------------------------
 
 // run is the CLI entry point. It returns an exit code.
-func run(args []string) int {
+func run(args []string) int { return runSelected(args, nil) }
+
+func runSelected(args []string, sink func(perfrec.Context)) int { return runMeasured(args, sink, nil) }
+
+func runMeasured(args []string, sink func(perfrec.Context), measurement *perfrec.Session) int {
 	// The global diagnostic switch, taken BEFORE any flag parsing so `--trace` works
 	// alongside this verb's bare-role-name positional grammar (which would otherwise refuse
 	// it as an undefined flag) and is invisible to the FlagSets below.
@@ -632,7 +697,8 @@ func run(args []string) int {
 	// measured on one operating desk host over 32 days). It returns HERE, before Guard, and
 	// writes nothing. HelpOnly matches only the unambiguous single-token shape, so a `--help`
 	// that is another flag's VALUE cannot be mistaken for one; every wider spelling falls
-	// through to the subcommand's own parse, where flag.ErrHelp is recognised instead.
+	// through to cmdToken / cmdCoverage's own parse, which hands flag.ErrHelp to
+	// deskkit.IsHelpRequest (tier two): it prints usage, exits 0, and the finalizer writes no row.
 	if deskkit.HelpOnly(args) {
 		fmt.Fprintln(os.Stderr, usage)
 		return deskkit.ExitOK
@@ -652,12 +718,21 @@ func run(args []string) int {
 	// installations can see). No role is named "coverage", so the dispatch is
 	// unambiguous.
 	if args[0] == "coverage" {
-		cerr := cmdCoverage(args[1:])
+		cerr := cmdCoverageMeasured(args[1:], measurement, sink)
+		if deskkit.IsHelpRequest(cerr) {
+			fmt.Fprintln(os.Stderr, usage)
+			return deskkit.ExitOK
+		}
 		deskkit.ReportError(os.Stderr, cerr)
 		return deskkit.ExitCodeOf(cerr)
 	}
 
-	err := cmdToken(args)
+	err := cmdTokenMeasured(args, measurement, sink)
+	if deskkit.IsHelpRequest(err) {
+		// TIER TWO terminus: print the help screen the operator asked for, exit 0.
+		fmt.Fprintln(os.Stderr, usage)
+		return deskkit.ExitOK
+	}
 	// The shared exit path. With DESK_TRACE off this is byte-identical to the
 	// fmt.Fprintln(os.Stderr, err.Error()) it replaces.
 	deskkit.ReportError(os.Stderr, err)
@@ -665,11 +740,28 @@ func run(args []string) int {
 }
 
 // cmdToken implements the mint-or-reuse logic.
-func cmdToken(args []string) (err error) {
+func cmdToken(args []string, sinks ...func(perfrec.Context)) error {
+	return cmdTokenMeasured(args, nil, sinks...)
+}
+
+func cmdTokenMeasured(args []string, measurement *perfrec.Session, sinks ...func(perfrec.Context)) (err error) {
 	ac := &auditCtx{verb: "mint", argsDigest: deskkit.ArgsDigest(os.Args[1:])}
 	defer func() { ac.finalize(err) }()
 
 	fs := flag.NewFlagSet("desktoken", flag.ContinueOnError)
+	var context perfrec.Context
+	selected := cli.GoPerformance(fs, func(c perfrec.Context) {
+		context = c
+		if measurement != nil {
+			measurement.SelectContext(c)
+		}
+		for _, sink := range sinks {
+			if sink != nil {
+				sink(c)
+			}
+		}
+	})
+	defer selected()
 	fs.SetOutput(new(strings.Builder))
 	repo := fs.String("repo", "", "repo slug (owner/name) for install auto-pick")
 	forge := fs.String("forge", "", "forge backend: empty/github (default) mints a GitHub App installation token; gitlab rotates the role's PAT in place (rotate-on-mint custody)")
@@ -678,7 +770,14 @@ func cmdToken(args []string) (err error) {
 	noRotate := fs.Bool("no-rotate", false, "read-only credential lookup: verify the role's existing custody and print its PATH without performing a destructive rotation. GitLab: skips the self-rotation (and its network contact) entirely — the shape a read-only or dry-run verb asks for. GitHub: no effect, the App mint is cached and non-destructive already, so the flag is accepted for callers that do not know the forge before they ask")
 
 	positionals, perr := parseInterspersed(fs, args)
+	selected()
+	authClient := measuredAuth(context, measurement)
 	if perr != nil {
+		// TIER TWO: `-h`/`--help` in any spelling reaches the parser as flag.ErrHelp. A help
+		// screen is not a refusal and writes no audit row (deskkit/helprequest.go).
+		if deskkit.IsHelpRequest(perr) {
+			return deskkit.ErrHelpRequested
+		}
 		return deskkit.Refused("bad flags: " + perr.Error())
 	}
 	if len(positionals) != 1 {
@@ -713,13 +812,13 @@ func cmdToken(args []string) (err error) {
 	switch strings.ToLower(strings.TrimSpace(*forge)) {
 	case "":
 		if gitlabRepoResolved(*repo) {
-			return cmdGitLabRotate(role, ac, !*noRotate)
+			return cmdGitLabRotate(role, ac, !*noRotate, authClient)
 		}
 		// fall through to the GitHub App-token mint path.
 	case "github":
 		// fall through to the GitHub App-token mint path.
 	case "gitlab":
-		return cmdGitLabRotate(role, ac, !*noRotate)
+		return cmdGitLabRotate(role, ac, !*noRotate, authClient)
 	default:
 		return deskkit.Refused("unknown --forge " + *forge + "; valid: github (default), gitlab")
 	}
@@ -840,7 +939,7 @@ func cmdToken(args []string) (err error) {
 		}
 		prebuiltJWT = jwt
 
-		resolvedID, rerr := resolveInstallID(jwt, owner)
+		resolvedID, rerr := resolveInstallID(jwt, owner, authClient)
 		if rerr != nil {
 			return deskkit.Unverifiable("resolve installation for owner "+owner, rerr)
 		}
@@ -888,8 +987,10 @@ func cmdToken(args []string) (err error) {
 		}
 	}
 
-	// Reuse cached token if < 50 min old.
-	if fi, serr := os.Stat(tokenPath); serr == nil {
+	// Reuse cached token if < 50 min old. Lstat, not Stat: the cache is desktoken's own
+	// regular file, so a symlink here is refused — never handed out as the role's token, and
+	// never written through by the mint below.
+	if _, fi, serr := deskkit.LstatCustody(tokenPath, deskkit.CustodyNoLinks); serr == nil {
 		if fi.Mode().Perm() != 0o600 {
 			return deskkit.Unverifiable(
 				fmt.Sprintf("token cache at %s has permissions %o; must be 0600", tokenPath, fi.Mode().Perm()), nil)
@@ -910,6 +1011,8 @@ func cmdToken(args []string) (err error) {
 			ac.suppress = true // no network call, no mint, nothing changed — no audit row
 			return nil
 		}
+	} else if _, isLink := serr.(*deskkit.CustodyLinkError); isLink {
+		return deskkit.Unverifiable(serr.Error(), nil)
 	} else if !os.IsNotExist(serr) {
 		return deskkit.Unverifiable("cannot stat token cache: "+tokenPath, serr)
 	}
@@ -956,7 +1059,7 @@ func cmdToken(args []string) (err error) {
 	}
 
 	// Exchange for an installation access token.
-	result, xerr := exchangeJWT(jwt, installID)
+	result, xerr := exchangeJWT(jwt, installID, authClient)
 	if xerr != nil {
 		// A 404 on an id that came from a CACHE is the one failure the caches can cause:
 		// the installation was removed or replaced while an entry still named it. Drop the
@@ -980,11 +1083,8 @@ func cmdToken(args []string) (err error) {
 	if err := os.Chmod(filepath.Dir(tokenPath), 0o700); err != nil {
 		return deskkit.Unverifiable("chmod token dir", err)
 	}
-	if err := os.WriteFile(tokenPath, []byte(result.Token), 0o600); err != nil {
+	if err := writeTokenCacheAtomic(tokenPath, result.Token); err != nil {
 		return deskkit.Unverifiable("write token to "+tokenPath, err)
-	}
-	if err := os.Chmod(tokenPath, 0o600); err != nil {
-		return deskkit.Unverifiable("chmod token cache", err)
 	}
 	writePerms(tokenPath, result.Permissions)
 	// Record WHICH App and WHICH account this file belongs to, so the next invocation can

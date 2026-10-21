@@ -26,7 +26,7 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 		{
 			name: "read_file_returns_content_and_id",
 			setupGH: func(s *goldenServer) {
-				s.contentsGet = map[string]any{"sha": "blob-gh", "content": ghB64("row one\n")}
+				s.contentsGet = ghServedFile("EVIDENCE.md", "row one\n")
 			},
 			setupGL: func(s *glServer) {
 				s.repoFile = map[string]map[string]any{"EVIDENCE.md": {
@@ -57,10 +57,10 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 		{
 			name: "write_file_changes_existing_content",
 			setupGH: func(s *goldenServer) {
-				s.contentsGet = map[string]any{"sha": "blob-gh", "content": ghB64("row one\n")}
+				s.contentsGet = ghServedFile("EVIDENCE.md", "row one\n")
 				s.contentsPut = map[string]any{
 					"content": map[string]any{"sha": "blob-gh-2"},
-					"commit": map[string]any{"author": map[string]any{"name": "assay-verifier-app[bot]"}},
+					"commit":  map[string]any{"author": map[string]any{"name": "assay-verifier-app[bot]"}},
 				}
 			},
 			setupGL: func(s *glServer) {
@@ -70,7 +70,7 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 					"content": glB64("row one\n"), "encoding": "base64",
 					"ref": "feat/x", "blob_id": "blob-gl", "last_commit_id": "commit-gl",
 				}}
-				s.updateFileResp = map[string]any{"file_path": "EVIDENCE.md", "branch": "feat/x"}
+				s.updateCommitResp = map[string]any{"id": "landed-commit"}
 			},
 			run: func(f Forge) (any, error) {
 				return f.WriteFile(forgeTestRepo, WriteFileInput{
@@ -94,7 +94,7 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 		{
 			name: "write_file_idempotent_noop_on_identical_content",
 			setupGH: func(s *goldenServer) {
-				s.contentsGet = map[string]any{"sha": "blob-gh", "content": ghB64("row one\n")}
+				s.contentsGet = ghServedFile("EVIDENCE.md", "row one\n")
 			},
 			setupGL: func(s *glServer) {
 				s.project = map[string]any{"visibility": "private", "default_branch": "main"}
@@ -123,7 +123,7 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 		{
 			name: "write_file_append_only_shrink_refused",
 			setupGH: func(s *goldenServer) {
-				s.contentsGet = map[string]any{"sha": "blob-gh", "content": ghB64("a\nb\nc\n")}
+				s.contentsGet = ghServedFile("rows.jsonl", "a\nb\nc\n")
 			},
 			setupGL: func(s *glServer) {
 				s.project = map[string]any{"visibility": "private", "default_branch": "main"}
@@ -149,13 +149,82 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 			},
 		},
 		{
+			// ExpectedSHA: the file changed after the caller's read — the backend's own fetch
+			// reports a different content id, so the conditional write refuses and writes nothing.
+			name: "write_file_expected_sha_mismatch_refused",
+			setupGH: func(s *goldenServer) {
+				s.contentsGet = ghServedFile("README.md", "row one\nforeign\n")
+			},
+			setupGL: func(s *glServer) {
+				s.project = map[string]any{"visibility": "private", "default_branch": "main"}
+				s.repoFile = map[string]map[string]any{"README.md": {
+					"file_name": "README.md", "file_path": "README.md",
+					"content": glB64("row one\nforeign\n"), "encoding": "base64",
+					"ref": "feat/x", "blob_id": "blob-gl", "last_commit_id": "commit-gl-moved",
+				}}
+			},
+			run: func(f Forge) (any, error) {
+				return f.WriteFile(forgeTestRepo, WriteFileInput{
+					File: "README.md", Branch: "feat/x", Content: []byte("row one\nrow two\n"),
+					Message: "Evidence: verification row", ExpectedSHA: "id-the-caller-judged",
+				})
+			},
+			check: func(t *testing.T, backend string, got any, err error) {
+				if err == nil {
+					t.Fatalf("%s: conditional write accepted a moved file; want a refusal", backend)
+				}
+				if ExitCodeOf(err) != ExitRefused {
+					t.Errorf("%s: exit = %d, want %d (Refused); err=%v", backend, ExitCodeOf(err), ExitRefused, err)
+				}
+			},
+		},
+		{
+			// ExpectedSHA matches the backend's own fetch: the write proceeds.
+			name: "write_file_expected_sha_match_writes",
+			setupGH: func(s *goldenServer) {
+				s.contentsGet = ghServedFile("README.md", "row one\n")
+				s.contentsPut = map[string]any{
+					"content": map[string]any{"sha": "blob-gh-2"},
+					"commit":  map[string]any{"author": map[string]any{"name": "assay-verifier-app[bot]"}},
+				}
+			},
+			setupGL: func(s *glServer) {
+				s.project = map[string]any{"visibility": "private", "default_branch": "main"}
+				s.repoFile = map[string]map[string]any{"README.md": {
+					"file_name": "README.md", "file_path": "README.md",
+					"content": glB64("row one\n"), "encoding": "base64",
+					"ref": "feat/x", "blob_id": "blob-gl", "last_commit_id": "commit-gl",
+				}}
+				s.updateCommitResp = map[string]any{"id": "landed-commit"}
+			},
+			run: func(f Forge) (any, error) {
+				// Each backend's own content id for the fixture above.
+				want := blobID("row one\n", false)
+				if _, ok := f.(*GitLabForge); ok {
+					want = "commit-gl"
+				}
+				return f.WriteFile(forgeTestRepo, WriteFileInput{
+					File: "README.md", Branch: "feat/x", Content: []byte("row one\nrow two\n"),
+					Message: "Evidence: verification row", ExpectedSHA: want,
+				})
+			},
+			check: func(t *testing.T, backend string, got any, err error) {
+				if err != nil {
+					t.Fatalf("%s: conditional write with a matching id errored: %v", backend, err)
+				}
+				if !got.(*WriteFileResult).Changed {
+					t.Errorf("%s: Changed = false, want true", backend)
+				}
+			},
+		},
+		{
 			name: "write_file_default_branch_probe",
 			setupGH: func(s *goldenServer) {
 				// GitHub's default branch is directly writable by the App — carve-out.
 				s.contentsGetStatus = 404 // absent → create
 				s.contentsPut = map[string]any{
 					"content": map[string]any{"sha": "blob-gh-new"},
-					"commit": map[string]any{"author": map[string]any{"name": "assay-verifier-app[bot]"}},
+					"commit":  map[string]any{"author": map[string]any{"name": "assay-verifier-app[bot]"}},
 				}
 			},
 			setupGL: func(s *glServer) {
@@ -215,4 +284,11 @@ func TestWriteFileOpBothBackends(t *testing.T) {
 			})
 		})
 	}
+}
+
+// ghServedFile is a Contents-API read of a plain file in its live shape: typed, base64,
+// its own git blob id — the only prior a GitHub write proceeds against (S-2266-8).
+func ghServedFile(path, content string) map[string]any {
+	return map[string]any{"type": "file", "path": path, "encoding": "base64",
+		"sha": blobID(content, false), "content": ghB64(content)}
 }

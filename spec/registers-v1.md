@@ -258,6 +258,22 @@ Each entry is a file under `docs/streams/intake/`, rendering into the generated 
 Disposition: new | watching | scoped → <stream> | rejected — <why> | decision-needed → issue #NN
 ```
 
+The `scoped →` target may also name a finding (`scoped → F-<slug>`); the disposition grammar is
+otherwise unchanged.
+
+A per-entry file MAY carry a **triage stamp** — three optional frontmatter keys, set in the same
+commit that moves the entry out of `new` (forward-only: an entry triaged before the stamp existed
+is not backfilled):
+
+| Key | Value | A conforming linter MUST report a PROBLEM when |
+|---|---|---|
+| `triaged` | a date (`YYYY-MM-DD`) or an RFC3339 timestamp | the value parses as neither |
+| `triaged-by` | one member of the closed role set: `the-desk`, `worker-desk`, `pr-review-desk`, `verify-desk`, `intake-desk`, `driver` | the value is not a member. Membership is checked against the list, never a pattern, so a person's login is always a PROBLEM. The PROBLEM quotes the value only up to the longest member's length |
+| `triager-tier` | `any` or `strong` | the value is anything else, such as a vendor model name |
+
+An absent key is legal. The register is committed to git, which is why no key may carry a person's
+login.
+
 ### 5.3 Rules
 
 - `id` MUST be a slug-form ID per section 3.4.
@@ -271,6 +287,30 @@ Disposition: new | watching | scoped → <stream> | rejected — <why> | decisio
   report intake debt that does not exist.
 - Withdrawal: keep the file, set `Disposition: rejected — <why>`, and explain in the
   body. The file MUST NOT be deleted.
+
+### 5.4 Exit mapping
+
+Every triaged entry maps to exactly one of the intake desk's five tracked exits, and
+`statusgen --intake-exits --json` exports one `intake-exit-v1` record per entry that maps AND
+carries a complete, valid stamp (section 5.2). The record schema lives in
+[`intake-exit-v1.md`](./intake-exit-v1.md).
+
+| Disposition | Exit | `artifact` | `detail` |
+|---|---|---|---|
+| `scoped → <stream>` or `scoped → <stream>/<NN>` | `placeholder` | the stream or brief | |
+| `scoped → issue #NN` | `bug` | `#NN` | |
+| `scoped → F-<slug>` | `finding` | `F-<slug>` | |
+| `decision-needed` (with `decision-issue: NN`) | `needs-decision` | `#NN` | |
+| `watching` | `rejected-watching` | | `watching` |
+| `rejected — <why>` | `rejected-watching` | | `rejected` |
+| legacy `adopted` (target a stream or brief) | `placeholder` | the stream or brief | |
+
+An entry whose disposition does not map (for example `decision-needed` with no `decision-issue`, a
+`scoped` target that is none of the forms above, or a value outside the vocabulary) is counted as
+`unmapped`, never guessed. An entry that maps but has no complete stamp is counted as `unstamped`.
+The export's last line is the summary `{"stamped": N, "unstamped": M, "unmapped": K}`. When neither
+the per-entry directory nor the `INTAKE.md` view exists, the export is could-not-check (exit 6), never
+an empty export.
 
 ## 6. REQUIREMENTS register
 
@@ -362,6 +402,122 @@ A reader who wants to know whether an ask was actually met follows the citation 
 brief and reads its Evidence. The register's job is to make that walk possible, not to
 perform it.
 
+### 6.4.1 Optional `product-intent-v1` extension
+
+The REQUIREMENTS owner optionally carries `product-intent:` in the existing frontmatter.
+The semantic owner is `statusgen/productintent` (`Decode`, `Validate`, `Resolve`,
+`CheckHistory`); the shape is `schemas/product-intent-v1.json`. This extension adds no
+mandatory base field and changes neither REQ IDs nor acceptance, status, satisfaction,
+`outcome:` or `satisfies:` meaning. It does not add `outcome-revision` to brief readers;
+that consumer binding remains statusgen/23's separately versioned work.
+
+Example synthetic extension (the complete two-revision fixture, including observed
+and operational references, is `statusgen/testdata/productintent/record.json`):
+
+```yaml
+product-intent:
+  schema: product-intent-v1
+  subject: {repository: example/product, requirement: REQ-evidence-visible}
+  kind: capability
+  owner: product-owner
+  status: active
+  directions:
+    - revision: direction-one
+      rationale: Readers can check published claims
+      owner: product-owner
+      decision: {repository: example/product, kind: decision, id: direction, revision: v1}
+  targets:
+    - revision: target-one
+      direction-revision: direction-one
+      condition: Evidence is accessible
+      measure: accessible claims
+      unit: percent
+      window: first release
+      confidence: unknown
+      basis: baseline gap
+      decision: {repository: example/product, kind: decision, id: target, revision: v1}
+```
+
+| Member | Supported meaning |
+|---|---|
+| `schema` | Required literal `product-intent-v1` for evaluated records. |
+| `mandatory` | Optional boolean, default false; controls unsupported-version refusal, never approval. |
+| `subject` | Required `repository` (`owner/repo`, lower-case name segments) and existing `requirement` (`REQ-<slug>`). Reader requires the same base REQ ID. A repository is an explicit coordinate, not an alias registry or access grant. |
+| `kind`, `owner`, `status` | Required kind `feature`, `capability` or `journey`, accountable owner text, and `active` or `withdrawn`. This classifies intent; it creates no operational definition. |
+| `directions` | Nonempty ordered history. Each has unique `revision`, nonblank `rationale`, `owner`, and a qualified `decision` reference. |
+| `targets` | Nonempty ordered history. Each has unique `revision`, existing `direction-revision`, nonblank `condition`, `measure`, `unit`, `window`, `basis`, `confidence` and a qualified `decision`. Optional boolean `approved` is retained solely as an author claim and ignored by resolution. |
+| `observed` | Optional ordered summary/reference history. Each has an existing `target-revision`, qualified `assessment`, nonblank `source`, `attributed-to`, `window`, `limitations`, `confidence`, and `date` shaped `YYYY-MM-DD`. This is a date shape, not calendar or freshness verification. No assessment content or benefit is inferred. |
+| `operational-references` | Optional ordered qualified references whose kind is exactly `journey`, `operational-workflow` or `practice`. Delivery `workflow-pattern` and `workflow-instance` are different kinds and refused. Definitions and assessment ledgers remain continuing-operations' responsibility. |
+
+A qualified reference has exactly `repository`, `kind`, `id`, `revision`. Record IDs and
+revisions use lower-case `[a-z0-9][a-z0-9._-]*`; revisions are stable tokens, not selected
+by list position or a mutable filename. Confidence is exactly `low`, `medium`, `high` or
+`unknown`. Text must contain a character other than ASCII space/tab/CR/LF. Unknown
+members, wrong types, nulls, duplicate JSON/YAML keys and trailing JSON are refused in
+supported records. Every version, unsupported included, must be well formed: duplicate
+keys, trailing JSON, a null envelope and a non-string `schema` or non-boolean
+`mandatory` are refused. A nested null inside an unsupported payload is retained as
+payload, not refused, because refusing it would evaluate that payload. JSON Schema checks
+shape; the reader additionally checks revision uniqueness and direction/observation
+links. Neither layer resolves external references.
+
+`Decode` accepts JSON bytes; no bytes means the legacy absence. The filesystem adapter
+uses the existing YAML codec and passes only the optional extension to this package.
+A present YAML null is malformed, not legacy absence. `Document.Raw` and `Record` return
+copies. `Resolve` returns detached qualified revisions and original direction/evidence
+references, without modifying the supplied snapshots.
+
+Approval requires a separately supplied `Evidence` snapshot: a decision's exact
+reference and qualified `(subject, direction-or-target kind, revision)` binding, available
+source, authorized principal and `approved` verdict. Both the direction and target must
+resolve approved. Authorities are supplied separately from records and decisions. Missing,
+unavailable, unauthorized, mismatched or conflicting evidence yields `unknown`; a resolved
+rejection remains `rejected`. One decision reference binds exactly one subject: every
+supplied entry citing that reference is a vote on the binding being resolved, so an entry
+bound to a different direction or target is a mismatch and the result is `unknown`. A
+direction and a target therefore cite distinct decision references. The adapter supplying evidence owns source authenticity,
+freshness, visibility and authority policy; this pure package does not authenticate a
+forge comment or establish the authority set. No production adapter is activated here.
+The parser never promotes its own claim boolean or base `status: satisfied` into approval.
+
+Resolution states are `unbound` (legacy absence), `unsupported` (retained future envelope),
+`unknown` (no current approved binding: an unresolved decision or base status, or a
+resolved rejection, whose verdict stays in the target's approval), `known` (resolved
+bindings, not observed benefit), or `withdrawn`. The record's state is `unknown` while any
+non-withdrawn target, historical revisions included, lacks an approved binding. Each target retains its own approval verdict, including historical
+verdicts under a tombstone; a withdrawn target's state is always `withdrawn`, never a
+current approved binding. Base REQ withdrawal also withdraws every target. Observed
+references remain evidence pointers even when the decision is unavailable.
+
+`CheckHistory(before, after)` requires prior direction, target, observed and operational
+reference lists to remain identical prefixes; new revisions/references append. Subject and
+kind cannot change, revision IDs cannot be reused, and withdrawal cannot resurrect. Owners
+and display names may change while historical bindings stay intact. This API needs an
+explicit prior snapshot: parsing one current file alone cannot prove no history was removed.
+A decision binds a revision token, not the revision's content: an in-place edit of a
+target's condition, measure or window under the same `revision` keeps a previously
+supplied approval unless `CheckHistory` runs against a prior snapshot. No production
+consumer calls `Resolve` yet; a consumer that acts on an `approved` binding must first
+run `CheckHistory` against its base tree, or bind each decision to a content digest.
+Git tombstone enforcement remains the register's existing responsibility; no new writer,
+ledger, polling, network, scheduler or dispatch authority is introduced.
+
+| Input | Reader/evaluator behavior |
+|---|---|
+| Legacy REQ without extension | Original base validation; explicitly `unbound`, no invented target or approval. |
+| Supported v1 | Strict decode and semantic validation; resolve only against supplied evidence. |
+| Unsupported version, absent/false `mandatory` | Retain envelope bytes, emit explicit unsupported NOTICE, never evaluate payload. |
+| Unsupported version, `mandatory: true` | Same retained unsupported state; requirement lint emits a hard PROBLEM. |
+| Malformed supported extension | Parse/validation error, never silently dropped. |
+
+The frozen same-input schema/parser corpus is exercised by
+`TestProductIntentSchemaParity` through the actual production `conform` validator via a
+test-only bridge. Keyword coverage fails if the schema exceeds that validator's supported
+set. The production validator is unchanged; no alternate evaluator or new dependency is
+installed. These are locally runnable Verify checks: current CI builds/vets statusgen but
+does not run its full suite or these named tests. Independent verification must run the
+brief's exact named commands; a green build is not their execution evidence.
+
 ### 6.5 The brief citation (`satisfies:`) and the requirement-ref grammar
 
 A brief cites the requirements it was written against with the OPTIONAL `satisfies:`
@@ -420,6 +576,28 @@ brief means the board says the work landed, not that the tool re-ran the accepta
 These checks reach a consumer only on an `.assay-versions` statusgen pin bump, which is why
 they land advisory: an un-bumped adopter is unaffected, and a bumped one gets NOTICEs, not a
 red gate, over a corpus authored before the register existed.
+
+### 6.6 Source-obligation mappings that reference requirements
+
+A requirement may be the target of a **source-obligation mapping** (`project-obligations-v1.md`):
+a versioned record tying one clause of a permitted source revision to one or more existing
+`REQ-<slug>` ids for a project profile. The mapping REFERENCES requirements and never adds a
+lifecycle, status or meaning to one; this register stays the only owner of what a requirement is.
+
+The link contract a consumer of this register MUST honour:
+
+- An in-repo reference dereferences against this register, read three-state. An id no entry
+  defines does not resolve, and a requirement whose status is `withdrawn` (section 3.3) does not
+  satisfy a mapping. The reference is never silently dropped.
+- A cross-repo `<alias>:REQ-<slug>` names a register the offline reader cannot see. It is
+  could-not-check and holds the mapping; it is never treated as resolved or as absent.
+- An absent register is a valid empty register, so every in-repo reference fails to resolve. An
+  unreadable one is an error, never an empty one (section 6.3).
+- Because the register is append-only, a mapping bound to a requirement id stays resolvable for
+  the life of the repository, and a withdrawal is visible as a tombstone, not a disappearance.
+
+These are rules about the consumer. They change no field in section 6.2 and no linter check in
+section 9.2.
 
 ## 7. DECISIONS register
 
@@ -680,6 +858,11 @@ A conforming linter MUST:
     (section 7, `brief-v1.md` §3.2) that does not match the `DR-<slug>` grammar or
     dereferences to no record — subject to the grandfathering and three-state rules the
     design-approval gate carries (`lifecycle-v1.md` §4.4).
+
+A conforming consumer of the REQUIREMENTS register that dereferences requirement ids on behalf
+of another record (section 6.6) MUST resolve them three-state and MUST NOT treat an unknown,
+withdrawn or unreadable reference as satisfied. This is a rule on the consumer, not an
+additional linter check.
 
 A conforming linter MUST NOT claim sequence-contiguity or gap detection (section 3.2),
 and MUST NOT let a `satisfies:` citation or a REQUIREMENTS entry change an exit code on

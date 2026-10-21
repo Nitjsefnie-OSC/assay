@@ -1,5 +1,6 @@
 {
-  "test": "go test ./internal/deskkit/ -count=1 -run 'TestBodyCheck|TestBodycheck|TestStructured|TestArmor|TestPathRule|TestScanOverride|TestOverrideHint|TestIsPathLike|TestIsIdentifierLike|TestAssignment|TestTrailingAcronym|TestMidRunAcronym|TestShortAcronymCosts|TestTwoLetterWords|TestSelfContain|TestGitHubForgeRefExists|TestGitLabForgeRefExists|TestForgeRepoInfoFetcherDrivesPublicRepoGateOnGitLab|TestForgeGithubGolden|TestForgeGitlabGolden|TestRoleTokenMemo|TestLabelTargetRoutes|TestLabelOpBothBackends|TestApplyIssueLabelsBothBackends|TestForgeGitlabSecurityFailIsReadableAtHead_1124|TestForgeGitlabReviewsAreAscending_1124|TestReviewLanes|TestClaim|TestResolveClaimStore'",
+  "test": "go test ./internal/deskkit/ -count=1 -run 'TestBodyCheck|TestBodycheck|TestStructured|TestArmor|TestPathRule|TestScanOverride|TestOverrideHint|TestIsPathLike|TestIsIdentifierLike|TestAssignment|TestTrailingAcronym|TestMidRunAcronym|TestVersionSegment|TestPlantedTokenBeside|TestIdentShapeClass|TestShortAcronymCosts|TestTwoLetterWords|TestSelfContain|TestGitHubForgeRefExists|TestGitLabForgeRefExists|TestForgeRepoInfoFetcherDrivesPublicRepoGateOnGitLab|TestForgeGithubGolden|TestForgeGitlabGolden|TestRoleTokenMemo|TestLabelTargetRoutes|TestLabelOpBothBackends|TestApplyIssueLabelsBothBackends|TestForgeGitlabSecurityFailIsReadableAtHead_1124|TestForgeGitlabReviewsAreAscending_1124|TestReviewLanes|TestClaim|TestResolveClaimStore|TestClassifyCustodyModel|TestClassifyCustodyOwnerOnlyPath|TestBodyEdit|TestStandingBlocker|TestParsePrereqDeclaration|TestPRBodyDigest|TestModelStampActor|TestFloorRefusalRoutesByApplierTrust|TestExitCodeTableMatchesDerivation|TestBriefID|TestSynthID|TestFileKindSitesCarrySources|TestGitLabEvidenceLanding|TestGitHubReadFileKind|TestGitHubWriteFileRefusesUnprovenPrior|TestWriteReceiptObject|TestContractConformance'",
+  "schemata": true,
   "control": {
     "name": "CONTROL — disarm the GitHub-token arm (a ghp_ token scans clean)",
     "file": "internal/deskkit/bodycheck.go",
@@ -29,13 +30,49 @@
       "name": "drop the SRI length check (any payload behind an integrity key passes)",
       "file": "internal/deskkit/structured.go",
       "old": "if want, ok := sriPayloadLen[alg]; ok && len(payload) == want {",
-      "new": "if _, ok := sriPayloadLen[alg]; ok {"
+      "new": "if _, ok := sriPayloadLen[alg]; ok && payload != \"\" {"
     },
     {
       "name": "drop the sops DOCUMENT signature (a pasted envelope alone is sanctioned)",
       "file": "internal/deskkit/structured.go",
       "old": "\tif !sopsDocument(s) {",
       "new": "\tif false && !sopsDocument(s) {"
+    },
+    {
+      "name": "#2060 — drop the cite-never-quote remedy from the sops-block refusal (a writer is handed the bare refusal again)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\" contains a sops-encrypted secret block or ENC[ marker\"+sopsCiteRemedy,",
+      "new": "\" contains a sops-encrypted secret block or ENC[ marker\","
+    },
+    {
+      "name": "#2060 — drop the remedy's PROHIBITION half (the refusal says cite, no longer says never quote)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "in words; never \" +\n\t\"quote its sops: footer or an ENC[…] envelope (a quotation is refused inside a code fence \" +\n\t\"too). Committed",
+      "new": "in words. Committed"
+    },
+    {
+      "name": "#2060 — disarm the sops arm's ENVELOPE half (a short envelope quoted into a review body is admitted)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tcase reSopsEncVal.MatchString(s) || (reSopsKey.MatchString(s) && reSopsField.MatchString(s)):",
+      "new": "\tcase false && reSopsEncVal.MatchString(s) || (reSopsKey.MatchString(s) && reSopsField.MatchString(s)):"
+    },
+    {
+      "name": "#2060 — disarm the sops arm's FOOTER half (a bare footer quoted into a review body is admitted)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tcase reSopsEncVal.MatchString(s) || (reSopsKey.MatchString(s) && reSopsField.MatchString(s)):",
+      "new": "\tcase reSopsEncVal.MatchString(s) || (false && reSopsKey.MatchString(s) && reSopsField.MatchString(s)):"
+    },
+    {
+      "name": "#2060 — un-anchor the envelope marker from its data: field (a cited ENC[AES256_GCM,…] mention refuses)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "reSopsEncVal = regexp.MustCompile(`ENC\\[AES256_GCM,data:`)",
+      "new": "reSopsEncVal = regexp.MustCompile(`ENC\\[AES256_GCM`)"
+    },
+    {
+      "name": "#2060 — un-anchor the sops: key and its metadata field from line start (a cited inline `sops:`/`mac:` mention refuses)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "reSopsKey    = regexp.MustCompile(`(?m)^\\s*\"?sops\"?\\s*:`)\n\treSopsField  = regexp.MustCompile(`(?m)^\\s*\"?(mac|",
+      "new": "reSopsKey    = regexp.MustCompile(`\"?sops\"?\\s*:`)\n\treSopsField  = regexp.MustCompile(`\"?(mac|"
     },
     {
       "name": "open the armor-label allowlist (an unknown label stops being secret-bearing)",
@@ -82,7 +119,7 @@
     {
       "name": "#203 — drop the FORWARD anchor (an acronym need not be adjacent to a word)",
       "file": "internal/deskkit/bodycheck.go",
-      "old": "\tif k == len(seg) || startsCamelWord(seg, k) {\n\t\treturn k, true\n\t}",
+      "old": "\tif startsCamelWord(seg, k) {\n\t\treturn k, true\n\t}",
       "new": "\tif true {\n\t\treturn k, true\n\t}"
     },
     {
@@ -96,6 +133,78 @@
       "file": "internal/deskkit/bodycheck.go",
       "old": "\tif acronymsSoFar >= maxAcronymUnits {",
       "new": "\tif false && acronymsSoFar >= maxAcronymUnits {"
+    },
+    {
+      "name": "#1642 — version unit admits any capital, not only V (S3, P2 ride the exemption)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tif seg[k-1] != 'V' {",
+      "new": "\tif false && seg[k-1] != 'V' {"
+    },
+    {
+      "name": "#1642 — drop the version DIGITS bound (V123 becomes one word)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "if d == k || d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits {",
+      "new": "if d == k || acronymsSoFar >= maxAcronymUnits {"
+    },
+    {
+      "name": "#1642 — version unit spends no acronym BUDGET",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "if d == k || d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits {",
+      "new": "if d == k || d-k > maxVersionDigits {"
+    },
+    {
+      "name": "#1642 — drop the version FORWARD anchor (a lowercase run may follow the digits)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tif d == len(seg) || startsCamelWord(seg, d) {\n\t\treturn d, true",
+      "new": "\tif true {\n\t\treturn d, true"
+    },
+    {
+      "name": "#1642 — weaken the version FORWARD anchor to any capital (V2 then a lone A rides the one-letter-word rule)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tif d == len(seg) || startsCamelWord(seg, d) {\n\t\treturn d, true",
+      "new": "\tif d == len(seg) || seg[d] >= 'A' && seg[d] <= 'Z' {\n\t\treturn d, true"
+    },
+    {
+      "name": "#1642 — drop the zero-digit check (a lone V before a word becomes a word unit)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "if d == k || d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits {",
+      "new": "if d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits {"
+    },
+    {
+      "name": "#1642 — a CLOSING version unit spends no budget (acronym mid-run, version closes)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "if d == k || d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits {",
+      "new": "if d == k || d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits && d != len(seg) {"
+    },
+    {
+      "name": "#1642 — dispatch a caps run ENDING in V before digits to versionUnit (XV1 becomes a version)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tif k-i == 1 {\n\t\treturn versionUnit(seg, k, acronymsSoFar)",
+      "new": "\tif k-i == 1 || (seg[k-1] == 'V' && k < len(seg) && seg[k] >= '0' && seg[k] <= '9') {\n\t\treturn versionUnit(seg, k, acronymsSoFar)"
+    },
+    {
+      "name": "#1642 — a closing acronym stays budget-free after a version unit (V2 then a closing OK/PRs)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\tif k == len(seg) && !versioned {",
+      "new": "\tif k == len(seg) {"
+    },
+    {
+      "name": "#1642 — never mark a run as versioned (the closing-acronym exemption survives a version unit)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "versioned = versioned || (seg[acrEnd-1] >= '0' && seg[acrEnd-1] <= '9')",
+      "new": "versioned = false"
+    },
+    {
+      "name": "#1642 class guard — over-broad identifier exemption at an untouched site (every run is identifier-like)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "\treturn ok && words >= 2 && camel\n}",
+      "new": "\treturn ok && words >= 2 && camel || run != \"\"\n}"
+    },
+    {
+      "name": "#1642 class guard — over-exemption in the scan loop (every run carrying a capital is exempt)",
+      "file": "internal/deskkit/bodycheck.go",
+      "old": "if isGitSHA(run) || isPathLike(run) || isIdentifierLike(run) || isAssignmentLike(run) || isAllEquals(run) {",
+      "new": "if isGitSHA(run) || isPathLike(run) || isIdentifierLike(run) || isAssignmentLike(run) || isAllEquals(run) || strings.ToLower(run) != run {"
     },
     {
       "name": "#203 — make the public-repo self-containment scan a no-op on every repo",
@@ -112,8 +221,8 @@
     {
       "name": "#203 — disarm the machine-shape arm (absolute paths, worktree names, session and agent ids)",
       "file": "internal/deskkit/selfcontain.go",
-      "old": "\t\tif loc := m.re.FindString(s); loc != \"\" {",
-      "new": "\t\tif loc := m.re.FindString(s); false {"
+      "old": "\t\tfor _, loc := range m.re.FindAllStringIndex(s, -1) {",
+      "new": "\t\tfor _, loc := range m.re.FindAllStringIndex(s, 0) {"
     },
     {
       "name": "#203 — stop refusing a PRIVATE repo slug on a public body",
@@ -278,19 +387,416 @@
       "new": "\tset := laneTable[tier]\n\tif false {\n\t\tset = laneTable[TierUnknown]\n\t}"
     },
     {
-      "name": "probe the not-yet-created target branch instead of the start branch on a GitLab file write (issue #1412: a create of a path that already exists on the base is rejected HTTP 400, so Evidence never lands on the side-branch lane)",
+      "name": "probe the not-yet-created target branch instead of the start branch on a GitLab file write (issue #1412: a create of a path that already exists on the base is rejected HTTP 400, so Evidence never lands on the side-branch lane). The probe ref is shared by the native read and the scoped landing's cached-prior match, so the mutant is caught on both paths",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "\tprobeRef := in.Branch\n\tif in.StartBranch != \"\" {\n\t\tprobeRef = in.StartBranch\n\t}\n\tcur, rerr := g.ReadFile(repo, ReadFileInput{File: in.File, Ref: probeRef})",
-      "new": "\tcur, rerr := g.ReadFile(repo, ReadFileInput{File: in.File, Ref: in.Branch})"
+      "old": "func gitlabWriteProbeRef(in WriteFileInput) string {\n\tif in.StartBranch != \"\" {\n\t\treturn in.StartBranch\n\t}\n\treturn in.Branch\n}",
+      "new": "func gitlabWriteProbeRef(in WriteFileInput) string {\n\treturn in.Branch\n}"
     },
     {
       "name": "claimstore-unmet-precondition-falls-through",
       "file": "internal/deskkit/claimstore.go",
       "old": "\t\tres, rerr := resolveConfiguredClaimStore(repo, value, keys, prov)\n\t\tif rerr != nil {\n\t\t\treturn ClaimStoreResolution{}, rerr\n\t\t}",
       "new": "\t\tres, rerr := resolveConfiguredClaimStore(repo, value, keys, prov)\n\t\tif rerr != nil {\n\t\t\treturn resolveLegacyClaimStore(repo, prov)\n\t\t}"
+    },
+    {
+      "name": "custody verdict: an uninterpretable DACL entry launders a determinable foreign writer into 'inconclusive' (DR-windows-port-08 relaxes ONLY the could-not-determine case — a definite violation must stay refused)",
+      "file": "internal/deskkit/custodyverdict.go",
+      "old": "\tif rerr := evaluateCustodyACL(path, readable); rerr != nil {",
+      "new": "\tif rerr := error(nil); rerr != nil {"
+    },
+    {
+      "name": "custody verdict: a foreign read-capable DACL entry passes the write-side read-back (TestClassifyCustodyModel's reader rows pin the refusal this PR inherits from evaluateCustodyACL)",
+      "file": "internal/deskkit/custodyacl.go",
+      "old": "\t\tif ace.GrantsRead {",
+      "new": "\t\tif false && ace.GrantsRead {"
+    },
+    {
+      "name": "custody verdict: the unix read-back stats through a link at the path (os.Stat for os.Lstat — a swapped-in link is reported verified for its target)",
+      "file": "internal/deskkit/custodyverdict_unix.go",
+      "old": "\tfi, err := os.Lstat(path)",
+      "new": "\tfi, err := os.Stat(path)"
+    },
+    {
+      "name": "body-edit class: trust the APPROVE's own finding id when the CR declared nothing (a different/undeclared class clears — reddens TestBodyEdit_NearMiss_UndeclaredCR)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif !d.Declared {\n\t\tdec.Reason = \"no `Blocked-On-Body:`",
+      "new": "\tif !d.Declared && len(in.Approves) > 0 {\n\t\td.FindingID = SoleVerdictMarkerValue(in.Approves[0].Body, resolvedBodyFinding, SkipFenced)\n\t\td.CRDigest = \"x\"\n\t} else if !d.Declared {\n\t\tdec.Reason = \"no `Blocked-On-Body:`"
+    },
+    {
+      "name": "body-edit class: accept a CR that co-declares another sole-blocker class (reddens TestBodyEdit_NearMiss_CoDeclaredWithAnotherClass)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif BlockedOnCheckName(crBody) != \"\" || ExternalPrereqOnlyDeclared(crBody) {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "body-edit class: accept a mixed CR carrying a code finding (reddens TestBodyEdit_NearMiss_MixedCRWithCodeFinding)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\t\t\tif strings.TrimSpace(f.ID) != d.FindingID || f.Blocker != BlockerCodeContent {",
+      "new": "\t\t\tif false {"
+    },
+    {
+      "name": "body-edit class: drop the live-body digest check (a stale re-read clears — reddens TestBodyEdit_NearMiss_LiveBodyChangedSinceReRead)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif dg != liveDigest {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "body-edit class: drop the edited-since-the-CR check (an unedited body clears — reddens TestBodyEdit_NearMiss_BodyNeverEdited)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif dg == d.CRDigest {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "body-edit class: accept CI-Green-At for another head (reddens TestBodyEdit_NearMiss_CIGreenAtAnotherHead)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif !strings.EqualFold(ci, head) {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "body-edit class: accept an APPROVE at the CR's own instant (reddens TestBodyEdit_NearMiss_ApproveNotAfterCR)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\t\tif perr != nil || !at.After(crAt) {",
+      "new": "\t\tif perr != nil || at.Before(crAt) {"
+    },
+    {
+      "name": "body-edit class: treat an absent forge edit time as an edit after the CR (an unedited body with a slipped CR digest clears — reddens TestBodyEdit_NearMiss_UneditedBody_SlippedCRDigest/forge_reports_no_edit)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\teditedRaw := strings.TrimSpace(in.BodyEditedAt)\n",
+      "new": "\teditedRaw := strings.TrimSpace(in.BodyEditedAt)\n\tif editedRaw == \"\" {\n\t\teditedRaw = \"9999-01-01T00:00:00Z\"\n\t}\n"
+    },
+    {
+      "name": "body-edit class: drop the forge edit-time-after-the-CR comparison (a body last edited before the CR clears on a slipped CR digest — reddens TestBodyEdit_NearMiss_UneditedBody_SlippedCRDigest/forge's_last_edit_is_before_the_CR)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif !editedAt.After(crAt) {",
+      "new": "\tif editedAt.IsZero() {"
+    },
+    {
+      "name": "body-edit class: accept a forge edit at the CR's own instant (reddens TestBodyEdit_NearMiss_UneditedBody_SlippedCRDigest/forge's_last_edit_is_at_the_CR's_own_instant)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\tif !editedAt.After(crAt) {",
+      "new": "\tif editedAt.Before(crAt) {"
+    },
+    {
+      "name": "body-edit class: admit a declared CR whose typed finding block is unreadable (reddens TestBodyEdit_NearMiss_UnreadableFindingBlock)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\t\td.Problem = \"the CR's typed finding block is unreadable (\" + err.Error() +\n\t\t\t\") — an unreadable declaration is could-not-check, never a clearance\"\n\t\treturn d",
+      "new": "\t\treturn d"
+    },
+    {
+      "name": "body-edit class: count a RESOLVED blocking code finding as standing (a re-review CR listing its resolved findings reads as mixed — reddens TestBodyEdit_ResolvedCodeFindingsDoNotMakeItMixed)",
+      "file": "internal/deskkit/bodyeditcr.go",
+      "old": "\t\t\tif !f.StandingBlockerAt(head) {",
+      "new": "\t\t\tif f.Severity != SeverityBlocking {"
+    },
+    {
+      "name": "standing-blocker predicate: retire every non-open state, not only resolved (a worker-asserted fix or a dispute stops blocking — reddens TestBodyEdit_NearMiss_UnresolvedCodeFindingStillMixed)",
+      "file": "internal/deskkit/reviewfinding.go",
+      "old": "\tif f.State != StateResolved {\n\t\treturn true\n\t}\n\tev := ",
+      "new": "\tif f.State == StateOpen {\n\t\treturn true\n\t}\n\tev := "
+    },
+    {
+      "name": "standing-blocker predicate: read a mis-cased or padded state as resolved (a non-canonical state stops failing closed — reddens TestBodyEdit_NearMiss_UnresolvedCodeFindingStillMixed)",
+      "file": "internal/deskkit/reviewfinding.go",
+      "old": "\tif f.State != StateResolved {\n\t\treturn true\n\t}\n\tev := ",
+      "new": "\tif !strings.EqualFold(strings.TrimSpace(string(f.State)), string(StateResolved)) {\n\t\treturn true\n\t}\n\tev := "
+    },
+    {
+      "name": "standing-blocker predicate: drop the evidence-head binding (a resolution at a stale head retires the entry — reddens TestBodyEdit_NearMiss_ResolvedAtStaleHeadStillMixed)",
+      "file": "internal/deskkit/reviewfinding.go",
+      "old": "\treturn ev != \"\" && ev != strings.TrimSpace(head)\n",
+      "new": "\t_ = ev\n\treturn false\n"
+    },
+    {
+      "name": "the stamp-authority allowance vouches for ANY login (the widening becomes a silent default over every login)",
+      "file": "internal/deskkit/modelstamp.go",
+      "old": "\t_, ok := c.StampLogins[want]\n\treturn ok\n}",
+      "new": "\treturn true\n}"
+    },
+    {
+      "name": "a stamp-allowance entry needs no ASSAY_TRUSTED_LOGINS membership (the allowance CREATES trust instead of widening it)",
+      "file": "internal/deskkit/rosterconfig.go",
+      "old": "\t\tif _, trusted := cfg.Humans[login]; !trusted {",
+      "new": "\t\tif false {"
+    },
+    {
+      "name": "the floor refusal names only the dispatcher slugs (a configured stamp allowance is invisible to the operator)",
+      "file": "internal/deskkit/modelfloor.go",
+      "old": "StripControl(strings.Join(untrusted, \", \")), StampAuthorityLoginsForMessage())",
+      "new": "StripControl(strings.Join(untrusted, \", \")), DispatcherLoginsForMessage())"
+    },
+    {
+      "name": "swap a refusal-class code onto its neighbour (rate-limited takes the constraint-refused code — the table drifts from the stated one-code-per-class 3..6 convention, and TestExitCodeTableMatchesDerivation reddens)",
+      "file": "internal/deskkit/exitcodes.go",
+      "old": "\tExitRateLimited = 4",
+      "new": "\tExitRateLimited = 5"
+    },
+    {
+      "name": "#2022 — drop the FILENAME condition from the brief-id exemption (a frontmatter id in a stream README or any file passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "\tif source == \"\" || !isBriefPath(filePath) {",
+      "new": "\tif source == \"\" {"
+    },
+    {
+      "name": "#2022 — drop the FRONTMATTER condition from the brief-id exemption (an id line anywhere in a brief passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "\tif len(src) < 3 || strings.TrimSpace(src[0]) != \"---\" {\n\t\treturn 0\n\t}\n\tcloseAt := -1\n\tfor i := 1; i < len(src); i++ {\n\t\tif strings.TrimSpace(src[i]) == \"---\" {\n\t\t\tcloseAt = i\n\t\t\tbreak\n\t\t}\n\t}\n\tif closeAt < 0 {\n\t\treturn 0 // unterminated: there is no frontmatter to be inside\n\t}",
+      "new": "\tcloseAt := len(src)"
+    },
+    {
+      "name": "#2022 — drop the whole-value anchor from the brief-id line shape (`id: <uuid> extra` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "[0-9a-f]{12}\")$`)",
+      "new": "[0-9a-f]{12}\")`)"
+    },
+    {
+      "name": "#2022 — drop the scanned-text alignment check (a different line at the id's position passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if idx >= len(got) || got[idx] != src[idx] {",
+      "new": "if idx >= len(got) {"
+    },
+    {
+      "name": "#2022 — exempt every session-id match once a brief id exists, not only the id line (brief prose passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "lineOf(s, loc[0]) == exemptLine {",
+      "new": "lineOf(s, loc[0]) > 0 {"
+    },
+    {
+      "name": "#2022 — read FileSources on every write kind, not only kind `file` (a PR body or comment carrying one passes)",
+      "file": "internal/deskkit/outbound.go",
+      "old": "\t\t\topts.InFile = fd.Name != OutboundFieldCommitMessage\n\t\t\tif src, ok := w.FileSources[fd.Name]; ok {",
+      "new": "\t\t\topts.InFile = fd.Name != OutboundFieldCommitMessage\n\t\t}\n\t\t{\n\t\t\tif src, ok := w.FileSources[fd.Name]; ok {"
+    },
+    {
+      "name": "#2022 class — plant a second kind-`file` check site that carries no FileSources (the WriteFile shape before #2022)",
+      "file": "internal/deskkit/outboundforge.go",
+      "old": "func (o *outboundForge) WriteFile(repo ForgeRepo, in WriteFileInput) (*WriteFileResult, error) {",
+      "new": "func (o *outboundForge) plantedFileSite(repo ForgeRepo, in WriteFileInput) error {\n\treturn o.check(repo, OutboundKindFile, OutboundField{in.File, string(in.Content)})\n}\n\nfunc (o *outboundForge) WriteFile(repo ForgeRepo, in WriteFileInput) (*WriteFileResult, error) {"
+    },
+    {
+      "name": "#2022 class — drop FileSources from the evidence pre-flight's kind-`file` check",
+      "file": "cmd/deskevidence/origin.go",
+      "old": "\t\tFileSources: map[string]string{target: string(full)},\n",
+      "new": ""
+    },
+    {
+      "name": "#2022 boundary — the LAST fence closes the frontmatter, not the first (an id line in the body ahead of a later `---` rule passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "\t\t\tcloseAt = i\n\t\t\tbreak\n",
+      "new": "\t\t\tcloseAt = i\n"
+    },
+    {
+      "name": "#2022 boundary — drop the first-line fence test (a file that does not open with `---` can earn the exemption)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if len(src) < 3 || strings.TrimSpace(src[0]) != \"---\" {",
+      "new": "if len(src) < 3 {"
+    },
+    {
+      "name": "#2022 boundary — an unterminated frontmatter runs to end of file (no closing fence needed)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "\tcloseAt := -1\n",
+      "new": "\tcloseAt := len(src)\n"
+    },
+    {
+      "name": "#2022 boundary — look for the id key past the closing fence (a body id line under an id-less frontmatter passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "for i := 1; i < closeAt; i++ {",
+      "new": "for i := 1; i < len(src); i++ {"
+    },
+    {
+      "name": "#2022 boundary — drop the exactly-one-id-key count (a second, non-UUID `id` key no longer blocks the exemption)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if keys != 1 || idx < 0 {",
+      "new": "if idx < 0 {"
+    },
+    {
+      "name": "#2022 boundary — the key counter misses a quoted key (`\"id\": x` is not counted as a second id)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "reFrontmatterIDKey = regexp.MustCompile(`^[\"']?id[\"']?\\s*:`)",
+      "new": "reFrontmatterIDKey = regexp.MustCompile(`^id[\"']?\\s*:`)"
+    },
+    {
+      "name": "#2022 boundary — the key counter misses a space before the colon (`id : x` is not counted as a second id)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "reFrontmatterIDKey = regexp.MustCompile(`^[\"']?id[\"']?\\s*:`)",
+      "new": "reFrontmatterIDKey = regexp.MustCompile(`^[\"']?id[\"']?:`)"
+    },
+    {
+      "name": "#2022 boundary — drop the start anchor from the id-line shape (text before `id: <uuid>` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "`^id: (?:[0-9a-f]{8}",
+      "new": "`id: (?:[0-9a-f]{8}"
+    },
+    {
+      "name": "#2022 boundary — make the closing quote optional (an unbalanced `id: \"<uuid>` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "[0-9a-f]{12}\")$`)",
+      "new": "[0-9a-f]{12}\"?)$`)"
+    },
+    {
+      "name": "#2022 boundary — make the opening quote optional (an unbalanced `id: <uuid>\"` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "|\"[0-9a-f]{8}-",
+      "new": "|\"?[0-9a-f]{8}-"
+    },
+    {
+      "name": "#2022 boundary — the path prefix is matched anywhere, not anchored (`vendor/docs/streams/...` and `/docs/streams/...` pass)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "rest, ok := strings.CutPrefix(p, \"docs/streams/\")",
+      "new": "_, rest, ok := strings.Cut(p, \"docs/streams/\")"
+    },
+    {
+      "name": "#2022 boundary — the path is matched case-insensitively (`Docs/Streams/...`, `Brief-*.md`, `.MD` pass)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "rest, ok := strings.CutPrefix(p, \"docs/streams/\")",
+      "new": "rest, ok := strings.CutPrefix(strings.ToLower(p), \"docs/streams/\")"
+    },
+    {
+      "name": "#2022 boundary — drop the backslash refusal (a name carrying `\\..\\` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if !ok || strings.Contains(p, `\\`) {",
+      "new": "if !ok {"
+    },
+    {
+      "name": "#2022 boundary — drop the empty-segment refusal (`docs/streams//brief-*.md` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if s == \"\" || s == \".\" || s == \"..\" {",
+      "new": "if s == \".\" || s == \"..\" {"
+    },
+    {
+      "name": "#2022 boundary — drop the `.` segment refusal (`docs/streams/./brief-*.md` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if s == \"\" || s == \".\" || s == \"..\" {",
+      "new": "if s == \"\" || s == \"..\" {"
+    },
+    {
+      "name": "#2022 boundary — drop the `..` segment refusal (`docs/streams/../brief-*.md` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if s == \"\" || s == \".\" || s == \"..\" {",
+      "new": "if s == \"\" || s == \".\" {"
+    },
+    {
+      "name": "#2022 boundary — widen the file-name glob (`xbrief-*.md` passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "path.Match(\"brief-*.md\", ",
+      "new": "path.Match(\"*brief-*.md\", "
+    },
+    {
+      "name": "#2022 boundary — the skip covers every line up to the id line (a UUID under a key ABOVE the id passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "lineOf(s, loc[0]) == exemptLine {",
+      "new": "lineOf(s, loc[0]) <= exemptLine {"
+    },
+    {
+      "name": "#2022 boundary — whitelist the VALUE, not the line (the same UUID on any other line passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "lineOf(s, loc[0]) == exemptLine {",
+      "new": "strings.Contains(strings.Split(s, \"\\n\")[exemptLine-1], s[loc[0]:loc[1]]) {"
+    },
+    {
+      "name": "#2022 boundary — the exempt line silences every arm of the loop, not only the session-id arm (an agent id, machine path or worktree name in the same brief passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if m.re == reSessionUUID && exemptLine > 0 && lineOf(s, loc[0]) == exemptLine {",
+      "new": "if exemptLine > 0 && (m.re != reSessionUUID || lineOf(s, loc[0]) == exemptLine) {"
+    },
+    {
+      "name": "#2217 — widen the synthetic-fixture head to seven zeros (a first group of all zeros but one digit, `0000000a-…` or `00000001-…`, passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "const syntheticFixtureUUIDHead = \"00000000-\"",
+      "new": "const syntheticFixtureUUIDHead = \"0000000\""
+    },
+    {
+      "name": "#2217 — drop the file-content condition from the synthetic-fixture exemption (the same id in a PR body, comment or commit message passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if m.re == reSessionUUID && o.InFile && isSyntheticFixtureUUID(s[loc[0]:loc[1]]) {",
+      "new": "if m.re == reSessionUUID && isSyntheticFixtureUUID(s[loc[0]:loc[1]]) {"
+    },
+    {
+      "name": "#2217 — the synthetic-fixture exemption silences every arm of the loop, not only the session-id arm (an agent id beside a fixture id passes)",
+      "file": "internal/deskkit/selfcontain.go",
+      "old": "if m.re == reSessionUUID && o.InFile && isSyntheticFixtureUUID(s[loc[0]:loc[1]]) {",
+      "new": "if o.InFile && strings.Contains(s, syntheticFixtureUUIDHead) {"
+    },
+    {
+      "name": "#2217 — give a file write's COMMIT MESSAGE the synthetic-fixture exemption (the Forge file-write seam's message field passes)",
+      "file": "internal/deskkit/outbound.go",
+      "old": "opts.InFile = fd.Name != OutboundFieldCommitMessage",
+      "new": "opts.InFile = true"
+    },
+    {
+      "name": "#2217 — never set InFile (the exemption is dead: every synthetic fixture id in a file is refused again)",
+      "file": "internal/deskkit/outbound.go",
+      "old": "opts.InFile = fd.Name != OutboundFieldCommitMessage",
+      "new": "opts.InFile = false"
+    },
+    {
+      "name": "GitHub ReadFile reads a link to a file as a regular file (the Contents API serves it as the target's bytes under the target's path) — S-2266-7",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\t\tif strings.Trim(w.Path, \"/\") != strings.Trim(file, \"/\") {",
+      "new": "\t\tif false && strings.Trim(w.Path, \"/\") != strings.Trim(file, \"/\") {"
+    },
+    {
+      "name": "GitHub ReadFile reads a link served as itself as a regular file (a dangling link's empty content becomes an empty record) — S-2266-7",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\tcase \"symlink\":\n\t\treturn FileKindSymlink",
+      "new": "\tcase \"symlink\":\n\t\treturn FileKindRegular"
+    },
+    {
+      "name": "GitHub ReadFile reads a link to a file as a regular file when its served bytes do not hash to the served sha (the live shape: the requested path, the link's blob sha, the target's bytes) — C-2266-6",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\t\tif w.Encoding != \"base64\" || !gitBlobMatches(w.SHA, content) {",
+      "new": "\t\tif w.Encoding != \"base64\" {"
+    },
+    {
+      "name": "GitHub ReadFile reads a file served without proof of its encoding as a regular file (a large file arrives with encoding none and an empty body) — S-2266-8",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\t\tif w.Encoding != \"base64\" || !gitBlobMatches(w.SHA, content) {",
+      "new": "\t\tif !gitBlobMatches(w.SHA, content) {"
+    },
+    {
+      "name": "git blob hash accepts a served sha that is not an object id of either length — S-2266-8",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\tdefault:\n\t\treturn false\n\t}\n\treturn strings.EqualFold(hex.EncodeToString(sum), sha)",
+      "new": "\tdefault:\n\t\treturn true\n\t}\n\treturn strings.EqualFold(hex.EncodeToString(sum), sha)"
+    },
+    {
+      "name": "GitHub WriteFile writes over a prior entry it cannot show to be a plain file (a file served without its content becomes an empty base for the idempotency and shrink checks) — S-2266-8",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "\t\tif cur.Kind != FileKindRegular {\n\t\t\theld := cur.Kind",
+      "new": "\t\tif false && cur.Kind != FileKindRegular {\n\t\t\theld := cur.Kind"
+    },
+    {
+      "name": "#2794: return the GitHub blob as the commit receipt",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "res.CommitSHA = CommitSHA(w.Commit.SHA)",
+      "new": "res.CommitSHA = CommitSHA(w.Content.SHA)"
+    },
+    {
+      "name": "#2794: infer the GitLab receipt from the prior file commit",
+      "file": "internal/deskkit/forge_gitlab.go",
+      "old": "res.CommitSHA = CommitSHA(commit.ID)",
+      "new": "res.CommitSHA = CommitSHA(priorSHA)"
+    },
+    {
+      "name": "#2794: fabricate a commit on an unchanged GitHub file",
+      "file": "internal/deskkit/forge_github.go",
+      "old": "res.ContentID = ContentID(priorSHA)\n\t\treturn res, nil",
+      "new": "res.ContentID = ContentID(priorSHA)\n\t\tres.CommitSHA = CommitSHA(priorSHA)\n\t\treturn res, nil"
+    },
+    {
+      "name": "#2794: drop the GitLab action file precondition",
+      "file": "internal/deskkit/forge_gitlab.go",
+      "old": "entry.LastCommitID = gitlab.Ptr(priorSHA)",
+      "new": "entry.LastCommitID = nil"
+    },
+    {
+      "name": "#2794: retry a rejected GitLab file update",
+      "file": "internal/deskkit/forge_gitlab.go",
+      "old": "return nil, g.mapErr(http.MethodPost, fmt.Sprintf(\"/projects/%s/repository/commits\", proj), cerr)",
+      "new": "_, _, _ = cl.Commits.CreateCommit(repo.Slug(), opt)\n\t\treturn nil, g.mapErr(http.MethodPost, fmt.Sprintf(\"/projects/%s/repository/commits\", proj), cerr)"
     }
   ],
   "_not_mutated": {
-    "coveredBy full-containment": "Weakening coveredBy to accept PARTIAL overlap (lo >= sp.lo && lo < sp.hi) was tried and is NOT CATCHABLE by any test, so it is deliberately absent rather than left surviving in the report. The reason is structural: reBase64ish's charset excludes newline, and every structured span this file computes either ends at a line boundary (a go.sum digest, the sops metadata block) or is delimited by a character outside the charset (the comma after an ENC payload, the quote after an SRI payload). So no run can begin inside an exempt span and continue past its end, and the two spellings are equivalent on every input the scan can be handed. The strict form is kept because it is the correct statement of intent for a future format whose fields are not line-delimited; a mutation report claiming it is unguarded would be noise, and a surviving mutant nobody can act on trains readers to ignore the report."
+    "coveredBy full-containment": "Weakening coveredBy to accept PARTIAL overlap (lo >= sp.lo && lo < sp.hi) was tried and is NOT CATCHABLE by any test, so it is deliberately absent rather than left surviving in the report. The reason is structural: reBase64ish's charset excludes newline, and every structured span this file computes either ends at a line boundary (a go.sum digest, the sops metadata block) or is delimited by a character outside the charset (the comma after an ENC payload, the quote after an SRI payload). So no run can begin inside an exempt span and continue past its end, and the two spellings are equivalent on every input the scan can be handed. The strict form is kept because it is the correct statement of intent for a future format whose fields are not line-delimited; a mutation report claiming it is unguarded would be noise, and a surviving mutant nobody can act on trains readers to ignore the report.",
+    "#2022 equivalent conditions": "Four conditions of the brief-id exemption have no mutant here because deleting each is EQUIVALENT: no input reaches a different verdict. (1) `source == \"\"` in briefIDExemptLine: an empty source splits to one empty line, which fails the first-line fence test, so the result is 0 either way. (2) `len(src) < 3`: a source with fewer than three lines cannot hold an opening fence, a line between and a closing fence, so the closing-fence search or the key count returns 0 either way. (3) the `closeAt < 0` early return: with no closing fence the key loop `for i := 1; i < closeAt` runs zero times, so idx stays -1 and the result is 0 either way (the mutant that DOES widen this, an unterminated frontmatter running to end of file, is in the list). (4) the push path's `rerr == nil` guard on reading the head blob: a failed read returns an empty string, which is case (1). Each is kept as the explicit statement of the fail-closed intent; the missing-source and unterminated cases are still pinned by TestBriefIDOutsideShapeRefused."
   }
 }

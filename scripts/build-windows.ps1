@@ -54,7 +54,8 @@
     pwsh -File scripts/build-windows.ps1 -ListTargets
 
   Targets (mirrored from the Unix Makefile):
-    desk-build         local unprivileged build of every tools/desk/cmd/* into
+    build-all     Compile every tracked Go module, then build every desk executable.
+  desk-build         local unprivileged build of every tools/desk/cmd/* into
                        tools/desk/dist/ (as <name>.exe). Succeeds with zero cmds.
     desk-install       build (desk-build), then install the built .exe binaries
                        into the per-user install dir (default
@@ -119,6 +120,7 @@ Set-StrictMode -Version Latest
 # the single declared Windows target set; tools/winparity diffs it against the
 # Makefile's `.PHONY` line and reddens on any difference. Keep the two in step.
 $MakefileParityTargets = @(
+    'build-all'
     'desk-build'
     'desk-install'
     'desk-manifest'
@@ -137,8 +139,6 @@ $RepoRoot   = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $DeskDir    = Join-Path $RepoRoot 'tools\desk'
 $DistDir    = Join-Path $DeskDir  'dist'
 $Manifest   = Join-Path $DeskDir  'MANIFEST.sha256'
-$HookSrc    = Join-Path $DeskDir  'hooks\pre-push'
-$HookDst    = Join-Path $RepoRoot '.githooks\pre-push'
 $DeskModule = 'github.com/medici-finance/assay/tools/desk'
 $DeskPkg    = "$DeskModule/internal/deskkit"
 
@@ -293,6 +293,19 @@ function Invoke-Go {
     }
 }
 
+function Target-BuildAll {
+    $modules = @(& git -C $RepoRoot ls-files -- '*go.mod')
+    if ($LASTEXITCODE -ne 0 -or $modules.Count -eq 0) {
+        throw 'build-all: cannot discover tracked Go modules'
+    }
+    foreach ($module in $modules) {
+        $moduleDir = Split-Path -Parent (Join-Path $RepoRoot $module)
+        Write-Host "build-all: $module"
+        Invoke-Go -WorkDir $moduleDir -GoArgs @('build', './...')
+    }
+    Target-DeskBuild
+}
+
 function Target-DeskBuild {
     New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
     $cmds = Get-DeskCmds
@@ -362,45 +375,16 @@ function Target-DeskManifest {
 }
 
 function Target-DeskHookInstall {
-    # Prefer the just-built deskpushguard's OWN `hook-install` subcommand: it resolves
-    # the guard binary from PATH at hook run time (no baked-in install-location
-    # literal) and writes BOTH pre-push (for Git for Windows' bundled sh.exe) and the
-    # native pre-push.cmd pair -- see windows-port/12, which closed the portability
-    # audit's "Push-guard shim" needs-port row this function used to carry (a verbatim
-    # copy of a POSIX shim that had no Windows-runnable form at all). Falls back to the
-    # old verbatim-copy behaviour only when no built deskpushguard.exe is available.
+    # One owner for hook recognition, migration, pairing and explicit -Force.
+    # desk-install builds first; a standalone call must do the same.
     $guard = Join-Path $DistDir 'deskpushguard.exe'
-    if (Test-Path $guard) {
-        $hookArgs = @('hook-install', '--dir', (Join-Path $RepoRoot '.githooks'))
-        if ($Force) { $hookArgs += '--force' }
-        & $guard @hookArgs
-        if ($LASTEXITCODE -ne 0) { throw "desk-hook-install: deskpushguard hook-install failed (exit $LASTEXITCODE)" }
-        return
+    if (-not (Test-Path $guard)) {
+        throw "desk-hook-install: $guard missing -- run desk-build first"
     }
-    Write-Host "desk-hook-install: $guard not built yet -- falling back to the static shim copy (run desk-build first for the PATH-resolving shim)"
-    if (-not (Test-Path $HookSrc)) {
-        Write-Host "desk-hook-install: $HookSrc not found -- nothing to install (ok)"
-        return
-    }
-    if (Test-Path $HookDst) {
-        if (Select-String -Path $HookDst -Pattern 'deskpushguard' -Quiet) {
-            Write-Host "desk-hook-install: pre-push hook already installed (idempotent skip)"
-            return
-        }
-        $oldName = (Get-Content -Path $HookDst -TotalCount 1)
-        if ($Force) {
-            Write-Host "desk-hook-install: -Force: overwriting existing non-deskpushguard pre-push hook: $oldName"
-        } else {
-            Write-Host "desk-hook-install: refusing to clobber existing non-deskpushguard pre-push hook: $oldName"
-            Write-Host "  Use -Force to overwrite, e.g.: pwsh -File scripts/build-windows.ps1 desk-hook-install -Force"
-            throw "desk-hook-install: existing foreign pre-push hook"
-        }
-    }
-    New-Item -ItemType Directory -Force -Path (Split-Path $HookDst) | Out-Null
-    # Copy the shim verbatim, exactly as the Makefile's own fallback does -- this
-    # fallback path only runs when deskpushguard has not been built yet.
-    Copy-Item -Force -Path $HookSrc -Destination $HookDst
-    Write-Host "desk-hook-install: installed pre-push hook (deskpushguard)"
+    $hookArgs = @('hook-install', '--dir', (Join-Path $RepoRoot '.githooks'))
+    if ($Force) { $hookArgs += '--force' }
+    & $guard @hookArgs
+    if ($LASTEXITCODE -ne 0) { throw "desk-hook-install: deskpushguard hook-install failed (exit $LASTEXITCODE)" }
 }
 
 function Target-DeskTest {
@@ -439,6 +423,7 @@ function Assert-MakefileParity {
 }
 
 $Dispatch = @{
+    'build-all'         = ${function:Target-BuildAll}
     'desk-build'        = ${function:Target-DeskBuild}
     'desk-install'      = ${function:Target-DeskInstall}
     'desk-manifest'     = ${function:Target-DeskManifest}

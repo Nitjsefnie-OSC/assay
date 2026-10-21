@@ -133,7 +133,7 @@ func lint(root string) (string, int) {
 // exclusivity violation (§9: more than one ACTIVE provider of an exclusive
 // key) is a PROBLEM, and that is checked regardless of showActivation.
 func lintReport(root string, showActivation bool) (string, int) {
-	paths, err := discover(root)
+	paths, nested, err := discover(root)
 	if err != nil {
 		// The lint could not run at all — three-state could-not-check, never
 		// rounded to clean and never to a problem it did not observe.
@@ -166,11 +166,29 @@ func lintReport(root string, showActivation bool) (string, int) {
 	if exErr != nil {
 		return fmt.Sprintf("could-not-check: %v\n", exErr), exitCouldNotCheck
 	}
-	state := computeActivation(root, manifests, providers)
+	bindings, bindErr := loadBindings(root, providers, exclusiveKeys)
+	if bindErr != nil {
+		return fmt.Sprintf("could-not-check: %v\n", bindErr), exitCouldNotCheck
+	}
+	state := computeActivation(root, manifests, providers, bindings)
+	for key, selected := range bindings {
+		if st := state[selected]; st == nil || !st.active {
+			reason := "not discovered"
+			if st != nil {
+				reason = st.reason
+			}
+			problems = append(problems, fmt.Sprintf("binding %s selected provider %s is INACTIVE: %s", key, selected, reason))
+		}
+	}
 	problems = append(problems, checkExclusive(providers, state, exclusiveKeys)...)
 
 	sort.Strings(problems)
 	var b strings.Builder
+	// A nested checkout that was not inspected is named, so a clean verdict
+	// never hides what it did not read. Informational: it changes no exit code.
+	for _, n := range nested {
+		fmt.Fprintf(&b, "SKIPPED: %s: nested checkout (carries .git), not this tree\n", n)
+	}
 	for _, p := range problems {
 		fmt.Fprintf(&b, "PROBLEM: %s\n", p)
 	}
@@ -201,15 +219,16 @@ func lintReport(root string, showActivation bool) (string, int) {
 
 // discover walks root for files named component.yaml, skipping .git. A missing
 // or unreadable root returns an error → the caller reports could-not-check.
-func discover(root string) ([]string, error) {
+// nested lists, root-relative and slash-separated, each directory below root
+// that was skipped whole because it carries its own .git entry.
+func discover(root string) (out, nested []string, err error) {
 	info, err := statRoot(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("root %s is not a directory", root)
+		return nil, nil, fmt.Errorf("root %s is not a directory", root)
 	}
-	var out []string
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -217,6 +236,20 @@ func discover(root string) ([]string, error) {
 		if d.IsDir() {
 			if d.Name() == ".git" {
 				return filepath.SkipDir
+			}
+			// A directory below root carrying its own .git entry (a nested
+			// clone, a linked worktree, a submodule) is another checkout:
+			// its manifests are not this tree's. The same rule as
+			// deskkit.DiscoverManifests, so lint and activation read one set.
+			if path != root {
+				if _, gerr := os.Lstat(filepath.Join(path, ".git")); gerr == nil {
+					rel, rerr := filepath.Rel(root, path)
+					if rerr != nil {
+						rel = path
+					}
+					nested = append(nested, filepath.ToSlash(rel))
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}
@@ -226,10 +259,11 @@ func discover(root string) ([]string, error) {
 		return nil
 	})
 	if walkErr != nil {
-		return nil, fmt.Errorf("could not walk %s: %w", root, walkErr)
+		return nil, nil, fmt.Errorf("could not walk %s: %w", root, walkErr)
 	}
 	sort.Strings(out)
-	return out, nil
+	sort.Strings(nested)
+	return out, nested, nil
 }
 
 // parseManifest reads and validates one component.yaml against §2's required
@@ -363,7 +397,7 @@ type activationState struct {
 // marker exists under root — this is how the harness adapters answer "the
 // presence of exactly one adapter's installed shape selects the binding"
 // (§9) before there is a record to consult.
-func computeActivation(root string, ms []*manifest, providers map[string][]provider) map[string]*activationState {
+func computeActivation(root string, ms []*manifest, providers map[string][]provider, bindings map[string]string) map[string]*activationState {
 	state := make(map[string]*activationState, len(ms))
 	for _, m := range ms {
 		state[m.Component] = &activationState{active: true}
@@ -375,6 +409,15 @@ func computeActivation(root string, ms []*manifest, providers map[string][]provi
 			}
 			if !fileExists(filepath.Join(root, pe.Evidence)) {
 				state[m.Component] = &activationState{active: false, reason: fmt.Sprintf("installed-shape marker %s absent", pe.Evidence)}
+			}
+		}
+	}
+	// Selection can deactivate a competing provider; it can never activate one
+	// whose evidence or required dependencies are absent.
+	for key, selected := range bindings {
+		for _, p := range providers[key] {
+			if p.component != selected {
+				state[p.component] = &activationState{active: false, reason: fmt.Sprintf("declaration binding %s selects %s", key, selected)}
 			}
 		}
 	}

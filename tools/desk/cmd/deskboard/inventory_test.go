@@ -50,15 +50,15 @@ import (
 // ---------------------------------------------------------------------------
 
 // actionConstsFromSource returns every ACTION verb string the classifier defines, read
-// from board.go's `act*` const block. Parsed rather than hand-listed for the reason the
+// from reviewflow/classify.go's `Act*` const block. Parsed rather than hand-listed for the reason the
 // whole cluster exists: a hand-kept second copy of a list drifts, and the drift is
 // invisible — a new action would simply never be asserted about.
 func actionConstsFromSource(t *testing.T) map[string]string {
 	t.Helper()
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "board.go", nil, 0)
+	f, err := parser.ParseFile(fset, "../../internal/reviewflow/classify.go", nil, 0)
 	if err != nil {
-		t.Fatalf("parsing board.go: %v", err)
+		t.Fatalf("parsing classify.go: %v", err)
 	}
 	out := map[string]string{}
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -67,7 +67,7 @@ func actionConstsFromSource(t *testing.T) map[string]string {
 			return true
 		}
 		name := vs.Names[0].Name
-		if !strings.HasPrefix(name, "act") {
+		if !strings.HasPrefix(name, "Act") {
 			return true
 		}
 		lit, ok := vs.Values[0].(*ast.BasicLit)
@@ -82,7 +82,7 @@ func actionConstsFromSource(t *testing.T) map[string]string {
 		return true
 	})
 	if len(out) == 0 {
-		t.Fatal("no act* constants found in board.go — the inventory would assert nothing " +
+		t.Fatal("no Act* constants found in reviewflow/classify.go — the inventory would assert nothing " +
 			"(this is the vacuous-pass the test exists to prevent)")
 	}
 	return out
@@ -362,8 +362,8 @@ var reviewFixtures = map[string]reviewState{
 	// forgery — the classifier must read it as EXTERNAL-PREREQ-REVIEW, never SUSPECT-APPROVAL.
 	"external-prereq-review": {ever: true, atHead: true, blocking: true, suspectNoOp: true, externalPrereqDeclared: true},
 	"approved":               {ever: true, atHead: true, approved: true},
-	"approved-secpass":      {ever: true, atHead: true, approved: true, securityPass: true},
-	"approved-no-secpass":   {ever: true, atHead: true, approved: true, securityPass: false},
+	"approved-secpass":       {ever: true, atHead: true, approved: true, securityPass: true},
+	"approved-no-secpass":    {ever: true, atHead: true, approved: true, securityPass: false},
 }
 
 // expectedAction is the per-fixture expected-action table (#400 Q4), written from the
@@ -377,7 +377,7 @@ var reviewFixtures = map[string]reviewState{
 // It is a second implementation on purpose. If a classifier arm is added or reordered,
 // this must be edited to match — that edit IS the review of the change.
 func expectedAction(rf rollupFixture, mv mergeVerdict, rs reviewState,
-	draft, ciRequired, humanGate, ownFilesChanged, riskClassed, authorTrustedHuman bool, zeroCI string) string {
+	draft, ciRequired, humanGate, ownFilesChanged, riskClassed bool, zeroCI string) string {
 
 	// The tallies and the CI verdict, derived ONLY from the declared fixture. #1652:
 	// a genuine zero rollup's green depends on WHAT the probe found, not just on
@@ -400,12 +400,8 @@ func expectedAction(rf rollupFixture, mv mergeVerdict, rs reviewState,
 
 	switch {
 	case !rs.ever:
-		// #177: a trusted human maintainer's OWN un-reviewed PR is HUMAN-OWNED, not
-		// desk-review neglect. Every other author (App, shared machine account,
-		// untrusted) stays NEEDS-REVIEW.
-		if authorTrustedHuman {
-			return actHumanOwned
-		}
+		// #2028: every author the trust gate admits is reviewed alike — no
+		// authorship arm (the retired #177 HUMAN-OWNED exemption).
 		return actNeedsReview
 	case !rs.atHead:
 		if !ownFilesChanged {
@@ -443,7 +439,8 @@ func expectedAction(rf rollupFixture, mv mergeVerdict, rs reviewState,
 		}
 		return actCIUnverified
 	case rs.approved && ciGreen && !blocked:
-		if draft && riskClassed && !rs.securityPass {
+		// #2158: draft OR ready — no draft-only exemption.
+		if riskClassed && !rs.securityPass {
 			return actSecReview
 		}
 		if humanGate {
@@ -616,15 +613,15 @@ func TestReduceReviews_AbsentShasAreNeverAtHead(t *testing.T) {
 // more. Unreachability is only worth asserting about an arm that still fails loud, so the
 // arm's identity is pinned at the source level, where a swapped return is visible.
 func TestClassify_GuardArmIsStillTheGuardArm(t *testing.T) {
-	src, err := os.ReadFile("board.go")
+	src, err := os.ReadFile("../../internal/reviewflow/classify.go")
 	if err != nil {
-		t.Fatalf("reading board.go: %v", err)
+		t.Fatalf("reading classify.go: %v", err)
 	}
 	body := string(src)
-	const arm = "\tcase in.approvedAtHead:\n"
+	const arm = "\tcase in.ApprovedAtHead:\n"
 	i := strings.Index(body, arm)
 	if i < 0 {
-		t.Fatal("the `case in.approvedAtHead:` guard arm is GONE from classify — #400 R2's fail-loud " +
+		t.Fatal("the `case in.ApprovedAtHead:` guard arm is GONE from classify — #400 R2's fail-loud " +
 			"backstop is what makes the unreachability claim meaningful; removing it makes a later " +
 			"routing change silent again")
 	}
@@ -637,16 +634,16 @@ func TestClassify_GuardArmIsStillTheGuardArm(t *testing.T) {
 		t.Fatal("could not find the end of the guard arm in classify")
 	}
 	armSrc := rest[:end]
-	if !strings.Contains(armSrc, "guardArmMarker") {
+	if !strings.Contains(armSrc, "GuardArmMarker") {
 		t.Errorf("the guard arm no longer returns guardArmMarker — the tripwire that asserts it is "+
 			"unreachable keys on that constant, so an arm that says anything else is a tripwire that "+
 			"deleted itself (N6). Arm source:\n%s", armSrc)
 	}
-	if !strings.Contains(armSrc, "actCheck") {
+	if !strings.Contains(armSrc, "ActCheck") {
 		t.Errorf("the guard arm must return actCheck — a reachable-but-unexplained row is an "+
 			"instruction to inspect, never a verdict. Arm source:\n%s", armSrc)
 	}
-	for _, forbidden := range []string{"actFlip", "actMergeNow", "CI green"} {
+	for _, forbidden := range []string{"ActFlip", "ActMergeNow", "CI green"} {
 		if strings.Contains(armSrc, forbidden) {
 			t.Errorf("the guard arm mentions %q — it exists to say the board has NO verdict for the row; "+
 				"a friendly verdict here is the #400 R2 defect restored. Arm source:\n%s", forbidden, armSrc)
@@ -655,9 +652,20 @@ func TestClassify_GuardArmIsStillTheGuardArm(t *testing.T) {
 	// And the phrase is the guard arm's alone: written out a second time anywhere in the
 	// package, the inventory's "nothing reached the guard arm" check could fire on an
 	// innocent row, or (worse) be satisfied by a note the guard arm no longer emits.
-	srcs, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("globbing package sources: %v", err)
+	// The scan covers BOTH homes: the command package (where the classifier used to live and
+	// where a copied phrase would still feed the inventory's notes) and the extracted
+	// reviewflow package, which owns the single const declaration.
+	const owner = "../../internal/reviewflow/classify.go"
+	var srcs []string
+	for _, pattern := range []string{"*.go", "../../internal/reviewflow/*.go"} {
+		m, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("globbing package sources %s: %v", pattern, err)
+		}
+		if len(m) == 0 {
+			t.Fatalf("glob %s matched no files — the scan would pass vacuously", pattern)
+		}
+		srcs = append(srcs, m...)
 	}
 	for _, f := range srcs {
 		if strings.HasSuffix(f, "_test.go") {
@@ -668,7 +676,7 @@ func TestClassify_GuardArmIsStillTheGuardArm(t *testing.T) {
 			t.Fatalf("reading %s: %v", f, err)
 		}
 		want := 0
-		if f == "board.go" {
+		if f == owner {
 			want = 1 // the const declaration; the arm references the identifier
 		}
 		if n := strings.Count(string(b), guardArmMarker); n != want {
@@ -692,14 +700,13 @@ func TestClassify_ActionInventory(t *testing.T) {
 				for _, draft := range []bool{true, false} {
 					for _, ciRequired := range []bool{true, false} {
 						for _, humanGate := range []bool{true, false} {
-							// #177: the AUTHOR is a classifier dimension too. `shared-agent`
-							// is a shared machine account (∈ ASSAY_TRUSTED_LOGINS but not an
-							// accountable human) — its un-reviewed PR stays NEEDS-REVIEW.
-							// `ada` is the mapped/bless accountable human — its un-reviewed PR
-							// is HUMAN-OWNED. Both must be produced, or Direction 2 below
-							// would report actHumanOwned as an arm no payload can reach.
+							// #2028: the AUTHOR is deliberately NOT a classifier dimension.
+							// `shared-agent` (a trusted shared machine account) and `ada` (the
+							// mapped/bless accountable human) are both enumerated and both must
+							// land on the SAME expected action — expectedAction never sees the
+							// author, so an arm that routes either one differently (the retired
+							// #177 HUMAN-OWNED shape) fails this row by row.
 							for _, author := range []string{"shared-agent", "ada"} {
-								authorTrustedHuman := deskkit.TrustedHumanAuthor(author)
 								title := "t"
 								if humanGate {
 									title = "[HUMAN GATE] t"
@@ -771,7 +778,7 @@ func TestClassify_ActionInventory(t *testing.T) {
 											// requires each action to be produced by SOME row; this binds THIS
 											// row's outcome, which is what Q1 and Q2 escaped through.
 											if want := expectedAction(rf, wantVerdict, rs, draft, ciRequired,
-												humanGate, ownFilesChanged, riskClassed, authorTrustedHuman, zeroCI); action != want {
+												humanGate, ownFilesChanged, riskClassed, zeroCI); action != want {
 												t.Fatalf("%s ownFilesChanged=%v riskClassed=%v author=%s: classify = %s, want %s\nnote: %s",
 													desc, ownFilesChanged, riskClassed, author, action, want, note)
 											}
@@ -824,7 +831,7 @@ func TestClassify_ActionInventory(t *testing.T) {
 	}
 	for action, desc := range produced {
 		if !known[action] {
-			t.Errorf("classify produced ACTION %q, which is not one of board.go's act* constants (from %s)", action, desc)
+			t.Errorf("classify produced ACTION %q, which is not one of reviewflow/classify.go's Act* constants (from %s)", action, desc)
 		}
 	}
 

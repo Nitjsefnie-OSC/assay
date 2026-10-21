@@ -37,14 +37,22 @@ fires within one observer interval instead of relying on a worker to remember it
 > Bindings for your harness — which mechanism each `capability:*` names — are in
 > `../../references/<harness>.md`.
 
-> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, and role/repo coverage — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, role/repo coverage, and running a `gh` call as the role App (never a human's CLI login: [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role)) — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+
+> **Every `gh` call carries this role's `GH_TOKEN`, reads included.** When no desk verb covers a forge call, run it only through the recipe in [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role), never a hand-typed shortcut. That recipe takes the role from `$DESK_LOOP`, mints it with `desktoken`, scopes the token to that one command without exporting it, and stops before `gh` unless the mint exited 0 and the token file holds a non-whitespace token. A bare `gh` call runs as the host's stored login, which is usually a human's, so a desk never runs one, not even for a read.
+
+> Disposable task output follows [desk-shell.md §Managed task scratch](../../references/desk-shell.md#managed-task-scratch). Use inherited owned scratch, complete canonical evidence handoff before acknowledgment, and let the runtime reclaim it. A delegated agent must never acknowledge its parent’s scratch.
+
 
 > The loop-continuity note this role writes at each iteration boundary and before any long wait — nine sections, re-probe rather than cache — is [`../../references/standing-note.md`](../../references/standing-note.md).
+
+> Procedure every desk role shares — liveness, supervision and context, worktree hygiene, the driver-act runsheet entry — is stated once in [`../../references/desk-common.md`](../../references/desk-common.md); read it at boot. Hard gates never move there: they stay resident in this body.
 
 ## Boot
 
 `deskboot worker-desk` — loop identity, `deskwt prune`, worktree lock, roster register, roster
-preflight, worker-App token mint, read-only board fetch. The first red step stops the boot and names
+preflight, worker-App token mint, read-only board fetch, worktree currency, first-sweep prerequisites
+(roster forge mapping, desk-tools pin). The first red step stops the boot and names
 itself; it refuses to boot in the shared checkout. Two residues it does not carry: `export
 KUBECONFIG=/dev/null` (the environment half of the offline envelope; every dispatched agent
 gets the same rule from the common-clauses kit) and inline `-c` commit identity per commit
@@ -141,16 +149,24 @@ empty. Repos and roots come from §THE REPO SET, never a pasted list.
 
 | # | Source | The instrument that reads it |
 |---|---|---|
-| 1 | Board rows the board SHOWS, per root (the span-capped Next-up selection) | `git -C <root> fetch origin && fanoutloop plan --root <root>` |
-| 2 | Rows **held back** by the 4-per-stream cap or the span cap | `deskboard dispatch` — it reports the held-back decomposition (N by per-stream caps, M by span) plus per-root claim degradation, so an EMPTY queue is distinguishable from a THROTTLED one |
+| 1 | Board rows the board SHOWS, per root (the span-capped Next-up selection) | `(cd "$root" && deskgit fetch --as worker) && fanoutloop plan --root "$root"` (absolute configured root; desk-shell §Authenticated transport) |
+| 2 | Rows **held back** by the 4-per-stream cap, the span cap, or the drive worker floor | `deskboard dispatch` — it reports the held-back decomposition (N by per-stream caps, M by span, K by the drive worker floor) plus per-root claim degradation, so an EMPTY queue is distinguishable from a THROTTLED one |
 | 3 | Orphan PRs owing a worker action, `CONFLICTING` PRs, red checks | the per-slug PR + disposition reads in [`references/dispatch-runbook.md`](references/dispatch-runbook.md) §The tick sweep, with the disposition read FIRST |
-| 4 | Stale drafts (reviewer verdict `CHANGES_REQUESTED` at head, author silent) | `deskboard stalled [--min-age-hours N]` — the purpose-built detector; its disposition column is advisory (shepherd / close-candidate) |
+| 4 | Stale drafts (reviewer verdict `CHANGES_REQUESTED` at head, author silent) | `deskboard stalled [--min-age-hours N]` — the purpose-built detector; its disposition column is advisory (shepherd / close-candidate / reconcile) |
 | 5 | `Awaiting implementer rework` board rows | `fanoutloop plan --root <root>` (desk-supervision/05: read per root from `refs/remotes/origin/main:STATUS.md`, the SAME offline ref read row 1 uses — no separate sweep) |
 | 5b | **Durable repair obligations** — a failed/blocked verification's actionable, still-unresolved obligation (desk-supervision/17) | `fanoutloop plan --root <root>` reads the reconciled obligations across the configured roots' `docs/streams/repair-obligations.jsonl` and surfaces the ASSIGNABLE ones (actionable, unresolved, awaiting-assignment or dead-lease) in the SAME rework lane as row 5. The item's ID is the IMMUTABLE obligation key, so a replacement worker resumes the SAME obligation after a dead lease — never a duplicate |
-| 6 | Un-briefed trusted work-ready issues (§Un-briefed issues) | `issueboard issues` — fail-closed |
+| 6 | Un-briefed trusted work-ready issues (§Un-briefed issues) | `issueboard issues --projection work-ready` — fail-closed |
 | 7 | A red default branch on a watched repo | `deskboard health` — three-state (green / RED / COULD-NOT-CHECK) |
 | 8 | Cross-root coverage: a board root that no sweep reaches, or a scanned repo with no board | the BOARD ROOTS ∪ SCAN REPOS symmetric difference printed at boot (§THE REPO SET) |
 | 9 | Queue **suppressors** — expired `refs/heads/dispatch/*` claims and dead branch-claims from merged/closed PRs | `desksupervise status --stops` (the liveness observer's runtime snapshot: per-claim liveness, timers-to-fire, and which stops are armed — the one structured read the sweep uses instead of guessing); the raw `git ls-remote origin 'refs/heads/dispatch/*'` + the claim tool's `list`/`show` verbs (`deskclaim-ref`, installed with desk-tools; a repo that ships its own `tools/dispatch-claim.sh` uses that instead) stay as the fallback — run BOTH, since the tool lists the `refs/dispatch/*` namespace it acquires in while that `ls-remote` pattern lists the `refs/heads/dispatch/*` branch refs the Go claim readers use |
+
+A `reconcile` disposition means the owning brief is withdrawn, not that the PR is
+finished. Route it to `pr-shepherd` for the withdrawn-brief reconciliation step before
+ordinary CI repair. Supply the current brief/withdrawal context, successor links and PR
+head; retain claim ownership checks. Never restore an obsolete plan just to green its
+branch, or auto-close its PR. Before a board amendment retires scope, use
+`statusgen withdrawal-audit` with an open-PR snapshot to discover these cases while the
+PRs are still fresh (the stalled detector deliberately sees only the aged subset).
 
 **Rows 5, 5b and 3 outrank row 1** — resuming started work outranks a fresh brief (mm/10) — and row 2 is
 what tells you whether row 1's zero means drained or throttled.
@@ -207,8 +223,13 @@ This is enforced in two INDEPENDENT layers that fail on different signals in dif
 neither is the single point of failure: the skill clause here, AND — should a desk skip the clause —
 `deskfile new`, which **REFUSES (exit 5)** any filing labelled `needs-decision`, `help wanted` or
 `question` whose body has no `### Evidence` heading followed by a fenced block, naming the missing
-section. `human-only` is not in that set (it is an ACT, not a claim); `attach` observations are not
-claims and are unaffected; and the refusal takes the same audited `--force-new --reason` every deskfile
+section. `human-only` is not in that set (it is an ACT, not a claim). A `BLOCKED-ON-HUMAN` report is
+still a blocker claim, so it carries BOTH the `### Evidence` section above AND the act itself, as the
+runnable **Act block** `ask-decision` §"Act — the shape of the fifth part" defines. `deskfile new`
+refuses (exit 5) a filing with no ` ```sh ` or ` ```url ` fence when it is labelled `human-only` or its
+body's first non-blank line opens with `BLOCKED-ON-HUMAN`; a marker in the title or after an opening
+paragraph is not caught, and there the Act block rests on this clause alone. `attach`
+observations are not claims and are unaffected; and the refusal takes the same audited `--force-new --reason` every deskfile
 refusal does, for a blocker whose evidence genuinely cannot be produced.
 
 ## THE REPO SET — derived once, consumed by every sweep
@@ -220,7 +241,7 @@ direction is visible from inside the file.
 
 | set | what it is | derived from |
 |---|---|---|
-| **BOARD ROOTS** | local checkouts carrying `docs/streams` — the dispatch queue | `deskroster repos --scope topology` rows carrying `root=`, **unioned** with a live `docs/streams` test over the siblings |
+| **BOARD ROOTS** | local checkouts carrying `docs/streams` — the dispatch queue | `deskroster repos --scope roots` rows carrying `root=`, **unioned** with a live `docs/streams` test over the siblings |
 | **SCAN REPOS** | `owner/repo` slugs swept for orphan PRs and un-briefed issues | `deskroster repos --scope scan` (`ASSAY_SCAN_REPOS`) |
 
 SCAN REPOS is deliberately wider (repos the desk fronts that carry no `docs/streams`); BOARD ROOTS is
@@ -232,7 +253,7 @@ The derivation itself — the `deskroster` read, the `docs/streams` + `--git-dir
 slug-keyed union — is [`references/dispatch-runbook.md`](references/dispatch-runbook.md) §Deriving THE
 REPO SET. Two rules from it bind here: **key on the repo slug, not the path**, and **a root in exactly
 one of the two lists is named in the report either way, never dropped** (declared-but-absent =
-could-not-check; observed-but-undeclared = a `topology.yaml` gap — dispatch it this cycle and file the
+could-not-check; observed-but-undeclared = a configured-root declaration gap — dispatch it this cycle and file the
 gap). A hard-coded list is the board-blind bug this replaces: written from one checkout it silently
 skips the largest board when the session is homed in another, and says nothing.
 
@@ -253,7 +274,7 @@ unreadable root in as an empty one.
   root from `refs/remotes/origin/main:STATUS.md` after fetching it — never regenerate in a sibling
   (`--root ../X` **writes**, and `../X` is the shared clone other sessions use). Spell the ref in full
   (bare `origin/main` resolves to a stray local branch of that name where one exists), chain
-  `git fetch origin && …` so a failed fetch short-circuits instead of printing a stale board at rc=0,
+  the authenticated fetch to the read with `&&` so a failed fetch short-circuits instead of printing a stale board at rc=0,
   and fetch **every** root.
 - **Row count is not eligible count** — the 4-per-stream cap holds rows back without tripping the
   overflow line, and no verb surfaces the held rows themselves. `deskboard dispatch` is the reading
@@ -269,49 +290,59 @@ unreadable root in as an empty one.
   root count when every stream identity is unique (one STATUS.md per root, exit 0) and never merges
   boards, so N roots buys generation convenience, not coverage. Where two or more roots declare a
   stream of the same name the collision is **quarantined per root**: the colliding roots are skipped
-  with loud STALE/PROBLEM lines while every non-colliding root still generates. The earlier "the
-  combined two-root form exits 1 and writes NOTHING" line mis-transcribed the collision case onto the
-  two-root form and is **withdrawn** (audit §8 correction 2). `statusgen init`
+  with loud STALE/PROBLEM lines while every non-colliding root still generates. `statusgen init`
   scaffolds every repo with the same `stream: example` identity, so init'd roots collide by
   construction — that, not root count, is what to check when a board goes missing.
 
+## Issue-reader compatibility
+
+Before selecting a projection, run `issueboard --version` locally and require its
+`issue-projection-v1` capability. Pair this skill with that producer source/release;
+an older binary uses the legacy `issueboard issues` sweep with the same manual
+work-readiness checks below until the pin is deliberately upgraded. Do not retry a
+failed projected sweep through a broad read. Reverting the plugin and producer pins
+restores the old sweep. See [the compatibility matrix](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
+An empty work-ready observation covers only unrepresented issue candidates; intake,
+addressed inbox, representation/PR checks and watcher health still need their own reads.
+
 ## Un-briefed issues — trusted, work-ready, on NO board (human:<name> 2026-08-13)
 
-An issue can be real, trusted, implementable work and still sit stranded merely because it is
-issue-shaped. Beside the board queue and the orphan sweep, the pool draws on **§Sources of work row
-6**: open issues across SCAN REPOS, trusted + work-ready but represented by NO brief and NO
-placeholder on any board.
+A real, trusted, implementable issue can sit stranded merely because it is issue-shaped. Beside the
+board queue and the orphan sweep, the pool draws on **§Sources of work row 6**: open issues across
+SCAN REPOS, trusted + work-ready but represented by NO brief and NO placeholder on any board.
 
-**Sweep it with `issueboard issues`, not a hand-rolled list.** The verb resolves the scan scope from
+**Sweep it with `issueboard issues --projection work-ready`, not a hand-rolled list.** The verb resolves the scan scope from
 the same roster key the placeholder scanner reads, applies the trust gate itself (untrusted, unblessed
-authors are quarantined under EXTERNAL / UNBLESSED — visible, never actionable), ages
-`needs-decision` / `question` rows against its SLA, and **fails closed**: an unset or empty scan set,
-or a single repo the token cannot read, is exit 6 COULD-NOT-CHECK for the WHOLE board rather than a
-silently partial one. A raw `gh issue list` fails soft in exactly the places that matter — a dropped
-repo reads as a clean, empty board — which is why the list form is not the instrument here. **ALL
-four must hold:**
+authors are quarantined under EXTERNAL / UNBLESSED — visible, never actionable), excludes represented, decision-owed, addressed and help-wanted issues before enrichment, and **fails closed**: an unset or empty scan set,
+or one unreadable repo, is exit 6 COULD-NOT-CHECK for the WHOLE board, never a silently partial one
+(a raw `gh issue list` reads a dropped repo as a clean, empty board). **ALL four must hold:**
 
 1. **Trust gate** — authored by a trusted login, or blessed by a trusted comment; the board's own
    quarantine is the reading, and an EXTERNAL / UNBLESSED row is never dispatched. No new exception.
 2. **Un-represented** — no `issue-loop/issue-<NN>` placeholder (stream root or `done/` archive), no
    brief citing it, no open PR working it. **Absence from the board is NOT absence of representation**
-   (staleness, the caps or a board defect can suppress a real placeholder): check the FILES and the
-   open PRs, never what the board shows. Work that persistently fails to surface is a board defect —
-   FILE IT, never route around it here.
+   (staleness, the caps or a board defect can hide a real placeholder): check the FILES and open PRs,
+   never the board. Work persistently failing to surface is a board defect — FILE IT, never route around it.
 3. **Work-ready on its face** — an implementable spec by the placeholder lane's standard, carrying
    none of `question` / `needs-decision` / `help wanted`, not parked awaiting a reply.
-4. **Needs no triage judgment** — single-repo, no open design fork, no risk-bearing surface
-   (public-repo copy, security, prod-deploy, irreversible actions). Anything needing scoping,
-   splitting, a decision or a risk call is **intake's job**. When in doubt, leave it to intake AND
-   LEAVE A TRACE (a `question` on the issue naming the fork) — intake's strong tier picks the default
-   a reversible fork then proceeds on.
+4. **Needs no triage judgment** — single-repo, no open design fork, no risk-bearing surface (public-repo
+   copy, security, prod-deploy, irreversible actions). Anything needing scoping, splitting, a decision
+   or a risk call is **intake's job**. When in doubt, leave it to intake AND LEAVE A TRACE (a `question`
+   on the issue naming the fork) — intake's strong tier picks the default a reversible fork proceeds on.
+
+An issue the board shows as `AWAIT` for its label history is not un-briefed work, whatever its current labels.
 
 **Priority is LOWEST of the dispatch sources** (WIP-draining work → board rows → un-briefed issues),
 but the ordering is a tie-break, not a hold: an empty slot with a qualifying issue and nothing above
 it dispatches NOW. Claim under the SAME issue-shaped key the placeholder lane uses, `<repo>--issue-<NN>`
 — deliberately shared, so the two lanes contend on one lock and can never double-dispatch. A
 sweep that repeatedly surfaces issues failing rule 4 is an intake-coverage signal: file it, never
-widen this lane.
+widen this lane. A `design-owed` `error-class` issue is not this lane's (its placeholder fails rule 2):
+intake unparks that row at the trigger, never past rule 4's risk-bearing-surface test (`intake-desk`
+step 1); it dispatches at **strong** tier, and its deliverable is the one its body line names, never code.
+A class also labelled `brittle` dispatches at the same **strong** tier with `docs/brittle-investigation-template.md`
+as its deliverable's shape: the design brief follows only on `redesign`, and `reconcile` yields a fix
+brief whose `retires:` is the investigation's deletion bundle (`accept` and `clear` code nothing).
 
 ## The loop
 
@@ -320,19 +351,20 @@ that row's own instrument. Repos from §THE REPO SET; an exit-6 or empty `deskro
 could-not-check, never "no repos".
 
 - Run the board-wide instruments once (`deskboard dispatch`, `deskboard stalled`, `deskboard health`,
-  `issueboard issues`), then the per-slug PR + disposition reads — the exact queries and the three
+  `issueboard issues --projection work-ready`), then the per-slug PR + disposition reads — the exact queries and the three
   pre-resume guards are [`references/dispatch-runbook.md`](references/dispatch-runbook.md)
   §The tick sweep. `--limit` is mandatory on every raw list (bare `gh pr list` silently caps at 30) and
   at-cap is **could-not-check — blind, not idle**.
 - **Read the DISPOSITIONS first, before any staleness arithmetic**: `SUPERSEDED` /
   `RESOLVED-ELSEWHERE` is a deskclose item, never an orphan; `NEEDS-REBASE` is live work; exit 6 or a
   failed read means that repo is BLIND this tick, not empty.
-- A PR is **ORPHANED** when its disposition reads checked-clean AND the worker owes it action
+- A PR is **ORPHANED** when its disposition is dispatch-eligible AND the worker owes it action
   (`CHANGES_REQUESTED` at current head, CI red, findings unanswered) AND no commit/comment for **>4h**
-  AND no live dispatch claim. **Write the verdict with `deskdisposition set`** when the sweep DERIVED
-  a new one — eight of ten orphan dispatches in one 2026-08-12 cycle re-derived a conclusion an
-  earlier pass had already posted — and **re-write nothing when nothing changed** (§WIP-capped: a
-  no-change tick makes no write at all).
+  AND no live dispatch claim. **Advisory comments do not establish disposition**: apply the
+  runbook's label, evidence and supersession guards. Write `deskdisposition set` only for a supported
+  derived outcome; `NEEDS-REBASE` requires an established base/conflict defect. Still-actionable
+  work without that defect needs **no disposition write**; progress belongs in the PR workpad.
+  Re-write nothing when nothing changed (§WIP-capped: a no-change tick makes no write at all).
 - **A `SUPERSEDED` record is a PROPOSAL, never a close.** After `deskdisposition set --verdict
   SUPERSEDED --evidence <target>`, the worker runs `deskclose superseded -R <repo> <N> --by
   <target>`: under a worker-bound token the tool applies `superseded?`, posts the proposal naming
@@ -355,7 +387,7 @@ could-not-check, never "no repos".
   item; where it is not, it is filed (§Output contract) and named in the tick's line.
 - The un-briefed-issue sweep (§Un-briefed issues) runs over the same set in the same tick.
 
-**1. Plan, per root.** `git -C <root> fetch origin && fanoutloop plan --root <root>` for every BOARD
+**1. Plan, per root.** `(cd "$root" && deskgit fetch --as worker) && fanoutloop plan --root "$root"` for every BOARD
 ROOT. `plan` is the SHOWN queue: orphan resumes first, then the board in board order, `issue-<NN>`
 placeholders **included** (only another loop's review-request dispatch tokens are skipped), each item
 carrying its tier and its exact dispatch instruction. It spawns nothing, writes nothing and **touches
@@ -368,8 +400,22 @@ for the held-back decomposition, and read the rework section off each root's boa
 rows 2 and 5). Where the two disagree, the wider reading wins and the narrower one is a defect to
 file, never a queue to route around.
 
+**The drive worker floor is the one exception: for drive work, the FLOORED reading wins.** While a
+drive is active, drive work takes at most 6 of 8 workers (statusgen's `driveWorkerCap`; the tool's
+value governs, never a number restated in a prompt). `fanoutloop plan` reads the board and carries
+no floor; `deskboard dispatch` applies it across every root against the summed drive work already
+in flight, and tags each row it offers `drive:<slug>` (and `critical:<arm>` for a critical-tier
+row, which takes the headroom first). So when its held-back line names the drive worker floor, or
+it prints `COULD-NOT-CHECK drive worker floor`, a fresh board row is dispatched only if
+`deskboard dispatch` lists it this tick. A board row it withholds waits for a drive worker to
+finish. That gap is the floor working, not a defect to file, and a disagreement over a drive row
+never licenses dispatching past the floor. Resumes and rework (rows 3, 4, 5, 5b) are not fresh
+drive picks and the floor does not hold them.
+
 **2. Merge the per-root plans** with §The interleave rule, tag every row with its repo-qualified ID,
-name every could-not-check root, and exclude items whose `depends:` are not yet `done`. A count from
+name every could-not-check root, and exclude items whose `depends:` are not yet `done` — except that a
+`gate: human` dependency at `implemented` whose Evidence carries a strict `**VERIFY: PASS**` (present in the raw text and not struck, fenced or
+quoted) with no later FAIL counts as met for `depends:` only, never for `gates:` (the same rule statusgen's eligibility evaluator applies). A count from
 human:<name> ("next 3") takes the top N **of the merged order** — scoping bounds THIS refill, never the loop.
 
 **3. Dispatch** each item with `deskdispatch` (below) — one `capability:dispatch-worker` per item, all
@@ -416,6 +462,28 @@ window stops, hands back, or asks the driver for direction.
 5. **The tick still reports.** One line per §Output contract, and the sweep obligations of the HARD
    GATE are unaffected by a quiet queue.
 
+## Post-open stamp handoff
+
+For a dispatch made before its PR exists, retain the real dispatch receipt with the
+actual selected model and tier. When the worker returns the opened PR, send that PR and
+selection to the coordinator desk (`the-desk`), which runs the printed
+`deskdispatch --stamp-only --repo <repo> --pr <N> --model <actual-model> --tier <tier>`
+command with the original kit. Require its applied-and-verified receipt before treating
+the PR's authoring as model-attested. A worker-kit stamp writes the `authored-model:` /
+`authored-tier:` pair, never `dispatched-*`. The `dispatched-*` pair is the review session's attestation,
+and it is the only one the capability floor reads. Both this worker-desk and its child are refused by stamp-only;
+a shared `DESK_SESSION` is claim custody, not stamp authority. Never switch identity or
+redispatch a worker just to obtain the stamp.
+
+To give a fresh dispatch a stamp target before its PR exists, add `--attest-worker` (with
+`--model`, `--tier` and `--brief`, or an `issue-<N>` item). The verb creates, stamps, closes and
+reads back a dispatcher-authored `[worker-attestation]` record before it emits the prompt. If
+any of those steps fails, it emits no prompt and releases the claim (exit 6). Do not retry
+by hand. The prompt carries one exact `Worker-Attestation:` line for the PR description,
+and the coordinator's `--stamp-only` call (optionally `--attestation <N>`) refuses a change
+whose branch, kit or model/tier disagrees with that record. The record constrains the PR
+stamp; it never stands in for it.
+
 ## Dispatch — `deskdispatch <item-key>` runs the ceremony
 
 The per-item ceremony is mechanical and lives in the verb: claim-acquire → worktree-create in the
@@ -444,7 +512,9 @@ deskdispatch <item-key> [--tier strong|any] [--kit worker] [--repo O/N] [--root 
   the claim tool `deskdispatch` resolved. **That tool is `deskclaim-ref` by default** — the
   cross-platform claim binary installed with desk-tools (`tools/desk/cmd/deskclaim-ref`), verbs
   `acquire` / `progress` / `release` / `steal` / `show` / `list`, deskkit exit codes **0** ok ·
-  **5** refused (a live holder owns it) · **6** unverifiable (never "assume free"). The fallback:
+  **5** refused (a live holder owns it) · **6** unverifiable (never "assume free"); `list` alone
+  adds **7** partial — some claims listed, some refs unreadable and named on stderr — which is
+  incomplete, never idle. The fallback:
   a repo may ship its own `tools/dispatch-claim.sh`, and `deskdispatch`'s claim-acquire step
   **prefers `deskclaim-ref` whenever it is on PATH**, falling back to that script when the binary
   is absent and the resolved root (`--claim-root` when given, else `--root`) carries it — and
@@ -452,14 +522,17 @@ deskdispatch <item-key> [--tier strong|any] [--kit worker] [--repo O/N] [--root 
   names which one ran. Both speak the same wire protocol, so which one runs never changes where
   the claim lands or whether two dispatchers collide. Either way the claim child runs as the
   DISPATCHING role: `deskdispatch` mints (or reuses) that role's App token and hands it over
-  (`--token-file` for the binary, `GH_TOKEN` in the child environment for the script); an
-  exported `GH_TOKEN` wins; a mint refusal is exit 6 with no claim attempted, never a fall-back to
-  the ambient `gh` login.
+  (`--token-file` for the binary, `GH_TOKEN` in the child environment for the script). An
+  exported `GH_TOKEN` wins only when `deskdispatch` verifies it IS the dispatching role's App —
+  the `desk` App for the worker kit, the `reviewer` App for the review kit, never the worker App
+  whose token a worker holds. Any other identity is ignored with a NOTICE and the role token
+  minted; one whose identity cannot be read is exit 6 with no claim attempted. A mint refusal is
+  exit 6 with no claim attempted, never a fall-back to the ambient `gh` login.
 - **Never hand-edit the board row — neither this desk nor the worker it dispatches.**
   `in-progress` appears the instant the worker's draft PR opens carrying the trailer
   `Brief: <stream>/<NN>` in its body; `deskpr create` refuses to open a PR whose body carries no
   link trailer at all — exactly one `Brief: <stream>/<NN>`, or `Issue: #<N>` for issue-only work
-  that delivers no brief — and that refusal at write time is the enforcement, not a follow-up edit
+  that delivers no brief (a briefs-AUTHORING PR carries `Authors: <stream>/<NN>[, …]` instead) — and that refusal at write time is the enforcement, not a follow-up edit
   to the stream README. `implemented` appears the instant that PR merges. `statusgen` derives both
   cells from the trailer plus the PR's own state — this
   desk's job at the `progress` step is opening the PR promptly, not writing a cell.
@@ -470,19 +543,59 @@ deskdispatch <item-key> [--tier strong|any] [--kit worker] [--repo O/N] [--root 
   `references/worker-prompt.md` (security-gate refusal,
   per-invocation scratch-file body files (desk-shell.md §Scratch files), stop-at-`implemented` + the bare-token board-row shape, lineage
   self-check, merge-never-rebase, verify-before-apply, scope + desk write verbs, release-the-claim,
-  fail-first evidence, public-body self-containment, changelog fragment where the repo enforces one) —
+  fail-first evidence, public-body self-containment, changelog fragment where the repo enforces one,
+  the defect-class rule for a bug fix, strike two, `## Weight`) —
   both shipped
   inside the binary from `tools/desk/cmd/deskdispatch/references/`. `--kits`
   lists what the installed binary carries; `--dry-run` prints the prompt it WOULD emit. **Never
   paraphrase, summarise or "improve" a kit clause at dispatch time**: each is a rule that has already
   failed in the field, and the wording is the fix.
+- **The prompt fits the KIND of run, and the verb decides the kind.** A dispatch with `--pr` onto an
+  open change is a SHEPHERDING run: its assignment names the change, its source branch and the head
+  read at dispatch, tells the agent to push with `deskpr update`, and never tells it to open a PR.
+  Every other worker dispatch is an IMPLEMENTING run and gets the open-a-draft-PR assignment. The
+  kit's clauses reach both kinds; only text that plainly binds one kind is cut for it, and the
+  objective kit's own copy of the common clauses is not quoted a second time. There is no flag for
+  the kind: `--pr` is what makes a run a shepherding one.
+- **Packet, gathering and waiting.** When the dispatch could prepare one, the assignment carries a
+  `Packet: <absolute path>` line: a file holding what the run would otherwise fetch first (for an
+  implementing run the brief, its dependencies' board status, the files it names and the
+  repository's own instruction files; for a shepherding run the change, how it stands against its
+  base, its checks, its reviews and its diff), taken at a recorded head. It holds no job log and no
+  review comment anchored to a file and line — the agent still fetches those. The
+  kit tells the agent to read it first in one read, to batch independent reads into one request,
+  and to wait on checks or a review in one bounded command instead of a look per request. A
+  packet that could not be built costs one stderr line and never fails the dispatch — the prompt
+  simply carries no `Packet:` line and the agent gathers for itself.
+- **A bug fix closes the defect CLASS, not the one instance** — the worker's fix obligation the kit
+  carries: name the class under a `## Defect class` heading (plus the earlier fix when there was
+  one), close it by removing the hazardous path or making it unrepresentable — a guard only when
+  removal is infeasible, reported as weight in `## Weight` and a rule-register row — and show it red
+  against a deliberately PLANTED second instance at a site the fix does not touch. A defect-fix PR
+  with no `## Defect class` section is INCOMPLETE, the same as one missing its fail-first run.
 - **Cross-repo is the default case.** The verb cuts the worktree in the item's own repo off
   `refs/remotes/origin/main`; dispatch the agent with `capability:isolate-workspace` too, so its
   payload cwd is never the shared checkout — a /tmp clone does NOT isolate that cwd, and a
   falsely-blocked worker is the input that produces evasion.
-- **Tier**: `--tier` follows the brief's `exec-tier` (absent = `any`); `strong` goes only to
-  session-tier and the kit carries the pickup-STOP text. Effort S may run at your session tier, M/L go
-  to a cheap tier behind the review/verify gates.
+- **Tier**: `--tier` follows the brief's `exec-tier` (absent = `any`); `strong` goes only to a
+  strong-tier worker and the kit carries the pickup-STOP text. A session that itself runs at strong
+  tier or above launches it at session tier; a session that runs BELOW strong names the strong tier
+  explicitly in the launch (`../../references/<harness>.md`, the `capability:dispatch-worker` row) —
+  a default launch there lands below strong and the worker stops at pickup, correctly. Naming a
+  tier is a request, not a result: BEFORE the dispatch, a session below strong reads the launch's
+  own resolution (the same row says where) and CONFIRMS the slot it will name is pinned to a
+  strong-tier model; `--model` states that pinned id in the stamp's form (the row gives it) —
+  never the tier name, the alias, that session's own model or a guessed mapping. The read comes
+  first because a dispatch that names a PR writes the stamp before the worker starts, and the
+  dispatching session has no verb that corrects it. A pin is what the launch asked for, not proof
+  of the model served: the kit's pickup stop stays the worker-side check, and a strong-stamped
+  worker that stops there is a wrong stamp — hold the item and file it. A session with no way to
+  launch a strong-tier worker, or that cannot confirm the pin, holds the item and files it; it
+  never edits the pickup text. Effort S
+  may run at your session tier, M/L go to a cheap tier behind the review/verify gates.
+  A re-dispatch or shepherd pass on a PR whose open finding class is at round ≥ 2 runs at **strong**
+  tier. A worker's `NEEDS_CONTEXT: strike two` (kit clause 8) returns the item to intake as
+  `design-owed` — not a failure to retry.
 - **Budget checkpoint — `budget:` is a filing threshold, never a gate.** A brief may declare
   `budget:` beside `effort:` — an amount with its unit (`400k tokens`, `25 USD`); absent = no
   checkpoint. The worker reads it from the brief it was dispatched on. When the worker's own
@@ -498,8 +611,7 @@ deskdispatch <item-key> [--tier strong|any] [--kit worker] [--repo O/N] [--root 
 - **Cheap implementers run below the floor, but authority-bearing writes do not**: a review verdict and a ready-flip enforce a model-capability floor keyed on the dispatcher's attested tier, so a dispatch ATTESTED below the strong tier is refused those writes even though it may implement freely — delegate downward, and escalate a verdict or flip to a strong-tier session rather than route around the refusal. A `dispatched-tier:any` stamp is not such an attestation (`any` is the brief's "no tier demanded"), so it proceeds with a NOTICE; nor is a stamp whose dispatch claim has since been RELEASED — a dead cycle's stamp ages out and the PR reads unstamped, rather than being refused harder than an unstamped one. **The unstamped/NOTICE path is RISK-CONDITIONAL for a review verdict (ruling 3):** on a risk-classed PR (every public-repo PR, or a diff touching a security path) a security-review-bearing verdict must carry a trustable strong-tier attestation, so an UNSTAMPED verdict there REFUSES; the NOTICE-proceed holds only for an unstamped NON-risk PR. The convention to escalate still stands.
 - **Serialize out-of-repo items** — no worktree isolation, no branch-as-claim: at most ONE in
   flight across all streams, the declaration is the claim, so check in-flight PRs for overlaps first.
-- **Placeholders stay dispatchable** (ruling 2, 2026-08-24) — and the shipped `fanoutloop plan`
-  includes them, so skill and binary now agree.
+- **Placeholders are dispatchable** (ruling 2, 2026-08-24); `fanoutloop plan` includes them.
 
 ## Cockpit-aware worktree creation — additive, chosen by `ASSAY_COCKPIT` or detected on PATH, never required
 
@@ -581,9 +693,16 @@ decision-trigger=spec` — the decision is only well-formed at the pickup design
 instructs the executor to author the brief's `## Human decision` section in its PR and report
 DECISION-BLOCK READY, and **this desk** then re-runs ensure `--at spec` against the branch copy
 (subagent issue-writes get classifier-denied); **5** = self-containment refusal, repair the brief,
-never hand-file around it; **6** = could-not-check, do not file, retry next cycle. Record the issue in
+never hand-file around it; **6** = could-not-check, do not file, retry next cycle — but a gate
+6 that repeats across more than one brief in one tick is a defect, not a blip: file it THAT tick as
+ONE issue naming every brief it blocked. The decision-gate step reports every helper failure as 6,
+the helper's own self-containment refusal included: where the step's message line or `DESK_TRACE`
+shows the helper itself refused (its status 5), that brief is a refusal — repair it, never count it
+toward the repeat filing. In either case, never hand-run the decision-issue helper around the
+refusal (a hand-run once landed a duplicate decision issue). Record the issue in
 the dispatch and the PR body's BLOCKED-ON-HUMAN line; where the Task has an explicit human co-execution
-step the prompt says prepare everything, STOP at the documented stop-point, report BLOCKED-ON-HUMAN.
+step the prompt says prepare everything, STOP at the documented stop-point, report BLOCKED-ON-HUMAN —
+the report carrying the step the human runs as an Act block (`ask-decision` §"Act — the shape of the fifth part").
 
 **Security-gate removal is gate:human BEFORE the commit, not only at approval**: such a diff
 erases the red-check signal that makes the decision visible downstream, so "a worker behind a draft PR
@@ -625,8 +744,12 @@ issue list. Two states:
    flight, label + comment THAT item rather than filing a duplicate. **The filed issue IS the
    escalation.**
 3. **Receipt on a human-typed message.** After ANY human-typed message, the FIRST line of your turn
-   is `deskack "<your one-line reading>"` (role from `$DESK_LOOP`; add `--repo <repo>` when it
-   concerns one), then act. It is the ONE acknowledgement line the floor above permits — not
+   is `deskack --repo <repo> "<your reading in at most 12 words>"`
+   (role from `$DESK_LOOP`; omit `--repo <repo>` when no repo is named), then act.
+   Put flags before the quoted text. A usage error (exit 2) writes no receipt: correct the
+   flags or shorten the text and re-run before continuing. Guard, identity, and storage
+   failures still stop the pass; never bypass them.
+   It is the ONE acknowledgement line the floor above permits — not
    narration, and a second acknowledgement line is a violation. Say what you UNDERSTOOD, never a
    quote, so a misread is corrected on your next turn. To hand work to another desk, address its
    LANE — `deskcomms send --to <role> --verb <verb>` for a routine hand-off (§Cross-desk
@@ -685,11 +808,18 @@ Before each loop cycle (orphan sweep, slot refill):
 
 ```bash
 [ -f "$HOME/.config/assay/STOP" ] && echo "STOP flag active — exiting loop" && exit 0
+case "$ASSAY_CELL" in ""|*[!a-z0-9-]*) ;; *) [ -f "$HOME/.config/assay/STOP.cell.$ASSAY_CELL" ] && echo "STOP.cell.$ASSAY_CELL active — exiting loop" && exit 0 ;; esac
 [ -n "$DESK_LOOP" ] && [ -f "$HOME/.config/assay/STOP.$DESK_LOOP" ] && echo "STOP.$DESK_LOOP active — exiting loop" && exit 0
+case "$ASSAY_CELL" in ""|*[!a-z0-9-]*) ;; *) [ -n "$DESK_LOOP" ] && [ -f "$HOME/.config/assay/STOP.cell.$ASSAY_CELL.$DESK_LOOP" ] && echo "STOP.cell.$ASSAY_CELL.$DESK_LOOP active — exiting loop" && exit 0 ;; esac
 ```
 
+`ASSAY_CELL` is the cell marker `cellctl` stamps on every desk it launches: `STOP.cell.<cell>` stops every
+loop of that cell, `STOP.cell.<cell>.<name>` one loop of it. A session with no marker skips both cell lines; a
+marker outside `[a-z0-9-]` builds no path here and is refused (exit 6) by the Guard. Cell flags only add a
+stop — they never lift `DISABLED`, `STOP` or `STOP.<name>`.
+
 A hit means exit cleanly (restart by `rm <flag>` + re-arm); never halt mid-dispatch. Precedence:
-`DISABLED` > `STOP` > `STOP.<name>`; `deskkit.Guard()` enforces them at the tool layer independently.
+`DISABLED` > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` = `STOP.cell.<cell>.<name>`; `deskkit.Guard()` enforces them at the tool layer independently.
 
 ## Guardrails
 
@@ -711,10 +841,19 @@ A hit means exit cleanly (restart by `rm <flag>` + re-arm); never halt mid-dispa
 - **The out-of-repo surface (files outside any repo) is serialized, never parallel** — max one
   in-flight item, staged as diffs in the PR and applied to the live files only as the last step
   before `implemented`.
+- **New dependency, plugin or MCP server — risk summary first, install second.** Before adding
+  one (to a manifest, a lockfile, the harness or the agent environment), file an issue carrying an
+  agent-generated **risk summary**: *source* (publisher, repo, exact version, release date),
+  *permissions* (network, filesystem, credentials or scopes it reads), and *persistence* (hooks,
+  background processes, auto-update, files written outside its own directory). The PR cites the
+  issue; no issue, no install. Minimum release age is **7 days** — a younger release needs the
+  risk-summary issue PLUS a driver `bless` on it before install, never the worker's own judgment.
 - **Insight-routing:** a systemic/process insight produced in passing (a wrap-up, a dispatch or drain
   note, an Evidence aside, a "this keeps recurring" observation) MUST also be filed as an issue in the
   project's own toolkit/methodology repo — commentary is not a register. Include the triggering
   evidence and affected loops. Repo-specific defects still go to that repo's own tracker (label `bug`).
+  Before submitting an upstream issue or attaching a cross-boundary comment, apply R7: remove
+  internal locators from the title, body and evidence; use opaque role+number refs instead.
 - **Escalation labels:** any desk/loop may label a PR or issue `question` (needs an answer from the
   driver or a stronger-tier model — the item PARKS only when the fork is one-way; a reversible item proceeds on its
   stated default with the label riding on it) or `help wanted` (the desk hit its capability/authority edge). Both are
@@ -722,9 +861,8 @@ A hit means exit cleanly (restart by `rm <flag>` + re-arm); never halt mid-dispa
   MUST comment what it needs and from whom when labeling; whoever answers removes the label with their response. A
   `question` that matures into a formal decision fork promotes to `needs-decision` with the pros/cons template.
   Labeled items are WAITING-ON-INPUT: they join the human/escalation queue and are NOT orphans for the worker sweep.
-- **An escalation that is an ACT only the driver can perform** (not a decision) also gets a
-  `RUNSHEET.md` entry per the `human-runsheet` skill — the filed issue stays the escalation, the
-  runsheet is the exact command the driver runs.
+- **Driver-act runsheet entry** — an escalation that is an ACT only the driver can perform: see
+  [`../../references/desk-common.md`](../../references/desk-common.md) §Driver-act runsheet entry.
 - **Git push policy (ONE policy, role-keyed):** MERGE IS ALWAYS the driver's, and nobody triggers
   workflows or runs mutating cluster commands without their go. **Branch push + draft PR is
   standing-authorized for every desk/loop** — the worker loop (`git push -u origin <branch>` +
@@ -742,9 +880,12 @@ A hit means exit cleanly (restart by `rm <flag>` + re-arm); never halt mid-dispa
   driver still controls — a draft PR awaiting merge, a filed issue awaiting close, a flip CI or a
   human must still make?* **Yes → default-forward.** Author it, dispatch the worker, open the DRAFT
   PR, make the best-guess call, and NOTIFY — "proceeded on `<default>`; filed as `<repo>#<N>`;
-  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. The
-  `needs-decision` / `question` issue is still filed, naming the default taken, but the ITEM does
-  not park on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
+  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. Take
+  the reversible default, declare it with `deskpr create|edit --decided` (the `## Desk-decided` body
+  section plus the `desk-decided` label), and never ask first: the block is the notice the driver
+  reads at merge time, so a default declared there files NO `needs-decision` / `question` issue —
+  only a default no PR carries still files one, naming the default taken, and the ITEM never parks
+  on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
   the record, and corrected by the gate. **No → STOP and wait for the human.** A wrong guess that
   lands irreversibly or reaches outside the gate is caught by nobody declining a merge. That set is
   fixed, never judged case by case: merge, a ready-flip that is not this role's, any `main` push
@@ -754,12 +895,52 @@ A hit means exit cleanly (restart by `rm <flag>` + re-arm); never halt mid-dispa
   data; and anything that leaves the repo — publishing to a public or external surface, sending
   content to an external service, mutating live infrastructure. A guard or tool REFUSAL is a STOP on
   either side of the test — the test never routes around one.
+- **A `needs-decision` filing must carry the `### Fork test` block `deskfile new` requires**
+  (grammar in `tools/desk/README.md` — not restated here): the options that can actually work, the
+  default, the gate that catches a wrong guess, and the search proving the question is not already
+  ruled. **An item with one workable option is not a decision** — the tool refuses it (exit 5) and
+  names the three `--no-fork` re-routes (`brief-contradicts-artifact` | `wrong-repo` |
+  `tool-false-positive`); use the one that fits rather than forcing the filing. Two workable options
+  plus a gate the driver still holds MAY file on the NOTICE LANE (`desk-decided`, off the driver's
+  queue, in the weekly digest with its veto date) instead of `needs-decision`. The tool admits it
+  only on a positive, content-bearing R-3 reversible signal (a tool default alone never admits,
+  and neither does a lint-level/lint-severity/notice-or-error/port-or-drop example, named CI
+  check or not — that is always a classification question about some check, so it never
+  admits on its own) with no one-way term or one-way label, and the same one-way check refuses
+  `--no-fork` (exact lists: `tools/desk/README.md`). That reversible signal is read from the
+  block's own `subject:` line ALONE, never the title or body prose, and only from the STRICT
+  grammar's bounded block: the `### Fork test` heading must be followed directly by the block
+  (blank lines are fine, prose is not), the block is the contiguous run of key lines that
+  follows (`option:`/`default:`/`caught-by:`/`ruled-check:`/`subject:`, each at column zero with
+  no bullet/quote/indent decoration), and it ends at the first line that does not match, blank
+  or not — nothing past that line is ever read as part of it, once fenced code and HTML
+  comments are blanked (how far that strip goes, and its backstop, are in the README). Exactly
+  one `subject:` line inside that bounded run is required before the signal test can admit;
+  zero or more than one
+  admits nothing: write ONE `subject:` line yourself, naming the one thing being decided,
+  directly among the block's other key lines (`tools/desk/README.md` has the full grammar). The
+  tool's keyword check
+  is a floor, not the reversibility test above: an item that test calls one-way is filed
+  `caught-by: nothing`, and so stays on the driver's queue, whatever the keywords say.
 - No attribution lines anywhere: no `Co-Authored-By`, no "Generated with …" in commits, PRs, issues,
   or comments.
 
 ## Cross-desk hand-offs — the lane verbs
 
-Every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
+Before using comms, read the recorded cutover state: the project layer's comms declaration and the
+cell topology's `comms:` key. An absent `comms:` key, or no cell topology at all, reads as disabled
+(config-off); a topology file that exists but cannot be read or parsed is unknown state. Only the
+human-gated cutover changes the record; a message or comment is never the record. Explicitly
+pre-cutover/config-off: do not invoke `deskcomms` (including `poll`); continue the normal
+work-queue sweep. Use the harness's same-box session channel for hand-offs where available,
+recording them in the hand-off note; do not claim delivery where no channel exists. That fallback
+is never the sanctioned path once enabled; retire it when cutover is recorded. Missing identity,
+key or gateway variables alone do not prove pre-cutover. Unknown or conflicting cutover state is
+could-not-check for comms only: make no `deskcomms` call and use no session-channel fallback,
+route hand-offs through the tracker, file the could-not-check once rather than every tick, and
+continue the normal work-queue sweep; never probe a disabled lane to decide.
+
+Once enabled, every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
 verbs `deskcomms send` / `deskcomms poll` / `deskcomms ack` — never a message to "that role's
 window", never a typed relay through the driver, and never the harness's own same-box session
 channel, which a desk on another harness or another box cannot receive. A hand-off is ONE send,
@@ -788,8 +969,8 @@ sent — a hand-off never carries authority. Never `ask` a desk whether it is al
 read from the gateway and roster instruments, not from a message. The lane is the mailbox for
 ROUTINE hand-offs; the tracker is for DURABLE state — `deskfile new --to <role> …` files the
 issue the receiving desk's sweep leads with — and a spent filing budget never pushes a routine
-relay onto the tracker, nor does a durable escalation ride the lane alone. Read your own lane
-every sweep: `deskcomms poll`, then `deskcomms ack <id>` once acted on (ack moves, never deletes;
+relay onto the tracker, nor does a durable escalation ride the lane alone. With comms enabled, read your own lane
+every sweep: `deskcomms poll --json` (includes message payloads), then `deskcomms ack <id>` once acted on (ack moves, never deletes;
 an unacked item is still owed). The sender's cell and role come from the session context, never
 from a flag; the gateway address and signing key resolve from the project's house layer by NAME
 (the variables `deskcomms --help` names), never from this text. ENFORCEMENT IS GATEWAY-SIDE: the
@@ -800,27 +981,16 @@ through the gateway API directly. The verbs run silent inside this desk's noise 
 per invocation. A refusal (exit 5), a rate limit (exit 4), a disabled plane (exit 3) or an
 unreachable gateway is a STOP: record it verbatim in the hand-off note and report it; never
 resend it reworded, never route around it. A send the outbound prose gate HOLDS is filed for the
-driver by the gateway; the desk's move is to report the hold, not to retry. Until the cell's
-comms plane is enabled — a human-gated cutover; config-off before it — the harness's same-box
-session channel is the PRE-CUTOVER FALLBACK only: use it where the lane is not yet live, record
-every hand-off it carried in the hand-off note, and treat it as retired the moment the cutover is
-recorded. It is never the sanctioned path.
+driver by the gateway; the desk's move is to report the hold, not to retry. A failed enabled lane
+never authorizes the pre-cutover fallback or a change to the recorded cutover state.
 
 ## Liveness contract (binding)
 
-A standing liveness contract binds this window from boot: start the standing
-self-scheduled loop BEFORE the first sweep and keep it ticking for the life of
-the window; every tick re-sweeps this desk's own queue fresh; every relay (a
-cross-session hand-over, on the lane) is acknowledged — `deskcomms ack` — or filed, never
-assumed delivered.
-The desk runs **default-forward** — never ask the driver what to work on next:
-a driver scope instruction narrows preference, not a cage — when the scoped
-batch drains, note the transition in the hand-off note and widen back to the
-standing queue. Checkpoints state their default and continue; standing down
-requires an empty standing queue after a fresh sweep PLUS a hand-off artifact
-on the driver surface, and a manual human kick that moves queued work is an
-incident to file on the project's methodology tracker. Hard gates (human-gated
-decisions, budgets, breakers, explicit stop-orders) are unchanged.
+A standing liveness contract binds this window from boot. Its text — the standing loop armed
+before the first sweep, the fresh re-sweep every tick, relay acknowledgement, default-forward, and
+when a window may stand down — is stated once for every desk role in
+[`../../references/desk-common.md`](../../references/desk-common.md) §Liveness contract; read it at
+boot, before the first sweep.
 
 ## Cadence and wake — this desk's numbers
 
@@ -841,8 +1011,7 @@ worker-desk's own.
 - **Why not a ~60-second poll.** The sweep this desk mandates costs roughly three reads per scanned
   repo per tick — about 48 at the current scan width, 60–90 with the pre-resume guards and a regen
   pass. At ~60s that is thousands of reads an hour, most of a GitHub App installation's hourly read
-  allowance before a single write; at 30 minutes it is ~96–150, a low single-digit percentage. The
-  earlier "~60s idle-poll" wording is retired for that reason.
+  allowance before a single write; at 30 minutes it is ~96–150, a low single-digit percentage.
 - **Harness degradation, in one line.** Where `capability:durable-monitor` is unavailable (its
   reference row reads `degrades` — no confirmed durable cross-turn wake, as on the Codex and Cursor
   bindings), the desk falls back to the event-driven + fixed-cadence board sweep at the same 30-minute
@@ -861,3 +1030,25 @@ worker-desk's own.
 - **A tick that did not happen is could-not-check, never idle.** Two ticks with no successful sweep is
   the silent-board-freeze class — re-arm, and if it does not clear, file it (§Output contract,
   detected blindness).
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-loop-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

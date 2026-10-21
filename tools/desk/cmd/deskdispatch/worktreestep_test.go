@@ -92,7 +92,7 @@ func TestWorktreeCreateSurfacesDeskwtsOwnMessageVerbatim(t *testing.T) {
 	if !s.ran("dispatch-claim.sh release") {
 		t.Error("the durable claim was not released after the worktree-create failure — it is orphaned")
 	}
-	if _, err := os.Stat(promptFile); err == nil {
+	if _, err := os.Stat(emittedPathFor(promptFile)); err == nil {
 		t.Error("a prompt was emitted for a dispatch with no worktree")
 	}
 }
@@ -134,7 +134,7 @@ func TestWorktreeCreateHintDiffersByKit(t *testing.T) {
 	if strings.Contains(review, "feat/item-1") || strings.Contains(review, "brief") {
 		t.Errorf("the review-lane hint still carries brief-lane feat/<id>/brief wording — it misleads a reviewer:\n%s", review)
 	}
-	if !strings.Contains(review, "reviewer worktree") || !strings.Contains(review, "deskwt remove") {
+	if !strings.Contains(review, "reviewer worktree") || strings.Contains(review, "deskwt remove") || !strings.Contains(review, "cleanup is not a prerequisite") {
 		t.Errorf("the review-lane hint does not point at the reviewer-worktree lifecycle:\n%s", review)
 	}
 	if brief == review {

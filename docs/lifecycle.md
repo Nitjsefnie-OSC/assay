@@ -17,6 +17,14 @@ todo → in-progress → implemented → verified → done
 - **verified** — a **non-implementer** re-ran the Verify table on merged main and filled
   the Evidence section (dated, with runner). Reason: independent re-execution is the check
   that "works on my machine / green in isolation" claims survive contact with main.
+  Since graph-execution/03, `verified` additionally requires the brief's evidence
+  **coverage** to be `released` (`statusgen --coverage`): every mandatory claim — its own
+  Verify rows, plus a bound workflow-pattern-v1 node's own mandatory evidence when one
+  applies — resolves `pass` at the item's revision. A claim that is missing, errored,
+  could-not-check, at the wrong revision, or an outright fail HOLDS coverage and demotes
+  `verified` the same way a stale witness version already does. The model-lane
+  `verified → done` auto-flip (`--auto-flip-model`) refuses on unreleased coverage before
+  it ever fetches a live review — the one place that flip re-checks the stamp it promotes.
 - **done** — additionally carries the recorded review verdict. A `gate: human` brief needs
   a review entry naming a human (`human:<name>`); a model sign-off does not close a
   risk-flagged brief.
@@ -41,6 +49,28 @@ distinct, owned step, not a side effect of merge.
   node (role `reviewer`, `evidence: review`); post-merge verification is the pattern's `verify`
   node (role `verifier`, `evidence: witness`), which is also the pattern's `join` — its
   integration check.
+- A **workflow instance** (`spec/workflow-instance-v1.md`) binds that pattern to one work
+  item in one Cell and pins the acceptance version the gates review against. A brief's
+  `version:` bump makes an instance bound to the earlier version stale; it is superseded by a
+  new instance, never rewritten in place. `statusgen instance validate --file PATH --json`
+  checks one. Human decisions at a gate are recorded as references to external
+  authenticated acts — the human acts in their own identity — never as a model role or a
+  node with a token of its own.
+
+## Verifier domain observations
+
+[`verification-domain-v1`](../spec/verification-domain-v1.md) supplies shared pure
+records for qualified work, a frozen candidate, its acceptance definition, required
+facts and reevaluation generation. `statusgen/domain.Assess` uses the existing
+eligibility and evidence-coverage evaluators. A missing fact holds; a candidate or
+generation mismatch is refused. A supported assessment grants no acceptance or write.
+
+Bind/admit/execute/assess/decide/publish progress, execution outcome, acceptance,
+publication receipt and retirement are separate observations. Execution can succeed
+while acceptance is held; accepted work can await publication; Complete can retain a
+resource-retirement hold. Observation times and typed hold owners/events are explicit.
+This contract wires no runtime and changes no independent review, verification, human
+decision or publication gate. Complete applicability context remains graph-execution/30.
 
 ## STATUS.md — a single-writer generated artifact
 

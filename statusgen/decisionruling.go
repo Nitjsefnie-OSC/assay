@@ -1,8 +1,8 @@
 package main
 
 // decisionruling.go — the RULING-LINK lane of `statusgen --corroborate` for
-// design-decision records (DR-<slug>.md under docs/streams/decisions/, schema
-// decision-v1, registers-v1 §7.5).
+// design-decision records (every record under docs/streams/decisions/, by
+// convention DR-<slug>.md; schema decision-v1, registers-v1 §7.5).
 //
 // The problem it closes. A record's `decided-by: "human:<name>"` stamp used to be
 // corroborated only against an approval by that human ON THE PR THAT ADDS THE
@@ -17,7 +17,7 @@ package main
 //	decided-by: "human:<name>"      # a real mapped name, OR the literal placeholder
 //	ruling: "https://github.com/<owner>/<repo>/issues/<N>#issuecomment-<ID>"
 //
-// What this lane does, for every DR record the PR ADDS OR EDITS (any added line in
+// What this lane does, for every record the PR ADDS OR EDITS (any added line in
 // the record file — the same diff scope the rest of --corroborate keeps):
 //
 //   - `ruling:` present → resolve the comment through the forge REST API and PASS
@@ -134,7 +134,7 @@ const (
 // decisionRecordStamp is one DR record the PR touched, as read from the checkout.
 type decisionRecordStamp struct {
 	File      string   // repo-relative path, as it appears in stamp.File
-	ID        string   // DR-<slug>
+	ID        string   // the record's frontmatter id when it is a valid DR-<slug>; "" otherwise, so the ruling lane refuses (fail closed, record-not-named)
 	DecidedBy string   // raw decided-by value
 	Names     []string // real human names parsed from DecidedBy (lowercase); empty = placeholder
 	Ruling    string   // raw ruling: value ("" = absent)
@@ -143,6 +143,7 @@ type decisionRecordStamp struct {
 
 // rulingOutcome is the resolved verdict for one record's ruling link.
 type rulingOutcome struct {
+	Body    string       // authenticated, unedited human comment, populated only on success
 	Present bool         // the record carries a ruling: (or could not be read)
 	Reason  rulingReason // rulingOK on a pass
 	Detail  string       // human-readable evidence (pass) or explanation (refusal)
@@ -223,9 +224,43 @@ func rulingStampResult(s stamp, o rulingOutcome) corroborateResult {
 // resolveRuling is the testable core. It resolves rec's ruling link through c and
 // returns the outcome. prRepo is the repository the record lives in; humanLogins
 // is the human-login map (name → login, names lowercase); citingBriefs are the
-// "<stream>/<NN>" ids of briefs whose `design:` cites rec.ID. It reads nothing
+// "<stream>/<NN>" ids of briefs whose `design:` cites rec.ID; repoAliases are the
+// short names the consumer's registry declares for prRepo (repoAliasesFor). It reads nothing
 // global and fails CLOSED in every direction: a pass needs every condition.
-func resolveRuling(c *ghClient, prRepo string, rec decisionRecordStamp, humanLogins map[string]string, citingBriefs []string) rulingOutcome {
+func resolveRuling(c *ghClient, prRepo string, rec decisionRecordStamp, humanLogins map[string]string, citingBriefs, repoAliases []string) rulingOutcome {
+	return resolveRulingOn(c, prRepo, rec, humanLogins, rulingIssueBinding{
+		what: rec.ID + " or for a brief whose design: cites it",
+		rules: func(iss rulingIssue, link rulingLink) bool {
+			if !issueRulesOnRecord(iss.Body, rec.ID, link.Repo, repoAliases, citingBriefs) {
+				return false
+			}
+			return true
+		},
+	})
+}
+
+// rulingIssue is the part of the linked decision issue a rulingIssueBinding reads.
+type rulingIssue struct {
+	Body string
+}
+
+// rulingIssueBinding is condition 6 of the ruling-link check — "the issue is a
+// decision issue for THIS record" — as a parameter, because what ties an issue to
+// its record differs by record kind: a design-decision record is tied through its
+// DR-<slug> id or a brief whose design: cites it (issueRulesOnRecord), a gate:human
+// brief through its own decision-gate marker (briefIssueRulesOn, decisiongatehold.go).
+// what names the expected marker in the refusal; rules decides.
+type rulingIssueBinding struct {
+	what  string
+	rules func(iss rulingIssue, link rulingLink) bool
+}
+
+// resolveRulingOn is resolveRuling with condition 6 supplied by the caller. Every
+// other condition — the link grammar, the repository, the comment's existence,
+// its parent issue, its being unedited, a bot never ruling, the author mapping to
+// a human, the comment naming rec.ID, the issue not being a pull request — is the
+// same code for every record kind.
+func resolveRulingOn(c *ghClient, prRepo string, rec decisionRecordStamp, humanLogins map[string]string, binding rulingIssueBinding) rulingOutcome {
 	out := rulingOutcome{Present: true, Names: rec.Names}
 	refuse := func(r rulingReason, format string, a ...any) rulingOutcome {
 		out.Reason = r
@@ -238,6 +273,14 @@ func resolveRuling(c *ghClient, prRepo string, rec decisionRecordStamp, humanLog
 	if strings.TrimSpace(rec.Ruling) == "" {
 		out.Present = false
 		return out
+	}
+	// The ruling is bound to the record by its DR-<slug> id (condition 5, and the
+	// decision-gate marker of condition 6). A record with no valid frontmatter id
+	// has no id a comment could name, so condition 5 cannot hold: refuse under its
+	// reason before any forge contact, with a detail that says why. The register
+	// lint reports the same record offline.
+	if rec.ID == "" {
+		return refuse(rulingRecordNotNamed, "the record %s carries no valid DR-<slug> frontmatter id, so no ruling comment can name it — fix its id: (statusgen --lint reports it)", rec.File)
 	}
 	link, ok := parseRulingURL(rec.Ruling)
 	if !ok {
@@ -360,11 +403,12 @@ func resolveRuling(c *ghClient, prRepo string, rec decisionRecordStamp, humanLog
 	if len(iss.PullRequest) > 0 && string(iss.PullRequest) != "null" {
 		return refuse(rulingUnrelatedIssue, "%s#%d is a pull request, not a decision issue", link.Repo, link.Issue)
 	}
-	if !issueRulesOnRecord(iss.Body, rec.ID, link.Repo, citingBriefs) {
-		return refuse(rulingUnrelatedIssue, "%s#%d carries no decision-gate marker for %s or for a brief whose design: cites it — the comment is not on this record's decision issue", link.Repo, link.Issue, rec.ID)
+	if !binding.rules(rulingIssue{Body: iss.Body}, link) {
+		return refuse(rulingUnrelatedIssue, "%s#%d carries no decision-gate marker for %s — the comment is not on this record's decision issue", link.Repo, link.Issue, binding.what)
 	}
 
 	out.Reason = rulingOK
+	out.Body = cm.Body
 	url := cm.HTMLURL
 	if url == "" {
 		url = rec.Ruling
@@ -418,8 +462,9 @@ func commentNamesRecord(text, recordID string) bool {
 // for the record: either the record's own id (`<!-- decision-gate: DR-<slug> -->`)
 // or a brief that cites it via `design:`, in either brief-id form — the canonical
 // "<stream>/<NN>" or the colon work-item form ending "<repo>:<stream>:<NN>". The
-// colon form must name the record's own repository when it names one.
-func issueRulesOnRecord(body, recordID, repo string, citingBriefs []string) bool {
+// colon form must name the record's own repository when it names one: by its
+// name, or by an alias the consumer's registry declares for it (repoAliases).
+func issueRulesOnRecord(body, recordID, repo string, repoAliases, citingBriefs []string) bool {
 	repoName := repo
 	if i := strings.LastIndex(repo, "/"); i >= 0 {
 		repoName = repo[i+1:]
@@ -433,7 +478,7 @@ func issueRulesOnRecord(body, recordID, repo string, citingBriefs []string) bool
 		if !ok {
 			continue
 		}
-		if parts := strings.Split(id, ":"); len(parts) >= 3 && !strings.EqualFold(parts[len(parts)-3], repoName) {
+		if parts := strings.Split(id, ":"); len(parts) >= 3 && !namesRepo(parts[len(parts)-3], repoName, repoAliases) {
 			continue // a colon-form id naming another repository
 		}
 		for _, b := range citingBriefs {
@@ -444,6 +489,50 @@ func issueRulesOnRecord(body, recordID, repo string, citingBriefs []string) bool
 		}
 	}
 	return false
+}
+
+// namesRepo reports whether a colon-form marker's repository segment names the
+// record's repository: its literal name, or one of its registry aliases. The
+// single comparison point for that segment, so the name and alias spellings can
+// never be checked by two different rules.
+func namesRepo(seg, repoName string, repoAliases []string) bool {
+	if strings.EqualFold(seg, repoName) {
+		return true
+	}
+	for _, a := range repoAliases {
+		if a != "" && strings.EqualFold(seg, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// repoAliasesFor returns the aliases the registry reg declares for repo
+// ("owner/repo"): every published entry whose repo is that repository, plus the
+// registry's `self:` alias (this tree lives in the record's repository, so its own
+// alias names it even when the entry is unpublished). A self entry that is
+// PUBLISHED under a different repo is a contradictory registry, so it adds nothing:
+// an alias the record's repository cannot be shown to own never widens the match.
+// A non-self unpublished entry adds nothing either, whatever its repo says. A nil
+// registry yields none. Sorted, so two runs agree.
+func repoAliasesFor(reg *graphRepos, repo string) []string {
+	if reg == nil {
+		return nil
+	}
+	var out []string
+	for alias, e := range reg.Aliases {
+		names := e.Repo != "" && strings.EqualFold(e.Repo, repo)
+		switch {
+		case alias == reg.Self:
+			if e.Unpublished || names {
+				out = append(out, alias)
+			}
+		case !e.Unpublished && names:
+			out = append(out, alias)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // normBriefNum drops leading zeros so "05" and "5" compare equal.
@@ -457,44 +546,41 @@ func normBriefNum(n string) string {
 
 // ---- disk / diff plumbing ------------------------------------------------------
 
-// isDecisionRecordPath reports whether a repo-relative path is a DR record in the
+// isDecisionRecordPath reports whether a repo-relative path is a record in the
 // DECISIONS register. Scoped to the register directory on purpose: a DR-shaped
 // file anywhere else is not a record this lane gates.
+//
+// The file set is exactly the one parseDecisionsDir reads: every .md directly under
+// the register directory except README.md, whatever its basename. The design gate
+// resolves a brief's design: by the record's frontmatter id, not by its file name, so
+// a record whose basename is not DR-shaped is still an approval the gate accepts. The
+// online lane must therefore re-read its decided-by too. Keying this lane on a
+// DR-shaped basename let such a record's decided-by pass the register lint while the
+// online lane never looked at it.
 func isDecisionRecordPath(path string) bool {
 	p := filepath.ToSlash(path)
 	if !strings.HasPrefix(p, "docs/streams/"+decisionsDirName+"/") {
 		return false
 	}
-	if strings.Contains(strings.TrimPrefix(p, "docs/streams/"+decisionsDirName+"/"), "/") {
+	base := strings.TrimPrefix(p, "docs/streams/"+decisionsDirName+"/")
+	if base == "" || strings.Contains(base, "/") {
 		return false
 	}
-	_, ok := decisionRecordID(p)
-	return ok
+	return strings.HasSuffix(base, ".md") && base != "README.md"
 }
 
-// decisionRecordsInDiff returns every DR record file the diff ADDS OR EDITS (at
-// least one added line), in first-seen order. A declared fixture corpus is skipped
+// decisionRecordsInDiff returns every decision record file (isDecisionRecordPath) the
+// diff ADDS OR EDITS (at least one added line), in first-seen order. A declared fixture corpus is skipped
 // exactly as stampsInDiff skips it.
 func decisionRecordsInDiff(root, diff string) []string {
 	var out []string
 	seen := map[string]bool{}
-	cur := ""
-	for _, line := range strings.Split(diff, "\n") {
-		t := strings.TrimRight(line, "\r")
-		if strings.HasPrefix(t, "diff --git ") {
-			if f := strings.Fields(t); len(f) >= 4 {
-				cur = strings.TrimPrefix(f[3], "b/")
-			}
-			continue
-		}
-		if strings.HasPrefix(t, "+++ ") {
-			cur = strings.TrimPrefix(t, "+++ b/")
-			continue
-		}
-		if !strings.HasPrefix(t, "+") || strings.HasPrefix(t, "+++") {
-			continue
-		}
-		if cur == "" || seen[cur] || !isDecisionRecordPath(cur) || isExcludedFixturePath(root, cur) {
+	// The one shared diff walker (addedDiffLines, corroboratescope.go) already skips
+	// a declared fixture corpus; a decision record is never a .patch file, so the
+	// walker's embedded-patch rule never touches this lane.
+	for _, al := range addedDiffLines(root, diff) {
+		cur := al.File
+		if cur == "" || seen[cur] || !isDecisionRecordPath(cur) {
 			continue
 		}
 		seen[cur] = true
@@ -505,9 +591,16 @@ func decisionRecordsInDiff(root, diff string) []string {
 
 // loadDecisionRecordStamp reads one DR record from the checkout. A read or parse
 // failure is carried in LoadErr (fail closed downstream), never dropped.
+//
+// The record's ID is its FRONTMATTER id, not its file name: that is the id the
+// design gate resolves a brief's design: by, the id the register lint validates, and
+// the id registers-v1 §7.5 condition 5 requires the ruling comment to name. The
+// register sets no file-name rule (§7.2), so a record's basename may be any name. An
+// id that is absent or not DR-<slug> leaves ID empty, and the ruling lane refuses it
+// (record-not-named, with a detail naming the missing id); the register lint reports
+// the same record.
 func loadDecisionRecordStamp(root, file string) decisionRecordStamp {
 	rec := decisionRecordStamp{File: file}
-	rec.ID, _ = decisionRecordID(file)
 	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
 	if err != nil {
 		rec.LoadErr = err.Error()
@@ -522,6 +615,9 @@ func loadDecisionRecordStamp(root, file string) decisionRecordStamp {
 	if uerr := yaml.Unmarshal([]byte(fm), &e); uerr != nil {
 		rec.LoadErr = uerr.Error()
 		return rec
+	}
+	if id := strings.TrimSpace(e.ID); decisionIDRe.MatchString(id) {
+		rec.ID = id
 	}
 	rec.DecidedBy = e.DecidedBy
 	rec.Ruling = e.Ruling
@@ -569,8 +665,12 @@ func addDecisionRecordStamps(stamps []stamp, recs []decisionRecordStamp) []stamp
 }
 
 // decisionCitingBriefs returns the "<stream>/<NN>" ids of every brief under
-// root/docs/streams (active or archived under done/) whose `design:` cites id.
+// root/docs/streams (active or archived under done/) whose `design:` cites id. An
+// empty id cites nothing: it would otherwise match every brief with no design:.
 func decisionCitingBriefs(root, id string) []string {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
 	var out []string
 	for _, pat := range []string{
 		filepath.Join(root, "docs", "streams", "*", "brief-*.md"),
@@ -600,13 +700,21 @@ func decisionCitingBriefs(root, id string) []string {
 // resolveDecisionRulings is the runner glue: one outcome per touched record.
 func resolveDecisionRulings(c *ghClient, root, repo string, recs []decisionRecordStamp, humanLogins map[string]string) rulingOutcomes {
 	out := rulingOutcomes{}
+	// The consumer's alias registry (the one citation-alias-resolution reads) lets a
+	// colon-form marker name the repository by an alias. An unreadable registry is a
+	// could-not-check: say so, and fall back to the literal name only (fail closed).
+	reg, _, rerr := loadGraphRepos(root)
+	if rerr != nil {
+		fmt.Fprintf(os.Stderr, "statusgen --corroborate: could-not-check: alias registry unreadable, decision-gate markers are matched by repository name only: %v\n", rerr)
+	}
+	aliases := repoAliasesFor(reg, repo)
 	for _, r := range recs {
 		// Name the forge target BEFORE first contact, so an operator sees what is
 		// about to be read, not only the verdict afterwards.
 		if r.LoadErr == "" && strings.TrimSpace(r.Ruling) != "" {
 			fmt.Fprintf(os.Stderr, "statusgen --corroborate: resolving ruling link %s for %s\n", strings.TrimSpace(r.Ruling), r.File)
 		}
-		out[r.File] = resolveRuling(c, repo, r, humanLogins, decisionCitingBriefs(root, r.ID))
+		out[r.File] = resolveRuling(c, repo, r, humanLogins, decisionCitingBriefs(root, r.ID), aliases)
 	}
 	return out
 }

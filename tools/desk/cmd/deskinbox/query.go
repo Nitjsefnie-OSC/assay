@@ -11,13 +11,17 @@ package main
 // four labels client-side — fewer calls, and the same union: an issue is included iff it
 // carries at least one of LABELS, exactly as the per-label fan-out would include it. The
 // one observable difference is the truncation THRESHOLD: the oracle caps each label query
-// at --limit (default 500) and warns per label; ListOpenIssues caps the repo's WHOLE open
-// list at 10,000 (forgeMaxIssuePages*forgeIssuePerPage) and refuses (could-not-check)
-// past it — a repo would need more open issues than that, escalation-labelled or not,
-// before the two mechanisms could disagree. testdata/spec.md records this as a deliberate,
-// bounded divergence.
+// at --limit (default 500) and warns per label; ListOpenIssues bounds the repo's WHOLE open
+// listing by the forge client's page guard and refuses (could-not-check) past it. On GitHub
+// that guard is 100 pages of 100 REST rows (forgeMaxIssuePages*forgeIssuePerPage), and the
+// rows include open pull requests, which the client drops only after reading the page; on
+// GitLab it is 25 pages of 100 issues. The two mechanisms disagree only on a repo whose open
+// listing fills that guard, escalation-labelled or not. testdata/spec.md records this as a
+// deliberate, bounded divergence.
 
 import (
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/issueflow"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,15 +46,7 @@ type item struct {
 // rankOf returns the lowest index into `labels` any of names carries, or 99 when none
 // match — the oracle's `$rankorder | index($n) | min // 99`.
 func rankOf(names []string) int {
-	best := 99
-	for _, n := range names {
-		for i, l := range labels {
-			if n == l && i < best {
-				best = i
-			}
-		}
-	}
-	return best
+	return issueflow.InboxRank(names)
 }
 
 // hasEscalationLabel reports whether names carries at least one of `labels`.
@@ -71,12 +67,12 @@ type queryFailure struct {
 // first within the same rank) — the oracle's ONE ordering every renderer reads from
 // (assay-inbox.sh:364-386). A repo whose read failed is counted in `failures` and excluded
 // from the queue, never silently treated as empty.
-func fetchQueue(repos []string) (sorted []item, failures []queryFailure) {
+func fetchQueue(repos []string, observers ...deskkit.RequestObserver) (sorted []item, failures []queryFailure) {
 	for _, repo := range repos {
 		if strings.TrimSpace(repo) == "" {
 			continue
 		}
-		f, fr, ferr := forgeFor(repo)
+		f, fr, ferr := forgeFor(repo, observers...)
 		if ferr != nil {
 			failures = append(failures, queryFailure{Repo: repo, Err: ferr})
 			continue

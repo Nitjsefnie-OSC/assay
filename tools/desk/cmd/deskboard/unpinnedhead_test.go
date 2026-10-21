@@ -49,6 +49,9 @@ func greenRollupPR(num int, head string) prBase {
 	p.State = "OPEN"
 	p.Author.Login = "ada"
 	p.HeadRefOid = head
+	// The head commit's committer date, as the live open-change read carries it (#3093):
+	// older than every fixture review, so a fixture approval at head reads as current.
+	p.HeadCommittedDate = fixtureHeadCommittedAt
 	p.StatusCheckRollup = []check{{
 		TypeName:   "CheckRun",
 		Name:       "build",
@@ -160,9 +163,14 @@ func TestPinnedShasStillCompareForMergeCurr(t *testing.T) {
 					"the reviewed sha to the current head", base, head, reviewed, unpinnedHead)
 			}
 			return &deskkit.RefComparison{
-				Status: "ahead",
-				Files:  []deskkit.ChangedFile{{Filename: "docs/elsewhere.md"}},
+				Status:          "ahead",
+				CommitsComplete: true,
+				Commits:         []deskkit.RepoCommit{{SHA: head, Parents: []string{base, "main"}}},
+				Files:           []deskkit.ChangedFile{{Filename: "docs/elsewhere.md"}},
 			}, nil
+		},
+		getCommit: func(_, sha string) (*deskkit.RepoCommit, error) {
+			return &deskkit.RepoCommit{SHA: sha, FilesComplete: true, Files: []deskkit.ChangedFile{{Filename: "docs/elsewhere.md"}}}, nil
 		},
 	})
 

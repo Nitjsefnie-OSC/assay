@@ -25,7 +25,7 @@ decision-trigger: creation
 decision-issue: 1247
 issues: [1187, 722]
 schema: brief-v2
-version: 1
+version: 2
 id: c861ae82-1fee-4d34-94f2-ccfc32a126cc
 authored: 2026-09-16 by desk-supervision authoring session
 exec-tier: strong
@@ -52,22 +52,12 @@ consumers:
 ## Context
 
 files:
-- **remove or reduce to a pointer** `tools/ci-load/activation/` and `ci/staged-workflows/` — the
-  two staging areas. If reduced rather than removed, the pointer file is named `POINTER.md` at
-  each staging area's root (`tools/ci-load/activation/POINTER.md` (planned),
-  `ci/staged-workflows/POINTER.md` (planned)) — pinned here so Verify rows 2/3 name a real deliverable
-  rather than an unenumerated "a pointer". Any live-and-current staged delta is first carried
-  through the workflow App PR path (desk-supervision/11), never landed verbatim (verbatim landing
-  of a stale copy reverts fixes — #1187).
+- **remove or reduce to a pointer** `tools/ci-load/activation/` and `ci/staged-workflows/` — the two staging areas. If reduced rather than removed, the pointer file is named `POINTER.md` at each staging area's root (`tools/ci-load/activation/POINTER.md` (planned), `ci/staged-workflows/POINTER.md` (planned)) — pinned here so Verify rows 2/3 name a real deliverable rather than an unenumerated "a pointer". Any live-and-current staged delta is first carried through the workflow App PR path (desk-supervision/11), never landed verbatim (verbatim landing of a stale copy reverts fixes — #1187).
 - **edit** the READMEs and `docs/adopting-assay.md` sections that instruct the `cp <staged>
   .github/workflows/` hand-copy step — rewrite them to the workflow-only-PR path.
 - **verify (not edit here)** that the release/changelog-fragment handling (#722) is not re-stranded
   by the removal.
-- **out of scope, named so it is not silently assumed** — the existing direct-to-default-branch
-  promote route (today's human-dispatched job) is NOT retired by this brief; only the staging
-  *directories* are. If closing that route is wanted, it is a branch-protection change (who may
-  push to the default branch) tracked separately, not implied by this removal (DR
-  "What is explicitly NOT decided here").
+- **out of scope, named so it is not silently assumed** — the existing direct-to-default-branch promote route (today's human-dispatched job) is NOT retired by this brief; only the staging *directories* are. If closing that route is wanted, it is a branch-protection change (who may push to the default branch) tracked separately, not implied by this removal (DR "What is explicitly NOT decided here").
 
 facts:
 - precondition: the workflow App PR path (desk-supervision/11) is proven to carry a workflow change
@@ -133,7 +123,7 @@ unruled DR — it stays `blocked` until 11 reaches `done`.
 | 1 | PRECONDITION + FLOW: `tools/workflowpr --dry-run` on a real prepared workflow change opens a workflow-only PR that carries the change end to end | exit 0; a workflow-only diff (proves the replacement path carries a change before anything is removed) | gate:human +flow +dereference |
 | 2 | `test ! -d tools/ci-load/activation -o -f tools/ci-load/activation/POINTER.md` | exit 0 (removed, or reduced to a pointer) | check |
 | 3 | `test ! -d ci/staged-workflows -o -f ci/staged-workflows/POINTER.md` | exit 0 | check |
-| 4 | `grep -rEn -e 'cp tools/ci-load/activation' -e 'cp ci/staged-workflows' docs/ ci/ tools/ 2>/dev/null \| wc -l` | 0 (no hand-copy runbook remains) | check +dereference |
+| 4 | `{ grep -rEn -e 'cp tools/ci-load/[a]ctivation' -e 'cp ci/[s]taged-workflows' docs/ ci/ tools/ 2>/dev/null \|\| [ $? -eq 1 ]; } \| wc -l` | output is `0` (no hand-copy runbook remains). Re-written 2026-10-03 (#1862): every grep stage tolerates only the no-match status, so a missing path or a grep error fails the row instead of passing it. The `[a]`/`[s]` bracket classes keep this row's own text from matching itself. | check +dereference |
 | 5 | `git diff $(git merge-base refs/remotes/origin/main HEAD)..HEAD -- .github/workflows/leaksweep-control.yml .github/workflows/leaksweep-pattern.yml` | empty (security/required workflows untouched) — base spelled `refs/remotes/origin/main` in full: git resolves `refs/heads/` before `refs/remotes/`, so a checkout that ever acquired a local branch literally named `origin/main` would silently compare against the stale one | check +neighbour |
 | 6 | `tools/workflowpr --check` on a fixture mixing a workflow file with a source file (the brief-11 guard) | exit non-zero (the guard still fires mid/post cutover) | check:ci +mutation |
 | 7 | `statusgen --consumers --root . --brief desk-supervision/12` | exit 0 (consumers routing corroborated against the diff) | check:ci |

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/medici-finance/assay/tools/desk/internal/acp"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/gitquiet"
 	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
 )
 
@@ -25,7 +27,12 @@ func TestMain(m *testing.M) {
 		runFakeACPAgent(mode)
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	// plan now reads pending Evidence as well as blockers. Legacy board/runner
+	// fixtures have no forge population; install its explicit empty offline
+	// source rather than letting their configured example repos mint credentials.
+	// Pending-Evidence integration tests replace this with their typed forge.
+	issueSourceFn = func() deskkit.IssueStateSource { return pendingFixture{} }
+	os.Exit(gitquiet.Run(m))
 }
 
 // runFakeACPAgent implements just enough of the ACP agent side to drive verifyloop's native
@@ -221,6 +228,7 @@ func nativeLoop(t *testing.T, mode string, extraEnv ...string) *VerifyLoop {
 	wt := t.TempDir()
 	env := append([]string{"VERIFYLOOP_FAKE_ACP=" + mode}, extraEnv...)
 	return &VerifyLoop{
+		Attest:        fixtureAttestation,
 		Root:          t.TempDir(),
 		TargetSHA:     "deadbeef",
 		Native:        true,
@@ -466,4 +474,13 @@ func assertAuditHas(t *testing.T, substr string) {
 	if !strings.Contains(string(data), substr) {
 		t.Fatalf("audit log has no line containing %q:\n%s", substr, data)
 	}
+}
+
+func fixtureAttestation(it loopengine.Item, home, model string) (deskkit.VerifierReceipt, error) {
+	return deskkit.VerifierReceipt{Issue: 41, Binding: deskkit.VerifierBinding{Run: "fixture-run", Source: it.TargetSHA, Brief: it.BriefPath, Model: "gpt-6-astra", Tier: "strong"}}, nil
+}
+func admitFixture(v *VerifyLoop, it loopengine.Item) {
+	v.Attest = fixtureAttestation
+	r, _ := fixtureAttestation(it, v.Root, "")
+	v.rememberRun(it, v.Root, r, nil)
 }

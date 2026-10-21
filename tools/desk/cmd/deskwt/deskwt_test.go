@@ -90,10 +90,22 @@ func withEnv(t *testing.T, work string) *[][]string {
 	plantFixtureRoster(t, fixtureHome)
 	t.Setenv("DESK_TOOLS_DISABLED", "")
 	t.Setenv("CLAUDE_SESSION_ID", "test")
+	// prune's cache pressure pass discovers marked cache roots under the cells root. Pin
+	// it to a fixture path (no cells) so a test run on a machine that exports CELLS_ROOT
+	// can never enumerate — let alone pressure-check — the operator's real cell caches.
+	t.Setenv("CELLS_ROOT", filepath.Join(fixtureHome, "no-cells-here"))
+	t.Setenv("XDG_DATA_HOME", "")
 
 	oldwd := getwd
 	getwd = func() (string, error) { return work, nil }
 	t.Cleanup(func() { getwd = oldwd })
+
+	// Every fixture worktree is seconds old, so the prune activity gate (activity.go)
+	// would hold all of them; the suite's gate tests were written for the content gates.
+	// The activity gate's own tests re-arm it with --min-idle.
+	oldIdle := defaultMinIdle
+	defaultMinIdle = 0
+	t.Cleanup(func() { defaultMinIdle = oldIdle })
 
 	oldTmp := tmpBaseDir
 	tmpBaseDir = filepath.Join(t.TempDir(), "wtroot")
@@ -105,15 +117,15 @@ func withEnv(t *testing.T, work string) *[][]string {
 	// role-init's two envelope seams (#1309 item 7): a fixture has no App credential to mint
 	// and no forge to preflight against, so the minter hands back a fixture token FILE (its
 	// path, never a value on stdout) and the preflight is green unless a test says otherwise.
-	oldTok := roleTokenPath
-	roleTokenPath = func(role, owner string) (string, error) {
+	oldCred := roleCredential
+	roleCredential = func(role string, repo deskkit.ForgeRepo, originURL string) (deskkit.RoleCredential, error) {
 		p := filepath.Join(fixtureHome, role+"-token-fixture")
 		if err := os.WriteFile(p, []byte(fixtureTokenValue+"\n"), 0o600); err != nil {
-			return "", err
+			return deskkit.RoleCredential{}, err
 		}
-		return p, nil
+		return deskkit.RoleCredential{Token: fixtureTokenValue, Path: p}, nil
 	}
-	t.Cleanup(func() { roleTokenPath = oldTok })
+	t.Cleanup(func() { roleCredential = oldCred })
 	oldPf := roleInitPreflight
 	roleInitPreflight = func(deskkit.PreflightRequest) error { return nil }
 	t.Cleanup(func() { roleInitPreflight = oldPf })

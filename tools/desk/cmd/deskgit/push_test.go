@@ -1,12 +1,16 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/gitcore"
 )
 
 // push_test.go — the authenticated-transport verbs (`deskgit push --as`, `deskgit fetch
@@ -31,7 +35,7 @@ func asWorker(t *testing.T) *bool {
 	t.Setenv("DESK_LOOP", "worker-desk")
 	called := new(bool)
 	prev := roleTokenForRepo
-	roleTokenForRepo = func(role, repo string) (string, string, error) {
+	roleTokenForRepo = func(role, repo string, _ []string) (string, string, error) {
 		*called = true
 		return fixtureToken, "/fixture/config/worker.token", nil
 	}
@@ -52,7 +56,8 @@ func onBranch(t *testing.T, work, branch string) {
 // because the authenticated forms prepend `-c credential.helper=` before the verb.
 func gitCallWith(calls [][]string, verb string) []string {
 	for _, c := range calls {
-		if len(c) == 0 || c[0] != "git" {
+		// "gitcore" is the synthetic entry the in-process fetch seam records (see withEnvCmds).
+		if len(c) == 0 || (c[0] != "git" && c[0] != "gitcore") {
 			continue
 		}
 		for _, a := range c[1:] {
@@ -101,12 +106,25 @@ func TestPushAdvancesFixtureRemote(t *testing.T) {
 	if got != wantHEAD {
 		t.Fatalf("remote refs/heads/feature-1 = %s, want worktree HEAD %s", got, wantHEAD)
 	}
-	// The argv is exactly the fixed form: helper cleared before the verb, receive-pack pinned,
-	// origin + the current-branch refspec, and NOTHING else.
-	argv := strings.Join(gitCallWith(*calls, "push"), " ")
-	want := "git -c credential.helper= push --receive-pack=git-receive-pack origin refs/heads/feature-1:refs/heads/feature-1"
+	// The argv is exactly the fixed form: ambient helpers cleared and the ONE host-scoped
+	// ephemeral helper added before the verb, receive-pack and submodule recursion pinned,
+	// origin + the current-branch refspec, and NOTHING else. The helper's path is ephemeral, so
+	// it is matched by shape and checked to be gone after the call.
+	call := gitCallWith(*calls, "push")
+	if len(call) != 10 {
+		t.Fatalf("push argv = %q, want exactly 10 tokens", call)
+	}
+	helperSpec, ok := strings.CutPrefix(call[4], "credential.https://github.com.helper=!'")
+	if !ok || !strings.HasSuffix(helperSpec, "/credential-helper.sh'") {
+		t.Fatalf("push argv token %q is not the host-scoped ephemeral helper", call[4])
+	}
+	if _, err := os.Stat(strings.TrimSuffix(helperSpec, "'")); !os.IsNotExist(err) {
+		t.Fatalf("ephemeral helper %s still exists after the push (stat err %v)", helperSpec, err)
+	}
+	argv := strings.Join(append(append([]string{}, call[:4]...), call[5:]...), " ")
+	want := "git -c credential.helper= -c push --receive-pack=git-receive-pack --no-recurse-submodules origin refs/heads/feature-1:refs/heads/feature-1"
 	if argv != want {
-		t.Fatalf("push argv = %q\n want %q", argv, want)
+		t.Fatalf("push argv (helper path elided) = %q\n want %q", argv, want)
 	}
 }
 
@@ -232,15 +250,15 @@ func TestAmbientCredentialHelperNeverConsulted(t *testing.T) {
 }
 
 // Row 6: the token never leaves the child. Its fixture VALUE must be absent from argv,
-// stdout, stderr and the audit line; and the ephemeral askpass dir must be gone after both a
+// stdout, stderr and the audit line; and the ephemeral helper dir must be gone after both a
 // successful push and an injected failure.
 func TestTokenNeverLeavesTheChild(t *testing.T) {
-	// Confine the ephemeral askpass dir to a scratch parent so its removal can be asserted
-	// without racing other /tmp entries.
+	// Confine the ephemeral credential-helper dir to a scratch parent so its removal can be
+	// asserted without racing other /tmp entries.
 	askParent := t.TempDir()
-	prevParent := askpassTempParent
-	askpassTempParent = askParent
-	t.Cleanup(func() { askpassTempParent = prevParent })
+	prevParent := credentialTempParent
+	credentialTempParent = askParent
+	t.Cleanup(func() { credentialTempParent = prevParent })
 
 	noLeak := func(t *testing.T) {
 		t.Helper()
@@ -249,8 +267,8 @@ func TestTokenNeverLeavesTheChild(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, e := range ents {
-			if strings.HasPrefix(e.Name(), "deskgit-askpass-") {
-				t.Fatalf("askpass temp dir leaked: %s", e.Name())
+			if strings.HasPrefix(e.Name(), "deskgit-cred-") {
+				t.Fatalf("credential helper temp dir leaked: %s", e.Name())
 			}
 		}
 	}
@@ -288,7 +306,7 @@ func TestTokenNeverLeavesTheChild(t *testing.T) {
 		// Inject a failure the credential path cannot recover from: remove the bare remote so
 		// the push itself fails. The effective-URL gate still passes (RepoForLocalPath falls
 		// back to the cleaned absolute path, which is still the configured root), so the flow
-		// reaches askpassSupply + the push, then fails — exercising the cleanup on the error path.
+		// reaches credentialSupply + the push, then fails — exercising the cleanup on the error path.
 		upstream := mustGit(t, work, "remote", "get-url", "origin")
 		if err := os.RemoveAll(upstream); err != nil {
 			t.Fatal(err)
@@ -370,22 +388,66 @@ func TestPushOptionsRefusedByName(t *testing.T) {
 	}
 }
 
-// Row 8: fetch --as keeps every fetch guard — the hardening pins and the effective-URL gate —
-// and only adds the credential channel.
+// Row 8: fetch --as keeps every fetch guard — the effective-URL gate, the refspec — and only adds
+// the credential. The credential is an in-memory value on the transport options; nothing is
+// staged on disk or in the environment (there is no helper to clear: no git child runs).
 func TestFetchAsRoleKeepsEveryFetchGuard(t *testing.T) {
-	t.Run("hardening pins still present, helper cleared before the verb", func(t *testing.T) {
+	t.Run("the credential is an in-memory value bound to a github.com origin only", func(t *testing.T) {
 		work := newRepo(t, allowedSlug)
-		calls := withEnv(t, work)
+		onBranch(t, work, "feature-auth")
+		mustGit(t, work, "remote", "set-url", "origin", githubOrigin)
+		withEnv(t, work)
 		asWorker(t)
-		if code := run([]string{"fetch", "--as", "worker"}); code != deskkit.ExitOK {
-			t.Fatalf("fetch --as worker exit = %d, want ok", code)
+		// github.com is not reachable from a unit test: the fetch seam records the options and
+		// fails, so the exit is 6 — the assertion is on what the transport was handed.
+		fetchFn = func(_ string, opts gitcore.FetchOpts) error {
+			fetchRecorded = append(fetchRecorded, opts)
+			return errors.New("offline")
 		}
-		argv := gitCallWith(*calls, "fetch")
-		if argv == nil {
-			t.Fatal("no git fetch was constructed for fetch --as")
+		if code := run([]string{"fetch", "--as", "worker"}); code != deskkit.ExitUnverifiable {
+			t.Fatalf("fetch --as worker exit = %d, want %d (offline seam)", code, deskkit.ExitUnverifiable)
 		}
-		assertHardened(t, argv)
-		assertCredentialHelperCleared(t, strings.Join(argv, " "), "fetch")
+		got := onlyFetch(t)
+		if got.URL != githubOrigin {
+			t.Errorf("fetch URL = %q, want the gated origin %q verbatim", got.URL, githubOrigin)
+		}
+		ba, ok := got.Auth.(*githttp.BasicAuth)
+		if !ok || ba.Password != fixtureToken {
+			t.Fatalf("fetch Auth = %#v, want BasicAuth carrying the role token", got.Auth)
+		}
+		if len(got.RefSpecs) != 1 || got.RefSpecs[0] != trackingRefspec {
+			t.Errorf("refspecs = %q, want exactly [%q]", got.RefSpecs, trackingRefspec)
+		}
+		// The token is in no URL and in no audit line.
+		if strings.Contains(got.URL, fixtureToken) {
+			t.Error("the token is in the fetch URL")
+		}
+		for _, e := range readAudit(t) {
+			if strings.Contains(e.Detail, fixtureToken) {
+				t.Errorf("the audit line carries the token: %+v", e)
+			}
+		}
+	})
+
+	t.Run("no credential is offered to an origin that is not https github.com", func(t *testing.T) {
+		for _, origin := range []string{
+			"http://github.com/" + allowedSlug + ".git",
+			"https://github.com.evil.test/" + allowedSlug + ".git",
+			"https://gitlab.example.com/" + allowedSlug + ".git",
+			"github.com:" + allowedSlug + ".git",
+		} {
+			if credentialHostOK(origin) {
+				t.Errorf("credentialHostOK(%q) = true, want false", origin)
+			}
+		}
+		for _, origin := range []string{
+			"https://github.com/" + allowedSlug + ".git",
+			"https://github.com:443/" + allowedSlug + ".git",
+		} {
+			if !credentialHostOK(origin) {
+				t.Errorf("credentialHostOK(%q) = false, want true", origin)
+			}
+		}
 	})
 
 	t.Run("effective-URL gate still refuses a rewritten origin", func(t *testing.T) {
@@ -399,8 +461,8 @@ func TestFetchAsRoleKeepsEveryFetchGuard(t *testing.T) {
 		if code := run([]string{"fetch", "--as", "worker"}); code != deskkit.ExitRefused {
 			t.Fatalf("fetch --as worker on a rewritten origin exit = %d, want %d (refused)", code, deskkit.ExitRefused)
 		}
-		if gitCallWith(*calls, "fetch") != nil {
-			t.Fatal("git fetch must not run when the effective URL is denied, even under --as")
+		if fetchArgv(*calls) != nil {
+			t.Fatal("the transport must not be reached when the effective URL is denied, even under --as")
 		}
 		if *called {
 			t.Fatal("a token was read though the origin gate refused — the gate must precede the token read")

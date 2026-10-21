@@ -38,78 +38,66 @@ func doneCount(s *Stream) int {
 	return n
 }
 
-// blockerSegment classifies an awaiting brief by who owns the blocker.
-// The desk-actionable segment is the residual —
-// the queue the desk can actually drain.
-type blockerSegment int
-
-const (
-	segmentDeskActionable blockerSegment = iota
-	segmentHumanGate
-	segmentRework
-	segmentPaused
-	segmentParked
-	segmentEnvBlocked
-)
-
-func (s blockerSegment) heading() string {
-	switch s {
-	case segmentDeskActionable:
-		return "Desk-actionable"
-	case segmentHumanGate:
-		return "Awaiting human gate"
-	case segmentRework:
-		return "Awaiting implementer rework"
-	case segmentPaused:
-		return "Paused stream"
-	case segmentParked:
-		return "Parked stream"
-	case segmentEnvBlocked:
-		return "Env-blocked"
-	}
-	return ""
+// awaitPlacement is where one awaiting (implemented/verified) brief renders on
+// the Awaiting board: a paused or parked stream's rows are UNBUCKETED (they
+// never reach bucketAwaiting and count only in the headline total); every other
+// row carries the owned queue bucketAwaiting chose, with its owner and next act.
+type awaitPlacement struct {
+	paused, parked bool
+	bucket         awaitingBucket
+	owner, nextAct string
 }
 
-// classifyAwaiting returns the blocker-owner segment for an awaiting
-// (implemented/verified) brief. Order matters — the first matching condition
-// wins: a paused stream trumps everything (nobody is working it), then
-// env-blocked (no agent can move it), then the Evidence verdict.
-//
-// The verdict arm reads the LAST verdict recorded, never "any FAIL ever seen"
-// (see lastVerifyVerdict): Evidence accumulates, and a brief that failed, was
-// reworked and passed is not awaiting rework. That also settles what used to
-// be a branch-order question — a brief cannot be simultaneously in rework and
-// through its human gate, because only one verdict is the current one. FAIL →
-// the implementer owns it. PASS on a `gate: human` brief → human:<name> owns it. Every
-// other row is the residual the desk can actually drain, which is what the
-// headline counts.
-func classifyAwaiting(s *Stream, br *Brief) blockerSegment {
+// placeAwaiting reads the brief's inputs and buckets it (awaiting_bucket.go).
+func placeAwaiting(s *Stream, br *Brief) awaitPlacement {
 	if s.Status == "paused" {
-		return segmentPaused
+		return awaitPlacement{paused: true}
 	}
 	if s.Status == streamStatusParked {
-		return segmentParked
+		return awaitPlacement{parked: true}
 	}
-	if br.BlockedBy == "env" {
-		return segmentEnvBlocked
-	}
-	switch lastVerifyVerdict(br.Evidence) {
-	case verdictFail:
-		return segmentRework
-	case verdictPass:
-		if br.Gate == "human" {
-			return segmentHumanGate
+	b, rows, ev, oc := awaitInputs(s, br)
+	bucket, owner, next := bucketAwaiting(b, rows, ev, oc)
+	return awaitPlacement{bucket: bucket, owner: owner, nextAct: next}
+}
+
+// awaitingTally counts every awaiting brief by its placement.
+type awaitingTally struct {
+	buckets        map[awaitingBucket]int
+	paused, parked int
+}
+
+func tallyAwaiting(streams []*Stream) awaitingTally {
+	t := awaitingTally{buckets: map[awaitingBucket]int{}}
+	for _, s := range streams {
+		for i := range s.Briefs {
+			br := &s.Briefs[i]
+			if br.Status != "implemented" && br.Status != "verified" {
+				continue
+			}
+			p := placeAwaiting(s, br)
+			switch {
+			case p.paused:
+				t.paused++
+			case p.parked:
+				t.parked++
+			default:
+				t.buckets[p.bucket]++
+			}
 		}
 	}
-	return segmentDeskActionable
+	return t
 }
 
 // debtCounts computes verification-debt depth and composition for the
 // Awaiting heading and the debt-alarm NOTICE. awaiting = implemented+verified;
-// deskActionable = the subset the desk can actually drain (excludes paused,
-// human-gated-with-VERIFY:PASS, rework, and env-blocked); done is the total
-// done briefs across all streams (segmentation of
-// the Awaiting board by blocker owner).
+// deskActionable = the desk-actionable bucket (the judgement queue the desk
+// drains — never a row another owner moves) PLUS the could-not-check rows: a
+// row whose inputs could not be read is not known to be someone else's, so it
+// stays in the measure. Dropping it would let one unreadable file lower the
+// count and switch the drain-before-instrument gate off, silently (fail open).
+// Runner-pending rows leave the measure: the verify runner and CI drain them
+// without the desk. done is the total done briefs across all streams.
 func debtCounts(streams []*Stream) (awaiting, deskActionable, implemented, verified, done int) {
 	for _, s := range streams {
 		for _, br := range s.Briefs {
@@ -124,21 +112,8 @@ func debtCounts(streams []*Stream) (awaiting, deskActionable, implemented, verif
 		}
 	}
 	awaiting = implemented + verified
-	// Compute desk-actionable: the residual after excluding every non-desk
-	// segment. Must be computed separately (the classification loops over
-	// the same streams + briefs but the five-class logic lives in one
-	// function — debtCounts mirrors it by counting the residual).
-	for _, s := range streams {
-		for i := range s.Briefs {
-			br := &s.Briefs[i]
-			if br.Status != "implemented" && br.Status != "verified" {
-				continue
-			}
-			if classifyAwaiting(s, br) == segmentDeskActionable {
-				deskActionable++
-			}
-		}
-	}
+	t := tallyAwaiting(streams)
+	deskActionable = t.buckets[bucketDeskActionable] + t.buckets[bucketCouldNotCheck]
 	return
 }
 
@@ -155,7 +130,8 @@ func debtBreached(streams []*Stream) bool {
 }
 
 // debtNotice returns a non-empty NOTICE string when the desk-actionable
-// Awaiting queue exceeds the threshold or the total done count — the
+// Awaiting queue (could-not-check rows included, see debtCounts) exceeds the
+// threshold or the total done count — the
 // queue the desk can actually move is the constraint and should be drained
 // before dispatching new implementation work (retargeted at the
 // desk-actionable slice).
@@ -164,55 +140,94 @@ func debtNotice(streams []*Stream) string {
 		return ""
 	}
 	_, desk, _, _, done := debtCounts(streams)
-	return fmt.Sprintf("verification debt: %d desk-actionable awaiting vs %d done — the queue is the constraint; drain before dispatching new implementation work", desk, done)
+	counted := fmt.Sprintf("%d desk-actionable", desk)
+	if n := tallyAwaiting(streams).buckets[bucketCouldNotCheck]; n > 0 {
+		counted = fmt.Sprintf("%d desk-actionable (%d of them could-not-check)", desk, n)
+	}
+	return fmt.Sprintf("verification debt: %s awaiting vs %d done — the queue is the constraint; drain before dispatching new implementation work", counted, done)
 }
 
-// segmentGroup is a sorted group of gate-score rows belonging to one blocker
-// segment.
+// placedGate is one gate-score row with its placement.
+type placedGate struct {
+	GateScore
+	place awaitPlacement
+}
+
+// segmentGroup is a sorted group of gate-score rows rendered under one heading.
 type segmentGroup struct {
 	heading string
-	gates   []GateScore
+	gates   []placedGate
+	// always renders the heading (with `_None._`) even when empty.
+	always bool
 }
 
-// buildSegments classifies each gate-score row and groups them by blocker
-// owner. Segments are returned in fixed display order: desk-actionable first
-// (the headline), then human-gate, rework, paused, parked, env-blocked.
+// buildSegments places each gate-score row and groups them. Fixed display
+// order: the four owned queues and the desk's judgement queue (human gate →
+// implementer rework → environment-blocked → runner-pending → desk-actionable),
+// each ALWAYS rendered so a reader can tell an empty queue from a missing one;
+// then could-not-check, paused and parked, rendered only when non-empty.
 func buildSegments(gates []GateScore) []segmentGroup {
-	var desk, human, rework, paused, parked, env []GateScore
+	byBucket := map[awaitingBucket][]placedGate{}
+	var paused, parked []placedGate
 	for _, g := range gates {
-		seg := classifyAwaiting(g.Stream, &g.Brief)
-		switch seg {
-		case segmentDeskActionable:
-			desk = append(desk, g)
-		case segmentHumanGate:
-			human = append(human, g)
-		case segmentRework:
-			rework = append(rework, g)
-		case segmentPaused:
-			paused = append(paused, g)
-		case segmentParked:
-			parked = append(parked, g)
-		case segmentEnvBlocked:
-			env = append(env, g)
+		p := placeAwaiting(g.Stream, &g.Brief)
+		pg := placedGate{GateScore: g, place: p}
+		switch {
+		case p.paused:
+			paused = append(paused, pg)
+		case p.parked:
+			parked = append(parked, pg)
+		default:
+			byBucket[p.bucket] = append(byBucket[p.bucket], pg)
 		}
 	}
-	groups := []segmentGroup{
-		{heading: segmentDeskActionable.heading(), gates: desk},
-		{heading: segmentHumanGate.heading(), gates: human},
-		{heading: segmentRework.heading(), gates: rework},
-		{heading: segmentPaused.heading(), gates: paused},
-		{heading: segmentParked.heading(), gates: parked},
-		{heading: segmentEnvBlocked.heading(), gates: env},
+	var groups []segmentGroup
+	for _, b := range bucketRenderOrder {
+		groups = append(groups, segmentGroup{heading: b.heading(), gates: byBucket[b], always: true})
 	}
-	// Remove empty groups in-place.
-	n := 0
-	for _, g := range groups {
+	for _, g := range []segmentGroup{
+		{heading: bucketCouldNotCheck.heading(), gates: byBucket[bucketCouldNotCheck]},
+		{heading: "Paused stream", gates: paused},
+		{heading: "Parked stream", gates: parked},
+	} {
 		if len(g.gates) > 0 {
-			groups[n] = g
-			n++
+			groups = append(groups, g)
 		}
 	}
-	return groups[:n]
+	return groups
+}
+
+// awaitingHeadline is the roll-up: one count per owner, then the total.
+func awaitingHeadline(streams []*Stream) string {
+	awaiting, _, _, _, _ := debtCounts(streams)
+	t := tallyAwaiting(streams)
+	line := fmt.Sprintf("## Awaiting verification / review (%d for the desk · %d for the driver · %d for workers · %d for an operator · %d runner-pending — of %d total",
+		t.buckets[bucketDeskActionable], t.buckets[bucketHumanGate], t.buckets[bucketRework],
+		t.buckets[bucketEnvBlocked], t.buckets[bucketRunnerPending], awaiting)
+	if n := t.buckets[bucketCouldNotCheck]; n > 0 {
+		line += fmt.Sprintf("; %d could-not-check", n)
+	}
+	return line + ")"
+}
+
+// tableCell renders free text safely inside a Markdown table cell.
+func tableCell(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\\|", "|")
+	return strings.ReplaceAll(s, "|", "\\|")
+}
+
+// nextActCell renders a next act; an environment-blocked command renders as a
+// code span so it reads verbatim.
+func nextActCell(p awaitPlacement) string {
+	if p.paused || p.parked || p.nextAct == "" {
+		return "—"
+	}
+	if p.bucket == bucketEnvBlocked && p.nextAct != nextActNoEnvCmd && !strings.HasPrefix(p.nextAct, nextActEnvBlocker) && !strings.Contains(p.nextAct, "`") {
+		return "`" + tableCell(p.nextAct) + "`"
+	}
+	return tableCell(p.nextAct)
 }
 
 // emit renders STATUS.md. ages maps "<stream>/<NN>" → rendered awaiting age;
@@ -282,9 +297,24 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 			if !s.LastTouch.IsZero() {
 				touched = s.LastTouch.Format("2006-01-02")
 			}
+			// Withdrawn briefs are retired and out of the denominator; their own
+			// count rides in Notes, ONLY when one exists (byte-identical otherwise).
+			if wc := withdrawnCount(s); wc > 0 {
+				if note != "" {
+					note += " · "
+				}
+				note += fmt.Sprintf("%d withdrawn", wc)
+			}
 			w("| [%s](docs/streams/%s/README.md) | %s | %s | %d/%d | %s | %s |",
-				s.Name, s.Name, s.Priority, s.Status, doneCount(s), len(s.Briefs), touched, note)
+				s.Name, s.Name, s.Priority, s.Status, doneCount(s), liveBriefCount(s), touched, note)
 		}
+	}
+
+	// Stuck auto-flips (verify-reset/07): the gate:model briefs at `verified`,
+	// which the model auto-flip judges and leaves REFUSED or COULD-NOT-CHECK.
+	// Rendered ONLY when one exists, so a board with none is byte-identical.
+	for _, l := range stuckFlipLines(streams, ages) {
+		w("%s", l)
 	}
 
 	// Parked streams (attention-budget/04): shelved out of the active roll-up and
@@ -313,7 +343,7 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 				touched = s.LastTouch.Format("2006-01-02")
 			}
 			w("| [%s](docs/streams/%s/README.md) | %s | %d/%d | %s |",
-				s.Name, s.Name, s.Priority, doneCount(s), len(s.Briefs), touched)
+				s.Name, s.Name, s.Priority, doneCount(s), liveBriefCount(s), touched)
 		}
 	}
 
@@ -351,6 +381,12 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 	}
 	for _, n := range nu.DriveCoverageNotices {
 		w("> **DRIVE COVERAGE — %s**", n)
+		w("")
+	}
+	// The critical tier's main-red arm could not check (drive active, no
+	// --main-health input). Present only while a drive is active.
+	if nu.MainRedUnknown != "" {
+		w("> **COULD NOT CHECK — %s**", nu.MainRedUnknown)
 		w("")
 	}
 	// Could-not-check on a serialized stream. Distinct from the banner above:
@@ -408,6 +444,30 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 			"lost, but it is held out of Next-up so no slot is spent re-discovering the move. Dispatch it "+
 			"against the repo named after the arrow.",
 			len(nu.HomedElsewhere), strings.Join(frags, ", "))
+		w("")
+	}
+	// Merged in a sibling repo (siblingmerge.go). A row
+	// here is NOT proven delivered — the finding is a PROMPT to read the
+	// merged change Task by Task, never proof — but a change naming it
+	// already merged in the named sibling and nobody has recorded what it
+	// covered, so it is held out of Next-up rather than let a slot rediscover
+	// work that (at least partly) already landed. The board NAMES each one
+	// with its sibling so a reader checks the right repo instead of guessing.
+	if len(nu.MergedElsewhere) > 0 {
+		ids := make([]string, 0, len(nu.MergedElsewhere))
+		for id := range nu.MergedElsewhere {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		frags := make([]string, 0, len(ids))
+		for _, id := range ids {
+			frags = append(frags, fmt.Sprintf("%s → %s", id, nu.MergedElsewhere[id]))
+		}
+		w("> **Merged in a sibling repo — check before dispatch (%d):** %s. Each has a matching "+
+			"sibling-merge-unreconciled finding: a change naming it already merged in the named sibling "+
+			"repo. This is a PROMPT to read the merged change Task by Task, never proof of delivery — "+
+			"reconcile the row, or record/complete a `delivery:` claim, to release it back onto this board.",
+			len(nu.MergedElsewhere), strings.Join(frags, ", "))
 		w("")
 	}
 	// Overflow is an alarm (SCADA / EEMUA-191): when the eligible backlog exceeds
@@ -476,7 +536,6 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 		w("%s", driveSections(activeDriveStatuses, activeDriveHeartbeat))
 	}
 
-	awaiting, deskActionable, implemented, verified, _ := debtCounts(streams)
 	gates := gateScores(streams, briefTouch)
 	segments := buildSegments(gates)
 
@@ -485,46 +544,53 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 	w("")
 	w("%s", intakeBoardLine(intake))
 	w("")
-	w("## Awaiting verification / review (%d desk-actionable of %d total — %d at implemented, %d verified awaiting review)", deskActionable, awaiting, implemented, verified)
+	w("%s", awaitingHeadline(streams))
 	w("")
-	w("_Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board segmented by blocker owner: the desk-actionable headline counts only the queue the desk can actually drain._")
+	w("_Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._")
 	w("")
 	w("%s", unrunLegend)
 	w("")
 
-	if len(gates) == 0 {
-		w("_None._")
-	} else {
-		for _, seg := range segments {
+	for i, seg := range segments {
+		if i > 0 {
 			w("")
-			w("### %s (%d)", seg.heading, len(seg.gates))
-			w("")
-			w("| Stream | Brief | Status | Score | _Blocked_ | Age | Verified | Reviewed |")
-			w("|---|---|---|---|---|---|---|---|")
-			for _, g := range seg.gates {
-				s, br := g.Stream, &g.Brief
-				v, r := br.Verified, br.Reviewed
-				if v == "" {
-					v = "—"
-				}
-				if r == "" {
-					r = "—"
-				}
-				// Age in current awaiting status — from the
-				// historian; "—" when unknown, never a guess. Render-only.
-				age := ages[s.Name+"/"+br.Num]
-				if age == "" {
-					age = "—"
-				}
-				marker := ""
-				if br.ExecTier == "strong" {
-					marker = " [exec:strong]"
-				}
-				if br.HomedIn != "" {
-					marker += " [homed→" + br.HomedIn + "]"
-				}
-				w("| %s | %s%s | %s | %d | %d | %s | %s | %s |", s.Name, br.Num, marker, qualityToken(s, br), g.Score, g.BlockedCount, age, v, r)
+		}
+		w("### %s (%d)", seg.heading, len(seg.gates))
+		w("")
+		if len(seg.gates) == 0 {
+			w("_None._")
+			continue
+		}
+		w("| Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |")
+		w("|---|---|---|---|---|---|---|---|---|---|")
+		for _, g := range seg.gates {
+			s, br := g.Stream, &g.Brief
+			v, r := br.Verified, br.Reviewed
+			if v == "" {
+				v = "—"
 			}
+			if r == "" {
+				r = "—"
+			}
+			// Age in current awaiting status — from the
+			// historian; "—" when unknown, never a guess. Render-only.
+			age := ages[s.Name+"/"+br.Num]
+			if age == "" {
+				age = "—"
+			}
+			marker := ""
+			if br.ExecTier == "strong" {
+				marker = " [exec:strong]"
+			}
+			if br.HomedIn != "" {
+				marker += " [homed→" + br.HomedIn + "]"
+			}
+			owner := g.place.owner
+			if owner == "" {
+				owner = "—"
+			}
+			// Reviewed stays the LAST column: consumers read it as $(NF-1).
+			w("| %s | %s%s | %s | %d | %d | %s | %s | %s | %s | %s |", s.Name, br.Num, marker, qualityToken(s, br), g.Score, g.BlockedCount, age, owner, nextActCell(g.place), v, r)
 		}
 	}
 
@@ -581,7 +647,7 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 	for _, s := range streams {
 		var open []Brief
 		for _, br := range s.Briefs {
-			if br.Status != "done" {
+			if br.Status != "done" && !isWithdrawn(br.Status) {
 				open = append(open, br)
 			}
 		}
@@ -628,6 +694,44 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 		}
 	}
 
+	// Withdrawn briefs (off-path): retired or merged into a successor. Rendered
+	// ONLY when one exists, so a board with none is byte-identical.
+	withdrawnTotal := 0
+	for _, s := range streams {
+		withdrawnTotal += withdrawnCount(s)
+	}
+	if withdrawnTotal > 0 {
+		w("")
+		w("## Withdrawn briefs")
+		w("")
+		w("_Terminal: retired by a later decision or merged into a successor. Not counted in any done ratio, never dispatched._")
+		for _, s := range streams {
+			var wd []Brief
+			for _, br := range s.Briefs {
+				if isWithdrawn(br.Status) {
+					wd = append(wd, br)
+				}
+			}
+			if len(wd) == 0 {
+				continue
+			}
+			w("")
+			w("### %s (%d withdrawn)", s.Name, len(wd))
+			w("")
+			for _, br := range wd {
+				succ := "no successor"
+				if len(br.SupersededBy) > 0 {
+					succ = "superseded by " + strings.Join(br.SupersededBy, ", ")
+				}
+				date := ""
+				if br.WithdrawnDate != "" {
+					date = " " + br.WithdrawnDate
+				}
+				w("- %s %s — withdrawn%s — %s", br.Num, br.Title, date, succ)
+			}
+		}
+	}
+
 	active, paused, parked, done, total := 0, 0, 0, 0, 0
 	for _, s := range streams {
 		switch s.Status {
@@ -639,7 +743,7 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 			parked++
 		}
 		done += doneCount(s)
-		total += len(s.Briefs)
+		total += liveBriefCount(s)
 	}
 	w("")
 	w("## Totals")
@@ -650,6 +754,10 @@ func emit(streams []*Stream, findings []Finding, nu NextUp, ages map[string]stri
 	if parked > 0 {
 		parkedClause = fmt.Sprintf(", **%d** parked", parked)
 	}
-	w("**%d** streams (**%d** active, **%d** paused%s) · **%d/%d** briefs done · completed initiatives: see `docs/archive/`", len(streams), active, paused, parkedClause, done, total)
+	withdrawnClause := ""
+	if withdrawnTotal > 0 {
+		withdrawnClause = fmt.Sprintf(" · **%d** withdrawn", withdrawnTotal)
+	}
+	w("**%d** streams (**%d** active, **%d** paused%s) · **%d/%d** briefs done%s · completed initiatives: see `docs/archive/`", len(streams), active, paused, parkedClause, done, total, withdrawnClause)
 	return b.String()
 }

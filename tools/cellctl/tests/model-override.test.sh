@@ -26,7 +26,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The binary under test. $CELLCTL lets the SAME suite run against either implementation
 # (the bash oracle, the default, or the Go port) — desk-containers/10.
-CELLCTL="${CELLCTL:-$HERE/../cellctl}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
+CELLCTL="${CELLCTL:-$HERE/../testdata/cellctl-shell-oracle.sh}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
 T="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/cellctl-override.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$T"' EXIT
 fails=0
@@ -69,7 +69,9 @@ esac
 echo "ARGS=$*" > "${CELLCTL_TEST_OUT:-/dev/null}"
 EOF
 chmod +x "$T/bin/claude"
-export PATH="$T/bin:$PATH"
+# shellcheck source=SCRIPTDIR/private-path.sh
+source "$HERE/private-path.sh"
+private_path "$T/bin"
 export CELLS_ROOT="$T/cells" CLAUDE_CONFIG_DIR="$T/claude-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
 
 "$CELLCTL" new house-cell --kind house --repo "$REPO" --roots "$ROOTS" >/dev/null

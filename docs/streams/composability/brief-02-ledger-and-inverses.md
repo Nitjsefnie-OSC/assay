@@ -34,7 +34,7 @@ consumers:
   - "docs/adopting-assay.md §3: follow-up composability/05 (the runbook gains the removal path in the adopter-doc delta)"
   - "tools/desk/cmd/deskinstall: fixed-here (the binary installer writes its ledger line)"
   - "tools/desk/cmd/clusterguard shim-off-PATH note: fixed-here (superseded by the shim's inverse)"
-version: 1
+version: 2
 id: 3c7ab933-8f9d-4de7-831f-dabc170095dc
 ---
 
@@ -51,10 +51,7 @@ files:
 - **edit** `tools/desk/cmd/deskinstall/` and the scaffold paths `assay:install` drives so that
   every outside step writes its ledger line at the moment of creation (label created, ruleset
   entry added, App installation observed).
-- **create** `tools/desk/cmd/deskdisable/` — `deskdisable <component> [--dry-run] [--yes]`:
-  replays the component's reverses LIFO; inside steps run; outside steps run their compensation
-  only when it is marked `unattended: true` in the manifest, otherwise they are printed as a
-  human checklist. `--dry-run` prints the plan and exits 0 without touching anything.
+- **create** `tools/desk/cmd/deskdisable/` — `deskdisable <component> [--dry-run] [--yes]`: replays the component's reverses LIFO; inside steps run; outside steps run their compensation only when it is marked `unattended: true` in the manifest, otherwise they are printed as a human checklist. `--dry-run` prints the plan and exits 0 without touching anything.
 - **edit** `tools/desk/component.yaml` (planned) — provides `assay.desk.verbs` now includes `deskdisable`.
 
 facts:
@@ -76,6 +73,7 @@ facts:
 
 ## Ground rules
 
+- CLI built on the desktools-v2 Cobra/Viper foundation (desktools-v2 cli-contract.md §7): every new command, verb or launcher this brief adds uses that shared foundation (added 2026-10-18).
 - Do not `git push`, trigger workflows, or run mutating infrastructure commands unless
   explicitly instructed. The deliverable is a draft PR opened by the desk verbs.
 - Stop at `implemented`. Do not set `verified` or `done`.
@@ -103,7 +101,7 @@ facts:
 
 | # | Command | Expect |
 |---|---------|--------|
-| 1 | `grep -rn 'TODO composability/02' --include=component.yaml . \| wc -l` | 0 |
+| 1 | `{ grep -rn 'TODO composability/02' --include=component.yaml . \|\| [ $? -eq 1 ]; } \| wc -l` | output is `0`. Re-written 2026-10-03 (#1862): every grep stage tolerates only the no-match status, so a missing path or a grep error fails the row instead of passing it. |
 | 2 | in a throwaway fixture repo: `git stash -u; tar cf /tmp/pre.tar .` then scripted install of `assay/streams-scaffold`, `assay/main-guard` (inside steps only), then `deskdisable assay/main-guard --yes && deskdisable assay/streams-scaffold --yes`, then `tar df /tmp/pre.tar` | empty diff (tree byte-identical) |
 | 3 | after row 2's install step, before disable: `wc -l .assay/ledger.jsonl` and `grep -c '"kind":"label"' .assay/ledger.jsonl` | one ledger line per outside step executed (labels created in the fixture) |
 | 4 | `deskdisable assay/labels --dry-run` in the fixture | exit 0; prints a plan; every label line says `list-for-human`; nothing deleted (`gh label list` unchanged) |

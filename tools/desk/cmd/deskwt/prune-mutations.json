@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/deskwt/ -count=1 -timeout 600s -run 'TestPrune|TestReap|TestDeadSession|TestMergeGateBeforeStatus|TestConcurrentPrunesCostOne|TestRemove|TestStaleLock|TestReclaim|TestUnattributedLock|TestDirtyHeld|TestUnmergedHeld'",
+  "test": "go test ./cmd/deskwt/ -count=1 -timeout 600s -run 'TestPrune|TestReap|TestDeadSession|TestMergeGateBeforeStatus|TestConcurrentPrunesCostOne|TestRemove|TestStaleLock|TestReclaim|TestUnattributedLock|TestDirtyHeld|TestUnmergedHeld|TestAdmission|TestAddLockSession|TestActivityGate|TestWorktreeAdminDirs'",
   "control": {
     "name": "CONTROL — invert the ancestor-set membership test (an unmerged worktree reads as merged and is deleted)",
     "file": "cmd/deskwt/prune.go",
@@ -22,8 +22,8 @@
     {
       "name": "the batched deregistration stops DEMOTING a path that is still registered (an unverified removal is counted as removed)",
       "file": "cmd/deskwt/prune.go",
-      "old": "\t\tfor _, rt := range pendingRemoved {\n\t\t\tif strandedSet[rt] {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tif reapedPaths[rt] {\n\t\t\t\tres.reaped++\n\t\t\t} else {\n\t\t\t\tres.removed++\n\t\t\t}\n\t\t}",
-      "new": "\t\tfor _, rt := range pendingRemoved {\n\t\t\tif reapedPaths[rt] {\n\t\t\t\tres.reaped++\n\t\t\t} else {\n\t\t\t\tres.removed++\n\t\t\t}\n\t\t}"
+      "old": "\t\tfor _, rt := range pendingRemoved {\n\t\t\tif strandedSet[rt] {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tif reapedPaths[rt] {\n\t\t\t\tres.reaped++\n\t\t\t} else {\n\t\t\t\tres.removed++\n\t\t\t}\n\t\t\tremovedPaths = append(removedPaths, rt)\n\t\t}",
+      "new": "\t\tfor _, rt := range pendingRemoved {\n\t\t\tif reapedPaths[rt] {\n\t\t\t\tres.reaped++\n\t\t\t} else {\n\t\t\t\tres.removed++\n\t\t\t}\n\t\t\tremovedPaths = append(removedPaths, rt)\n\t\t}"
     },
     {
       "name": "--dry-run reaches the REAL `git worktree prune` again (the read-only promise is gone)",
@@ -94,14 +94,248 @@
     {
       "name": "the reap arm's --dry-run arm reaps for real (an inspection run deletes what it was asked to describe)",
       "file": "cmd/deskwt/prune.go",
-      "old": "\t\t\t\tif opts.dryRun {\n\t\t\t\t\tres.reaped++\n\t\t\t\t\tres.plan = append(res.plan, v)\n\t\t\t\t\tcontinue\n\t\t\t\t}",
-      "new": "\t\t\t\tif false {\n\t\t\t\t\tres.reaped++\n\t\t\t\t\tres.plan = append(res.plan, v)\n\t\t\t\t\tcontinue\n\t\t\t\t}"
+      "old": "\t\t\t\tif opts.dryRun {\n\t\t\t\t\tres.reaped++\n\t\t\t\t\tres.plan = append(res.plan, v)\n\t\t\t\t\tremovedPaths = append(removedPaths, rt)\n\t\t\t\t\tcontinue\n\t\t\t\t}",
+      "new": "\t\t\t\tif false {\n\t\t\t\t\tres.reaped++\n\t\t\t\t\tres.plan = append(res.plan, v)\n\t\t\t\t\tremovedPaths = append(removedPaths, rt)\n\t\t\t\t\tcontinue\n\t\t\t\t}"
     },
     {
       "name": "the identity refusals stop binding the reap arm (the shared checkout / the current worktree become reap candidates)",
       "file": "cmd/deskwt/prune.go",
-      "old": "\t\tif opts.reapDeadSessions && !protected {",
-      "new": "\t\tif opts.reapDeadSessions {"
+      "old": "\t\tif opts.reapDeadSessions && !protected && admHold == \"\" && idleHold == \"\" {",
+      "new": "\t\tif opts.reapDeadSessions && admHold == \"\" && idleHold == \"\" {"
+    },
+    {
+      "name": "the sweep never runs the cache pressure pass (the cadence this PR exists for is gone)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\tif !opts.noCache {\n\t\tcacheRes, cacheWarns := sweepCellCaches(opts.cellsRoot, opts.dryRun, removedPaths)",
+      "new": "\tif false && !opts.noCache {\n\t\tcacheRes, cacheWarns := sweepCellCaches(opts.cellsRoot, opts.dryRun, removedPaths)"
+    },
+    {
+      "name": "the orphan reap keys on the cache root path instead of the trust domain (the match can never fire — an orphaned root is never reaped)",
+      "file": "cmd/deskwt/cachepressure.go",
+      "old": "\t\tif owner, orphan := orphans[p.Domain]; orphan {",
+      "new": "\t\tif owner, orphan := orphans[p.Root]; orphan {"
+    },
+    {
+      "name": "namespaces are never descended into (a nested cell's marked root gets no cadence check)",
+      "file": "cmd/deskwt/cachepressure.go",
+      "old": "\t\treturn nil // a namespace: descend",
+      "new": "\t\treturn filepath.SkipDir // a namespace: descend"
+    },
+    {
+      "name": "a non-directory walk entry skips its siblings (a symlink hides every later cell from the sweep)",
+      "file": "cmd/deskwt/cachepressure.go",
+      "old": "\t\t\treturn nil\n\t\t}\n\t\tfi, serr := os.Stat(filepath.Join(path, \"cell.env\"))",
+      "new": "\t\t\treturn filepath.SkipDir\n\t\t}\n\t\tfi, serr := os.Stat(filepath.Join(path, \"cell.env\"))"
+    },
+    {
+      "name": "the configured cells root is walked uncanonicalized (a linked or relative root sweeps nothing)",
+      "file": "cmd/deskwt/cachepressure.go",
+      "old": "\tif abs, err := filepath.Abs(cellsRoot); err == nil {\n\t\tcellsRoot = abs\n\t}\n\tif canon, err := filepath.EvalSymlinks(cellsRoot); err == nil {\n\t\tcellsRoot = canon\n\t}",
+      "new": "\t// root canonicalization omitted"
+    },
+    {
+      "name": "the fresh-worktree guard holds an at-tip tree without ever checking its content (pristine reclaim residue is immortal again — the defect this change fixes)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\t\tif anyDirty != \"\" {\n\t\t\t\tres.skips = append(res.skips, skipEntry{rt, \"fresh worktree at origin/main (no landed commits — holds uncommitted or untracked work)\"})\n\t\t\t\tcontinue\n\t\t\t}",
+      "new": "\t\t\tif true || anyDirty != \"\" {\n\t\t\t\tres.skips = append(res.skips, skipEntry{rt, \"fresh worktree at origin/main (no landed commits — holds uncommitted or untracked work)\"})\n\t\t\t\tcontinue\n\t\t\t}"
+    },
+    {
+      "name": "the fresh-worktree guard's content check is dropped (an at-tip tree with untracked new source is deleted — the hole the guard exists to close)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\t\tif anyDirty != \"\" {\n\t\t\t\tres.skips = append(res.skips, skipEntry{rt, \"fresh worktree at origin/main (no landed commits — holds uncommitted or untracked work)\"})\n\t\t\t\tcontinue\n\t\t\t}",
+      "new": "\t\t\tif false && anyDirty != \"\" {\n\t\t\t\tres.skips = append(res.skips, skipEntry{rt, \"fresh worktree at origin/main (no landed commits — holds uncommitted or untracked work)\"})\n\t\t\t\tcontinue\n\t\t\t}"
+    },
+    {
+      "name": "a cleared stale registration ALSO goes through the candidate loop (reported twice, and as a misleading unverifiable hold)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\tif staleSet[rt] {\n\t\t\tcontinue\n\t\t}",
+      "new": "\t\tif false && staleSet[rt] {\n\t\t\tcontinue\n\t\t}"
+    },
+    {
+      "name": "the stale-registration pass's LOCK rule is dropped (a locked husk is cleared by the default sweep — the lock's whole protection is gone)",
+      "file": "cmd/deskwt/stalereg.go",
+      "old": "\t\tif e.wasLocked {\n\t\t\tif _, unlocked := reclaimed[e.path]; !unlocked {",
+      "new": "\t\tif false && e.wasLocked {\n\t\t\tif _, unlocked := reclaimed[e.path]; !unlocked {"
+    },
+    {
+      "name": "the stale-registration pass clears for real under --dry-run (a report deregisters what it was asked to describe)",
+      "file": "cmd/deskwt/stalereg.go",
+      "old": "\tif dryRun {\n\t\treturn toClear, held, nil, nil\n\t}",
+      "new": "\tif false {\n\t\treturn toClear, held, nil, nil\n\t}"
+    },
+    {
+      "name": "the stale-registration pass drops its scope gate (an out-of-prefix registration is deregistered by a sweep that has no business touching it)",
+      "file": "cmd/deskwt/stalereg.go",
+      "old": "\t\tif rt == guard.sharedCheckout || rt == cwd || !guard.allowed(rt) {\n\t\t\tcontinue\n\t\t}",
+      "new": "\t\tif rt == guard.sharedCheckout || rt == cwd {\n\t\t\tcontinue\n\t\t}"
+    },
+    {
+      "name": "the stale-registration pass's content gate inverts (a husk whose detached HEAD is NOT on the mainline is cleared — possibly-unpushed commits stranded)",
+      "file": "cmd/deskwt/stalereg.go",
+      "old": "\t\tif _, ok := sc.mainAncestors[head]; !ok {\n\t\t\treturn \"detached HEAD \" + head[:12] + \" is not reachable from refs/remotes/origin/main — clearing the registration would strand possibly-unpushed commits\"\n\t\t}",
+      "new": "\t\tif _, ok := sc.mainAncestors[head]; ok {\n\t\t\treturn \"detached HEAD \" + head[:12] + \" is not reachable from refs/remotes/origin/main — clearing the registration would strand possibly-unpushed commits\"\n\t\t}"
+    },
+    {
+      "name": "the lock-reclaim pass unlocks a content-held husk (the post-reclaim bookkeeping prune drops the registration the content gate held)",
+      "file": "cmd/deskwt/lockreclaim.go",
+      "old": "\t\tif except[rt] {\n\t\t\tcontinue\n\t\t}",
+      "new": "\t\tif false {\n\t\t\tcontinue\n\t\t}"
+    },
+    {
+      "name": "git's in-flight \"initializing\" add lock is judged by the age test again (a sweep can retire git's own lock mid-add)",
+      "file": "cmd/deskwt/lockreclaim.go",
+      "old": "\tif strings.TrimSpace(reason) == gitInitLockReason {\n\t\treturn lockVerdict{false, `git's in-flight \"initializing\" add lock — never retired`}\n\t}",
+      "new": "\tif false && strings.TrimSpace(reason) == gitInitLockReason {\n\t\treturn lockVerdict{false, `git's in-flight \"initializing\" add lock — never retired`}\n\t}"
+    },
+    {
+      "name": "the fresh-worktree safety window is dropped (a just-created pristine at-tip tree — the verifier/reviewer shape — is removed mid-session)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\t\tif age < freshWorktreeSafetyWindow {",
+      "new": "\t\t\tif age < 0 {"
+    },
+    {
+      "name": "the ignored-payload gate is dropped (an at-tip tree's git-ignored files — which exist in no commit — are deleted with it)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\t\tif ignored != \"\" {",
+      "new": "\t\t\tif false && ignored != \"\" {"
+    },
+    {
+      "name": "a failed clear never re-locks (the husk is left registered and UNLOCKED — less protected than the sweep found it)",
+      "file": "cmd/deskwt/stalereg.go",
+      "old": "\tif len(failed) > 0 {\n\t\trestored, restoreErr := relockReclaimedHusks(guard, dir, failed, reclaimed)\n\t\twarns = append(warns, restored...)\n\t\terr = restoreErr\n\t}",
+      "new": "\tif false && len(failed) > 0 {\n\t\trestored, restoreErr := relockReclaimedHusks(guard, dir, failed, reclaimed)\n\t\twarns = append(warns, restored...)\n\t\terr = restoreErr\n\t}"
+    },
+    {
+      "name": "failed restoration is ignored and later pruning can discard the surviving husk",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\tif staleErr != nil {\n\t\treturn res, staleErr\n\t}",
+      "new": "\tif false && staleErr != nil {\n\t\treturn res, staleErr\n\t}"
+    },
+    {
+      "name": "#2830: the ordinary arm stops holding an admitted verifier home (merged+clean, so the merge gate removes it)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\tif admHold != \"\" {\n\t\t\tres.skips = append(res.skips, skipEntry{rt, admHold})",
+      "new": "\t\tif false {\n\t\t\tres.skips = append(res.skips, skipEntry{rt, admHold})"
+    },
+    {
+      "name": "#2830: the dead-session arm judges an admitted home instead of keeping it",
+      "file": "cmd/deskwt/prune.go",
+      "old": "if opts.reapDeadSessions && !protected && admHold == \"\" && idleHold == \"\" {",
+      "new": "if opts.reapDeadSessions && !protected && idleHold == \"\" {"
+    },
+    {
+      "name": "#2830: an unreadable admission registry is ignored instead of holding every candidate",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\t\tif admErr != nil {\n\t\t\t\tadmHold = \"could-not-check: verifier admissions: \"",
+      "new": "\t\t\tif false {\n\t\t\t\tadmHold = \"could-not-check: verifier admissions: \""
+    },
+    {
+      "name": "#2830: the hold window collapses to nothing (every admission reads as expired)",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\tif age >= verifierAdmissionHold {\n\t\treturn \"\"",
+      "new": "\tif age >= 0 {\n\t\treturn \"\""
+    },
+    {
+      "name": "#2830: the hold window boundary moves (an admission exactly at the window still holds)",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\tif age >= verifierAdmissionHold {\n\t\treturn \"\"",
+      "new": "\tif age > verifierAdmissionHold {\n\t\treturn \"\""
+    },
+    {
+      "name": "#2830: an unreadable admission record reads as absent (drains) instead of could-not-check",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\tif ev.err != nil {\n\t\treturn \"could-not-check",
+      "new": "\tif false {\n\t\treturn \"could-not-check"
+    },
+    {
+      "name": "#2830: a record that names no worktree is skipped instead of failing the registry read closed",
+      "file": "cmd/deskwt/admissionhold.go",
+      "old": "\t\tif rerr != nil || dotGit == \"\" {\n\t\t\treturn nil,",
+      "new": "\t\tif false {\n\t\t\treturn nil,"
+    },
+    {
+      "name": "#2830: an admitted AND active tree gets a second KEEP row from the reap arm (the activity row is written beside the admission's)",
+      "file": "cmd/deskwt/prune.go",
+      "old": "if opts.reapDeadSessions && !protected && admHold == \"\" && idleHold != \"\" {",
+      "new": "if opts.reapDeadSessions && !protected && idleHold != \"\" {"
+    },
+    {
+      "name": "activity gate skipped in the ordinary arm",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\tif idleHold != \"\" {\n\t\t\tres.skips = append(res.skips, skipEntry{rt, idleHold})",
+      "new": "\t\tif false {\n\t\t\tres.skips = append(res.skips, skipEntry{rt, idleHold})"
+    },
+    {
+      "name": "dead-session arm ignores the activity gate",
+      "file": "cmd/deskwt/prune.go",
+      "old": "if opts.reapDeadSessions && !protected && admHold == \"\" && idleHold == \"\" {",
+      "new": "if opts.reapDeadSessions && !protected && admHold == \"\" {"
+    },
+    {
+      "name": "unreadable activity evidence judged idle",
+      "file": "cmd/deskwt/activity.go",
+      "old": "if !f.required && os.IsNotExist(err) {",
+      "new": "if true {"
+    },
+    {
+      "name": "index writes are not activity",
+      "file": "cmd/deskwt/activity.go",
+      "old": "\t{\"index\", false},\n",
+      "new": ""
+    },
+    {
+      "name": "activity gate off by default",
+      "file": "cmd/deskwt/activity.go",
+      "old": "var defaultMinIdle = 60 * time.Minute",
+      "new": "var defaultMinIdle = 0 * time.Minute"
+    },
+    {
+      "name": "prune singleton keyed per worktree, not per repository",
+      "file": "cmd/deskwt/prune.go",
+      "old": "\t\treturn guard.commonDir\n",
+      "new": "\t\treturn cwd\n"
+    },
+    {
+      "name": "add --lock-session never reads the lock back: git's exit status alone is taken as proof the session lock exists (#3070)",
+      "file": "cmd/deskwt/deskwt.go",
+      "old": "if _, ok := locked[rt]; !ok {",
+      "new": "if _, ok := locked[rt]; false && !ok {"
+    },
+    {
+      "name": "add --lock-session does not roll the worktree back when the lock fails: the caller gets an unlocked tree it asked to be locked (#3070)",
+      "file": "cmd/deskwt/deskwt.go",
+      "old": "\t\tif lerr := lockForSession(guard, dir, resolvePath(target), *lockSession); lerr != nil {\n\t\t\tif rerr := removeWorktreeDir(guard, dir, resolvePath(target)); rerr != nil {",
+      "new": "\t\tif lerr := lockForSession(guard, dir, resolvePath(target), *lockSession); lerr != nil {\n\t\t\tif rerr := error(nil); rerr != nil {"
+    },
+    {
+      "name": "ORIG_HEAD is no longer activity evidence: a tree whose only recent activity is a merge, reset or rebase reads as idle",
+      "file": "cmd/deskwt/activity.go",
+      "old": "\t{\"ORIG_HEAD\", false},\n",
+      "new": ""
+    },
+    {
+      "name": "FETCH_HEAD is no longer activity evidence: a tree whose only recent activity is a fetch reads as idle",
+      "file": "cmd/deskwt/activity.go",
+      "old": "\t{\"FETCH_HEAD\", false},\n",
+      "new": ""
+    },
+    {
+      "name": "a future activity mtime is read as exactly --min-idle old (idle) instead of the most recent activity possible",
+      "file": "cmd/deskwt/activity.go",
+      "old": "\t\tage = 0\n",
+      "new": "\t\tage = minIdle\n"
+    },
+    {
+      "name": "the admin registry is keyed on the raw gitdir path, so a worktree recorded through a symlink has no admin entry",
+      "file": "cmd/deskwt/activity.go",
+      "old": "out[resolvePath(filepath.Dir(dotGit))] = admin",
+      "new": "out[filepath.Dir(dotGit)] = admin"
+    },
+    {
+      "name": "a relative gitdir (worktree.useRelativePaths) is resolved against the sweep's working directory, so every such worktree has no admin entry and is held forever",
+      "file": "cmd/deskwt/activity.go",
+      "old": "\t\t\tdotGit = filepath.Join(admin, dotGit)\n",
+      "new": ""
     }
   ]
 }

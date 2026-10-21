@@ -8,21 +8,19 @@ IDE agent the **secondary** end-user surface. Harness tool names are legal here 
 is this file's whole purpose — and illegal in a skill body (`tools/harnesslint bodies`
 enforces it).
 
-## Install — copy, do not marketplace
+## Install and upgrade — versioned bundle or explicit source
 
 Cursor has **no** `/plugin marketplace add` / `/plugin install` path. That is Claude Code.
-
-1. Copy `plugins/assay/skills/*` into the adopter repo at `.cursor/skills/` or
-   `.agents/skills/`.
-2. Copy `plugins/assay/references/*.md` next to that tree so skill includes of
-   `../../references/*.md` resolve. Skills-only copies leave those links dead.
-3. Resident rules arrive through `AGENTS.md` and/or `.cursor/rules/*.mdc`. Assay's
-   Claude `SessionStart` hooks do **not** run here.
-4. Desk binaries on `PATH`. GitHub desks use `gh`. GitLab desks use `glab` /
-   `--forge gitlab`. Skill examples that say `gh` are GitHub-shaped; they are not a
-   Cursor requirement and they are wrong on GitLab.
-5. `harnessgen cursor` output is optional. If `plugins/assay/cursor/` is absent from
-   the tree, the copy path above still stands.
+The authoritative install steps — the one-command `deskinstall --harness cursor` (`windows-port/07`)
+and the five manual steps it automates — live in
+[`docs/adopting-assay.md`](../../../docs/adopting-assay.md) § **Running Assay on Cursor**
+(`windows-port/09`); this file does not carry a second copy. Versioned placement verifies
+the selected release's bundle; `upgrade-assay --harness cursor` previews, applies, and
+checks it through the existing version resolver. Skills and references are siblings,
+bindings arrive via `AGENTS.md`/`.cursor/rules`, and desk binaries go on `PATH`.
+Legacy releases without the asset refuse the versioned route; explicit local source
+placement remains available. Edit canonical `plugins/assay`, then regenerate the
+managed `.cursor` copies; do not edit generated copies.
 
 The in-editor agent is a supported install surface. Headless `cursor-agent` is the
 smoke/automation surface (HP/13); blocked live smoke does not mean "do not copy skills."
@@ -85,6 +83,8 @@ degradations than Codex** because isolation is native on the IDE surface and the
 | `adopt` | **runs** — needs only `resident-rules-channel` §2.1, `skills-discovery` §2.2, `install-mechanism` §2.10, all `supported`; no dispatch/isolation/gate surface. |
 | `ask-decision` | **runs** — interactive decision text; its one write (filing or commenting the decision issue) is a `gh` write → permission-posture precondition (§2.8), else it composes the decision text and states the write is blocked. No dispatch/isolation/gate surface. |
 | `author-brief` | **runs** — pure authoring/planning text; touches no dispatch, no isolation, no gate. |
+| `author-spec` | **runs** — specification authoring and review; uses available source-reading and editing tools. |
+| `cut-release` | **runs** — preconditions, dry-run reading, checksum harvest and re-pin authoring are reads plus local edits; its one write (re-pin draft PRs) is a `gh` write → permission-posture precondition (§2.8), stated in-session rather than half-run. Neither release-workflow run is the session's act, the dry run included: both wait at the release environment's human approval and record their dispatcher as the authorizer, so both dispatches and both approvals are handed to the driver via `human-runsheet` on every harness. The session itself touches no dispatch/isolation/gate surface. |
 | `dailies` | **runs** — report generation is sequential CLI work; any report fan-out **degrades: runs serially with an explicit in-session statement** if headless parallel dispatch is unconfirmed (§2.5); dispatch is a convenience here, not a safety guarantee. |
 | `human-runsheet` | **runs** — writes one file (`RUNSHEET.md`) to the session's own scratch home; a local text write needs no `gh`, no dispatch, no isolation and no gate authority. No dispatch/isolation/gate surface. |
 | `install` | **runs** — the turnkey install verb; needs `resident-rules-channel` §2.1, `skills-discovery` §2.2 and `install-mechanism` §2.10, all `supported`. Its scaffold write and pinned-binary acquisition need a write-capable, network-permitted posture → permission-posture preconditions (§2.8), stated in-session rather than half-run. It opens draft PRs only and escalates every human-gated step; no dispatch/isolation/gate surface. |
@@ -93,6 +93,7 @@ degradations than Codex** because isolation is native on the IDE surface and the
 | `pdfingest` | **runs** — local PDF ingestion, no dispatch/isolation/gate surface; the default posture allows local reads. Any outbound fetch or external-binary call is a permission-posture precondition (§2.8) → the skill states the blocked fetch in-session rather than silently skipping it. |
 | `pr-review-desk` | **runs** — the review **verdict** is text and is never degraded; posting the review and the draft→ready flip need `gh` writes → permission-posture precondition (§2.8). The review gate is upheld or the skill refuses; it never silently degrades. |
 | `pr-shepherd` | **runs on the IDE surface** — cloud background agents provide **native isolated git worktrees** (§2.9 `supported`), which is the one capability this skill treats as a floor. **Headless (`cursor-agent`): conditional on `[needs: live-install confirmation]`** — if the headless posture permits `git worktree add` (§2.8) it **runs**; if the sandbox blocks that ref-write it **refuses rather than drive the PR from the shared checkout**. Its watch loop needs no durable poll — the body states the periodic `gh pr view` read as the primary form and `capability:durable-monitor` only as an alternative, so the §2.6/§2.7 gap **degrades to the stated poll**, not to blindness. Discovery-mode fan-out (one shepherd per PR) **degrades: serial, one PR at a time, stated in-session** where headless parallel dispatch is unconfirmed (§2.5). Gates are unchanged: it never flips, merges or closes, and the security-gate carve-out is a refusal, never a degradation. *(Derived from this file's own capability rows plus the skill's declared needs — not a separate live measurement.)* |
+| `session-coach` | **runs** — reads the session's own record (transcript, tool calls, subagent transcripts) and writes one coaching note outside any repository; no `gh`, no dispatch, no isolation and no gate authority. Where the note's location is one the permission posture does not let it write (§2.8), that is a permission-posture precondition stated in-session — the note is never written into the repository instead. A piece of the record the session cannot read is marked as such in the note, per the body. No dispatch/isolation/gate surface.  *(Derived from the skill body and this harness's capability rows; not a live measurement.)* |
 | `system-demo` | **runs** — authoring a storyboard and, when requested, a local static player is text/local-file work; it writes only within the session's own workspace, needs no `gh`, no dispatch, no isolation and no gate authority. No dispatch/isolation/gate surface. |
 | `the-desk` | **runs** — coordination; its worker fan-out **degrades: serial with an in-session statement** if headless parallel dispatch is unconfirmed (§2.5); the review/merge gate is unchanged (the human merges). Isolation of dispatched implementers is delegated to `worker-desk` (below). |
 | `upgrade-assay` | **runs** — the dry-run-first order is the skill's own invariant and is never degraded; the apply step writes the tree and version pins → needs a write-capable posture, and where the posture blocks the write it states BLOCKED rather than half-applying (§2.8). No dispatch/isolation/gate surface beyond that. |

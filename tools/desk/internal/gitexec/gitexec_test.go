@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/medici-finance/assay/tools/desk/internal/gitquiet"
 )
 
 func TestAllowlistRefusesUnknownToolVerb(t *testing.T) {
@@ -24,20 +26,26 @@ func TestAllowlistRefusesUnknownToolVerb(t *testing.T) {
 
 // TestDeskmergeAllowlistNarrowedToTrialMergeFamily is brief 07's own
 // golden: the verbs that migrated to gitcore in this brief must be OFF the allowlist,
-// and the trial-merge family (plus the still-pending transport verbs briefs 05/06 own)
+// and the trial-merge family (plus the still-pending push transport verb brief 06 owns)
 // must stay on it.
 func TestDeskmergeAllowlistNarrowedToTrialMergeFamily(t *testing.T) {
-	stayed := []string{"merge", "diff", "add", "worktree", "fetch", "push"}
+	stayed := []string{"merge", "diff", "add", "worktree", "push"}
 	for _, v := range stayed {
 		if !Allowed("deskmerge", v) {
 			t.Fatalf("deskmerge:%s must stay allowlisted (trial-merge family, or a "+
 				"transport verb not yet migrated)", v)
 		}
 	}
-	migrated := []string{"rev-parse", "rev-list", "merge-base", "remote", "commit", "update-ref"}
+	// `remote` stays for the origin-resolution read the fetch/push gates make (#1623): only git
+	// can report what git will resolve, so that read cannot live on gitcore.
+	if !Allowed("deskmerge", "remote") {
+		t.Fatal("deskmerge:remote must stay allowlisted for `remote get-url [--push] --all origin`")
+	}
+	// fetch migrated to gitcore.Fetch in brief 05 (desktools-go-git).
+	migrated := []string{"rev-parse", "rev-list", "merge-base", "commit", "update-ref", "fetch"}
 	for _, v := range migrated {
 		if Allowed("deskmerge", v) {
-			t.Fatalf("deskmerge:%s migrated to gitcore in brief 07 — must no "+
+			t.Fatalf("deskmerge:%s migrated to gitcore (brief 07; fetch brief 05) — must no "+
 				"longer be allowlisted", v)
 		}
 	}
@@ -77,10 +85,13 @@ func TestRunExecutesAllowlistedVerbInFixture(t *testing.T) {
 	if _, err := Run("deskadvisory", dir, init...); err != nil {
 		t.Fatalf("fixture init: %v", err)
 	}
-	for _, kv := range [][2]string{
+	// Run scrubs GIT_TEMPLATE_DIR with every other GIT_* variable, so the init above
+	// did not take gitquiet's template; the fixture writes the settings itself, or
+	// the commit below forks automatic maintenance into t.TempDir.
+	for _, kv := range append([][2]string{
 		{"user.name", "test"},
 		{"user.email", "test@example.invalid"},
-	} {
+	}, gitquiet.Settings...) {
 		if _, err := Run("deskwt", dir, "config", kv[0], kv[1]); err != nil {
 			t.Fatalf("fixture config: %v", err)
 		}
@@ -112,5 +123,19 @@ func TestRunReportsStderrOnFailure(t *testing.T) {
 		t.Fatal("expected failure in empty dir")
 	} else if !strings.Contains(err.Error(), "gitexec: deskgit: git rev-parse") {
 		t.Fatalf("unexpected error shape: %v", err)
+	}
+}
+
+// TestBrief06PushVerbsRetired is brief 06's golden: deskpr's push, verifyloop's durable
+// push and deskkit's preflight probe moved to gitcore (Push / List), so none of the three
+// tools may spawn `git push` any more. deskmerge's push stays (brief 07's exception).
+func TestBrief06PushVerbsRetired(t *testing.T) {
+	for _, tool := range []string{"deskpr", "verifyloop", "deskkit"} {
+		if Allowed(tool, "push") {
+			t.Fatalf("%s:push migrated to gitcore in brief 06 — must no longer be allowlisted", tool)
+		}
+	}
+	if !Allowed("deskmerge", "push") {
+		t.Fatal("deskmerge:push stays paired with its trial merge (brief 07)")
 	}
 }

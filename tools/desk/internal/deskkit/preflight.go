@@ -36,6 +36,7 @@ package deskkit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -45,6 +46,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/medici-finance/assay/tools/desk/internal/gitcore"
 )
@@ -138,8 +142,11 @@ type Check struct {
 	// summary so the reader can see the failure already has a home and does NOT
 	// need a new issue filed about it.
 	Refs string
-	// Notice is an informational message on an OTHERWISE-GREEN check: something
-	// the reader should see that does NOT block the pass. A sibling checkout an
+	// Notice is an informational message: something the reader should see that
+	// does NOT itself block the pass. It usually rides a green check, but it can
+	// ride a red one too — the ambient-identity check keeps its human-login
+	// warning on every transport outcome, so a transport failure never hides it.
+	// A sibling checkout an
 	// UNCLAIMED cross-repo brief declares is absent at boot is a notice, not a
 	// failure (#661) — the brief is not being claimed now, so the pass proceeds;
 	// the notice records that claiming it later needs that checkout.
@@ -224,8 +231,9 @@ func (r PreflightReport) NotApplicable() []Check {
 	return out
 }
 
-// Notices returns the informational notices attached to otherwise-green checks,
-// in check order, each prefixed with the check name. A notice is something the
+// Notices returns the informational notices attached to checks (usually green
+// ones, see Check.Notice), in check order, each prefixed with the check name. A
+// notice is something the
 // reader should see that does NOT block the pass — an unclaimed brief's absent
 // cross-repo sibling, say (#661) — so it is reported even on a GREEN preflight.
 func (r PreflightReport) Notices() []string {
@@ -363,9 +371,10 @@ type PreflightProbes struct {
 	// the token was minted for. tokenPath is what ColdMint returned; an empty
 	// tokenPath means the mint produced nothing to read scopes from.
 	GrantedScopes func(role, tokenPath string) (map[string]string, error)
-	// WriteTransport performs ONE read-only probe of the landing path.
+	// WriteTransport performs ONE read-only probe of the landing path: can the
+	// role (its in-memory custody credential) reach repo's landing remote?
 	// Called at most once per preflight — see the ProbeRejected doc.
-	WriteTransport func(l Landing) (ProbeVerdict, string, error)
+	WriteTransport func(l Landing, role, repo string) (ProbeVerdict, string, error)
 	// CommitEmail returns the commit author email this worktree would commit under.
 	CommitEmail func(dir string) (string, error)
 	// AppIDFor returns the role's GitHub App id — the value that must NOT appear
@@ -383,11 +392,14 @@ type PreflightProbes struct {
 	DirExists func(path string) (bool, error)
 	// AmbientLogin returns the login the AMBIENT `gh` credential would post/push
 	// as — the identity a tool fall-through would silently use. It is the value
-	// `gh api user` (or `gh auth status`) reports, NOT a minted App token: the
-	// check exists to catch an ambient credential that is a bot slug or a
-	// non-blessing human. It returns "" with no error when there is no
-	// ambient identity at all (nothing to fall through to — safe), and an error
-	// when it could not look (gh absent / unreadable — could-not-check).
+	// `gh api user` reports, NOT a minted App token: the check exists to catch an
+	// ambient credential that is a bot slug, and to warn on a human one. It
+	// returns "" with no error, OR an error wrapping ErrNoAmbientIdentity, when
+	// there is no usable ambient human identity (`gh` not logged in; a credential
+	// that answers 401/403 on /user, i.e. an App/integration token) — nothing to
+	// fall through to as a person, safe. Any other error means it could not look
+	// (gh absent, exec failure, timeout, a server or rate-limit answer) —
+	// could-not-check.
 	AmbientLogin func() (login string, err error)
 	// CredHelperMatchesApp reports whether every credential source git consults
 	// for the landing remote's push URL — the ordered helper chain across all
@@ -485,7 +497,7 @@ func (req PreflightRequest) Run() PreflightReport {
 	rep.Checks = append(rep.Checks,
 		mint,
 		checkAppScopes(p, role, tokenPath, forge),
-		checkWriteTransport(p, l),
+		checkWriteTransport(p, l, role, repo),
 		checkCommitIdentity(p, role, l.Dir),
 		checkSiblings(p, root, req.ClaimedBrief),
 		checkAmbientIdentity(p, l, tokenPath, forge),
@@ -709,19 +721,24 @@ func gitlabColdCustodyProbe(role string) (string, error) {
 		return "", fmt.Errorf("gitlab token file not found: no %s on the App-credential search path (searched: %s)",
 			name, strings.Join(searched, ", "))
 	}
-	fi, serr := os.Stat(path)
+	target, fi, serr := LstatCustody(path, CustodySameDirLink)
 	if serr != nil {
+		if _, isLink := serr.(*CustodyLinkError); isLink {
+			return "", serr
+		}
 		return "", fmt.Errorf("could not stat gitlab token file at %s: %v", path, serr)
 	}
 	if !fi.Mode().IsRegular() {
-		return "", fmt.Errorf("gitlab custody at %s is not a regular file (mode %s); custody requires a 0600 regular file", path, fi.Mode())
+		return "", fmt.Errorf("gitlab custody at %s is not a regular file (mode %s); custody requires a 0600 regular file", target, fi.Mode())
 	}
-	if err := VerifyCustodyOwnerOnly(path, fi); err != nil {
+	// The owner-only check and the read both take the target LstatCustody judged, so a
+	// followed link's resolved file is what is checked and read on every platform.
+	if err := VerifyCustodyOwnerOnly(target, fi); err != nil {
 		return "", err
 	}
-	raw, rerr := os.ReadFile(path)
+	raw, rerr := os.ReadFile(target)
 	if rerr != nil {
-		return "", fmt.Errorf("could not read gitlab token file at %s: %v", path, rerr)
+		return "", fmt.Errorf("could not read gitlab token file at %s: %v", target, rerr)
 	}
 	if strings.TrimSpace(string(raw)) == "" {
 		return "", fmt.Errorf("the gitlab token file at %s is empty", path)
@@ -733,8 +750,8 @@ func gitlabColdCustodyProbe(role string) (string, error) {
 	return path, nil
 }
 
-// deriveRepoSlug reads the landing remote's URL as the RAW configured value (go-git's
-// RemoteURL, matching `git config --get remote.<name>.url` — no `insteadOf` expansion) and
+// deriveRepoSlug reads the landing remote's repository-local URL through gitcore.RemoteURL
+// (fetch insteadOf rules applied, push-only rewrites excluded) and
 // extracts owner/name through the single shared parser (ParseRemoteRepo). That parser
 // handles every remote shape a desk checkout uses, including an ssh HOST ALIAS and the
 // rewritten/hybrid forms an `insteadOf` config bakes onto it (issue 1470) — the alias form
@@ -991,91 +1008,197 @@ func parsePermsJSON(s string) (map[string]string, error) {
 
 // checkWriteTransport probes the role's LANDING path before the pass starts,
 // rather than discovering at landing time that no outward write transport is
-// permitted (#823 — a pass verified two briefs to a clean PASS and could land
+// reachable (#823 — a pass verified two briefs to a clean PASS and could land
 // neither).
 //
 // The probe is READ-ONLY by construction (see writeTransportProbe) and a
 // rejection is a STOP: this function reports it and returns. There is no branch
 // that tries a second credential — AGENTS.md, "A scope rejection is a STOP —
 // never re-push the change under a different identity."
-func checkWriteTransport(p PreflightProbes, l Landing) Check {
+func checkWriteTransport(p PreflightProbes, l Landing, role, repo string) Check {
 	const refs = "#823"
-	verdict, detail, err := p.WriteTransport(l)
+	verdict, detail, err := p.WriteTransport(l, role, repo)
 	if err != nil {
 		return unchecked(CheckWriteTransport, oneLine(err.Error()),
-			"run the landing probe by hand (`git -C "+orDot(l.Dir)+" push --dry-run "+l.Remote+" HEAD`) and read the transport error", refs)
+			"list the landing repo by hand as this role (`git ls-remote https://<forge>/"+orRepo(repo)+".git` "+
+				"with the role's minted token) and read the transport error", refs)
 	}
 	switch verdict {
 	case ProbePermitted:
-		return clean(CheckWriteTransport, "landing transport permitted for "+l.Remote+" "+orCurrent(l.Branch)+
+		return clean(CheckWriteTransport, "landing transport reachable for "+orRepo(repo)+
 			" ("+oneLine(detail)+")", refs)
 	case ProbeRejected:
-		return failed(CheckWriteTransport, "landing transport REJECTED for "+l.Remote+" "+orCurrent(l.Branch)+
+		return failed(CheckWriteTransport, "landing transport REJECTED for "+orRepo(repo)+
 			": "+oneLine(detail),
-			"STOP — do not retry under another identity. Obtain the write permission for THIS identity "+
+			"STOP — do not retry under another identity. Obtain the access for THIS identity "+
 				"(or run in a permission mode that admits the desk's landing verbs) and re-run preflight", refs)
 	default:
 		return unchecked(CheckWriteTransport, "probe inconclusive: "+oneLine(detail),
-			"ensure a git remote named "+l.Remote+" exists and this worktree is on a branch (a detached HEAD has no landing ref)", refs)
+			"ensure the landing repo is named (a "+l.Remote+" remote naming owner/name, or an explicit repo), "+
+				"its forge is listed in ASSAY_REPO_FORGES, and the role's credential can be minted", refs)
 	}
 }
 
-// writeTransportProbe is the real, NON-MUTATING write-transport probe:
-// `git push --dry-run`.
-//
-// --dry-run does everything except send the update: it authenticates, contacts
-// the remote's receive-pack and evaluates the ref update, then stops. That is
-// exactly the read-only "would this land?" question, and it is NOT the
-// permission LISTING that AGENTS.md warns is neither grant nor bar — a listing
-// says what the docs claim, this says what the transport does.
-//
-// It runs ONCE. Every failure path below returns; none re-invokes git with a
-// different credential.
-func writeTransportProbe(l Landing) (ProbeVerdict, string, error) {
-	dir := orDot(l.Dir)
-	if _, err := exec.LookPath("git"); err != nil {
-		return ProbeInconclusive, "git is not on PATH", nil
+// orRepo renders an unresolved repo slug readably in a check line.
+func orRepo(repo string) string {
+	if strings.TrimSpace(repo) == "" {
+		return "(unresolved repo)"
 	}
-	probeRepo, err := gitcore.Open(dir)
-	if err != nil {
-		return ProbeInconclusive, "cannot open " + dir + " as a git repository", nil
-	}
-	branch := strings.TrimSpace(l.Branch)
-	if branch == "" {
-		out, err := probeRepo.SymbolicRefShortHEAD()
-		if err != nil {
-			return ProbeInconclusive, "detached HEAD: no landing branch to probe", nil
-		}
-		branch = strings.TrimSpace(out)
-	}
-	if _, err := probeRepo.RemoteURL(l.Remote); err != nil {
-		return ProbeInconclusive, "no remote named " + l.Remote, nil
-	}
+	return repo
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "push", "--dry-run", "--porcelain",
-		l.Remote, "HEAD:refs/heads/"+branch)
-	// GIT_TERMINAL_PROMPT=0: a probe must never block on an interactive
-	// credential prompt — an unauthenticated transport has to FAIL, loudly.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	out, err := cmd.CombinedOutput()
-	text := oneLine(string(out))
-	if err == nil {
-		return ProbePermitted, text, nil
+// forgeGitEndpointFn is the seam the default write-transport probe resolves the
+// landing repo's git endpoint through — ForgeGitEndpointForCheckout in production:
+// the canonical https URL of the RESOLVED forge plus the role's in-memory custody
+// credential (the landing remote's URL is only a forge-KIND hint when the roster is
+// silent, never the host dialled). Tests point it at a local fixture remote.
+var forgeGitEndpointFn = ForgeGitEndpointForCheckout
+
+// writeTransportProbe is the real, NON-MUTATING write-transport probe: an
+// authenticated, in-process gitcore.List of the landing repo AS THE ROLE.
+//
+// The transport is explicit, so there is nothing ambient left to discover: the
+// URL is the resolved forge's canonical https URL for repo and the credential is
+// the role's custody token, held in memory and presented to that one URL only —
+// no external git process, no credential helper, no insteadOf rewrite, no
+// interactive prompt that could block. A List that answers proves transport and
+// authentication reach the landing repo as this identity; the forge refusing the
+// identity is a REJECTION. Whether the identity may also WRITE is check 2's
+// question (the installation's granted scopes), answered from the grant itself.
+//
+// It runs ONCE. Every failure path below returns; none re-invokes the List with a
+// different credential.
+func writeTransportProbe(l Landing, role, repo string) (ProbeVerdict, string, error) {
+	if strings.TrimSpace(repo) == "" {
+		return ProbeInconclusive, "no landing repo resolved (no owner/name slug from the remote or the request)", nil
 	}
-	if rejectionRe.MatchString(text) {
+	ep, err := forgeGitEndpointFn(repo, role, landingRemoteURL(l))
+	if err != nil {
+		return ProbeInconclusive, "no git endpoint for " + repo + " as " + role + ": " + err.Error(), nil
+	}
+	return listReachability(ep.Opts)
+}
+
+// landingRemoteURL is the landing remote's repository-local fetch-rewritten URL, or "" when it cannot be
+// read. It is consulted only as the forge-kind hint ForgeGitEndpointForCheckout takes.
+func landingRemoteURL(l Landing) string {
+	repo, err := gitcore.Open(orDot(l.Dir))
+	if err != nil {
+		return ""
+	}
+	u, err := repo.RemoteURL(l.Remote)
+	if err != nil {
+		return ""
+	}
+	return u
+}
+
+// listTimeout bounds the reachability List: a probe must FAIL, loudly, rather
+// than hold a desk's boot on a transport that never answers.
+var listTimeout = 45 * time.Second
+
+// listReachability turns one in-process List into the probe's three-state
+// verdict: an answer is PERMITTED, a forge refusing the presented identity
+// (401/403, or a denial in the transport's own wording) is REJECTED, and every
+// other failure — unreachable host, timeout, a server error, a repo the forge
+// reports as absent — is INCONCLUSIVE. The detail never carries the credential:
+// gitcore's errors name the URL, which is built without userinfo.
+func listReachability(opts gitcore.ListOpts) (ProbeVerdict, string, error) {
+	type listed struct {
+		refs []*plumbing.Reference
+		err  error
+	}
+	done := make(chan listed, 1)
+	go func() {
+		refs, err := gitcore.List(opts)
+		done <- listed{refs, err}
+	}()
+	var res listed
+	select {
+	case res = <-done:
+	case <-time.After(listTimeout):
+		return ProbeInconclusive, "List of " + redactURLCredential(opts.URL) + " did not answer within " + listTimeout.String(), nil
+	}
+	if res.err == nil {
+		return ProbePermitted, listedDetail(res.refs), nil
+	}
+	text := oneLine(res.err.Error())
+	if errors.Is(res.err, transport.ErrAuthenticationRequired) ||
+		errors.Is(res.err, transport.ErrAuthorizationFailed) ||
+		isRejection(text) {
 		return ProbeRejected, text, nil
 	}
 	return ProbeInconclusive, text, nil
+}
+
+// listedDetail summarises a successful List: how many refs answered and, when the
+// remote advertises one, the default branch it points at.
+func listedDetail(refs []*plumbing.Reference) string {
+	head := ""
+	for _, r := range refs {
+		if r.Name() == plumbing.HEAD && r.Type() == plumbing.SymbolicReference {
+			head = r.Target().String()
+		}
+	}
+	if head == "" {
+		for _, r := range refs {
+			if r.Name().IsBranch() {
+				head = r.Name().String()
+				break
+			}
+		}
+	}
+	d := fmt.Sprintf("authenticated List answered: %d refs", len(refs))
+	if head != "" {
+		d += ", " + head
+	}
+	return d
 }
 
 // rejectionRe matches the transport answers that mean DENIED, as opposed to
 // "could not reach a verdict". Both the git/GitHub wordings and the harness
 // permission-classifier wording (#823) are here: from the desk's seat a
 // classifier denial and a 403 are the same fact — this identity has no permitted
-// write transport to its landing path.
-var rejectionRe = regexp.MustCompile(`(?i)(permission denied|denied to |403|401|authentication failed|not authorized|resource not accessible|protected branch|pre-receive hook declined|refusing to allow|blocked by|permission to .* denied)`)
+// write transport to its landing path. The status codes are whole tokens (\b),
+// so 401/403 inside a longer number (a 14010 port, a request number) is not one.
+// The same boundary means a status glued to letters or an underscore ("HTTP403",
+// "err_403") is not read as one either; that is deliberate, and a text-only denial
+// in that shape reads as could-not-check.
+//
+// Match through isRejection, never rejectionRe directly on raw transport text:
+// gitcore's errors name the request URL, and digits in a URL's port or path are
+// not a status the forge answered.
+var rejectionRe = regexp.MustCompile(`(?i)(permission denied|denied to |\b403\b|\b401\b|authentication failed|not authorized|resource not accessible|protected branch|pre-receive hook declined|refusing to allow|blocked by|permission to .* denied)`)
+
+// addressRe matches the places transport text carries an address rather than an
+// answer, and ONLY the address:
+//
+//   - a URL, from its scheme ("http://", "https://") to the first character that
+//     cannot belong to one: whitespace, a quote, an angle bracket, a comma, pipe,
+//     semicolon or parenthesis, or a colon not followed by a port. Wording glued to
+//     a URL by punctuation ('"Not authorized","documentation_url":"https://…"',
+//     "https://host/o/r.git:permission denied") stays outside the match.
+//   - a host:port whose host LOOKS like a host: a dotted name ("127.0.0.1:40109",
+//     "github.com:443"), "localhost", or a bracketed IPv6 literal ("[::1]:403").
+//
+// A word that is none of those followed by a colon and digits is a label and its
+// value, not an address: "status:403", "error:403" and "code:401" are statuses and
+// are left for rejectionRe. The one ambiguity is a dotted name followed directly by
+// a colon and 401 or 403 ("example.test:403"), which reads as a port. Address
+// shapes it does not blank (a port with no host, a hostname label such as
+// "git-403.internal", a scheme-less path, a bare count) are still judged as text:
+// there a 401 or 403 can still read as a denial, as it did before.
+var addressRe = regexp.MustCompile(
+	`[A-Za-z][A-Za-z0-9+.-]*://(?:\[[0-9A-Fa-f:.]+(?:%[\w.-]+)?\]|[^\s"'<>,|;()\[\]:]|:\d)*` +
+		`|(?:[\w-]+(?:\.[\w-]+)+|localhost|\[[0-9A-Fa-f:.]+(?:%[\w.-]+)?\]):\d+\b`)
+
+// isRejection reports whether a transport error's text says DENIED. It judges the
+// wording of the answer: addresses are blanked first, so a port or path that
+// happens to contain 401 or 403 cannot turn a 502 into a rejection, while denial
+// wording that sits next to an address still counts.
+func isRejection(text string) bool {
+	return rejectionRe.MatchString(addressRe.ReplaceAllString(text, " "))
+}
 
 // --- check 4: commit identity ----------------------------------------------
 
@@ -1154,7 +1277,7 @@ func checkGitHubCommitIdentity(p PreflightProbes, ident BotIdentity, role, email
 
 // checkGitLabCommitIdentity validates a GitLab worktree's commit author. On GitLab the
 // desk runs TWO distinct identities (#643): the SESSION / implementer identity (a real
-// GitLab user, e.g. `ih-bot`) authors the commits under an ordinary user address, while
+// GitLab user, e.g. `qa-bot`) authors the commits under an ordinary user address, while
 // the role SERVICE ACCOUNT — the analog of the GitHub role App — is used only for minted
 // API writes. So this check accepts EITHER:
 //
@@ -1480,12 +1603,28 @@ func dirExistsProbe(path string) (bool, error) {
 // on the same helper. This check closes the two halves the per-tool refusal
 // cannot see from inside one tool:
 //
-//   - IDENTITY. The ambient `gh` login must be the ONE human the roster names for
-//     rulings (ASSAY_BLESS_LOGIN). A bot/App slug is red — a fall-through under a
-//     bot identity misattributes and dodges the App-token mint. A NON-blessing
-//     human login is red — the observed case, where an unrelated account carried
-//     the write. No ambient identity at all is NOT red: there is nothing to fall
-//     through to.
+//   - IDENTITY. Desk writes go out under minted App tokens; no desk needs an
+//     ambient human login, and the only state with no identity-fall-through risk
+//     is the one with NO usable ambient human identity. So:
+//     no usable ambient human identity (`gh` not logged in with no stored
+//     credential `gh auth token` can still read, a credential that answers 401
+//     on /user, or an App/integration token's 403) passes this half;
+//     "not logged in" with a stored credential still readable (an OS-keyring
+//     login behind an empty config dir) is could-not-check — a wrapper that
+//     resolves `gh auth token` hands it back, and whose it is cannot be told
+//     without using it;
+//     a HUMAN login — the blessing login or any other — is a non-blocking
+//     WARNING (a Notice on the result) naming the login, because a fall-through
+//     would act as that human, the blessing login included, which is the case
+//     where a stray write lands under the maintainer's name;
+//     a bot/App slug is checked-failed — a fall-through under a bot identity
+//     misattributes and dodges the App-token mint;
+//     a probe that could not look (gh absent, exec failure, timeout, any other
+//     answer) is could-not-check.
+//     Before #1798 the safe state was unreachable: the real probe reported
+//     "not logged in" and the App-token 403 as errors, the check read both as
+//     could-not-check, and the only green ambient state was a logged-in
+//     blessing human.
 //   - TRANSPORT. Every credential source git consults for the landing remote's
 //     push URL — each helper in the ordered chain git builds across all config
 //     scopes, and any embedded URL credential or Authorization extraHeader it
@@ -1493,14 +1632,15 @@ func dirExistsProbe(path string) (bool, error) {
 //     under, so the write-transport probe (check 3) and a real push from this
 //     envelope present the same credential. A competing source that git would
 //     consult first is what the probe-green/push-red split is made of, and it
-//     reads red here rather than hiding behind the last-configured helper.
+//     reads red here rather than hiding behind the last-configured helper. This
+//     half is independent of the identity half and runs whatever that half found.
 //
 // It is forge-aware. The ambient-login half reads a GitHub `gh` identity, which a
 // GitLab-forge repo does not use, so on GitLab the check is not-applicable (it
 // does not redden a correctly provisioned GitLab envelope) — the same shape the
 // app-scopes check takes for the GitHub-only installation grant.
 func checkAmbientIdentity(p PreflightProbes, l Landing, tokenPath string, forge ForgeKind) Check {
-	const refs = "#1527"
+	const refs = "#1527 #1798"
 	if forge == ForgeGitLab {
 		return notApplicable(CheckAmbientID,
 			"gitlab credential: the ambient-identity check reads a GitHub `gh` login and matches the origin "+
@@ -1512,38 +1652,80 @@ func checkAmbientIdentity(p PreflightProbes, l Landing, tokenPath string, forge 
 	}
 
 	cfg := EffectiveConfig()
-	if strings.TrimSpace(cfg.Bless.Login) == "" {
-		return unchecked(CheckAmbientID,
-			"the roster names no blessing login, so the ambient identity cannot be judged",
-			"set "+EnvBlessLogin+"=<login>:<id> in "+ConfigHomePath()+
-				" — it is the one human login an ambient credential may safely carry", refs)
-	}
-	bless := strings.ToLower(strings.TrimSpace(cfg.Bless.Login))
 
+	// Identity half. identity is the clean-detail phrase; notice is the
+	// non-blocking warning a human ambient login carries on EVERY outcome below,
+	// so a transport failure never hides it.
+	var identity, notice string
 	login, err := p.AmbientLogin()
-	if err != nil {
-		return unchecked(CheckAmbientID, "could not read the ambient gh identity: "+oneLine(err.Error()),
-			"run `gh auth status` (or `gh api user`) by hand and confirm the ambient login is "+cfg.Bless.Login, refs)
-	}
-	got := strings.ToLower(strings.TrimSpace(login))
 	switch {
-	case got == "":
-		// No ambient identity at all: nothing for a tool to fall through TO on the
-		// identity axis. Safe — fall through to the transport half.
-	case isAmbientBot(cfg, got):
-		return failed(CheckAmbientID,
-			"the ambient gh login is "+got+", a bot/App slug — a tool fall-through would post as a bot and dodge the App-token mint",
-			"log the interactive gh identity out of the bot account and in as "+cfg.Bless.Login+
-				" (`gh auth login`), or unset GH_TOKEN so no bot credential is ambient", refs)
-	case got != bless:
-		return failed(CheckAmbientID,
-			"the ambient gh login is "+got+", a non-blessing login — the only human an ambient credential may carry is "+cfg.Bless.Login,
-			"switch the interactive gh identity to "+cfg.Bless.Login+" (`gh auth login`), or clear the ambient credential", refs)
+	case errors.Is(err, ErrNoAmbientIdentity):
+		identity = "no usable ambient human identity (" + oneLine(strings.TrimPrefix(
+			strings.TrimPrefix(err.Error(), ErrNoAmbientIdentity.Error()), ": ")) + ")"
+	case errors.Is(err, ErrStoredAmbientCredential):
+		return unchecked(CheckAmbientID, oneLine(err.Error()),
+			ambientClearRemedy+"; then re-run preflight", refs)
+	case err != nil:
+		return unchecked(CheckAmbientID, "could not read the ambient gh identity: "+oneLine(err.Error()),
+			"run `gh api user` by hand in this same shell and read its answer — a not-logged-in gh and an "+
+				"HTTP 401/403 already count as no ambient human identity, so what blocked the read is something "+
+				"else (gh missing from PATH, a timeout, a server or rate-limit error); fix that and re-run preflight", refs)
+	default:
+		got := strings.ToLower(strings.TrimSpace(login))
+		switch {
+		case got == "":
+			identity = "no ambient gh identity is set (nothing to fall through to)"
+		case isAmbientBot(cfg, got):
+			botRemedy := ambientClearRemedy + "; if the bot credential is the interactive gh login rather than " +
+				"a token variable, log that bot account out of gh"
+			botDetail := "the ambient gh login is " + got + ", a bot/App slug — a tool fall-through would post " +
+				"as a bot and dodge the App-token mint"
+			return failed(CheckAmbientID, botDetail, botRemedy, refs)
+		default:
+			identity = "ambient gh login is a human (" + got + ", warned)"
+			whose := "that human"
+			if bless := strings.ToLower(strings.TrimSpace(cfg.Bless.Login)); bless != "" && got == bless {
+				whose = "that human — the blessing login, so a stray write would land under the maintainer's name"
+			}
+			notice = "WARNING: the ambient gh login is " + got + ", a human — a tool that falls through to the " +
+				"ambient credential would act as " + whose + ". Desk writes use minted App tokens and need no " +
+				"ambient login: " + ambientClearRemedy
+		}
 	}
 
 	// Transport half: every credential source git consults for the landing remote's
 	// push URL must be the minted App token, so the probe and a real push present
 	// the same credential.
+	c := checkAmbientTransport(p, l, tokenPath, identity, refs)
+	c.Notice = notice
+	return c
+}
+
+// ambientClearRemedy is the ONE remediation for an ambient credential a desk shell
+// should not carry. It leads with clearing the credential, and it never
+// recommends logging a human in.
+//
+// An empty GH_CONFIG_DIR alone is NOT enough on a machine whose gh login lives in
+// the OS keyring: `gh api user` reports "not logged in" from an empty config
+// directory, but `gh auth token` still returns the keyring login — and cellctl's
+// per-verb shim resolves `gh auth token` when GH_TOKEN and GH_ENTERPRISE_TOKEN
+// are unset and its `gh` wrapper hands the result to every `gh` child as
+// GH_TOKEN (#1145, #1631), so the human credential the operator just cleared
+// comes back for exactly the `gh` a fall-through would run. Setting GH_TOKEN to
+// the role's minted App token closes both paths: it outranks every stored gh
+// credential, the shim and its wrapper leave an explicit GH_TOKEN alone, and
+// /user answers 403 for it, which this check reads as no ambient human identity.
+const ambientClearRemedy = "clear the ambient gh credential for desk shells — unset GITHUB_TOKEN/GH_ENTERPRISE_TOKEN " +
+	"and export GH_TOKEN as the role's minted App token (the cache file `desktoken <role>` prints), which outranks " +
+	"every stored gh login; an empty GH_CONFIG_DIR alone is not enough, because `gh auth token` still returns an " +
+	"OS-keyring login from an empty config dir, and a verb shim whose gh wrapper hands that to gh as GH_TOKEN brings the human back. " +
+	"Never log a human in, or switch the operator's own gh account, to clear this"
+
+// checkAmbientTransport is the transport half of checkAmbientIdentity: every
+// credential source git consults for the landing remote's push URL must be the
+// minted App token. identity is the identity half's clean phrase, carried into
+// the checked-clean detail.
+func checkAmbientTransport(p PreflightProbes, l Landing, tokenPath, identity, refs string) Check {
 	if strings.TrimSpace(tokenPath) == "" {
 		return unchecked(CheckAmbientID,
 			"no App token was minted, so the credential helper cannot be matched against it",
@@ -1553,8 +1735,9 @@ func checkAmbientIdentity(p PreflightProbes, l Landing, tokenPath string, forge 
 	if herr != nil {
 		return unchecked(CheckAmbientID, "credential-helper resolution: "+oneLine(herr.Error()),
 			"list the helper chain by hand (`git -C "+orDot(l.Dir)+" config --show-origin --get-regexp "+
-				"'^credential\\.'` against `git -C "+orDot(l.Dir)+" remote get-url --push "+l.Remote+"`) and confirm "+
-				"every applicable helper reads the App token cache", refs)
+				"'^credential\\.'` against every URL `git -C "+orDot(l.Dir)+" remote get-url --push --all "+l.Remote+
+				"` prints) and confirm every applicable helper is the App token helper and no netrc entry answers "+
+				"for the host", refs)
 	}
 	if !ok {
 		return failed(CheckAmbientID,
@@ -1562,13 +1745,10 @@ func checkAmbientIdentity(p PreflightProbes, l Landing, tokenPath string, forge 
 				" push URL is not solely the minted App token ("+oneLine(detail)+
 				") — the write-transport probe and a real push could disagree, the probe-green/push-red split",
 			"reset the helper chain for the "+l.Remote+" URL with an empty credential.helper entry, then add only the "+
-				"desk's App-token helper after it; remove any embedded URL credential or Authorization extraHeader for it", refs)
+				"desk's App-token helper after it; remove any embedded URL credential, Authorization extraHeader or netrc "+
+				"entry for it, and check every push URL the remote lists", refs)
 	}
-	blessed := "ambient gh login is the blessing human (" + cfg.Bless.Login + ")"
-	if got == "" {
-		blessed = "no ambient gh identity is set (nothing to fall through to)"
-	}
-	return clean(CheckAmbientID, blessed+" and every credential source git consults for the "+l.Remote+
+	return clean(CheckAmbientID, identity+" and every credential source git consults for the "+l.Remote+
 		" push URL is the minted App token", refs)
 }
 
@@ -1591,35 +1771,149 @@ func isAmbientBot(cfg Config, login string) bool {
 	return false
 }
 
+// ErrNoAmbientIdentity is what ambientLoginProbe wraps when `gh` answered, and
+// the answer is that there is NO usable ambient human identity: `gh` is not
+// logged in, or the ambient credential answers 401/403 on /user (an
+// App/integration token is not a user). It is the SAFE state for the identity
+// half — nothing to fall through to as a person — and must never be read as
+// could-not-check: doing so is exactly what made the safe state unreachable
+// (#1798).
+var ErrNoAmbientIdentity = errors.New("no usable ambient human identity")
+
+// ErrStoredAmbientCredential is what ambientLoginProbe wraps when `gh api user`
+// answered "not logged in" but `gh auth token` still returns a stored credential.
+// That is the shape an empty GH_CONFIG_DIR gives on a machine whose gh login
+// lives in the OS keyring: the API call finds no config, the keyring credential
+// is one local call away, and a wrapper that resolves `gh auth token` into
+// GH_TOKEN (cellctl's per-verb shim does) hands it straight back to the next
+// `gh`. It is NOT the no-identity state, and the check cannot tell whose
+// credential it is without using it, so it reads as could-not-check. The
+// credential itself is never kept or echoed.
+var ErrStoredAmbientCredential = errors.New("a stored gh credential is still reachable")
+
+// ambientProbeTimeout bounds the `gh api user` call. A var only so the timeout
+// path is testable without a 15-second test.
+var ambientProbeTimeout = 15 * time.Second
+
+// ghExitAuthRequired is gh's documented exit status for "authentication required"
+// (not logged in, no token).
+const ghExitAuthRequired = 4
+
 // ambientLoginProbe reads the login the ambient `gh` credential would act as.
 //
 // It runs `gh api user` under the AMBIENT environment on purpose — the opposite
 // of the cold mint's scrubbed env — because the whole question is "what identity
-// would a tool fall-through silently use". An App token that 403s the
-// integrations-forbidden `/user` endpoint, or a `gh` that is not logged in, is
-// reported as an ERROR (could-not-check) rather than guessed. A `gh` that is on
-// PATH and answers with an empty login is "no ambient identity", not a failure.
+// would a tool fall-through silently use". Its outcomes:
+//
+//   - a login on stdout → that login;
+//   - `gh` answered, and the answer is "no usable human identity" (see
+//     classifyNoAmbientIdentity) → an error wrapping ErrNoAmbientIdentity —
+//     except that a "not logged in" answer is only taken once `gh auth token`
+//     confirms no stored credential is readable either (storedAmbientCredential);
+//     one that is → an error wrapping ErrStoredAmbientCredential;
+//   - gh absent, gh could not be started, the call timed out, or any other
+//     answer → a plain error (could-not-check).
 func ambientLoginProbe() (string, error) {
 	bin, err := exec.LookPath("gh")
 	if err != nil {
 		return "", fmt.Errorf("gh is not on PATH: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), ambientProbeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "api", "user", "-q", ".login").Output()
+	cmd := exec.CommandContext(ctx, bin, "api", "user", "-q", ".login")
+	// A child gh leaves behind (a pager, a helper) can hold stdout open past the
+	// kill; WaitDelay bounds that wait so the timeout is the real bound.
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("gh api user did not answer within %s", ambientProbeTimeout)
+		}
 		var ee *exec.ExitError
 		if asExitError(err, &ee) {
-			return "", fmt.Errorf("gh api user failed: %s", oneLine(string(ee.Stderr)))
+			stderr := oneLine(string(ee.Stderr))
+			if reason, ok := classifyNoAmbientIdentity(ee.ExitCode(), stderr); ok {
+				if reason == ghNotLoggedInReason {
+					// The stored-credential look is launched HERE, from the one
+					// function the forge-CLI ban's register already names for the
+					// ambient `gh` launch, not from a helper that would be a second
+					// exec site; storedAmbientCredential only judges the result.
+					tctx, tcancel := context.WithTimeout(context.Background(), ambientProbeTimeout)
+					defer tcancel()
+					tcmd := exec.CommandContext(tctx, bin, "auth", "token")
+					tcmd.WaitDelay = time.Second
+					tout, terr := tcmd.Output()
+					if err := storedAmbientCredential(tout, terr, tctx.Err()); err != nil {
+						return "", err
+					}
+				}
+				return "", fmt.Errorf("%w: %s", ErrNoAmbientIdentity, reason)
+			}
+			return "", fmt.Errorf("gh api user failed: %s", stderr)
 		}
 		return "", fmt.Errorf("could not run gh api user: %v", oneLine(err.Error()))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
+// classifyNoAmbientIdentity reads a FAILED `gh api user` (exit status + stderr)
+// and reports whether the failure is gh's answer "there is no usable human
+// identity here", with the reason. It is deliberately narrow: only the three
+// answers that name the credential's shape count, and everything else — a
+// server error, a network failure, a RATE-LIMIT 403 (a human token can be
+// rate-limited) — is not an answer about identity and stays could-not-check.
+func classifyNoAmbientIdentity(exitCode int, stderr string) (string, bool) {
+	low := strings.ToLower(stderr)
+	switch {
+	case strings.Contains(low, "rate limit"):
+		return "", false
+	case strings.Contains(low, "(http 401)"):
+		return "the ambient credential authenticates as no one: HTTP 401 on /user", true
+	case strings.Contains(low, "(http 403)"):
+		return "the ambient credential is not a user: HTTP 403 on /user, an App/integration token", true
+	case exitCode == ghExitAuthRequired || strings.Contains(low, "gh auth login"):
+		return ghNotLoggedInReason, true
+	}
+	return "", false
+}
+
+// ghNotLoggedInReason is classifyNoAmbientIdentity's reason for the "not logged
+// in" answer — the one answer that is only true of the API call's config view,
+// not of every credential gh can still read locally.
+const ghNotLoggedInReason = "gh is not logged in"
+
+// storedAmbientCredential judges the `gh auth token` call (local, no network)
+// ambientLoginProbe makes after `gh api user` said "not logged in": out and
+// runErr are that call's result, ctxErr its timeout context's error. It returns
+// nil only when the call shows no stored credential: a non-zero exit, or an
+// empty answer. A non-empty answer is an error wrapping
+// ErrStoredAmbientCredential; a call that could not run or did not answer in
+// time is a plain error (could-not-check). The answer is only tested for being
+// empty — it is never returned, logged, or kept.
+func storedAmbientCredential(out []byte, runErr, ctxErr error) error {
+	err := runErr
+	if ctxErr != nil {
+		return fmt.Errorf("gh reports not logged in, and gh auth token did not answer within %s, so a stored "+
+			"credential could not be ruled out", ambientProbeTimeout)
+	}
+	if err != nil {
+		var ee *exec.ExitError
+		if asExitError(err, &ee) {
+			return nil
+		}
+		return fmt.Errorf("gh reports not logged in, and gh auth token could not run: %v", oneLine(err.Error()))
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: gh api user reports not logged in, but gh auth token still returns a stored "+
+		"credential (an OS-keyring login read past an empty config dir, say) that a wrapper resolving gh auth "+
+		"token into GH_TOKEN hands back to the next gh", ErrStoredAmbientCredential)
+}
+
 // credHelperMatchesAppProbe reports whether EVERY credential source git consults for the
-// landing remote's PUSH URL (the URL `git push` — and the write-transport probe's
-// `push --dry-run` — authenticate against) is the minted App token. The judgement is
+// landing remote's PUSH URL (the URL a git-binary push from this checkout authenticates
+// against) is the minted App token. The judgement is
 // credTransportMatchesApp (credhelperchain.go): the ordered helper chain across every config
 // scope, not the single last value --get-urlmatch returns. It is READ-ONLY: it never runs a
 // helper and never contacts the remote — a probe that authenticated would be the mutating
@@ -1633,11 +1927,50 @@ func credHelperMatchesAppProbe(l Landing, appTokenPath string) (bool, string, er
 	if strings.TrimSpace(remote) == "" {
 		remote = "origin"
 	}
-	pushURL, err := gitOut(dir, "remote", "get-url", "--push", remote)
+	// --all: `git push` pushes to EVERY push URL the remote has (every pushurl, or every url
+	// when there is no pushurl), so every one of them is judged, and one failing fails the
+	// check. Judging only the first would read green while a later URL authenticates as
+	// something else.
+	out, err := gitOut(dir, "remote", "get-url", "--push", "--all", remote)
 	if err != nil {
 		return false, "", fmt.Errorf("no remote named %s in %s", remote, dir)
 	}
-	return credTransportMatchesApp(dir, strings.TrimSpace(pushURL), appTokenPath)
+	var urls []string
+	for _, line := range strings.Split(out, "\n") {
+		if u := strings.TrimSpace(line); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	if len(urls) == 0 {
+		return false, "", fmt.Errorf("the %s remote in %s lists no push URL", remote, dir)
+	}
+	var cantCheck error
+	details := make([]string, 0, len(urls))
+	for i, u := range urls {
+		ok, detail, cerr := credTransportMatchesApp(dir, u, appTokenPath)
+		prefix := ""
+		if len(urls) > 1 {
+			prefix = fmt.Sprintf("push URL %d of %d: ", i+1, len(urls))
+		}
+		switch {
+		case cerr != nil:
+			if cantCheck == nil {
+				cantCheck = fmt.Errorf("%s%w", prefix, cerr)
+			}
+		case !ok:
+			// A red verdict outranks a could-not-check on another URL: it is a finding.
+			return false, prefix + detail, nil
+		default:
+			details = append(details, detail)
+		}
+	}
+	if cantCheck != nil {
+		return false, "", cantCheck
+	}
+	if len(urls) == 1 {
+		return true, details[0], nil
+	}
+	return true, fmt.Sprintf("all %d push URLs pass: %s", len(urls), strings.Join(details, "; ")), nil
 }
 
 // --- small shared helpers ---------------------------------------------------

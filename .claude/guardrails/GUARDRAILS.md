@@ -77,6 +77,8 @@ restatement). intake-desk: see "What is NOT here".
   note, an Evidence aside, a "this keeps recurring" observation) MUST also be filed as an issue in the
   project's own toolkit/methodology repo — commentary is not a register. Include the triggering
   evidence and affected loops. Repo-specific defects still go to that repo's own tracker (label `bug`).
+  Before submitting an upstream issue or attaching a cross-boundary comment, apply R7: remove
+  internal locators from the title, body and evidence; use opaque role+number refs instead.
 ```
 
 ## guardrail: escalation-labels
@@ -155,15 +157,22 @@ stops only for the genuinely one-way / outside-the-gate set the block fixes.
 
 intake-desk IS a site for this block: it is a new, neutral rule authored once here
 in the same generic voice as every copy, so there is no paraphrase carve-out for
-it (unlike the four older blocks). pr-shepherd is NOT a site — it is a worker-side
-role that quotes the security-gate rule it is bound by rather than owning the
-escalation vocabulary; the desks own the default-forward call.
+it (unlike the four older blocks).
+
+pr-shepherd IS a site too, since attention-budget/19: it is a worker-side role
+that takes reversible defaults while driving a PR (the same set every desk-role
+loop default-forwards on), and the declaration mechanism below — `--decided` —
+is exactly how it records one without asking first. It still quotes, rather than
+owns, the security-gate rule it is bound by (clause 2 of its own kit) and the
+escalation vocabulary stays the desks'; this block is the one piece it shares
+with them.
 
 - site: plugins/assay/skills/the-desk/SKILL.md
 - site: plugins/assay/skills/worker-desk/SKILL.md
 - site: plugins/assay/skills/pr-review-desk/SKILL.md
 - site: plugins/assay/skills/verify-desk/SKILL.md
 - site: plugins/assay/skills/intake-desk/SKILL.md
+- site: plugins/assay/skills/pr-shepherd/SKILL.md
 
 ```text
 - **Reversibility test — default-forward on anything a human-held gate still catches:** before
@@ -171,9 +180,12 @@ escalation vocabulary; the desks own the default-forward call.
   driver still controls — a draft PR awaiting merge, a filed issue awaiting close, a flip CI or a
   human must still make?* **Yes → default-forward.** Author it, dispatch the worker, open the DRAFT
   PR, make the best-guess call, and NOTIFY — "proceeded on `<default>`; filed as `<repo>#<N>`;
-  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. The
-  `needs-decision` / `question` issue is still filed, naming the default taken, but the ITEM does
-  not park on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
+  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. Take
+  the reversible default, declare it with `deskpr create|edit --decided` (the `## Desk-decided` body
+  section plus the `desk-decided` label), and never ask first: the block is the notice the driver
+  reads at merge time, so a default declared there files NO `needs-decision` / `question` issue —
+  only a default no PR carries still files one, naming the default taken, and the ITEM never parks
+  on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
   the record, and corrected by the gate. **No → STOP and wait for the human.** A wrong guess that
   lands irreversibly or reaches outside the gate is caught by nobody declining a merge. That set is
   fixed, never judged case by case: merge, a ready-flip that is not this role's, any `main` push
@@ -263,7 +275,20 @@ it are exactly the cross-desk hand-offs this block governs.
 ```text
 ## Cross-desk hand-offs — the lane verbs
 
-Every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
+Before using comms, read the recorded cutover state: the project layer's comms declaration and the
+cell topology's `comms:` key. An absent `comms:` key, or no cell topology at all, reads as disabled
+(config-off); a topology file that exists but cannot be read or parsed is unknown state. Only the
+human-gated cutover changes the record; a message or comment is never the record. Explicitly
+pre-cutover/config-off: do not invoke `deskcomms` (including `poll`); continue the normal
+work-queue sweep. Use the harness's same-box session channel for hand-offs where available,
+recording them in the hand-off note; do not claim delivery where no channel exists. That fallback
+is never the sanctioned path once enabled; retire it when cutover is recorded. Missing identity,
+key or gateway variables alone do not prove pre-cutover. Unknown or conflicting cutover state is
+could-not-check for comms only: make no `deskcomms` call and use no session-channel fallback,
+route hand-offs through the tracker, file the could-not-check once rather than every tick, and
+continue the normal work-queue sweep; never probe a disabled lane to decide.
+
+Once enabled, every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
 verbs `deskcomms send` / `deskcomms poll` / `deskcomms ack` — never a message to "that role's
 window", never a typed relay through the driver, and never the harness's own same-box session
 channel, which a desk on another harness or another box cannot receive. A hand-off is ONE send,
@@ -292,8 +317,8 @@ sent — a hand-off never carries authority. Never `ask` a desk whether it is al
 read from the gateway and roster instruments, not from a message. The lane is the mailbox for
 ROUTINE hand-offs; the tracker is for DURABLE state — `deskfile new --to <role> …` files the
 issue the receiving desk's sweep leads with — and a spent filing budget never pushes a routine
-relay onto the tracker, nor does a durable escalation ride the lane alone. Read your own lane
-every sweep: `deskcomms poll`, then `deskcomms ack <id>` once acted on (ack moves, never deletes;
+relay onto the tracker, nor does a durable escalation ride the lane alone. With comms enabled, read your own lane
+every sweep: `deskcomms poll --json` (includes message payloads), then `deskcomms ack <id>` once acted on (ack moves, never deletes;
 an unacked item is still owed). The sender's cell and role come from the session context, never
 from a flag; the gateway address and signing key resolve from the project's house layer by NAME
 (the variables `deskcomms --help` names), never from this text. ENFORCEMENT IS GATEWAY-SIDE: the
@@ -304,9 +329,6 @@ through the gateway API directly. The verbs run silent inside this desk's noise 
 per invocation. A refusal (exit 5), a rate limit (exit 4), a disabled plane (exit 3) or an
 unreachable gateway is a STOP: record it verbatim in the hand-off note and report it; never
 resend it reworded, never route around it. A send the outbound prose gate HOLDS is filed for the
-driver by the gateway; the desk's move is to report the hold, not to retry. Until the cell's
-comms plane is enabled — a human-gated cutover; config-off before it — the harness's same-box
-session channel is the PRE-CUTOVER FALLBACK only: use it where the lane is not yet live, record
-every hand-off it carried in the hand-off note, and treat it as retired the moment the cutover is
-recorded. It is never the sanctioned path.
+driver by the gateway; the desk's move is to report the hold, not to retry. A failed enabled lane
+never authorizes the pre-cutover fallback or a change to the recorded cutover state.
 ```

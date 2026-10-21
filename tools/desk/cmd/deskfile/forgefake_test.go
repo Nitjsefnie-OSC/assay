@@ -29,7 +29,14 @@ type dfForge struct {
 	getNums      []int
 	filed        *deskkit.IssueInput
 	appliedLabel []string // labels ApplyLabels added after a filing
-	comments     []int    // PostComment / PostCommentTyped target numbers
+	// labelSpecs / removedLabel / labelOps record the FULL label reconciliation, in call
+	// order: every LabelSpec added (with its create-time Color/Description), every name a
+	// LabelChange took off, and each LabelChange as sent — the observable for the notice
+	// lane's add-first-then-remove ordering and its label-create metadata.
+	labelSpecs   []deskkit.LabelSpec
+	removedLabel []string
+	labelOps     []deskkit.LabelChange
+	comments     []int // PostComment / PostCommentTyped target numbers
 	// getKinds / commentKinds record the TargetKind each typed read / typed write was
 	// asked for, in call order — the observable that proves `--kind` reached the forge.
 	getKinds     []deskkit.TargetKind
@@ -148,10 +155,18 @@ func (f *dfForge) ApplyLabels(repo deskkit.ForgeRepo, number int, change deskkit
 		return nil, deskkit.Refused(fmt.Sprintf("refusing to apply labels: target %s, want issue — deskfile labels the ISSUE it filed", change.Target))
 	}
 	f.labelTarget = change.Target
+	f.labelOps = append(f.labelOps, change)
+	// FAKEGH_LABEL_REMOVE_FAIL fails any reconciliation that takes a label OFF — the
+	// partial-failure shape for the notice lane's second (remove) write.
+	if len(change.Remove) > 0 && os.Getenv("FAKEGH_LABEL_REMOVE_FAIL") != "" {
+		return nil, deskkit.Unverifiable("HTTP 500: label remove failed", nil)
+	}
 	for _, l := range change.Add {
 		f.appliedLabel = append(f.appliedLabel, l.Name)
+		f.labelSpecs = append(f.labelSpecs, l)
 	}
-	return &deskkit.LabelOutcome{Added: f.appliedLabel}, nil
+	f.removedLabel = append(f.removedLabel, change.Remove...)
+	return &deskkit.LabelOutcome{Added: f.appliedLabel, Removed: change.Remove}, nil
 }
 
 func (f *dfForge) PostComment(repo deskkit.ForgeRepo, number int, body string) (*deskkit.CommentRef, error) {
@@ -203,6 +218,26 @@ func (f *dfForge) synthGH() [][]string {
 	return out
 }
 
+// finalLabels is the label set the filed issue ends up carrying: every label added, minus
+// every label a later reconciliation took off (case-insensitive), first-seen order.
+func (f *dfForge) finalLabels() []string {
+	removed := map[string]bool{}
+	for _, r := range f.removedLabel {
+		removed[strings.ToLower(r)] = true
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, l := range f.appliedLabel {
+		k := strings.ToLower(l)
+		if removed[k] || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, l)
+	}
+	return out
+}
+
 // curForge is the fake installed by the most recent withEnv, for assertions.
 var curForge *dfForge
 
@@ -225,7 +260,9 @@ func installFakeForge(t *testing.T) *dfForge {
 		if k, ok := deskkit.EffectiveConfig().RepoForges[strings.ToLower(repo)]; ok {
 			kind = deskkit.ForgeKind(k)
 		}
-		return f, f.fr, kind, nil
+		// Production's resolver returns the outbound-checked decorator (ResolveForge), so the
+		// fake is wrapped the same way: a verb under test holds what it would hold for real.
+		return deskkit.OutboundChecked(f, "worker"), f.fr, kind, nil
 	}
 	t.Cleanup(func() { forgeForFn = old; ghToken = oldTok })
 	return f

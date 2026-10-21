@@ -25,6 +25,10 @@ import (
 // NOT cryptographic un-forgeability. A holder of signing material can still forge; the close
 // is author!=approver between distinct Apps + branch protection, which is out of scope here.
 type VerifyLoop struct {
+	performance verifyPerformance // optional invocation diagnostics; never scheduling authority
+	attested    verifierRuns
+	Attest      func(loopengine.Item, string, string) (deskkit.VerifierReceipt, error)
+
 	Root      string // repo root the Awaiting scan runs against
 	TargetSHA string // merged-main SHA verifiers run against (stamped onto every Item)
 	// Roots, when non-empty, is the MULTI-ROOT queue: the configured stream roots (the same
@@ -65,6 +69,14 @@ type VerifyLoop struct {
 	// tool version, and NEVER observes an external action (that stays could-not-check offline).
 	// Injected in tests so every wake path is exercised without touching the filesystem.
 	WakeReader deskkit.WakeInputs
+	// Issues reads the open/closed state of a held receipt's blocker issue (verify-reset/03).
+	// nil — `plan --no-forge`, and every caller that never wired a forge — reads every blocker as
+	// could-not-check, so a hold is surfaced, never released and never confirmed, without a read.
+	Issues deskkit.IssueStateSource
+	// RootRepo is the single-root plan's own repository ("owner/name", from Root's origin
+	// remote): where a held record's bare #N blocker_ref resolves when the record names no repo.
+	// Empty — no origin, or a caller that never set it — leaves such a ref could-not-check.
+	RootRepo string
 
 	// --- Native ACP dispatch --------------------------------
 	// Native selects the dispatch MODE. false (the zero value, the default) keeps
@@ -104,11 +116,51 @@ func (v *VerifyLoop) Name() string { return "verify-desk" }
 // (implemented + empty Evidence) before tier-2 (free-closes / Evidence-present), oldest-first
 // within class. See briefscan.go.
 func (v *VerifyLoop) SelectQueue() ([]loopengine.Item, error) {
-	now := v.wakeNow()
-	if len(v.Roots) > 0 {
-		return scanAwaitingRoots(v.Roots, v.TargetSHA, v.WakeReader, now)
+	if source, ok := v.Issues.(interface{ beginPlanningPass() }); ok {
+		source.beginPlanningPass()
 	}
-	return scanAwaitingIn(deskkit.RootConfig{Path: v.Root}, v.TargetSHA, v.WakeReader, now)
+	now := v.wakeNow()
+	var items []loopengine.Item
+	var err error
+	stopScan := v.performance.phase("queue-scan")
+	pass := deskkit.NewVerifierAssociationPass(v.performance.session)
+	if len(v.Roots) > 0 {
+		items, err = scanAwaitingRootsPass(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
+	} else {
+		items, err = scanAwaitingPass(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
+	}
+	stopScan()
+	if err != nil {
+		return nil, err
+	}
+	// Both single-root and multi-root consumers pass this join. A source with
+	// no pending-Evidence capability keeps the offline board-only scan.
+	if source, ok := v.Issues.(pendingEvidenceSource); ok {
+		if prepare, ok := v.Issues.(interface {
+			preparePendingEvidence([]loopengine.Item, string)
+		}); ok {
+			prepare.preparePendingEvidence(items, v.RootRepo)
+		}
+		for i, it := range items {
+			if payloadValue(it, "could_not_check") != "" {
+				continue
+			}
+			root, repo := payloadValue(it, "root"), payloadValue(it, "repo")
+			if root == "" {
+				root = v.Root
+			}
+			if repo == "" {
+				repo = v.RootRepo
+			}
+			ref, err := source.PendingEvidence(root, repo, it, now, v.WakeReader)
+			if err != nil {
+				items[i].Payload["could_not_check"] = "pending Evidence: " + oneLine(err)
+			} else if ref != "" {
+				items[i].Payload["awaiting_merge"] = ref
+			}
+		}
+	}
+	return items, nil
 }
 
 // wakeNow is the clock the wake evaluator uses — v.Now when injected (deterministic in tests),
@@ -127,6 +179,12 @@ func (v *VerifyLoop) wakeNow() time.Time {
 // drives a real ACP child process (dispatch_native.go). The rendered prompt is identical
 // either way — renderDispatchPrompt is the single source, unchanged.
 func (v *VerifyLoop) Dispatch(it loopengine.Item, tier loopengine.Tier) (loopengine.Handle, error) {
+	if ref := payloadValue(it, "awaiting_merge"); ref != "" {
+		return nil, fmt.Errorf("awaiting-merge %s: pending verifier Evidence", ref)
+	}
+	if why := payloadValue(it, "could_not_check"); why != "" {
+		return nil, fmt.Errorf("could-not-check: %s", why)
+	}
 	if v.Native {
 		return v.dispatchNative(it, tier)
 	}
@@ -139,10 +197,29 @@ func (v *VerifyLoop) Dispatch(it loopengine.Item, tier loopengine.Tier) (loopeng
 // engine EMITS the dispatch and the model executes it verbatim, then feeds the structured
 // Result back.
 func (v *VerifyLoop) dispatchInterim(it loopengine.Item, tier loopengine.Tier) (loopengine.Handle, error) {
-	prompt := renderDispatchPrompt(it, tier)
+	if v.Feeder == nil {
+		return nil, fmt.Errorf("interim dispatch: no feeder wired — BLOCKED-ON-HUMAN")
+	}
+	// The association is re-checked here only without an injected attester; with
+	// one, queuedVerifierReceipt binds the admitted receipt to the queued source,
+	// brief and tracking/source association instead (attestation.go).
+	if v.Attest == nil {
+		if err := checkQueuedAssociation(it); err != nil {
+			return nil, err
+		}
+	}
+	receipt, err := v.attestRun(it, v.Root, "")
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := admittedVerifierPrompt(it, tier, receipt)
+	if err != nil {
+		return nil, err
+	}
 	if err := assertNoSharedCheckout(prompt); err != nil {
 		return nil, err
 	}
+	v.rememberRun(it, v.Root, receipt, nil)
 	fmt.Fprintf(v.emit(), "\n=== DISPATCH %s (tier=%s) ===\n%s\n=== END DISPATCH ===\n", it.ID, tier, prompt)
 
 	if v.Feeder == nil {

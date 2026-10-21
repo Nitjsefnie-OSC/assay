@@ -18,9 +18,15 @@ gate-why: >-
   (the same reason brief 04 and brief 10 are human-gated): a maintainer lands the workflow hunk
   from the staged copy. `irreversible: yes` records the workflow-path rule as brief 04 did; the
   other three answers are honestly no — the leg reads no secret beyond the read-only token the
-  existing leg already uses. decision-trigger start: the exact staged-copy vs direct landing
-  question (the same tension brief 10 named) is best framed when the implementer has the leg.
-decision-trigger: start
+  existing leg already uses. decision-trigger spec (corrected from `start`, assay#1679 F1):
+  the exact staged-copy vs direct landing question (the same tension brief 10 named) is only
+  well-formed once the implementer has the leg, and the Task section's own step 4 has the
+  executor author `## Human decision` at pickup — that is `decision-trigger: spec`'s own
+  definition, not `start`'s (a `start`-trigger brief is filed by the dispatcher between
+  claim-acquire and worker launch, before any such authoring happens, which is exactly why the
+  original `start` value made `deskdispatch --gate-human` refuse this brief on a still-unauthored
+  placeholder section).
+decision-trigger: spec
 risk: {regulatory: no, customer: no, irreversible: yes, sensitive-data: no}
 issues: [1435]
 schema: brief-v2
@@ -44,7 +50,7 @@ consumers:
   - "plugins/assay/skills/{pr-review-desk,intake-desk,inbox,ask-decision}/SKILL.md + references/tick-contract.md (drop the script fallback wording): follow-up windows-port/14 (this brief)"
   - "docs/adopting-assay.md § Windows adopters: follow-up windows-port/14 (this brief)"
   - "tools/desk/cmd/scanloop/monitor.go parity mode (removed with the oracle): follow-up windows-port/14 (this brief)"
-version: 1
+version: 2
 id: ea048fcd-b19e-466e-bbb5-7c768c57770d
 ---
 
@@ -60,9 +66,9 @@ facts:
 single-point-of-failure: the ONE control is the PATH-scrub assertion (without it a green leg could have used bash). Independent layer: 11/13's parity tests on a bash-less Go test run (`-tags nobash` or a runner without bash) — a different runner, different signal.
 
 ## Human decision
-<!-- decision-trigger: start — the executor authors this at pickup: the landing mechanism for
+<!-- decision-trigger: spec — the executor authors this at pickup: the landing mechanism for
      the workflow hunk (staged copy promoted by a maintainer vs direct), the same question
-     brief 10 raised; then files it via tools/decision-issue.sh ensure … --at start. -->
+     brief 10 raised; then files it via tools/decision-issue.sh ensure … --at spec. -->
 
 ## Ground rules
 - NEVER git push / trigger workflows / run mutating infra commands. Commit only per the task
@@ -87,7 +93,7 @@ single-point-of-failure: the ONE control is the PATH-scrub assertion (without it
 | 3 | One step per verb: `grep -c -e 'deskmonitor inbound' -e 'deskmonitor pr' -e 'desktick regexp' -e 'deskinbox flow' -e 'hook-install' ci/staged-workflows/windows-ci-leg.yml` | `5` | `check` |
 | 4 | **DEREFERENCE — the leg ran green on this head** (after the human promotes it): `gh run list --workflow windows-ci-leg.yml --branch <this PR branch> --json conclusion,headSha --jq '.[0]'` | `success` at this PR's head; could-not-check with reason before promotion | `check +dereference` |
 | 5 | Retirement honest: for each deleted script, the PR body cites the green step + the parity test; `git diff --name-status origin/main -- plugins/assay/scripts/ \| grep -c '^D'` | equals the number of scripts the body claims retired | `check` |
-| 6 | No fallback wording left for retired scripts: `grep -c -e 'inbound-monitor.sh' -e 'pr-monitor.sh' -e 'tick-summary.sh' -e 'assay-inbox.sh' plugins/assay/skills/*/SKILL.md plugins/assay/references/*.md` | `0` for each retired script | `check` |
+| 6 | No fallback wording left for retired scripts: `grep -c -e 'inbound-monitor.sh' -e 'pr-monitor.sh' -e 'tick-summary.sh' -e 'assay-inbox.sh' plugins/assay/skills/*/SKILL.md plugins/assay/references/*.md` | exit 1 (grep exits 1 when no file matches); every printed per-file count is `0` for each retired script. Expect re-written 2026-10-03 (#1862). | `check` |
 | 7 | **Flow — a desk boots without bash**: on a Windows host (or the leg): `deskboot intake-desk --dry-run` with bash absent from PATH | exit 0 and the inbound surface reported as armed | `check +flow` |
 | 8 | Decision issue: `gh issue list -R medici-finance/assay --label needs-decision --search 'decision-gate: windows-port/14' --json number --jq length` | `1` | `check` |
 | 9 | Consumers routing corroborated: `statusgen --root . --consumers windows-port/14; echo $?` | `0` | `check` |

@@ -42,21 +42,9 @@ id: 0786889c-9b51-4b97-b02d-333c757cca9a
 
 ## Context
 files:
-- `tools/desk/internal/deskkit/migrate.go` — new op `statusgen-regen: {verb: migrate,
-  args: [brief-v1-to-v2]}`: runs the PINNED statusgen (resolved from `.assay-versions`,
-  never `$PATH`) with `--root`; dry-run prints the statusgen dry-run; idempotent.
-- `statusgen/migrate.go` (new) — verb `migrate brief-v1-to-v2 [--dry-run]`: rewrite
-  `schema: brief-v1` → `brief-v2` on every brief; rewrite `brief: <stream>/<NN>` →
-  `brief: <cell>:<repo>:<stream>:<NN>` using the tree's `graph-repos.yaml` (refuse, exit 5, if
-  absent — the adopter writes the registry first; the release note says so); add `version: 1`
-  where absent; mint `id:` (uuid v4) on every brief that lacks one (spec §8 — minted at
-  migration, once); wrap each stream README's Briefs table in
-  the markers and add `board: generated`; refuse (exit 5) if any README has no
-  recognisable table. Prints a per-file plan under `--dry-run`.
-- `migrations/0001-v0.28.0-to-v1.0.0-derived-board.md` (planned) — the first REAL migration (source umbrella v0.28.0, the latest at cut time — medici-finance/assay#453) — `apply:` =
-  `statusgen-regen` + `ensure-line` in `docs/UPGRADING.txt`; body = the adopter-facing
-  release note (what changes on their board, the trailer they must now write, the
-  reconcile step they must add to their workflow — with the exact YAML).
+- `tools/desk/internal/deskkit/migrate.go` — new op `statusgen-regen: {verb: migrate, args: [brief-v1-to-v2]}`: runs the PINNED statusgen (resolved from `.assay-versions`, never `$PATH`) with `--root`; dry-run prints the statusgen dry-run; idempotent.
+- `statusgen/migrate.go` (new) — verb `migrate brief-v1-to-v2 [--dry-run]`: rewrite `schema: brief-v1` → `brief-v2` on every brief; rewrite `brief: <stream>/<NN>` → `brief: <cell>:<repo>:<stream>:<NN>` using the tree's `graph-repos.yaml` (refuse, exit 5, if absent — the adopter writes the registry first; the release note says so); add `version: 1` where absent; mint `id:` (uuid v4) on every brief that lacks one (spec §8 — minted at migration, once); wrap each stream README's Briefs table in the markers and add `board: generated`; refuse (exit 5) if any README has no recognisable table. Prints a per-file plan under `--dry-run`.
+- `migrations/0001-v0.28.0-to-v1.0.0-derived-board.md` (planned) — the first REAL migration (source umbrella v0.28.0, the latest at cut time — medici-finance/assay#453) — `apply:` = `statusgen-regen` + `ensure-line` in `docs/UPGRADING.txt`; body = the adopter-facing release note (what changes on their board, the trailer they must now write, the reconcile step they must add to their workflow — with the exact YAML).
 - `statusgen/main.go` + brief-reading desk tools (`deskboard`, `deskpr`, `deskclaim`,
   `deskevidence`) — on `schema: brief-v2` in the tree with a binary `< v1.0.0`: exit 6
   "tree is brief-v2; this <tool> is vX; run assay:upgrade-assay".

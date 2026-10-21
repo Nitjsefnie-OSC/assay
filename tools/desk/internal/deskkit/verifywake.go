@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -75,11 +76,11 @@ type WakeReceipt struct {
 	SHA     string `json:"sha"`
 
 	// --- verify-wake-v1 additive fields ---
-	Schema   string `json:"wake_schema,omitempty"` // SchemaWakeV1 on a complete receipt
-	ID       string `json:"receipt_id,omitempty"`  // stable receipt ID (dedupe key)
-	Repo     string `json:"repo,omitempty"`        // owner/repo the brief lives in
-	Verifier string `json:"verifier,omitempty"`    // the TRUSTED WRITER identity, never free text
-	Rows     []int  `json:"rows,omitempty"`        // the Verify-row numbers this receipt holds
+	Schema   string        `json:"wake_schema,omitempty"` // SchemaWakeV1 on a complete receipt
+	ID       string        `json:"receipt_id,omitempty"`  // stable receipt ID (dedupe key)
+	Repo     string        `json:"repo,omitempty"`        // owner/repo the brief lives in
+	Verifier string        `json:"verifier,omitempty"`    // the TRUSTED WRITER identity, never free text
+	Rows     []VerifyRowID `json:"rows,omitempty"`        // the Verify-row numbers this receipt holds
 
 	// Inputs is the declared input scope: input key -> the revision observed at receipt time.
 	// Keys are opaque to the evaluator; the reader interprets them. An empty scope for a
@@ -92,6 +93,63 @@ type WakeReceipt struct {
 	WakePredicate string `json:"wake_predicate,omitempty"` // one of the WakeXxx constants
 	Deadline      string `json:"deadline,omitempty"`       // RFC3339 / date, for declared-deadline-reached
 	RecheckReason string `json:"recheck_reason,omitempty"` // required for explicit-recheck-with-reason
+
+	// --- additive join keys (run metadata + delivered PRs) ---
+	// PRs, DispatchRef and the verifier_tier/started/finished set are VERIFIER-ASSERTED: the
+	// writer checks that a PR exists, is merged and carries the named merge commit, but not that
+	// it delivered this brief, and dispatch_ref has no attested source. A consumer must not read
+	// either join as authenticated. See the verify-wake-v1 schema doc.
+	PRs               []DeliveredPR `json:"prs,omitempty"`                 // merged delivering PRs
+	PRsUnknownReason  string        `json:"prs_unknown_reason,omitempty"`  // closed set; required exactly when prs is an explicit []
+	VerifierTier      string        `json:"verifier_tier,omitempty"`       // any | strong, never a vendor model name
+	Started           string        `json:"started,omitempty"`             // RFC3339; started <= finished <= ts
+	Finished          string        `json:"finished,omitempty"`            // RFC3339
+	RowsPassed        int           `json:"rows_passed,omitempty"`         // Verify rows that passed
+	RowsTotal         int           `json:"rows_total,omitempty"`          // Verify rows the brief carries
+	RowResults        []RowResult   `json:"row_results,omitempty"`         // optional; covers ALL rows_total rows
+	DispatchRef       string        `json:"dispatch_ref,omitempty"`        // INPUT only; never committed in clear
+	DispatchRefSHA256 string        `json:"dispatch_ref_sha256,omitempty"` // WRITER output only, private register only
+}
+
+// DeliveredPR is one entry of a record's prs list: a merged change that delivered the brief's
+// deliverables. Withheld is the form ONLY the writer produces for a change in a repository the
+// register's audience may not see: sha256("<canonical repo>#<number>@<merge_sha>"), with the
+// clear fields omitted. Withheld is never valid input.
+type DeliveredPR struct {
+	Repo     string `json:"repo,omitempty"`
+	Number   int    `json:"number,omitempty"`
+	MergeSHA string `json:"merge_sha,omitempty"`
+	Withheld string `json:"withheld,omitempty"`
+}
+
+// RowResult is one entry of a record's row_results list.
+type RowResult struct {
+	Row    VerifyRowID `json:"row"`
+	Result string      `json:"result"`
+}
+
+// PRsUnknownReasonNoPRDelivery is the one value of prs_unknown_reason today: the brief's
+// deliverables landed with no pull request (a direct push, or a deliverable that is not code).
+const PRsUnknownReasonNoPRDelivery = "no-pr-delivery"
+
+// Row result vocabulary of row_results.
+const (
+	RowPass        = "pass"
+	RowFail        = "fail"
+	RowCouldNotRun = "could-not-run"
+	RowDeferred    = "deferred"
+)
+
+// ValidPRsUnknownReason reports whether s is in the closed prs_unknown_reason set.
+func ValidPRsUnknownReason(s string) bool { return s == PRsUnknownReasonNoPRDelivery }
+
+// ValidRowResult reports whether s is in the closed row_results result set.
+func ValidRowResult(s string) bool {
+	switch s {
+	case RowPass, RowFail, RowCouldNotRun, RowDeferred:
+		return true
+	}
+	return false
 }
 
 // ParseWakeReceipt unmarshals one JSONL sidecar line into a receipt. A malformed line, or one
@@ -138,6 +196,45 @@ func (r WakeReceipt) Complete() bool {
 		return strings.TrimSpace(r.RecheckReason) != ""
 	}
 	return false
+}
+
+// FirstIncompleteField returns the name of the FIRST field Complete would fail on, in
+// Complete's own check order, or "" when the receipt is complete. A caller that refuses an
+// incomplete receipt names this field, so the refusal tells the verifier what to fix first
+// rather than that "something" is missing. Complete stays the single yes/no gate;
+// TestFirstIncompleteFieldAgreesWithComplete holds the two together.
+func (r WakeReceipt) FirstIncompleteField() string {
+	if r.Schema != SchemaWakeV1 {
+		return "wake_schema"
+	}
+	if strings.TrimSpace(r.ID) == "" {
+		return "receipt_id"
+	}
+	if !blockerKinds[r.BlockerKind] {
+		return "blocker_kind"
+	}
+	if !wakePredicates[r.WakePredicate] {
+		return "wake_predicate"
+	}
+	switch r.WakePredicate {
+	case WakeRelevantInputChanged:
+		if len(r.Inputs) == 0 {
+			return "inputs"
+		}
+	case WakeReferencedActionDone:
+		if strings.TrimSpace(r.BlockerRef) == "" {
+			return "blocker_ref"
+		}
+	case WakeDeadlineReached:
+		if strings.TrimSpace(r.Deadline) == "" {
+			return "deadline"
+		}
+	case WakeExplicitRecheck:
+		if strings.TrimSpace(r.RecheckReason) == "" {
+			return "recheck_reason"
+		}
+	}
+	return ""
 }
 
 // NextActor names who owns the next action for this receipt's blocker kind. It is a scheduling
@@ -210,6 +307,10 @@ type WakeInputs interface {
 	ActionCompleted(ref string) (done bool, ok bool)
 }
 
+// Readers that know the authoring contract can additionally reject incomplete
+// historical scopes. Generic/custom readers retain their own declared semantics.
+type receiptScopeReader interface{ CheckReceiptScope(WakeReceipt) error }
+
 // EvaluateWake decides whether the receipt's held work should stay held, wake, be reported as
 // could-not-check, or be reclassified. It is pure: all external observation comes through reader
 // and the clock through now, so a fake reader and a fake clock exercise every path.
@@ -223,6 +324,11 @@ func (r WakeReceipt) EvaluateWake(reader WakeInputs, now time.Time) WakeDecision
 	switch r.WakePredicate {
 	case WakeRelevantInputChanged:
 		var changed, unreadable []string
+		if scope, ok := reader.(receiptScopeReader); ok {
+			if err := scope.CheckReceiptScope(r); err != nil {
+				unreadable = append(unreadable, "declared scope: "+err.Error())
+			}
+		}
 		for _, in := range wakeSortedKeys(r.Inputs) {
 			cur, ok := reader.Revision(in)
 			if !ok {
@@ -233,15 +339,13 @@ func (r WakeReceipt) EvaluateWake(reader WakeInputs, now time.Time) WakeDecision
 				changed = append(changed, in)
 			}
 		}
-		// Could-not-check is decided FIRST: an unreadable input means unchangedness is not
-		// establishable, so we never claim a hold on a partially-read scope.
-		if len(unreadable) > 0 {
-			return WakeDecision{State: WakeCouldNotCheck, Unreadable: unreadable,
-				Reason: base + " — could-not-check: unreadable declared input(s): " + strings.Join(unreadable, ", ")}
-		}
 		if len(changed) > 0 {
 			return WakeDecision{State: WakeFire, Changed: changed,
 				Reason: base + " — woke: changed input(s): " + strings.Join(changed, ", ")}
+		}
+		if len(unreadable) > 0 {
+			return WakeDecision{State: WakeCouldNotCheck, Unreadable: unreadable,
+				Reason: base + " — could-not-check: unreadable declared input(s): " + strings.Join(unreadable, ", ")}
 		}
 		return WakeDecision{State: WakeHold, Reason: base + " — all " + strconv.Itoa(len(r.Inputs)) + " declared input(s) unchanged"}
 
@@ -314,7 +418,7 @@ func NewWakeReceipt(id, repo, brief, verifier, outcome, sha string, rows []int, 
 	toolVersion, blockerKind, blockerRef, predicate, deadline, recheckReason, ts string) WakeReceipt {
 	return WakeReceipt{
 		TS: ts, Brief: brief, Outcome: outcome, SHA: sha,
-		Schema: SchemaWakeV1, ID: id, Repo: repo, Verifier: verifier, Rows: rows,
+		Schema: SchemaWakeV1, ID: id, Repo: repo, Verifier: verifier, Rows: numericVerifyRows(rows),
 		Inputs: inputs, ToolVersion: toolVersion,
 		BlockerKind: blockerKind, BlockerRef: blockerRef, WakePredicate: predicate,
 		Deadline: deadline, RecheckReason: recheckReason,
@@ -345,13 +449,17 @@ func NewRootRevisionReader(root, toolVersion string) *RootRevisionReader {
 }
 
 const (
-	inputKeyTool       = "tool"
-	inputKeyFilePrefix = "file:"
+	// Repository-qualified immutable source. Older readers fail closed on this
+	// unknown key rather than treating a partial manifest as unchanged.
+	InputKeyRepoSourcePrefix = "repo-source:"
+	inputKeyTool             = "tool"
+	inputKeyFilePrefix       = "file:"
 )
 
 // Revision content-hashes a declared input against the local tree. A "tool" key returns the
-// configured tool version; a "file:<relpath>" key returns the sha256 of that file's bytes; any
-// unreadable file or unknown key is ok=false (could-not-check).
+// configured tool version; a "file:<relpath>" key returns the sha256 of that file's bytes (of a
+// symlink's target text, as git stores it); any unreadable file or unknown key is ok=false
+// (could-not-check).
 func (rr *RootRevisionReader) Revision(input string) (string, bool) {
 	switch {
 	case input == inputKeyTool:
@@ -359,20 +467,64 @@ func (rr *RootRevisionReader) Revision(input string) (string, bool) {
 			return "", false
 		}
 		return rr.ToolVersion, true
+	case strings.HasPrefix(input, InputKeyRepoSourcePrefix):
+		repo := strings.TrimPrefix(input, InputKeyRepoSourcePrefix)
+		root := RootForRepo(repo)
+		if root == "" {
+			return "", false
+		}
+		// A configured root may reach its checkout through a link; the own-work-tree
+		// check compares git's resolved toplevel to it by string. A root that
+		// cannot be resolved is could-not-check.
+		var err error
+		if _, root, err = verifierHome(root); err != nil || verifierRepoIdentity(root, repo) != nil {
+			return "", false
+		}
+		head, err := verifierGit(root, "rev-parse", "HEAD")
+		if err != nil {
+			return "", false
+		}
+		checkout, err := readVerifierCheckout(root)
+		if err != nil || verifierNoReplacements(root) != nil || verifierNoLocalAttributes(root) != nil || verifierOwnWorkTree(root) != nil || verifierSourceClosure(root, head, checkout, nil) != nil {
+			return "", false
+		}
+		return head, true
 	case strings.HasPrefix(input, inputKeyFilePrefix):
 		rel := strings.TrimPrefix(input, inputKeyFilePrefix)
+		if _, err := (rootScopeTree{root: rr.Root}).safePath(rel); err != nil {
+			return "", false
+		}
 		// Contain the read within the root: a key that climbs out is could-not-check, never a
 		// read of an arbitrary path.
 		clean := filepath.Clean(rel)
 		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || filepath.IsAbs(clean) {
 			return "", false
 		}
-		b, err := os.ReadFile(filepath.Join(rr.Root, clean))
-		if err != nil {
+		// A symlink is hashed as its target text, never followed — exactly the blob git stores
+		// for it, which is what the receipt writer hashed at the record's sha. Following it would
+		// disagree with the writer on every symlinked input and could read outside the root.
+		full := filepath.Join(rr.Root, clean)
+		var b []byte
+		if fi, err := os.Lstat(full); err != nil {
+			return "", false
+		} else if fi.Mode()&os.ModeSymlink != 0 {
+			target, lerr := os.Readlink(full)
+			if lerr != nil {
+				return "", false
+			}
+			b = []byte(target)
+		} else if b, err = os.ReadFile(full); err != nil {
 			return "", false
 		}
 		sum := sha256.Sum256(b)
 		return hex.EncodeToString(sum[:]), true
+	case strings.HasPrefix(input, InputKeyScopePrefix):
+		decl := strings.TrimPrefix(input, InputKeyScopePrefix)
+		scope, err := ResolveDeclaredScope([]string{decl}, rootScopeTree{root: rr.Root})
+		if err != nil {
+			return "", false
+		}
+		return scope.Shapes[input], true
 	default:
 		return "", false
 	}
@@ -385,3 +537,191 @@ func (rr *RootRevisionReader) ActionCompleted(string) (bool, bool) { return fals
 
 // compile-time assertion: the offline reader satisfies the interface.
 var _ WakeInputs = (*RootRevisionReader)(nil)
+
+// --- the two independent hold reads (verify-reset/03) ---------------------------------------
+//
+// A held non-pass stays held only while BOTH reads say nothing moved: the declared inputs
+// (Unchanged, a content digest of the local tree) and the blocker issue (ReadBlocker, a forge
+// read). They fail on different signals in different components, so either one alone wakes the
+// brief. Each read is three-state; could-not-check is never rounded to "unchanged" or "closed".
+
+// InputsState is Unchanged's three-state verdict over a receipt's declared inputs.
+type InputsState int
+
+const (
+	InputsUnchanged     InputsState = iota // every declared input read, every revision equal
+	InputsChanged                          // at least one declared input read with a different revision
+	InputsCouldNotCheck                    // no change observed, but some input could not be read
+)
+
+// Unchanged hashes every declared input of r at the current tree and compares it with the
+// revision the receipt recorded. It returns the state and a reason: "unchanged",
+// "changed <path>[, <path>…]" or "could-not-check <why>". An observed change wins over an
+// unreadable sibling (a change is enough to wake); otherwise one unreadable input makes the
+// whole read could-not-check, because unchangedness cannot be established on a partial scope.
+// An empty scope, or no tree reader, is could-not-check too.
+func Unchanged(r WakeReceipt, tree WakeInputs) (InputsState, string) {
+	if tree == nil {
+		return InputsCouldNotCheck, "could-not-check no tree reader"
+	}
+	if len(r.Inputs) == 0 {
+		return InputsCouldNotCheck, "could-not-check the receipt declares no inputs"
+	}
+	var changed, unreadable []string
+	if scope, ok := tree.(receiptScopeReader); ok {
+		if err := scope.CheckReceiptScope(r); err != nil {
+			unreadable = append(unreadable, "declared scope: "+err.Error())
+		}
+	}
+	for _, in := range wakeSortedKeys(r.Inputs) {
+		cur, ok := tree.Revision(in)
+		switch {
+		case !ok:
+			unreadable = append(unreadable, inputLabel(in))
+		case !strings.EqualFold(strings.TrimSpace(cur), strings.TrimSpace(r.Inputs[in])):
+			changed = append(changed, inputLabel(in))
+		}
+	}
+	if len(changed) > 0 {
+		return InputsChanged, "changed " + strings.Join(changed, ", ")
+	}
+	if len(unreadable) > 0 {
+		return InputsCouldNotCheck, "could-not-check unreadable input(s): " + strings.Join(unreadable, ", ")
+	}
+	return InputsUnchanged, "unchanged"
+}
+
+// inputLabel is the human-facing name of an input key: the path of a file: key, else the key.
+func inputLabel(in string) string {
+	return strings.TrimPrefix(in, inputKeyFilePrefix)
+}
+
+// BlockerState is ReadBlocker's three-state verdict on the issue a receipt's blocker_ref names.
+// The zero value is BlockerCouldNotCheck, so a source that returns nothing fails closed (held,
+// surfaced) rather than reading as an open blocker.
+type BlockerState int
+
+const (
+	BlockerCouldNotCheck BlockerState = iota // no read, a failed read, or an unreadable answer
+	BlockerOpen                              // the forge read the issue and it is open
+	BlockerClosed                            // the forge read the issue and it is closed
+)
+
+func (s BlockerState) String() string {
+	switch s {
+	case BlockerOpen:
+		return "open"
+	case BlockerClosed:
+		return "closed"
+	default:
+		return "could-not-check"
+	}
+}
+
+// BlockerRef is a parsed blocker_ref: a forge issue, change or run named by number, never free
+// text and never fetched as a URL.
+type BlockerRef struct {
+	Raw    string
+	Owner  string // empty for a bare #N parsed with no default repository
+	Name   string
+	Kind   string // "numbered" (#N or owner/repo#N), "issue", "change" or "run"
+	Number int    // 0 for a run
+	RunID  string // set for a run
+}
+
+// Repo is the forge coordinate the reference resolves against.
+func (b BlockerRef) Repo() ForgeRepo { return ForgeRepo{Owner: b.Owner, Name: b.Name} }
+
+var (
+	blockerRefBareRe = regexp.MustCompile(`^#([0-9]+)$`)
+	blockerRefRepoRe = regexp.MustCompile(`^([\w.-]+)/([\w.-]+)#([0-9]+)$`)
+	blockerRefURLRe  = regexp.MustCompile(`^https?://[^/]+/([\w.-]+)/([\w.-]+)/(issues|pull|actions/runs)/([0-9]+)(?:[/?#].*)?$`)
+)
+
+// ParseBlockerRef parses raw as #<N>, <owner>/<repo>#<N>, or a forge issue/PR/run URL. A bare
+// #<N> resolves against defaultOwner/defaultName (left empty when those are). Anything else —
+// an empty value, "to file", an "action: …" sentence — is refused, naming blocker_ref.
+func ParseBlockerRef(raw, defaultOwner, defaultName string) (BlockerRef, error) {
+	raw = strings.TrimSpace(raw)
+	ref := BlockerRef{Raw: raw}
+	switch {
+	case blockerRefBareRe.MatchString(raw):
+		m := blockerRefBareRe.FindStringSubmatch(raw)
+		ref.Owner, ref.Name, ref.Kind = defaultOwner, defaultName, "numbered"
+		ref.Number, _ = strconv.Atoi(m[1])
+	case blockerRefRepoRe.MatchString(raw):
+		m := blockerRefRepoRe.FindStringSubmatch(raw)
+		ref.Owner, ref.Name, ref.Kind = m[1], m[2], "numbered"
+		ref.Number, _ = strconv.Atoi(m[3])
+	case blockerRefURLRe.MatchString(raw):
+		m := blockerRefURLRe.FindStringSubmatch(raw)
+		ref.Owner, ref.Name = m[1], m[2]
+		switch m[3] {
+		case "issues":
+			ref.Kind = "issue"
+			ref.Number, _ = strconv.Atoi(m[4])
+		case "pull":
+			ref.Kind = "change"
+			ref.Number, _ = strconv.Atoi(m[4])
+		default:
+			ref.Kind = "run"
+			ref.RunID = m[4]
+		}
+	default:
+		return BlockerRef{}, Refused("refused: blocker_ref " + strconv.Quote(raw) +
+			" is not a reference — must be #<N>, <owner>/<repo>#<N>, or a forge issue/PR/run URL " +
+			"(free text, a placeholder and an action: … sentence are refused)")
+	}
+	return ref, nil
+}
+
+// IssueStateSource reads whether the issue or change a blocker reference names is open or
+// closed. Production is a forge client; tests inject a fake. Any answer other than BlockerOpen
+// or BlockerClosed is read as could-not-check.
+type IssueStateSource interface {
+	IssueState(ref BlockerRef) (state BlockerState, why string)
+}
+
+// ReadBlocker is the blocker half of the hold: the open/closed state of the issue the receipt's
+// blocker_ref names, read through src. It never reports closed without a read that said so: no
+// source (plan --no-forge), an unparseable reference, a bare #N with no repository to resolve it
+// against, a run reference (a run has no issue state) and every failed read are could-not-check.
+// defaultRepo is "<owner>/<repo>", used only for a bare #N.
+func ReadBlocker(raw, defaultRepo string, src IssueStateSource) (BlockerState, string) {
+	owner, name, _ := strings.Cut(strings.TrimSpace(defaultRepo), "/")
+	ref, err := ParseBlockerRef(raw, owner, name)
+	if err != nil {
+		return BlockerCouldNotCheck, "blocker_ref " + strconv.Quote(strings.TrimSpace(raw)) + " is not a reference"
+	}
+	if ref.Owner == "" || ref.Name == "" {
+		return BlockerCouldNotCheck, "blocker_ref " + ref.Raw + " names no repository to read it in"
+	}
+	if ref.Kind == "run" {
+		return BlockerCouldNotCheck, "blocker_ref " + ref.Raw + " is a run, which has no open/closed state"
+	}
+	if src == nil {
+		return BlockerCouldNotCheck, "no issue-state source (forge reads off)"
+	}
+	st, why := src.IssueState(ref)
+	switch st {
+	case BlockerOpen, BlockerClosed:
+		return st, why
+	}
+	if strings.TrimSpace(why) == "" {
+		why = "the issue-state read returned no state"
+	}
+	return BlockerCouldNotCheck, why
+}
+
+// numericVerifyRows keeps the existing constructor source-compatible with callers
+// holding numeric rows. Exact suffixed IDs can be supplied in WakeReceipt.Rows.
+func numericVerifyRows(rows []int) []VerifyRowID {
+	if rows == nil {
+		return nil
+	}
+	ids := make([]VerifyRowID, len(rows))
+	for i, row := range rows {
+		ids[i] = VerifyRowID(strconv.Itoa(row))
+	}
+	return ids
+}

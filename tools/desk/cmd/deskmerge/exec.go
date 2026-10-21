@@ -62,10 +62,13 @@ func runCmdIn(dir, name string, args ...string) (string, error) {
 //   - "worktree" — the scratch-worktree family (add/remove/prune); linked worktrees are
 //     a separate, larger go-git gap, explicitly out of scope for this brief and left to
 //     the named follow-on stream.
-//   - "fetch", "push" — the transport verbs; not yet migrated (briefs 05 and 06 own them).
+//   - "push"     — the push transport verb; not yet migrated (brief 06 owns it). Fetch is
+//     in-process (gitcore.Fetch, currency.go) and is no longer a binary verb.
+//   - "remote"   — ONLY `remote get-url [--push] --all origin`, the gates' read of where that
+//     fetch and push will connect, as git resolves it (#1623; see resolveRepoRoot).
 var gitexecVerbs = map[string]bool{
 	"merge": true, "diff": true, "add": true, "worktree": true,
-	"fetch": true, "push": true,
+	"push": true, "remote": true,
 }
 
 // runGit runs git with cwd=dir. It is a variable so tests can record argv; production
@@ -107,11 +110,6 @@ var gitcoreCommit = func(dir string, opts gitcore.CommitOpts) (string, error) {
 	}
 	return repo.Commit(opts)
 }
-
-// runGH runs a gh subcommand under the AMBIENT gh identity, for READS only. deskmerge
-// makes no mutating gh call on any path — its only write is a `git push` of the PR's
-// own branch. There is no `gh pr merge`, no `gh pr ready`, no `gh api -X`.
-var runGH = func(args ...string) (string, error) { return runCmdIn("", "gh", args...) }
 
 // allowWrite is deskkit's outward-write meter, behind a variable so tests can inject a
 // real exit-4 without manufacturing ten audit lines.

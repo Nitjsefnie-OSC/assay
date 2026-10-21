@@ -12,9 +12,11 @@ package deskkit
 // declaration, never from prose. checkonlycr.go handles the case where the sole blocker
 // was a required CHECK that turned green; this file handles the case where the sole
 // blockers were EXTERNAL PREREQUISITES (an upstream PR that later merged, a recorded
-// decision that later answered the question). The two exemptions are deliberately
-// parallel so a reader who understands one understands the other, and so neither can be
-// widened without the other's discipline being visible next to it.
+// decision that later answered the question). bodyeditcr.go is the third sibling, under
+// the same discipline: a CHANGES_REQUESTED whose sole blocker was the PR body, answered by a
+// documented body edit. The exemptions are deliberately parallel so a reader who
+// understands one understands the others, and so none can be widened without the others'
+// discipline being visible next to it.
 //
 // WHY A TYPED DECLARATION AND NOT PROSE. The exemption was authorised on the condition
 // that "external-prerequisite-only" is established by the review's EXPLICIT SHAPE, never
@@ -138,8 +140,10 @@ type PrereqDeclaration struct {
 // ParsePrereqDeclaration reads a CHANGES_REQUESTED body's external-prerequisite
 // declaration: the marker line plus the typed finding block that enumerates the
 // prerequisites. Legacy free text (a marker with no typed block) yields Declared=true but
-// no Conditions, which the decision refuses — the enumeration must be typed.
-func ParsePrereqDeclaration(crBody string) PrereqDeclaration {
+// no Conditions, which the decision refuses — the enumeration must be typed. crHead is the
+// head the CR is pinned to: a finding the block records as resolved retires only when its
+// evidence is at that head (Finding.StandingBlockerAt).
+func ParsePrereqDeclaration(crBody, crHead string) PrereqDeclaration {
 	d := PrereqDeclaration{}
 	d.Summary = SoleVerdictMarkerValue(crBody, externalPrereqOnly, SkipFenced)
 	d.Declared = d.Summary != ""
@@ -153,7 +157,11 @@ func ParsePrereqDeclaration(crBody string) PrereqDeclaration {
 		return d
 	}
 	for _, f := range block.Findings {
-		if f.Severity != SeverityBlocking {
+		// Only a STANDING blocker counts: a re-review CR lists the findings it now records
+		// as resolved beside the open ones, and a resolved entry is neither a content
+		// blocker that makes the CR mixed nor a prerequisite the CR still rests on — unless
+		// it was resolved at a stale evidence head, which still stands (#1985).
+		if !f.StandingBlockerAt(crHead) {
 			continue
 		}
 		switch f.Blocker {
@@ -223,7 +231,7 @@ type ExternalPrereqDecision struct {
 // checks last.
 func EvaluateExternalPrereqExemption(in ExternalPrereqInput) ExternalPrereqDecision {
 	dec := ExternalPrereqDecision{}
-	d := ParsePrereqDeclaration(in.CRBody)
+	d := ParsePrereqDeclaration(in.CRBody, in.CRHead)
 	dec.Declared = d.Declared
 
 	// (1) No declaration: the ordinary unchanged-head rule stands, with no diagnosis —

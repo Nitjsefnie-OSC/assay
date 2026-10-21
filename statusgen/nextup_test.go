@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -221,8 +222,12 @@ func TestEligibilityV2EscapesWholeWaveGate(t *testing.T) {
 	}
 
 	// --- subtest (converse): depends unsatisfied → held ---
+	// The target is `implemented` with no gate and no Evidence. Under the
+	// depends: rule pinned by TestDependsHumanGatePass below, `implemented`
+	// satisfies a depends: edge ONLY for a gate:human brief with a recorded
+	// pass — this one is neither, so it still holds.
 	blocker2 := mkStream("blocker", "active", "P1",
-		Brief{Num: "01", Wave: 0, Status: "implemented"}, // not done/verified
+		Brief{Num: "01", Wave: 0, Status: "implemented"}, // not done/verified, not gate:human-with-PASS
 	)
 	blocker2.LastTouch = day(0)
 
@@ -237,6 +242,210 @@ func TestEligibilityV2EscapesWholeWaveGate(t *testing.T) {
 		if p.Stream.Name == "target" && p.Brief.Num == "02" {
 			t.Fatalf("brief-v2 02 with unsatisfied depends should be HELD even though the wave-0 sibling is done, got %+v", picks2)
 		}
+	}
+
+	// --- subtest (rule change): the SAME implemented target, but gate:human
+	// with a recorded strict PASS → the depends: edge is satisfied → offered.
+	// Before this rule an `implemented` target held every dependent whatever
+	// its gate and verdict; this subtest is the deliberate flip of that.
+	blocker3 := mkStream("blocker", "active", "P1",
+		Brief{Num: "01", Wave: 0, Status: "implemented", Gate: "human", Evidence: evPass},
+	)
+	blocker3.LastTouch = day(0)
+	target3 := mkStream("target", "active", "P1",
+		Brief{Num: "08", Wave: 0, Status: "done"},
+		Brief{Num: "02", Wave: 1, Status: "todo", Schema: "brief-v2", Depends: []string{"blocker/01"}},
+	)
+	target3.LastTouch = day(0)
+	if !pickedIn(nextUp([]*Stream{target3, blocker3}, ClaimView{}, nil).Picks, "target", "02") {
+		t.Fatalf("brief-v2 02 whose depends: target is gate:human at implemented with a recorded PASS should be eligible")
+	}
+}
+
+// Evidence bodies for the depends: rule tests below.
+const (
+	evPass      = "| Date | Runner |\n|---|---|\n| 2026-01-02 | verifier |\n\n**VERIFY: PASS**\n"
+	evFail      = "**VERIFY: FAIL** — row 2 red\n"
+	evPassFail  = "**VERIFY: PASS**\n\nre-run:\n\n**VERIFY: FAIL** — regression\n"
+	evFailPass  = "**VERIFY: FAIL** — row 2 red\n\nre-run after fix:\n\n**VERIFY: PASS**\n"
+	evLoosePass = "Non-implementer verifier run — VERIFY: PASS (no strict marker)\n"
+	// A FAIL that answers a strict PASS, followed by a prose mention of a
+	// future pass: the last verdict token reads PASS, so only the
+	// FAIL-after-strict-PASS check holds it.
+	evPassFailProsePass = "**VERIFY: PASS**\n\nre-run:\n\n**VERIFY: FAIL** — regression\n\nWill record VERIFY: PASS once green.\n"
+	// A strict PASS that appears only struck, fenced or quoted: the marker is
+	// present in the raw Evidence but is a quotation, not a live verdict.
+	evStruckPass = "~~**VERIFY: PASS**~~ withdrawn\n"
+	evFencedPass = "Expected output:\n\n```\n**VERIFY: PASS**\n```\n"
+	evQuotedPass = "> **VERIFY: PASS**\n"
+	// The same three quotations plus one loose-form PASS token in live prose:
+	// the last verdict token now reads PASS and no FAIL follows, so only the
+	// live strict-marker read (hasLiveVerifyPass) holds these.
+	evStruckPassLoose = "~~**VERIFY: PASS**~~ withdrawn; will record VERIFY: PASS once green\n"
+	evFencedPassLoose = "Expected output:\n\n```\n**VERIFY: PASS**\n```\n\nWill record VERIFY: PASS once green.\n"
+	evQuotedPassLoose = "> **VERIFY: PASS**\n\nWill record VERIFY: PASS once green.\n"
+	// A live strict PASS that also quotes the marker elsewhere: the quotation
+	// does not hide the live verdict, so this still satisfies (control).
+	evPassPlusQuoted = evPass + "\nExpected output:\n\n```\n**VERIFY: PASS**\n```\n\n> **VERIFY: PASS**\n"
+	// Shapes the live read alone would admit but the raw strict read refuses.
+	// Splice: a struck FAIL inside the marker's own bold run; removing the
+	// struck span joins the rest into **VERIFY: PASS**, a marker the raw
+	// Evidence never carries. Unclosed: a **VERIFY: FAIL opener with no
+	// closing ** on its line; the raw read runs it on to the next line's
+	// opening **, so that line's PASS marker never forms as one. Only the raw
+	// hasVerifyPass conjunct holds these.
+	evSplicePass     = "**VERIFY: ~~FAIL~~PASS**\n"
+	evFailSplicePass = evFail + "\n" + evSplicePass
+	evUnclosedFail   = "**VERIFY: FAIL — row 2 red\n\n**VERIFY: PASS**\n"
+	// A retracted FAIL struck as a whole, then a strict PASS on the same line:
+	// both strict reads find the PASS, so this satisfies (control for the
+	// splice cases).
+	evStruckFailPass = "~~**VERIFY: FAIL**~~ **VERIFY: PASS**\n"
+)
+
+func pickedIn(picks []Pick, stream, num string) bool {
+	for _, p := range picks {
+		if p.Stream.Name == stream && p.Brief.Num == num {
+			return true
+		}
+	}
+	return false
+}
+
+// TestDependsHumanGatePass pins the depends: satisfaction rule: a target at
+// done/verified satisfies a depends: edge; so does a gate:human target at
+// `implemented` whose last recorded verdict is a strict PASS. Every other
+// shape — a FAIL, a PASS later answered by a FAIL (even when prose mentions a
+// pass after it), no verdict, a loose-form PASS only, a strict PASS that is only
+// struck, fenced or quoted (with or without a loose-form PASS in live prose), a
+// PASS marker that forms only once a struck span is removed or that follows an
+// unclosed FAIL opener (neither is a strict marker in the raw Evidence), a
+// non-human gate, a status other than implemented — stays held.
+// Each case is checked through all three readers: depIsSatisfied, the
+// eligibility evaluator, and Next-up.
+func TestDependsHumanGatePass(t *testing.T) {
+	cases := []struct {
+		name   string
+		dep    Brief
+		wantOK bool
+	}{
+		{"human implemented PASS", Brief{Status: "implemented", Gate: "human", Evidence: evPass}, true},
+		{"human implemented FAIL then PASS", Brief{Status: "implemented", Gate: "human", Evidence: evFailPass}, true},
+		{"human implemented FAIL", Brief{Status: "implemented", Gate: "human", Evidence: evFail}, false},
+		{"human implemented PASS then FAIL", Brief{Status: "implemented", Gate: "human", Evidence: evPassFail}, false},
+		{"human implemented no verdict", Brief{Status: "implemented", Gate: "human"}, false},
+		{"human implemented loose PASS only", Brief{Status: "implemented", Gate: "human", Evidence: evLoosePass}, false},
+		{"human implemented PASS then FAIL then prose PASS", Brief{Status: "implemented", Gate: "human", Evidence: evPassFailProsePass}, false},
+		{"human implemented struck PASS only", Brief{Status: "implemented", Gate: "human", Evidence: evStruckPass}, false},
+		{"human implemented fenced PASS only", Brief{Status: "implemented", Gate: "human", Evidence: evFencedPass}, false},
+		{"human implemented quoted PASS only", Brief{Status: "implemented", Gate: "human", Evidence: evQuotedPass}, false},
+		{"human implemented struck PASS plus loose PASS", Brief{Status: "implemented", Gate: "human", Evidence: evStruckPassLoose}, false},
+		{"human implemented fenced PASS plus loose PASS", Brief{Status: "implemented", Gate: "human", Evidence: evFencedPassLoose}, false},
+		{"human implemented quoted PASS plus loose PASS", Brief{Status: "implemented", Gate: "human", Evidence: evQuotedPassLoose}, false},
+		{"human implemented live PASS plus quoted PASS", Brief{Status: "implemented", Gate: "human", Evidence: evPassPlusQuoted}, true},
+		{"human implemented struck-splice PASS", Brief{Status: "implemented", Gate: "human", Evidence: evSplicePass}, false},
+		{"human implemented FAIL then struck-splice PASS", Brief{Status: "implemented", Gate: "human", Evidence: evFailSplicePass}, false},
+		{"human implemented unclosed FAIL then PASS", Brief{Status: "implemented", Gate: "human", Evidence: evUnclosedFail}, false},
+		{"human implemented struck FAIL then PASS", Brief{Status: "implemented", Gate: "human", Evidence: evStruckFailPass}, true},
+		{"model implemented PASS", Brief{Status: "implemented", Gate: "model", Evidence: evPass}, false},
+		{"legacy implemented PASS", Brief{Status: "implemented", Evidence: evPass}, false},
+		{"human in-progress PASS", Brief{Status: "in-progress", Gate: "human", Evidence: evPass}, false},
+		{"human todo PASS", Brief{Status: "todo", Gate: "human", Evidence: evPass}, false},
+		{"model verified", Brief{Status: "verified", Gate: "model"}, true},
+		{"human done", Brief{Status: "done", Gate: "human"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dep := tc.dep
+			dep.Num, dep.Wave = "01", 0
+			blocker := mkStream("blocker", "active", "P1", dep)
+			blocker.LastTouch = day(0)
+			target := mkStream("target", "active", "P1",
+				Brief{Num: "02", Wave: 0, Status: "todo", Schema: "brief-v2", Depends: []string{"blocker/01"}},
+			)
+			target.LastTouch = day(0)
+			streams := []*Stream{target, blocker}
+
+			if got := depIsSatisfied(streams, "blocker/01"); got != tc.wantOK {
+				t.Errorf("depIsSatisfied = %v, want %v", got, tc.wantOK)
+			}
+			ev := evaluateEligibility(streams, nil, "")["target/02"]
+			if gotOK := ev.Verdict == VerdictEligible; gotOK != tc.wantOK {
+				t.Errorf("evaluator verdict = %s (holds %+v), want eligible=%v", ev.Verdict, ev.Holds, tc.wantOK)
+			}
+			if got := pickedIn(nextUp(streams, ClaimView{}, nil).Picks, "target", "02"); got != tc.wantOK {
+				t.Errorf("Next-up offers target/02 = %v, want %v", got, tc.wantOK)
+			}
+		})
+	}
+}
+
+// TestHumanGateReadsImplyLastVerdictPass pins why humanGatedVerifyPassed does
+// not also require lastVerifyVerdict == verdictPass: whenever a live strict
+// PASS is present (hasLiveVerifyPass) and no FAIL follows the last strict PASS
+// (verdictFailAfterStrictPass), the last live verdict token is a PASS. It walks
+// every Evidence body of up to three fragments, joined both on one line and on
+// separate lines, drawn from verdict markers in every form and every quotation
+// context the readers strip. If either reader drifts so the implication
+// breaks, this goes red and the conjunct has to come back.
+func TestHumanGateReadsImplyLastVerdictPass(t *testing.T) {
+	frags := []string{
+		"**VERIFY: PASS**", "**VERIFY: FAIL** red", "VERIFY: PASS", "VERIFY: FAIL", "VERIFY:FAIL",
+		"~~**VERIFY: PASS**~~", "~~VERIFY: FAIL~~", "```", "~~~", "> **VERIFY: PASS**", "> VERIFY: FAIL",
+		"text", "**VERIFY: PASS VERIFY: FAIL**", "**VERIFY: PASS — rows** then VERIFY: FAIL", "VERIFY: PARTIAL",
+	}
+	checked := 0
+	var walk func(ev string, depth int)
+	walk = func(ev string, depth int) {
+		checked++
+		if hasLiveVerifyPass(ev) && !verdictFailAfterStrictPass(ev) && lastVerifyVerdict(ev) != verdictPass {
+			t.Fatalf("live strict PASS with no later FAIL, but lastVerifyVerdict = %q for Evidence %q", lastVerifyVerdict(ev), ev)
+		}
+		if depth == 3 {
+			return
+		}
+		for _, f := range frags {
+			walk(ev+"\n"+f, depth+1)
+			walk(ev+" "+f, depth+1)
+		}
+	}
+	walk("", 0)
+	if checked < 27000 {
+		t.Fatalf("walked %d Evidence bodies, want the full fragment product", checked)
+	}
+}
+
+// TestGatesNeverHumanPass pins the other half of the rule: the gate:human +
+// implemented + PASS target that satisfies a depends: edge NEVER satisfies a
+// gates: edge (still held) or a feathers: edge (still a notice). A gates:
+// edge keeps waiting for verified/done.
+func TestGatesNeverHumanPass(t *testing.T) {
+	dep := Brief{Num: "01", Wave: 0, Status: "implemented", Gate: "human", Evidence: evPass}
+	blocker := mkStream("blocker", "active", "P1", dep)
+	blocker.LastTouch = day(0)
+
+	gated := mkStream("target", "active", "P1",
+		Brief{Num: "02", Wave: 0, Status: "todo", Schema: "brief-v2",
+			Gates: []GraphEdge{{Ref: "blocker/01", Type: "ordering-gate", Reason: "must be in force first"}}},
+		Brief{Num: "03", Wave: 0, Status: "todo", Schema: "brief-v2",
+			Feathers: []GraphEdge{{Ref: "blocker/01", Type: "build-dep"}}},
+	)
+	gated.LastTouch = day(0)
+	streams := []*Stream{gated, blocker}
+
+	elig := evaluateEligibility(streams, nil, "")
+	if ev := elig["target/02"]; ev.Verdict != VerdictHeld || len(ev.Holds) != 1 || ev.Holds[0].State != StateUnsatisfied || ev.Holds[0].Why == "" {
+		t.Fatalf("gates: edge on a gate:human implemented PASS target must HOLD unsatisfied with a reason; got %+v", ev)
+	}
+	if ev := elig["target/03"]; ev.Verdict != VerdictEligibleWithNotice || len(ev.Notices) != 1 {
+		t.Fatalf("feathers: edge on a gate:human implemented PASS target must stay a notice; got %+v", ev)
+	}
+	if pickedIn(nextUp(streams, ClaimView{}, nil).Picks, "target", "02") {
+		t.Fatalf("Next-up must not offer a brief whose gates: target is only gate:human implemented PASS")
+	}
+	// Same target satisfies a depends: edge — the asymmetry is the rule.
+	if !depIsSatisfied(streams, "blocker/01") {
+		t.Fatalf("control: the same target must satisfy a depends: edge")
 	}
 }
 
@@ -309,6 +518,132 @@ func TestDriveAntiStarvationFloor(t *testing.T) {
 	if driveSlotCap != 15 {
 		t.Fatalf("driveSlotCap must be 15, got %d", driveSlotCap)
 	}
+	if driveWorkerCap != 6 {
+		t.Fatalf("driveWorkerCap must be 6, got %d", driveWorkerCap)
+	}
+
+	// --- the 6-of-8 WORKER floor, bound on the dispatch queue (--next-up JSON) ---
+	//
+	// statusgen does not dispatch workers; it emits the queue a dispatcher starts
+	// from. The floor binds THERE: with an active drive, drive picks offered for
+	// dispatch never exceed driveWorkerCap minus the drive work already in flight
+	// (claimed items the drive covers). Each case reads the JSON the dispatcher
+	// consumes, not an internal field.
+	for _, tc := range []struct {
+		name        string
+		inFlight    int  // claimed items in a drive-covered stream
+		unknown     bool // claim filtering did not run
+		wantDrive   int  // drive rows the queue may offer
+		wantHeld    int  // drive rows withheld by the worker floor
+		wantUnknown bool
+	}{
+		{name: "nothing-in-flight-offers-at-most-6", inFlight: 0, wantDrive: 6, wantHeld: 2},
+		{name: "4-in-flight-offers-2", inFlight: 4, wantDrive: 2, wantHeld: 6},
+		{name: "6-in-flight-offers-none", inFlight: 6, wantDrive: 0, wantHeld: 8},
+		{name: "claims-unknown-is-could-not-check-and-offers-none", unknown: true, wantDrive: 0, wantHeld: 8, wantUnknown: true},
+	} {
+		t.Run("worker-floor-"+tc.name, func(t *testing.T) {
+			view := workerFloorQueue(t, true, tc.inFlight, tc.unknown)
+			if got := intField(t, view, "driveWorkerCap"); got != driveWorkerCap {
+				t.Fatalf("the dispatch JSON must carry driveWorkerCap=%d while a drive is active, got %d", driveWorkerCap, got)
+			}
+			driveRows, nonDrive := 0, 0
+			for _, r := range view["rows"].([]any) {
+				if r.(map[string]any)["driveSlug"] != nil {
+					driveRows++
+				} else {
+					nonDrive++
+				}
+			}
+			if driveRows != tc.wantDrive {
+				t.Fatalf("drive rows offered for dispatch: got %d, want %d (driveWorkerCap %d, in flight %d)", driveRows, tc.wantDrive, driveWorkerCap, tc.inFlight)
+			}
+			if nonDrive != 8 {
+				t.Fatalf("the worker floor must never withhold NON-drive work: got %d non-drive rows, want 8", nonDrive)
+			}
+			if got := intField(t, view, "heldByDriveWorkerCap"); got != tc.wantHeld {
+				t.Fatalf("heldByDriveWorkerCap: got %d, want %d", got, tc.wantHeld)
+			}
+			if !tc.unknown {
+				if got := intField(t, view, "driveInFlight"); got != tc.inFlight {
+					t.Fatalf("driveInFlight: got %d, want %d", got, tc.inFlight)
+				}
+			}
+			reason, _ := view["driveWorkerUnknown"].(string)
+			if tc.wantUnknown != (reason != "") {
+				t.Fatalf("driveWorkerUnknown must be set iff claims are unread: got %q", reason)
+			}
+			// Nothing is dropped silently: shown + every held bucket == eligible.
+			sum := intField(t, view, "shown") + intField(t, view, "heldByStreamCap") + intField(t, view, "heldBySpan") +
+				intField(t, view, "heldByDriveCap") + intField(t, view, "heldByDriveWorkerCap")
+			if sum != intField(t, view, "eligible") {
+				t.Fatalf("held-back decomposition must account for every eligible pick: %d != eligible %d (%v)", sum, intField(t, view, "eligible"), view)
+			}
+		})
+	}
+
+	t.Run("worker-floor-critical-pick-takes-headroom-first", func(t *testing.T) {
+		// One slot of headroom (5 of 6 in flight). The drive covers 4 routine P0
+		// briefs and a P3 fire/01 that three reciprocated dependents lift into the
+		// critical tier; the P0 picks outscore fire/01 even with its unblocks term.
+		// The one slot must go to the critical pick, never to a higher-scored
+		// routine drive pick: the floor grants headroom in the (criticalTier,
+		// score) order, the same order the board ranks by.
+		fire := mkStream("fire", "active", "P3",
+			Brief{Num: "01", Wave: 0, Status: "todo", Schema: "brief-v1", Unblocks: fireDependents})
+		fire.LastTouch = day(0)
+		blocked := mkStream("blocked", "active", "P2",
+			Brief{Num: "01", Wave: 1, Status: "todo", Schema: "brief-v1", Depends: []string{"fire/01"}},
+			Brief{Num: "02", Wave: 1, Status: "todo", Schema: "brief-v1", Depends: []string{"fire/01"}},
+			Brief{Num: "03", Wave: 1, Status: "todo", Schema: "brief-v1", Depends: []string{"fire/01"}},
+		)
+		blocked.LastTouch = day(0)
+		busy := driveBriefStream("busy", 5)
+		drv0 := driveBriefStream("drv0", 4)
+		drv0.Priority = "P0"
+		streams := []*Stream{drv0, fire, blocked, busy}
+		claimed := map[string]bool{}
+		for _, b := range busy.Briefs {
+			claimed["busy/"+b.Num] = true
+		}
+		root := t.TempDir()
+		makeStreamsDir(t, root)
+		writeDrive(t, root, "surge-critical", "declared-by: operator\n"+liveWindow+
+			"intensity: surge\nstate: active\nitems:\n  - stream: drv0\n  - stream: fire\n  - stream: busy\n")
+		ds := loadDrives(root, streams, driveTestNow)
+		if !ds.applied() {
+			t.Fatalf("the surge drive must apply: %+v", ds)
+		}
+		withDrives(t, ds)
+		withFindings(t, nil)
+		cv := KnownClaims(claimed)
+		nu := nextUp(streams, cv, nil)
+		view := buildDispatchView(nu, streams, "", cv.Source)
+		var drive []dispatchRow
+		for _, r := range view.Rows {
+			if r.DriveSlug != "" {
+				drive = append(drive, r)
+			}
+		}
+		if len(drive) != 1 || drive[0].Brief != "fire/01" || drive[0].CriticalArm == "" {
+			t.Fatalf("the one slot of headroom must go to the critical pick fire/01, got %+v (held %d)", drive, view.HeldByDriveWorkerCap)
+		}
+		if view.HeldByDriveWorkerCap != 4 {
+			t.Fatalf("the 4 routine drive picks must be withheld, got held=%d", view.HeldByDriveWorkerCap)
+		}
+	})
+
+	t.Run("worker-floor-inert-without-a-drive", func(t *testing.T) {
+		view := workerFloorQueue(t, false, 4, false)
+		for _, k := range []string{"driveWorkerCap", "driveInFlight", "heldByDriveWorkerCap", "driveWorkerUnknown"} {
+			if _, ok := view[k]; ok {
+				t.Fatalf("with no active drive the dispatch JSON must not carry %q (payload unchanged): %v", k, view)
+			}
+		}
+		if n := len(view["rows"].([]any)); n != 16 {
+			t.Fatalf("with no drive every eligible pick is offered: got %d rows, want 16", n)
+		}
+	})
 
 	t.Run("15-of-20-via-2-pass-fill", func(t *testing.T) {
 		// 5 driven streams × 4 briefs = 20 drive-eligible picks; 2 free streams × 4 = 8
@@ -453,6 +788,70 @@ func TestDriveAntiStarvationFloor(t *testing.T) {
 			t.Fatalf("a stream's declared max-concurrent (1) must ALWAYS win over drive-stream-cap (3), got %d picks", serialCount)
 		}
 	})
+}
+
+// workerFloorQueue builds the worker-floor fixture and returns the `--next-up`
+// dispatch JSON as a generic map (what a consumer parses). Two driven streams × 4
+// briefs = 8 drive picks, two free streams × 4 = 8 non-drive picks; a third driven
+// stream "busy" holds inFlight briefs, every one claimed (in flight, not eligible).
+// drive=false skips the manifest; unknown=true runs with claims unread.
+func workerFloorQueue(t *testing.T, drive bool, inFlight int, unknown bool) map[string]any {
+	t.Helper()
+	streams := []*Stream{driveBriefStream("drv0", 4), driveBriefStream("drv1", 4),
+		driveBriefStream("free0", 4), driveBriefStream("free1", 4)}
+	claimed := map[string]bool{}
+	if inFlight > 0 {
+		busy := driveBriefStream("busy", inFlight)
+		streams = append(streams, busy)
+		for _, b := range busy.Briefs {
+			claimed["busy/"+b.Num] = true
+		}
+	}
+	ds := DriveSet{}
+	if drive {
+		root := t.TempDir()
+		makeStreamsDir(t, root)
+		items := "  - stream: drv0\n  - stream: drv1\n"
+		if inFlight > 0 {
+			items += "  - stream: busy\n"
+		}
+		writeDrive(t, root, "surge-workers", "declared-by: operator\n"+liveWindow+
+			"intensity: surge\nstate: active\nitems:\n"+items)
+		ds = loadDrives(root, streams, driveTestNow)
+		if !ds.applied() {
+			t.Fatalf("the surge drive must apply: %+v", ds)
+		}
+	}
+	withDrives(t, ds)
+	withFindings(t, nil)
+	cv := KnownClaims(claimed)
+	if unknown {
+		cv = ClaimView{Claimed: claimed}
+	}
+	nu := nextUp(streams, cv, nil)
+	raw, err := json.Marshal(buildDispatchView(nu, streams, "", cv.Source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var view map[string]any
+	if err := json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+	return view
+}
+
+// intField reads an integer JSON field; an absent key reads as 0 (omitempty).
+func intField(t *testing.T, view map[string]any, key string) int {
+	t.Helper()
+	v, ok := view[key]
+	if !ok {
+		return 0
+	}
+	f, ok := v.(float64)
+	if !ok {
+		t.Fatalf("field %q is not a number: %v", key, v)
+	}
+	return int(f)
 }
 
 // TestNextUpSpanCapOverflow — 23 eligible briefs, span cap 7: exactly 7 shown,

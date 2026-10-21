@@ -28,17 +28,40 @@
 #      finds a clean pull request and enables auto-merge. The blast radius of
 #      being wrong is the same as case 3 — a pull request that needs a human's
 #      merge click — because nothing here merges anything.
-#   5. CLEAN STATUS — "Pull request is in clean status". The mirror of case 4 one
-#      merge-state over: a just-flipped approved pull request with every check
-#      green satisfies every requirement already, so there is nothing for
-#      auto-merge to wait on and GitHub refuses the enable. The refusal reddens
-#      the run, and that red is itself a state — the same self-inflicted loop.
-#      Exiting 0 leaves a pull request a human merges with one click, so the
-#      blast radius matches cases 3 and 4. See #586.
+#      "Only failing check" is judged on the LATEST run per check (see LATEST
+#      RUN PER CHECK below), never on every run the rollup still lists.
+#   5. CLEAN STATUS — "Pull request is in clean status". Nothing remains for
+#      GitHub's auto-merge queue to wait on. Emit clean=true for the workflow's
+#      protected completion step instead of silently stranding the PR (#586).
+#      This classifier still never merges; the completion step independently
+#      rechecks scope/reviews/checks and uses the non-bypass workflow token.
 #
 # EVERYTHING ELSE REDDENS, exit 1. In particular: a refusal for "unstable" while
 # some OTHER check is failing is a real signal — that pull request is not
 # mergeable for a reason this workflow did not cause, and the red run says so.
+#
+# LATEST RUN PER CHECK (#1959). The rollup lists EVERY run on the head commit,
+# superseded ones included: a check whose workflow cancels an in-flight run when
+# a newer event arrives leaves a CANCELLED run beside the later run that replaced
+# it. Judging every listed run counts that CANCELLED predecessor as "failing
+# besides our own check", reddens the benign case-4 path, and strands a ready,
+# approved pull request without auto-merge. So the rollup is first reduced to
+# the latest run per CHECK, and only a SUPERSEDED run is ever dropped:
+#   - a check run is keyed on (workflowName, name). Two DIFFERENT workflows that
+#     each run a job with the same name (build, test, lint) are two checks, not
+#     one: a later SUCCESS in one workflow never hides a FAILURE in another.
+#   - a status context (no workflow) is keyed on ("status", context).
+#   - a check run with no workflowName, and any entry with neither a name nor a
+#     context, has no identity to prove "same check" with, so it is kept on its
+#     own and judged as listed — FAIL-CLOSED: nothing is de-duplicated on a
+#     guess, and a failing run without a workflowName still reddens.
+# Recency follows the desk tools' own reducer (deskkit.LatestRunPerName):
+# completedAt, else startedAt, else createdAt; a stampless run sorts OLDEST, so
+# it never displaces a run that actually ran; a tie keeps the first-seen entry.
+# (That reducer keys on name alone; this one deliberately keys finer, because
+# a coarser key here could only hide a failure.) The reduction changes only
+# WHICH run of a check is judged, never HOW: a check whose latest run is red or
+# cancelled still reddens.
 #
 # THREE-STATE, and could-not-check is a FAILURE. If the check rollup cannot be
 # read or parsed, the "is our own check the only failing one?" question was not
@@ -99,6 +122,10 @@ if printf '%s' "$out" | grep -qi 'unstable status'; then
   # The rollup mixes two node shapes — CheckRun (`name` + `conclusion`) and the
   # legacy StatusContext (`context` + `state`) — and both are read, so a failing
   # commit status is never invisible to this decision.
+  #
+  # Only the LATEST run per check — (workflowName, name), or a status context —
+  # is judged (#1959; see LATEST RUN PER CHECK in the header): a superseded
+  # CANCELLED run is not a current failure.
   if ! failing="$(python3 - "$ROLLUP_JSON" <<'PY'
 import json, sys
 
@@ -106,6 +133,58 @@ FAIL_CONCLUSIONS = {
     "FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE",
 }
 FAIL_STATES = {"FAILURE", "ERROR"}
+
+
+def recency(entry):
+    # completedAt, else startedAt, else createdAt. The gh CLI renders an unset
+    # timestamp (an in-progress run's completedAt, a queued run's startedAt) as
+    # Go's zero time, 0001-01-01T00:00:00Z; that is "no stamp", not a stamp
+    # older than every real one, so it is skipped rather than compared — or an
+    # in-progress successor would lose to the run it superseded. RFC3339 stamps
+    # in one zone sort lexicographically in chronological order.
+    for key in ("completedAt", "startedAt", "createdAt"):
+        value = entry.get(key)
+        if isinstance(value, str) and value and not value.startswith("0001-01-01"):
+            return value
+    return ""
+
+
+def check_key(entry):
+    # The identity two runs must share to be "the same check", or None when it
+    # cannot be proven. A status context: ("status", context). A check run:
+    # ("run", workflowName, name) — BOTH required, so same-named jobs of two
+    # different workflows never collapse, and a check run without a
+    # workflowName is never collapsed with anything (fail-closed).
+    name = entry.get("name")
+    context = entry.get("context")
+    if entry.get("__typename") == "StatusContext" or (not name and context):
+        return ("status", str(context)) if context else None
+    workflow = entry.get("workflowName")
+    if name and isinstance(workflow, str) and workflow:
+        return ("run", workflow, str(name))
+    return None
+
+
+def latest_run_per_check(entries):
+    # One entry per check_key(): the newest by recency(). Strictly-newer
+    # replaces, so a tie keeps the first seen; a stampless run ("") sorts
+    # oldest and never displaces a run that ran. An entry with no provable key
+    # is kept on its own. First-appearance order is preserved.
+    out, index = [], {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = check_key(entry)
+        if key is None:
+            out.append(entry)
+            continue
+        if key not in index:
+            index[key] = len(out)
+            out.append(entry)
+        elif recency(entry) > recency(out[index[key]]):
+            out[index[key]] = entry
+    return out
+
 
 try:
     with open(sys.argv[1]) as fh:
@@ -119,9 +198,7 @@ if not isinstance(rollup, list):                          # null, missing, wrong
     print("rollup JSON carries no statusCheckRollup list", file=sys.stderr)
     sys.exit(2)
 
-for entry in rollup:
-    if not isinstance(entry, dict):
-        continue
+for entry in latest_run_per_check(rollup):
     conclusion = str(entry.get("conclusion") or "").upper()
     state = str(entry.get("state") or "").upper()
     if conclusion in FAIL_CONCLUSIONS or state in FAIL_STATES:
@@ -141,22 +218,16 @@ PY
     exit 1
   fi
 
-  echo "::warning::auto-merge not enabled on PR ${PR}: the request was refused as 'unstable status' and the only failing check is this workflow's own '${SELF_CHECK}'. That is self-inflicted and self-clearing — this run greens that check, and the next pull-request or review event enables auto-merge. Benign; see #586."
+  echo "::warning::auto-merge not enabled on PR ${PR}: the request was refused as 'unstable status' and the only failing check is this workflow's own '${SELF_CHECK}'. That is self-inflicted and self-clearing — this run greens that check, and the next scheduled poll retries enabling auto-merge. Benign; see #586."
   exit 0
 fi
 
-# 5) CLEAN STATUS — the request that arrives at a pull request which ALREADY
-#    satisfies every merge requirement. `enablePullRequestAutoMerge` asks GitHub
-#    to hold the merge until the pending required checks and reviews clear; when
-#    there is nothing left to wait on — a just-flipped approved pull request with
-#    every check green — GitHub has nothing to queue and refuses with "Pull
-#    request is in clean status" rather than enabling. That refusal reddens the
-#    run, and the failed check run is itself a state — the same self-inflicted
-#    feedback the unstable case closes, one merge-state over. Nothing here merges,
-#    so the blast radius of exiting 0 is identical to cases 3 and 4: a pull
-#    request a human merges with one click. Benign; see #586.
+# 5) CLEAN STATUS — route to protected completion; this classifier never merges.
 if printf '%s' "$out" | grep -qi 'clean status'; then
-  echo "::warning::auto-merge not enabled on PR ${PR}: the request was refused as 'clean status' — the pull request already satisfies every merge requirement, so there is nothing left for auto-merge to wait on. Benign; see #586."
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    printf 'clean=true\n' >> "$GITHUB_OUTPUT"
+  fi
+  echo "auto-merge queue refused clean PR ${PR}; protected clean-merge completion is required (clean=true)"
   exit 0
 fi
 

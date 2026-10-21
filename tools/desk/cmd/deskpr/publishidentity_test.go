@@ -55,7 +55,7 @@ func TestPublishIdentityGateWiredCreateRefusesForeignCommit(t *testing.T) {
 	if rc != deskkit.ExitRefused {
 		t.Fatalf("create with a foreign-identity commit rc = %d, want 5 (refused)", rc)
 	}
-	if anyCall(gitCalls(*calls), "push") {
+	if anyPush(*calls) {
 		t.Fatal("the gate refused but the branch was still pushed — a mis-attributed commit reached the forge")
 	}
 }
@@ -71,7 +71,7 @@ func TestPublishIdentityGateWiredUpdateRefusesForeignCommit(t *testing.T) {
 	if rc != deskkit.ExitRefused {
 		t.Fatalf("update with a foreign-identity commit rc = %d, want 5 (refused)", rc)
 	}
-	if anyCall(gitCalls(*calls), "push") {
+	if anyPush(*calls) {
 		t.Fatal("the gate refused but update still pushed")
 	}
 }
@@ -101,7 +101,7 @@ func TestPublishIdentityGateSeamIsRealInProduction(t *testing.T) {
 	// A stubbed-out gate in the shipped binary would leave every wiring test above vacuous.
 	if err := productionPublishIdentityGateFn(deskkit.PublishIdentityInput{
 		Role:    "worker",
-		Commits: func(string, string) ([]deskkit.PublishCommit, error) { return nil, errSeamProbe },
+		Commits: func(string, deskkit.PublishRange) ([]deskkit.PublishCommit, error) { return nil, errSeamProbe },
 	}); err == nil {
 		t.Fatal("productionPublishIdentityGateFn is not the real gate — a real gate reports the probe error, a stub returns nil")
 	}

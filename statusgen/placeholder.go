@@ -81,8 +81,12 @@ var (
 
 	// riskGateLabels is the risk vocabulary recognised as an exact issue LABEL,
 	// kept separate from the free-text keyword match to preserve the two-stage
-	// derivation (exact-label check first, then whole-word text match).
-	riskGateLabels = []string{"funds", "security"}
+	// derivation (exact-label check first, then whole-word text match). The base
+	// set also carries the methodology's top triage risk label, risk:high;
+	// risk:med and risk:low are deliberately absent, and the match is exact
+	// (no prefix or pattern match on "risk:"). It stays out of riskGateKeywords
+	// so a title that merely mentions risk:high does not gate.
+	riskGateLabels = []string{"funds", "security", "risk:high"}
 
 	// placeholderRiskLabels / placeholderRiskKeywordRe are DERIVED from the risk
 	// vocabulary above (registerRiskGateVocabulary rebuilds them after an
@@ -388,6 +392,8 @@ func (p *Placeholder) toBrief() Brief {
 		Schema:  "placeholder-v1",
 		Value:   p.Value,
 		Blocked: p.Blocked,
+		// The placeholder's own issue, as a full ref, for the main-red arm.
+		IssueRefs: []string{fmt.Sprintf("%s#%d", p.Repo, p.Issue)},
 	}
 }
 
@@ -446,7 +452,7 @@ func checkPlaceholderFiles(streams []*Stream) (problems, notices []string) {
 			if !validGate[ph.Gate] {
 				add("%s: invalid gate %q (want model or human)", path, ph.Gate)
 			}
-			if !validBriefStatus[ph.Status] {
+			if !validPlaceholderStatus[ph.Status] {
 				add("%s: invalid status %q", path, ph.Status)
 			}
 			if ph.Value != "" && !validValue[ph.Value] {

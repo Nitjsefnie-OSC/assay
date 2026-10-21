@@ -202,6 +202,36 @@ func enforceAdmission(o dispatchOpts, plan dispatchPlan, repo string, auth claim
 	return releaseLease, nil
 }
 
+// admitAndClaim is dispatch's reserve -> claim -> release sequence: the admission gate, then the
+// durable item claim (claim, which is dispatch's stepClaim call — stepClaim stays lexically inside
+// dispatch, where the claim-release chokepoint guard anchors), then the lease release. It is the
+// one place that ordering lives, so the crash tests drive exactly the sequence dispatch runs. Admission runs BEFORE the item claim and
+// is inert unless ASSAY_REPAIR_ADMISSION=on (a nil release, no error), so the shipped default flow
+// is unchanged. When on, an ADMIT keeps the lease held THROUGH stepClaim so the
+// count->decide->claim window is atomic across hosts; a HOLD or a could-not-check refuses before
+// any durable item state exists — a refused fresh dispatch never wedges the item.
+func admitAndClaim(o dispatchOpts, plan dispatchPlan, repo string, auth claimAuth, claim func() error) error {
+	admitRelease, admitErr := enforceAdmission(o, plan, repo, auth)
+	if admitErr != nil {
+		return admitErr
+	}
+	if err := claim(); err != nil {
+		// The lease was taken and no item claim was placed — release it so a corrected re-run is
+		// not serialized behind a dispatcher that never claimed. With no item claim there is no
+		// occupancy to leak.
+		if admitRelease != nil {
+			admitRelease()
+		}
+		return err
+	}
+	// The item claim is now the durable occupancy; the window is closed, so release the lease (a
+	// crash before here leaves it to expire by the claim tool's TTL).
+	if admitRelease != nil {
+		admitRelease()
+	}
+	return nil
+}
+
 // ---- the live backend -------------------------------------------------------------------------
 
 // claimToolAdmissionBackend reads occupancy and holds the serialization lease through the SAME
@@ -217,8 +247,8 @@ type claimToolAdmissionBackend struct {
 
 // leaseKey is the admission lease's claim key: the scheduling scope (repo alias + loop) plus a fixed
 // `--admission` leaf, so it lives in the same refs/dispatch namespace as the item claims, collides
-// across dispatchers (the CAS the serialization rests on), and is trivially excluded from the
-// occupancy count by its suffix.
+// across dispatchers (the CAS the serialization rests on), and is excluded from the occupancy
+// count by this exact key — never by its suffix, which a worker item key could also end in.
 func (b *claimToolAdmissionBackend) leaseKey() string {
 	return shortRepo(b.repo) + "--" + admissionLoop + "--admission"
 }
@@ -274,8 +304,8 @@ func countLiveClaims(listOut, leaseKey string) int {
 		if !ok {
 			continue
 		}
-		if id == leaseKey || strings.HasSuffix(id, "--admission") {
-			continue // the serialization lease is not a worker slot
+		if id == leaseKey {
+			continue // the serialization lease is not a worker slot; any other id is counted
 		}
 		if stale, _, _ := holderIsStale(line); stale {
 			continue // a dead worker's reclaimable claim is not an occupied slot
@@ -287,8 +317,11 @@ func countLiveClaims(listOut, leaseKey string) int {
 
 // heldClaimID pulls the claim id out of a `dispatch-claim: HELD <id> — …` list/show line. ok=false
 // for any line that is not a HELD row (the tool's `(no dispatch claims…)`, a FREE row, a blank).
+//
+// The marker must start a word: the claim tool's `show` also prints `ALIAS-HELD <id> — …` for
+// another spelling of the same PR, and that row is not a second occupied slot.
 func heldClaimID(line string) (string, bool) {
-	i := strings.Index(line, "HELD ")
+	i := heldRowMarker(line)
 	if i < 0 {
 		return "", false
 	}
@@ -301,6 +334,26 @@ func heldClaimID(line string) (string, bool) {
 		return rest[:j], true
 	}
 	return rest, true
+}
+
+// heldRowMarker is the index of the first "HELD " in line that is not the tail of a longer
+// hyphenated word (ALIAS-HELD), or -1.
+func heldRowMarker(line string) int {
+	for off := 0; ; {
+		j := strings.Index(line[off:], "HELD ")
+		if j < 0 {
+			return -1
+		}
+		i := off + j
+		if i == 0 || (line[i-1] != '-' && !isWordByte(line[i-1])) {
+			return i
+		}
+		off = i + 1
+	}
+}
+
+func isWordByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
 }
 
 func (b *claimToolAdmissionBackend) reservation() (int, map[string]int, error) {

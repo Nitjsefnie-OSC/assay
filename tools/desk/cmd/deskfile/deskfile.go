@@ -54,15 +54,21 @@ const (
 	skillBugReceiptWindow = 30 * time.Minute
 )
 
+// needsDecisionLabel names the standing decision-queue label, restated once so the fork-test
+// gate (forktest.go) and the evidence gate below cannot drift on the
+// literal.
+const needsDecisionLabel = "needs-decision"
+
 // escalationLabels are the labels whose `new` filings MUST carry evidence: such a filing is
 // a blocker claim, and a blocker claim with nothing to quote is not a blocker claim. The gate
 // is the tool half of the two-layer blocker-evidence rule. `human-only` is deliberately NOT
-// here — it marks an ACT, not a claim (brief 05 of its tracking stream) — and the gate binds `new` only,
-// so `attach` observations (not fresh claims) are unaffected.
+// here — it marks an ACT, not a claim (brief 05 of its tracking stream), and has its own act gate
+// (isHumanOnlyHandoff / bodyHasActFence, below) — and the gate binds `new` only, so `attach`
+// observations (not fresh claims) are unaffected.
 var escalationLabels = map[string]bool{
-	"needs-decision": true,
-	"help wanted":    true,
-	"question":       true,
+	needsDecisionLabel: true,
+	"help wanted":      true,
+	"question":         true,
 }
 
 // escalationLabelIn returns the first label in labels that is an escalation label (matched
@@ -74,6 +80,17 @@ func escalationLabelIn(labels []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// withoutLabel returns labels with every case-insensitive match of want dropped.
+func withoutLabel(labels []string, want string) []string {
+	out := make([]string, 0, len(labels))
+	for _, l := range labels {
+		if !strings.EqualFold(strings.TrimSpace(l), want) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // hasLabel reports whether want is among labels (case-insensitive, trimmed).
@@ -116,6 +133,188 @@ func isEvidenceHeading(line string) bool {
 	}
 	rest := strings.TrimSpace(strings.TrimLeft(line, "#"))
 	return strings.HasPrefix(strings.ToLower(rest), "evidence")
+}
+
+// --- the human-only act gate ---------------------------------------------------------
+//
+// A human-only filing hands the driver an ACT only they can perform, so the act has to be in
+// the body in runnable form — the `ask-decision` skill's Act block: a fenced `sh` block that
+// runs top to bottom, or, for a browser-click step, a fenced `url` block holding the one URL
+// and the field values. A filing that only describes the act in prose makes the driver
+// reconstruct the command, and that reconstruction is where a hand-off goes wrong.
+//
+// The gate is the TOOL half of a two-layer rule (the skills carry the other): `deskfile new`
+// REFUSES (exit 5) a filing that is a human-only hand-off — labelled `human-only`, or whose
+// body's first non-blank line opens with `BLOCKED-ON-HUMAN` — when the body carries no act
+// fence. It is DISTINCT from the blocker-evidence gate above: that one asks a CLAIM for its
+// evidence; this one asks an ACT for its runnable form. The only bypass is `--force-new --reason`, and a
+// filing that takes it is audited with actGateBypassNote so the bypass is visible on the line.
+const (
+	// humanOnlyLabel is the label that marks a filing as an act owed to the driver.
+	humanOnlyLabel = "human-only"
+	// blockedOnHumanMarker opens the first non-blank line of a BLOCKED-ON-HUMAN report.
+	blockedOnHumanMarker = "BLOCKED-ON-HUMAN"
+	// actGateBypassNote is appended to the audit detail of a filing that was a human-only
+	// hand-off with no act fence and was filed anyway under --force-new --reason.
+	actGateBypassNote = "act-gate=bypassed:force-new"
+)
+
+// isHumanOnlyHandoff reports whether a `new` filing is a human-only hand-off: it carries the
+// human-only label, or its body's first non-blank line opens with the BLOCKED-ON-HUMAN marker.
+// Markdown decoration ahead of the marker (a heading `#`, emphasis `*`/`_`, a quote `>`) is
+// ignored, and the match is case-insensitive, so dressing the marker does not step around
+// the gate.
+func isHumanOnlyHandoff(labels []string, body string) bool {
+	if hasLabel(labels, humanOnlyLabel) {
+		return true
+	}
+	for _, ln := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(ln)
+		if t == "" {
+			continue
+		}
+		t = strings.TrimLeft(t, "#*_> \t")
+		return len(t) >= len(blockedOnHumanMarker) &&
+			strings.EqualFold(t[:len(blockedOnHumanMarker)], blockedOnHumanMarker)
+	}
+	return false
+}
+
+// bodyHasActFence reports whether body carries an act block: a fenced block whose info string
+// is `sh` or `url` (```sh, ```url), closed, with at least one non-blank line inside. An
+// unclosed or empty fence is not a block a driver can run.
+//
+// Fences follow CommonMark: any run of three or more backticks or tildes opens one, whatever
+// its info string, and only a bare run of the SAME character at least as long closes it. So
+// an ```sh line quoted inside another fence (a ```text block showing an example) is content,
+// not an act block, and an ```sh line inside an open block does not close it. A fence line
+// may be indented at most three columns past the list item it sits in (past the margin,
+// outside a list); one indented four or more is indented code, not a fence. List items are
+// tracked only as far as that rule needs: a marker line (`-`, `*`, `+`, `1.`, `1)`) opens
+// one, and a less-indented line after a blank line, a fence line or another marker closes it.
+func bodyHasActFence(body string) bool {
+	var (
+		open, act, content bool
+		char               byte
+		width, base        int
+		items              []int // content column of each enclosing list item, innermost last
+		prevBlank          = true
+	)
+	for _, ln := range strings.Split(body, "\n") {
+		col, rest := indentOf(ln)
+		t := strings.TrimSpace(rest)
+		if open {
+			c, n := fenceRun(t)
+			if n >= width && c == char && col-base <= 3 && strings.TrimSpace(t[n:]) == "" {
+				if act && content {
+					return true
+				}
+				open, prevBlank = false, false
+				continue
+			}
+			if t != "" {
+				content = true
+			}
+			continue
+		}
+		if t == "" {
+			prevBlank = true
+			continue
+		}
+		_, n := fenceRun(t)
+		_, _, marker := listMarker(rest, col)
+		for len(items) > 0 && col < items[len(items)-1] && (prevBlank || n > 0 || marker) {
+			items = items[:len(items)-1]
+		}
+		prevBlank = false
+		top := 0
+		if len(items) > 0 {
+			top = items[len(items)-1]
+		}
+		// Each marker on the line opens an item; what follows the last one is its content.
+		for col-top <= 3 {
+			mcol, mrest, ok := listMarker(rest, col)
+			if !ok {
+				break
+			}
+			items = append(items, mcol)
+			extra, r := indentOf(mrest)
+			col, rest, top = mcol+extra, r, mcol
+		}
+		t = strings.TrimSpace(rest)
+		c, n := fenceRun(t)
+		if n == 0 || col-top > 3 {
+			continue
+		}
+		info := strings.Fields(t[n:])
+		open, char, width, base, content = true, c, n, top, false
+		act = len(info) > 0 && (strings.EqualFold(info[0], "sh") || strings.EqualFold(info[0], "url"))
+	}
+	return false
+}
+
+// indentOf returns the indentation of line ln in columns (a tab advances to the next multiple
+// of four) and the line with that indentation removed.
+func indentOf(ln string) (int, string) {
+	col := 0
+	for i := 0; i < len(ln); i++ {
+		switch ln[i] {
+		case ' ':
+			col++
+		case '\t':
+			col += 4 - col%4
+		default:
+			return col, ln[i:]
+		}
+	}
+	return col, ""
+}
+
+// listMarker reports whether rest (a line's text after its indentation, which sits at column
+// col) opens with a list-item marker, and if so returns the column the item's content starts
+// at and the text from there on. The content column follows CommonMark: one to four spaces
+// after the marker count, more than four means the content is one space past the marker.
+func listMarker(rest string, col int) (int, string, bool) {
+	m := 0
+	switch {
+	case rest != "" && (rest[0] == '-' || rest[0] == '*' || rest[0] == '+'):
+		m = 1
+	default:
+		for m < len(rest) && m < 9 && rest[m] >= '0' && rest[m] <= '9' {
+			m++
+		}
+		if m == 0 || m >= len(rest) || (rest[m] != '.' && rest[m] != ')') {
+			return 0, "", false
+		}
+		m++
+	}
+	if m == len(rest) {
+		return col + m + 1, "", true
+	}
+	if rest[m] != ' ' && rest[m] != '\t' {
+		return 0, "", false
+	}
+	scol, after := indentOf(rest[m:])
+	if after == "" || scol > 4 {
+		return col + m + 1, strings.TrimPrefix(rest[m:], rest[m:m+1]), true
+	}
+	return col + m + scol, after, true
+}
+
+// fenceRun returns the fence character and the length of the run of it that opens line t,
+// or (0, 0) when t does not open with a run of three or more backticks or tildes.
+func fenceRun(t string) (byte, int) {
+	if t == "" || (t[0] != '`' && t[0] != '~') {
+		return 0, 0
+	}
+	n := 0
+	for n < len(t) && t[n] == t[0] {
+		n++
+	}
+	if n < 3 {
+		return 0, 0
+	}
+	return t[0], n
 }
 
 // composeSkillBugTitle renders the deterministic skill-bug title from the section the desk
@@ -446,6 +645,18 @@ type auditCtx struct {
 	// createSentMarker being the PREFIX of Detail, so nothing may go in front of it.
 	addressedTo string
 
+	// lane records which route a `new` filing took through the fork-test gate —
+	// `lane=desk-decided (<why>)`, `lane=needs-decision (<why>)`, or `no-fork=<value>` — so
+	// "the tool took this off the human queue" is on the LOCAL audit trail, not only on the
+	// forge. Appended after addressedTo, never prepended (see raisedBy for why).
+	lane string
+
+	// actGate records that the human-only act gate was BYPASSED under --force-new --reason
+	// (actGateBypassNote), empty otherwise. Appended to the audit detail after addressedTo —
+	// never prepended, for the createSentMarker-prefix reason above — so every outcome line of
+	// a bypassed filing names the bypass, not only the success line.
+	actGate string
+
 	// createSent is set immediately BEFORE the `gh issue create` exec and stamps
 	// createSentMarker onto the audit detail. It is the discriminator the per-session
 	// budget reads to tell "the create was sent and we cannot confirm it" (charges) from
@@ -481,6 +692,12 @@ func (a *auditCtx) log(result, detail string) {
 	}
 	if a.addressedTo != "" {
 		detail = strings.TrimSpace(detail + " | " + a.addressedTo)
+	}
+	if a.lane != "" {
+		detail = strings.TrimSpace(detail + " | " + deskkit.StripControl(a.lane))
+	}
+	if a.actGate != "" {
+		detail = strings.TrimSpace(detail + " | " + a.actGate)
 	}
 	e := deskkit.Entry{
 		Tool:       "deskfile",
@@ -590,11 +807,16 @@ func cmdNew(args []string) (err error) {
 		"passed; refuses if no receipt was recorded in the last "+skillBugReceiptWindow.String()+")")
 	section := fs.String("section", "", "the skill + section the desk was following (composed into the skill-bug body; requires --correction)")
 	reading := fs.String("reading", "", "the desk's one-line reading of what the skill should have said (composed into the skill-bug body; requires --correction)")
-	forceNew := fs.Bool("force-new", false, "bypass the DEDUPE search AND the blocker-evidence gate (escape hatch; requires --reason)")
+	forceNew := fs.Bool("force-new", false, "bypass the DEDUPE search, the blocker-evidence gate, the fork-test gate (needs-decision filings) AND the human-only act gate, all on the one --reason (escape hatch; requires --reason)")
 	forceFile := fs.Bool("force-file", false, "raise the new-issue RATE for this ONE filing so it files even when the "+
 		"rate is spent (escape hatch; requires --reason). Distinct from --force-new, which bypasses dedupe; "+
 		"--force-file does NOT weaken dedupe and does NOT reset the rate count (the filing is still audited and charged).")
 	reason := fs.String("reason", "", "stated reason for --force-new / --force-file (required with either)")
+	noFork := fs.String("no-fork", "", "re-routes a filing that turned out to have fewer than two workable options "+
+		"(the `deskfile new` fork-test gate's refusal names this flag): one of "+noForkBriefContradicts+" | "+
+		noForkWrongRepo+" | "+noForkToolFalsePositive+". Files WITHOUT the needs-decision label, and refuses a one-way item (deskkit.OneWay, or a "+
+		"human-only hand-off: the human-only label or a body led by BLOCKED-ON-HUMAN) — that stays on the driver's queue")
+	applyOverride, _ := deskkit.RegisterOutboundOverride(fs, "deskfile", "new")
 	if perr := fs.Parse(args); perr != nil {
 		// TIER TWO: `-h`/`--help` in any spelling reaches flag.Parse as flag.ErrHelp.
 		// A help screen is not a refusal and writes no audit row — the finalizer
@@ -603,6 +825,9 @@ func cmdNew(args []string) (err error) {
 			return deskkit.ErrHelpRequested
 		}
 		return deskkit.Refused("refused: bad flags: " + perr.Error())
+	}
+	if oerr := applyOverride(); oerr != nil {
+		return oerr
 	}
 	if fs.NArg() != 0 {
 		return deskkit.Refused("refused: unexpected extra arguments")
@@ -647,6 +872,59 @@ func cmdNew(args []string) (err error) {
 	}
 	if !deskkit.IsAllowedRepo(*repo) {
 		return deskkit.Refused("refused: " + *repo + " is not in the desk-tools repo set")
+	}
+	// desk-decided is the notice lane's OWN label: the tool applies it after the fork-test
+	// gate admits a filing, never a caller. A caller --label desk-decided would put an item off
+	// the driver's queue without passing that gate at all, so it is refused — --force-new
+	// included, which bypasses dedupe and evidence, never this.
+	if hasLabel(labels, deskDecidedLabel) {
+		return deskkit.Refused("refused: --label " + deskDecidedLabel + " is applied by this tool itself, only to a " +
+			needsDecisionLabel + " filing its fork-test gate admits to the notice lane — never a caller label. File " +
+			"with --label " + needsDecisionLabel + " and a `### Fork test` block and the gate decides.")
+	}
+
+	// --no-fork re-routes a fork-test refusal: the filer re-runs a
+	// filing that had fewer than two workable options with exactly one of the three closed
+	// values, and the tool composes the shape each re-route requires — title prefix and
+	// addressee for the two that name one, content requirements for all three — rather than
+	// trusting free text to carry it. It NEVER coexists with --label needs-decision: the
+	// whole point of the flag is filing WITHOUT that label.
+	noForkVal := strings.TrimSpace(*noFork)
+	if noForkVal != "" {
+		switch noForkVal {
+		case noForkBriefContradicts, noForkWrongRepo, noForkToolFalsePositive:
+		default:
+			return deskkit.Refused("refused: --no-fork must be one of " + noForkBriefContradicts + " | " +
+				noForkWrongRepo + " | " + noForkToolFalsePositive + ", got " + noForkVal)
+		}
+		if hasLabel(labels, needsDecisionLabel) {
+			return deskkit.Refused("refused: --no-fork files WITHOUT the " + needsDecisionLabel +
+				" label — drop --label " + needsDecisionLabel)
+		}
+		var requiredPrefix, requiredTo string
+		switch noForkVal {
+		case noForkBriefContradicts:
+			requiredPrefix, requiredTo = "amend brief:", "desk"
+		case noForkWrongRepo:
+			// "worker" is the ROSTER's role name for the worker-desk window (the vocabulary
+			// --to shares with --raised-by, RaisedByRoles) — NOT the skill file name
+			// "worker-desk", which boundRole would refuse as unbound.
+			requiredPrefix, requiredTo = "re-dispatch:", "worker"
+		}
+		if requiredTo != "" {
+			if strings.TrimSpace(*toRole) != "" && !strings.EqualFold(strings.TrimSpace(*toRole), requiredTo) {
+				return deskkit.Refused(fmt.Sprintf(
+					"refused: --no-fork %s addresses the filing --to %s — drop --to or pass --to %s",
+					noForkVal, requiredTo, requiredTo))
+			}
+			*toRole = requiredTo
+		}
+		if requiredPrefix != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(*title)), strings.ToLower(requiredPrefix)) {
+			*title = requiredPrefix + " " + strings.TrimSpace(*title)
+		}
+		if noForkVal == noForkToolFalsePositive && !hasLabel(labels, "bug") {
+			labels = append(labels, "bug")
+		}
 	}
 	ac.repo = *repo
 	ac.title = *title
@@ -721,10 +999,119 @@ func cmdNew(args []string) (err error) {
 		}
 		body = b
 	}
-	if serr := deskkit.ScanSurface("issue body", body); serr != nil {
-		return serr
+	// The desk-r3-decision marker in a filed issue's body is the notice lane's record that the
+	// TOOL admitted the filing; deskdigest reads it as exactly that. A caller body already
+	// carrying it would forge that record, so it is refused (exit 5), --force-new included.
+	// The refusal matches every spelling of the marker (any case, any whitespace, any
+	// version) — a superset of what deskdigest's reader accepts, so no variant the reader
+	// would take as the marker gets past it (cor-1688-C6, sec-1688-S4).
+	if deskkit.HasDeskDecidedMarkerClaim(string(body)) {
+		return deskkit.Refused("refused: the body carries the " + deskDecidedMarker + " marker (in some spelling), which only this " +
+			"tool writes (the notice lane's record that its gate admitted the filing). Remove it; a " +
+			needsDecisionLabel + " filing with a `### Fork test` block gets it from the gate if admitted.")
 	}
-	if serr := deskkit.ScanSurface("issue title", []byte(*title)); serr != nil {
+
+	// --no-fork content requirements: each re-route names what its body must carry, checked
+	// against the shape rather than trusting free text. FIRST, the one-way check: every
+	// --no-fork value files WITHOUT needs-decision, so a one-way item (a one-way caller label,
+	// a one-way term anywhere in title+body — deskkit.OneWay — or a human-only hand-off, the
+	// act gate's own test) is refused here rather than
+	// steered off the driver's queue. The only way forward for it is a needs-decision filing.
+	if noForkVal != "" {
+		ac.lane = "no-fork=" + noForkVal
+		if hit, oneWay := filingOneWay(*title, string(body), labels); oneWay {
+			return deskkit.Refused("refused: --no-fork files WITHOUT the " + needsDecisionLabel + " label, and this " +
+				"item is one-way — " + hit.String() + ". A one-way item stays on the driver's queue: file it " +
+				"with --label " + needsDecisionLabel + " (and a `### Fork test` block), or, if it genuinely has one " +
+				"workable option, with --label " + needsDecisionLabel + " --force-new --reason \"<why>\".")
+		}
+		switch noForkVal {
+		case noForkWrongRepo:
+			if !repoShapeRe.Match(body) {
+				return deskkit.Refused("refused: --no-fork wrong-repo requires the body to name the repo the " +
+					"work belongs in (an `owner/repo` token)")
+			}
+		case noForkBriefContradicts:
+			if !briefIDShapeRe.Match(body) {
+				return deskkit.Refused("refused: --no-fork brief-contradicts-artifact requires the body to name " +
+					"the brief id it amends (a `<stream>/<NN>` or `assay:at:<stream>:<NN>` token)")
+			}
+			if !artifactPathShapeRe.Match(body) {
+				return deskkit.Refused("refused: --no-fork brief-contradicts-artifact requires the body to name " +
+					"the artifact it contradicts (a backtick-quoted path with an extension)")
+			}
+		case noForkToolFalsePositive:
+			if !bodyHasFence(string(body)) {
+				return deskkit.Refused("refused: --no-fork tool-false-positive requires the body to carry the " +
+					"tool's refusal text in a fenced block")
+			}
+		}
+	}
+
+	// The fork-test gate: a filing labelled needs-decision must carry a well-formed
+	// `### Fork test` block naming the workable options, the default, the gate that catches
+	// a wrong guess, and the search that showed the question was not already ruled. Runs
+	// BEFORE dedupe, and before the blocker-evidence gate below so the evidence requirement
+	// (an escalation-label property) sees the label set. --no-fork and this gate are mutually
+	// exclusive (enforced above: --no-fork refuses if --label needs-decision is also given),
+	// so a --no-fork filing never reaches this block. --force-new bypasses it as it bypasses
+	// dedupe and the evidence gate — the audited escape hatch every refusal in this tool
+	// shares, and one that FILES AS needs-decision, so it never takes an item off the queue.
+	//
+	// Every route off the driver's queue this gate offers FAILS CLOSED (deskkit/noticelane.go):
+	// the fewer-than-two-options refusal names the --no-fork re-routes only for an item that
+	// is not one-way, and the notice lane admits only a positive, content-bearing R-3
+	// reversible signal (deskkit.FirstNoticeLaneSignal) with no one-way term and no one-way
+	// caller label. That reversible signal is read from the block's own `subject:` line alone
+	// (res.Subject below), never from the title or body prose: a title can carry more than one
+	// clause, and a scan of the whole thing admits on whichever clause happens to carry a
+	// reversible needle rather than on what the filing is actually about (security review
+	// sec-1688-S1, round 4).
+	deskDecidedApply := false
+	if !*forceNew && noForkVal == "" && hasLabel(labels, needsDecisionLabel) {
+		res := parseForkTest(string(body))
+		if !res.Structural() {
+			return deskkit.Refused(forkTestErrorMessage(res))
+		}
+		if !res.Workable() {
+			if hit, oneWay := filingOneWay(*title, string(body), labels); oneWay {
+				return deskkit.Refused(forkTestOneWayMessage(res, hit))
+			}
+			return deskkit.Refused(forkTestRerouteMessage(res))
+		}
+		def := res.DefaultOption() // non-nil: Structural() already proved it names a counted option
+		ac.lane = "lane=" + needsDecisionLabel
+		if res.CaughtByKind == caughtByNothing {
+			// No gate catches a wrong guess, so this is a genuine decision: stays
+			// needs-decision, filed as today.
+			ac.lane += " (caught-by: nothing)"
+		} else if hit, oneWay := filingOneWay(*title, string(body), labels); oneWay {
+			// One-way — including a one-way term on the ruled-check line, which
+			// NoticeLaneVerdict below never sees: stays needs-decision, filed as today.
+			ac.lane += " (one-way: " + hit.String() + ")"
+		} else if admit, why := deskkit.NoticeLaneVerdict(*title, oneWayHay(string(body)), res.Subject, labels); admit {
+			// Notice lane (R-3): two-plus workable options, a gate the driver still holds, a
+			// positive reversible signal and no one-way term. desk-decided is ADDED alongside
+			// needs-decision at label time, and needs-decision comes off only in a second
+			// write (see the label block below), so a failed write never leaves the filing on
+			// neither label. The appended block carries the shared marker, so the filing IS
+			// the desk's R-3 act — no separate comment for deskdigest to wait for.
+			body = append(body, []byte(renderDeskDecidedBlock(*def, res.CountedOptions(), res.CaughtByKind, res.CaughtByDetail))...)
+			deskDecidedApply = true
+			ac.lane = "lane=" + deskDecidedLabel + " (" + why + ")"
+		} else {
+			// One-way, or nothing positive to go on: stays needs-decision, filed as today.
+			ac.lane += " (" + why + ")"
+		}
+	}
+
+	// The outbound-write check (desktools-v2/10) — credentials, the impersonation guard,
+	// personal data and, for a public or unknown-visibility target, self-containment and the
+	// withheld register. It runs HERE, before the dedupe search and any budget is spent, as
+	// a pre-flight; the checked Forge runs the same check again at FileIssue, which is the
+	// guarantee (a refused write never reaches the backend whatever this verb does).
+	if serr := deskkit.OutboundCheck(deskkit.OutboundWrite{Repo: *repo, Kind: deskkit.OutboundKindIssue,
+		Fields: []deskkit.OutboundField{{Name: "title", Text: *title}, {Name: "body", Text: string(body)}}}); serr != nil {
 		return serr
 	}
 	ac.bodyDigest = deskkit.Sha256Hex(body)
@@ -734,9 +1121,16 @@ func cmdNew(args []string) (err error) {
 	// claim. Refuse (exit 5) unless the body carries an `### Evidence` heading followed by a
 	// fenced block. --force-new --reason bypasses it as it bypasses dedupe — audited — for the
 	// case where the evidence genuinely cannot be produced. human-only is not in the set (an
-	// act, not a claim); attach is a separate verb and unaffected.
+	// act, not a claim); attach is a separate verb and unaffected. A notice-lane filing is
+	// judged WITHOUT needs-decision: it is filed as a desk decision taken, not a blocker
+	// claim (needs-decision stays on its label list only so the label writes can be
+	// add-first — see the notice lane above).
+	evidenceLabels := labels
+	if deskDecidedApply {
+		evidenceLabels = withoutLabel(labels, needsDecisionLabel)
+	}
 	if !*forceNew {
-		if lbl, ok := escalationLabelIn(labels); ok && !bodyHasEvidenceBlock(string(body)) {
+		if lbl, ok := escalationLabelIn(evidenceLabels); ok && !bodyHasEvidenceBlock(string(body)) {
 			return deskkit.Refused(fmt.Sprintf(
 				"refused: a filing labelled %q is a blocker claim and must carry a `### Evidence` section with "+
 					"at least one fenced block that is the verbatim output of a command run this tick (its "+
@@ -745,6 +1139,29 @@ func cmdNew(args []string) (err error) {
 					"with it; if it produces a success, proceed. Override with --force-new --reason only if the "+
 					"evidence genuinely cannot be produced (audited).", lbl))
 		}
+	}
+
+	// Human-only act gate: a human-only hand-off (label `human-only`, or a body whose first
+	// non-blank line opens with BLOCKED-ON-HUMAN) must carry the act in runnable form — a
+	// ```sh or ```url fence (the ask-decision skill's Act block). Refuse (exit 5) when it
+	// carries neither. The only bypass is --force-new --reason, and a bypassed filing is
+	// audited with actGateBypassNote. attach is a separate verb and unaffected.
+	if isHumanOnlyHandoff(labels, string(body)) && !bodyHasActFence(string(body)) {
+		if !*forceNew {
+			return deskkit.Refused(
+				"refused: this filing is a human-only hand-off (label " + humanOnlyLabel + ", or a body whose " +
+					"first non-blank line opens with " + blockedOnHumanMarker + ") and its body carries no act block. Put the act the " +
+					"driver must perform in a fenced ```sh block that runs top to bottom (a dry run on paste, live only " +
+					"on that act's own opt-in; plain-text comments in the header only and an echo opening each step, the only control on a first zsh paste; " +
+					"the zsh comment guard first, for later pastes; a per-act function name; `# fill:` " +
+					"for values only the driver can supply, each secret read as `NAME=; read -rs NAME || exit 1`), " +
+					"or, for a browser step, a fenced ```url block with the one URL and the field values — the " +
+					"Act block the ask-decision skill defines. A prose description of the act makes the driver " +
+					"reconstruct the command. Override with --force-new --reason only if the act genuinely " +
+					"cannot be written as a block (audited; it also waives the dedupe search, the blocker-evidence gate and, " +
+					"on a needs-decision filing, the fork-test gate).")
+		}
+		ac.actGate = actGateBypassNote
 	}
 
 	// Dedupe gate. --force-new bypasses the search entirely (the operator vouches the
@@ -844,6 +1261,16 @@ func cmdNew(args []string) (err error) {
 	if toApply != "" {
 		applyLabels = append(applyLabels, deskkit.LabelSpec{Name: toApply})
 	}
+	if deskDecidedApply {
+		// UNLIKE the user labels above, desk-decided is never pre-checked-and-refused: the
+		// tool applies it itself, so it goes through the SAME ensure-exists path
+		// deskflip/deskpost's mechanical labels use (ApplyLabels creates a missing label on
+		// first use, with this colour and description) rather than requiring a human/admin
+		// label-create step before the first notice-lane filing can succeed. needs-decision is
+		// still in applyLabels here: it comes off in a SECOND write, after this one lands.
+		applyLabels = append(applyLabels, deskkit.LabelSpec{Name: deskDecidedLabel, Color: deskDecidedColor,
+			Description: deskkit.DeskDecidedLabelDescription})
+	}
 
 	// On-behalf-of trailer (multi-principal/01), appended to the filed body only — every
 	// gate above (dedupe/title checks, the secret/self-contain scans) already ran against
@@ -858,14 +1285,21 @@ func cmdNew(args []string) (err error) {
 	// carry the marker too. See createSentMarker.
 	ac.createSent = true
 	ref, cerr := fg.FileIssue(fr, deskkit.IssueInput{Title: *title, Body: string(fileBody)})
+	if cerr != nil && deskkit.IsRefused(cerr) {
+		// The checked Forge refused before any request: nothing was sent, nothing to charge.
+		ac.createSent = false
+		return cerr
+	}
 	if cerr != nil {
 		return deskkit.Unverifiable("file issue failed", cerr)
 	}
 	n := ref.Number
 	ac.target = &n
-	// Apply the resolved labels. Every label in applyLabels was confirmed to EXIST above (user
-	// labels refuse if missing; stamp/to labels resolve to "" if missing), so ApplyLabels'
-	// ensure step no-ops (the create returns already-exists) and NO label is minted.
+	// Apply the resolved labels. Every caller/stamp/to label in applyLabels was confirmed to
+	// EXIST above (user labels refuse if missing; stamp/to labels resolve to "" if missing), so
+	// ApplyLabels' ensure step no-ops for them (the create returns already-exists). The ONE
+	// label this write may mint is the tool's own desk-decided, on a notice-lane filing's
+	// first use.
 	// The target is the ISSUE just filed, stated explicitly: on GitLab the same number also
 	// names an unrelated merge request, and a write that left the kind implicit stamped that
 	// MR and left the issue unaddressed (no to:<role>, no dedupe key).
@@ -873,6 +1307,16 @@ func cmdNew(args []string) (err error) {
 		change := deskkit.LabelChange{Target: deskkit.TargetIssue, Add: applyLabels}
 		if _, lerr := fg.ApplyLabels(fr, ref.Number, change); lerr != nil {
 			return deskkit.Unverifiable("apply labels to the filed issue failed", lerr)
+		}
+	}
+	// Notice lane, second write: only now that desk-decided is ON the issue does
+	// needs-decision come off. Add-first ordering is the fail-closed one — a failure here
+	// leaves the issue on BOTH labels (still on the driver's queue, exit 6), never on neither.
+	if deskDecidedApply {
+		change := deskkit.LabelChange{Target: deskkit.TargetIssue, Remove: []string{needsDecisionLabel}}
+		if _, lerr := fg.ApplyLabels(fr, ref.Number, change); lerr != nil {
+			return deskkit.Unverifiable("the filing is labelled "+deskDecidedLabel+" AND still "+needsDecisionLabel+
+				" (it stays on the driver's queue): removing "+needsDecisionLabel+" failed", lerr)
 		}
 	}
 	url := deskkit.StripControl(ref.URL)
@@ -932,6 +1376,7 @@ func cmdAttach(args []string) (err error) {
 	to := fs.Int("to", 0, "target issue number (required)")
 	bodyFile := fs.String("body-file", "", "path to a file containing the comment body (required)")
 	kindFlag := fs.String("kind", "issue", "which object --to names: issue (default) or mr (pr is an alias)")
+	applyAttachOverride, _ := deskkit.RegisterOutboundOverride(fs, "deskfile", "attach")
 	if perr := fs.Parse(args); perr != nil {
 		// TIER TWO: `-h`/`--help` in any spelling reaches flag.Parse as flag.ErrHelp.
 		// A help screen is not a refusal and writes no audit row — the finalizer
@@ -940,6 +1385,9 @@ func cmdAttach(args []string) (err error) {
 			return deskkit.ErrHelpRequested
 		}
 		return deskkit.Refused("refused: bad flags: " + perr.Error())
+	}
+	if oerr := applyAttachOverride(); oerr != nil {
+		return oerr
 	}
 	kind, kerr := deskkit.ParseTargetKind(*kindFlag)
 	if kerr != nil {
@@ -976,7 +1424,9 @@ func cmdAttach(args []string) (err error) {
 	if berr != nil {
 		return berr
 	}
-	if serr := deskkit.ScanSurface("comment body", body); serr != nil {
+	// Pre-flight of the outbound-write check (see cmdNew); PostComment re-runs it at the seam.
+	if serr := deskkit.OutboundCheck(deskkit.OutboundWrite{Repo: *repo, Kind: deskkit.OutboundKindComment, NumberHint: *to,
+		Fields: []deskkit.OutboundField{{Name: "body", Text: string(body)}}}); serr != nil {
 		return serr
 	}
 	ac.bodyDigest = deskkit.Sha256Hex(body)

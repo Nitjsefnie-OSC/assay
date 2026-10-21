@@ -48,13 +48,32 @@ type fakeForge struct {
 	commitAuthorLogin string
 	commitErr         error
 	getCommitCalls    int
+	getCommitSHAs     []string
+	writeReceipt      *deskkit.WriteFileResult
 	// prHeadSHA is the HeadSHA GetPullRequest reports for the draft change opened on the GitLab
-	// landing path, and prErr its error. Empty HeadSHA leaves the online resolution with no sha.
+	// landing path, and prErr its error. It also supplies a deliberately different head in
+	// the receipt regression: attribution must use the write receipt instead.
 	prHeadSHA string
 	prErr     error
 	// onPut runs at the top of WriteFile, inside deskevidence's audit flock — the
 	// serialisation tests use it to observe what a concurrent invocation can do.
 	onPut func()
+
+	// cmpFiles are the files CompareRefs reports the branch changed since the base ref;
+	// cmpErr is its error; cmpIncomplete marks the commit interval as not fully read;
+	// cmpCalls records "<base>...<head>" per call.
+	cmpFiles      []deskkit.ChangedFile
+	cmpErr        error
+	cmpIncomplete bool
+	cmpCalls      []string
+	// cmpBehind is the BehindBy the compare reports (the home's HEAD not an ancestor).
+	cmpBehind int
+	// fileKinds is what ReadFile reports a path holds (deskkit.FileContent.Kind); a path
+	// not named is a regular file.
+	fileKinds map[string]string
+	// commitSHAs maps a ref GetCommit is asked for onto the SHA it resolves to; a ref not
+	// named resolves to itself.
+	commitSHAs map[string]string
 
 	hits    []string
 	reads   []deskkit.ReadFileInput
@@ -72,6 +91,100 @@ type fakeForge struct {
 	visibility      string
 	visibilityCalls int
 	visibilityRepo  deskkit.ForgeRepo
+
+	// readScript, when set for a path, serves that path's successive reads — every ReadFile
+	// AND WriteFile's own ExpectedSHA fetch, in call order — from successive entries (the last
+	// one repeats), each with a content-derived SHA: a file that changes between the reads a
+	// landing makes. Paths without a script are served from files with the fixed "sha-<path>".
+	readScript map[string][]string
+	readN      map[string]int
+	// expectedSHARefusals counts WriteFile calls refused by their ExpectedSHA precondition.
+	expectedSHARefusals int
+
+	// holds records the change number of every OpenMergeHold call (#2254); holdErr, when set,
+	// is OpenMergeHold's error. The default is a GitLab-shaped success, since the draft lane
+	// this fake drives is the closed-default-branch (GitLab) one.
+	holds   []int
+	holdErr error
+
+	// --- join-key reads -------------------------------------------------
+	// prs, when non-nil, makes GetPullRequest strict: it serves "owner/name#N" from the map and
+	// answers a 404 for anything else. Left nil, GetPullRequest keeps its draft-landing behaviour.
+	prs map[string]*deskkit.PullRequest
+	// defaultBranches serves RepoDefaultBranch per "owner/name" (unset -> "main");
+	// defaultBranchErr is its error.
+	defaultBranches  map[string]string
+	defaultBranchErr error
+	// compareStatus serves CompareRefs per "<owner/name>:<base>...<head>" (unset -> "ahead");
+	// compareErr, when set, is its error (the GitLab-shaped fake sets a could-not-check).
+	compareStatus map[string]string
+	compareErr    error
+	// visibilityByRepo serves RepoVisibility per "owner/name" (unset -> visibility); visErrByRepo
+	// is a per-repo read error ("*" matches every repo).
+	visibilityByRepo map[string]string
+	visErrByRepo     map[string]error
+	// joinReads records every record-driven read, in order: "GetPullRequest owner/name#N",
+	// "CompareRefs owner/name base...head", "RepoDefaultBranch owner/name", "RepoVisibility owner/name".
+	joinReads []string
+}
+
+// joinRead records one record-driven read (the caller holds f.mu).
+func (f *fakeForge) joinReadLocked(format string, a ...any) {
+	f.joinReads = append(f.joinReads, fmt.Sprintf(format, a...))
+}
+
+// RepoDefaultBranch answers the default-branch read the join-key dereference makes.
+func (f *fakeForge) RepoDefaultBranch(repo deskkit.ForgeRepo) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.joinReadLocked("RepoDefaultBranch %s", repo.Slug())
+	if f.defaultBranchErr != nil {
+		return "", f.defaultBranchErr
+	}
+	if b, ok := f.defaultBranches[repo.Slug()]; ok {
+		return b, nil
+	}
+	return "main", nil
+}
+
+// CompareRefs answers both compare reads a landing makes: the ancestry read of the join-key
+// dereference (compareStatus, compareErr, recorded in joinReads) and the decision gate's
+// branch-board read (cmpFiles, cmpErr, cmpIncomplete, recorded in cmpCalls).
+func (f *fakeForge) CompareRefs(repo deskkit.ForgeRepo, base, head string) (*deskkit.RefComparison, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := repo.Slug() + ":" + base + "..." + head
+	f.joinReadLocked("CompareRefs %s %s...%s", repo.Slug(), base, head)
+	f.cmpCalls = append(f.cmpCalls, base+"..."+head)
+	if f.compareErr != nil {
+		return nil, f.compareErr
+	}
+	if f.cmpErr != nil {
+		return nil, f.cmpErr
+	}
+	st := "ahead"
+	if s, ok := f.compareStatus[key]; ok {
+		st = s
+	}
+	return &deskkit.RefComparison{Files: f.cmpFiles, CommitsComplete: !f.cmpIncomplete, Status: st, BehindBy: f.cmpBehind}, nil
+}
+
+// serveLocked answers one read of path (the caller holds f.mu): a scripted path advances its
+// script, any other path is served from files.
+func (f *fakeForge) serveLocked(path string) (content, sha string, ok bool) {
+	if script := f.readScript[path]; len(script) > 0 {
+		if f.readN == nil {
+			f.readN = map[string]int{}
+		}
+		n := f.readN[path]
+		f.readN[path] = n + 1
+		if n >= len(script) {
+			n = len(script) - 1
+		}
+		return script[n], "sha-" + path + "-" + deskkit.Sha256Hex([]byte(script[n]))[:12], true
+	}
+	c, ok := f.files[path]
+	return c, "sha-" + path, ok
 }
 
 // RepoVisibility answers the public-repo gate's live-visibility read from THIS fake — the
@@ -81,6 +194,16 @@ func (f *fakeForge) RepoVisibility(repo deskkit.ForgeRepo) (string, error) {
 	defer f.mu.Unlock()
 	f.visibilityCalls++
 	f.visibilityRepo = repo
+	f.joinReadLocked("RepoVisibility %s", repo.Slug())
+	if err, ok := f.visErrByRepo[repo.Slug()]; ok {
+		return "", err
+	}
+	if err, ok := f.visErrByRepo["*"]; ok {
+		return "", err
+	}
+	if v, ok := f.visibilityByRepo[repo.Slug()]; ok {
+		return v, nil
+	}
 	if f.visibility != "" {
 		return f.visibility, nil
 	}
@@ -101,12 +224,16 @@ func (f *fakeForge) ReadFile(_ deskkit.ForgeRepo, in deskkit.ReadFileInput) (*de
 	defer f.mu.Unlock()
 	f.hits = append(f.hits, "GET "+in.File)
 	f.reads = append(f.reads, in)
-	c, ok := f.files[in.File]
+	c, sha, ok := f.serveLocked(in.File)
 	if !ok {
 		return nil, deskkit.Unverifiable("not found: "+in.File,
 			&deskkit.ForgeAPIError{Status: 404, Method: "GET", Path: in.File})
 	}
-	return &deskkit.FileContent{Content: []byte(c), SHA: "sha-" + in.File, Exists: true}, nil
+	kind := deskkit.FileKindRegular
+	if k, set := f.fileKinds[in.File]; set {
+		kind = k
+	}
+	return &deskkit.FileContent{Content: []byte(c), SHA: sha, Exists: true, Kind: kind}, nil
 }
 
 func (f *fakeForge) WriteFile(_ deskkit.ForgeRepo, in deskkit.WriteFileInput) (*deskkit.WriteFileResult, error) {
@@ -123,6 +250,14 @@ func (f *fakeForge) WriteFile(_ deskkit.ForgeRepo, in deskkit.WriteFileInput) (*
 		// The closed default branch: report the sentinel, record NO write.
 		return &deskkit.WriteFileResult{DefaultBranchNotWritable: true}, nil
 	}
+	if in.ExpectedSHA != "" {
+		// The backend's own pre-write fetch, then the conditional-write precondition — the
+		// shape both real backends implement (deskkit.WriteFileInput.ExpectedSHA).
+		if _, sha, ok := f.serveLocked(in.File); !ok || sha != in.ExpectedSHA {
+			f.expectedSHARefusals++
+			return nil, deskkit.Refused("fake: conditional write refused — " + in.File + " is no longer " + in.ExpectedSHA)
+		}
+	}
 	f.writes = append(f.writes, in)
 	f.putCalls++
 	f.putBranch = in.Branch
@@ -137,7 +272,10 @@ func (f *fakeForge) WriteFile(_ deskkit.ForgeRepo, in deskkit.WriteFileInput) (*
 	} else if author == "" {
 		author = verifierBotDisplay()
 	}
-	return &deskkit.WriteFileResult{Changed: true, SHA: "new-sha", Author: author}, nil
+	if f.writeReceipt != nil {
+		return f.writeReceipt, nil
+	}
+	return &deskkit.WriteFileResult{Changed: true, ContentID: "new-blob", CommitSHA: "new-sha", Author: author}, nil
 }
 
 func (f *fakeForge) CreateDraftChange(_ deskkit.ForgeRepo, in deskkit.DraftChangeInput) (*deskkit.PullRef, error) {
@@ -147,13 +285,32 @@ func (f *fakeForge) CreateDraftChange(_ deskkit.ForgeRepo, in deskkit.DraftChang
 	return &deskkit.PullRef{Number: 4242, URL: "https://forge.example/change/4242"}, nil
 }
 
-// GetPullRequest serves the head sha the online attribution resolution reads on the GitLab
-// draft-landing path (#1477). Only the HeadSHA field is populated (all deskevidence reads).
-func (f *fakeForge) GetPullRequest(_ deskkit.ForgeRepo, number int) (*deskkit.PullRequest, error) {
+// OpenMergeHold records the merge-hold the draft lane opens on the change it just created.
+func (f *fakeForge) OpenMergeHold(_ deskkit.ForgeRepo, number int) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.holds = append(f.holds, number)
+	if f.holdErr != nil {
+		return "", f.holdErr
+	}
+	return "disc-4242", nil
+}
+
+// GetPullRequest serves delivery joins and supplies a distinct draft head for the receipt
+// regression. Attribution must not read this mutable head as the landed commit.
+func (f *fakeForge) GetPullRequest(repo deskkit.ForgeRepo, number int) (*deskkit.PullRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.joinReadLocked("GetPullRequest %s#%d", repo.Slug(), number)
 	if f.prErr != nil {
 		return nil, f.prErr
+	}
+	if f.prs != nil {
+		if pr, ok := f.prs[fmt.Sprintf("%s#%d", repo.Slug(), number)]; ok {
+			cp := *pr
+			return &cp, nil
+		}
+		return nil, deskkit.Unverifiable("not found: change", &deskkit.ForgeAPIError{Status: 404, Method: "GET", Path: "pulls"})
 	}
 	return &deskkit.PullRequest{Number: number, HeadSHA: f.prHeadSHA}, nil
 }
@@ -165,10 +322,30 @@ func (f *fakeForge) GetCommit(_ deskkit.ForgeRepo, sha string) (*deskkit.RepoCom
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.getCommitCalls++
+	f.getCommitSHAs = append(f.getCommitSHAs, sha)
 	if f.commitErr != nil {
 		return nil, f.commitErr
 	}
+	if resolved, ok := f.commitSHAs[sha]; ok {
+		sha = resolved
+	}
 	return &deskkit.RepoCommit{SHA: sha, AuthorLogin: f.commitAuthorLogin}, nil
+}
+
+// stubAdmittedReceipt is the receipt the stubbed admission returns: a binding to the brief a
+// verify-outcome record target (docs/streams/verify-outcomes/<stream>/<NN>-<digest>.json) is
+// keyed to, so the writer's TARGET-TIE re-check of the final path has a real binding to hold.
+// Every admitted fixture includes a source; non-outcome targets need no brief tie.
+func stubAdmittedReceipt(target string) deskkit.VerifierReceipt {
+	r := deskkit.VerifierReceipt{Binding: deskkit.VerifierBinding{Source: strings.Repeat("a", 40)}}
+	rest, ok := strings.CutPrefix(target, deskkit.OutcomeRecordsDir+"/")
+	if !ok {
+		return r
+	}
+	stream, file, _ := strings.Cut(rest, "/")
+	nn, _, _ := strings.Cut(file, "-")
+	r.Binding.Brief = "docs/streams/" + stream + "/brief-" + nn + "-stub.md"
+	return r
 }
 
 // setupFake wires isolation: a temp HOME with the fixture roster (so trust/write-auth decisions
@@ -177,6 +354,30 @@ func (f *fakeForge) GetCommit(_ deskkit.ForgeRepo, sha string) (*deskkit.RepoCom
 // stdout/stderr.
 func setupFake(t *testing.T) (*fakeForge, *bytes.Buffer) {
 	t.Helper()
+	// General writer tests isolate this independent gate. The outcome-binding
+	// suite restores the captured production implementation and drives run().
+	oldObservationBinding := outcomeObservationBindingFn
+	outcomeObservationBindingFn = func(string, deskkit.Forge, deskkit.ForgeRepo, string, deskkit.VerifierReceipt, deskkit.WakeReceipt) error {
+		return nil
+	}
+	t.Cleanup(func() { outcomeObservationBindingFn = oldObservationBinding })
+	oldEvidenceBinding := outcomeEvidenceBindingFn
+	outcomeEvidenceBindingFn = func(string, deskkit.Forge, deskkit.ForgeRepo, string, deskkit.VerifierReceipt, string) error {
+		return nil
+	}
+	t.Cleanup(func() { outcomeEvidenceBindingFn = oldEvidenceBinding })
+	oldAdmission := verifierEvidenceAdmissionFn
+	verifierEvidenceAdmissionFn = func(_, _, target string, _ deskkit.Forge) (deskkit.VerifierReceipt, error) {
+		return stubAdmittedReceipt(target), nil
+	}
+	t.Cleanup(func() { verifierEvidenceAdmissionFn = oldAdmission })
+	oldValidate := receiptValidateFn
+	receiptValidateFn = func(string, deskkit.Forge, deskkit.ForgeRepo, string, string, deskkit.WakeReceipt) error { return nil }
+	t.Cleanup(func() { receiptValidateFn = oldValidate })
+	// Which forge software serves the repo: GitHub unless a test says otherwise.
+	oldKind := forgeKindFn
+	forgeKindFn = func(string, string) (deskkit.ForgeKind, error) { return deskkit.ForgeGitHub, nil }
+	t.Cleanup(func() { forgeKindFn = oldKind })
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -191,13 +392,21 @@ func setupFake(t *testing.T) (*fakeForge, *bytes.Buffer) {
 
 	oldForge := forgeForFn
 	forgeForFn = func(owner, name string) (deskkit.Forge, deskkit.ForgeRepo, error) {
-		return f, deskkit.ForgeRepo{Owner: owner, Name: name}, nil
+		return deskkit.OutboundChecked(f, "verifier"), deskkit.ForgeRepo{Owner: owner, Name: name}, nil
 	}
 	t.Cleanup(func() { forgeForFn = oldForge })
 
 	oldMint := mintTokenFn
 	mintTokenFn = func(string) error { ghToken = "test-verifier-token"; return nil }
 	t.Cleanup(func() { mintTokenFn = oldMint; ghToken = "" })
+
+	// verify-reset/03: the receipt derivation reads git history at the record's sha, which
+	// the plain-directory test roots do not have; outcomereceipt_test.go restores the real one.
+	oldReceipt := outcomeReceiptFn
+	outcomeReceiptFn = func(raw []byte, _ string, _ deskkit.Forge, _ deskkit.ForgeRepo, _, _ string) ([]byte, error) {
+		return raw, nil
+	}
+	t.Cleanup(func() { outcomeReceiptFn = oldReceipt })
 
 	oldGate := publicRepoGateFn
 	publicRepoGateFn = func(deskkit.RepoInfoFetcher, string, string) error { return nil }
@@ -218,8 +427,21 @@ func setupFake(t *testing.T) (*fakeForge, *bytes.Buffer) {
 	oldLintDiff := lintDiffFn
 	lintDiffFn = func(string, string, []byte) ([]string, error) { return nil, nil }
 	t.Cleanup(func() { lintDiffFn = oldLintDiff })
+	oldDecisionGate := decisionGateDiffFn
+	decisionGateDiffFn = func(string, string, []byte, bool, []byte, []boardEdit) ([]string, error) { return nil, nil }
+	t.Cleanup(func() { decisionGateDiffFn = oldDecisionGate })
+	oldBranchBoard := decisionGateBranchBoardFn
+	decisionGateBranchBoardFn = func(deskkit.Forge, deskkit.ForgeRepo, string, string, string) ([]boardEdit, error) { return nil, nil }
+	t.Cleanup(func() { decisionGateBranchBoardFn = oldBranchBoard })
+	oldLanded := landedClosureFn
+	landedClosureFn = func(root, target string, before, after []byte, exists bool, f deskkit.Forge, r deskkit.ForgeRepo, branch string) (string, string, func(), error) {
+		return root, "", func() {}, nil
+	}
+	t.Cleanup(func() { landedClosureFn = oldLanded })
 	oldOutcome := outcomeGuardFn
-	outcomeGuardFn = func(string, string, []byte, []byte, deskkit.Forge, deskkit.ForgeRepo, string) error { return nil }
+	outcomeGuardFn = func(string, string, string, []byte, []byte, deskkit.Forge, deskkit.ForgeRepo, string) error {
+		return nil
+	}
 	t.Cleanup(func() { outcomeGuardFn = oldOutcome })
 
 	// The verified-sidecar acceptance gate defaults to "accepts" so a verify-outcomes landing
@@ -443,7 +665,9 @@ func TestSecretScanRefusedNoRemote(t *testing.T) {
 	}
 }
 
-// TestOversizeRefused: a local file over the byte cap is refused before any forge call.
+// TestOversizeRefused: a local file over the byte cap is refused before the landing reads the
+// branch. It runs after the mint and admission (admitLanding), which this suite stubs, so
+// "reached the forge" below means the landing's own forge, not admission's record read.
 func TestOversizeRefused(t *testing.T) {
 	f, _ := setupFake(t)
 	big := strings.Repeat("x", maxBytes+1)
@@ -457,87 +681,30 @@ func TestOversizeRefused(t *testing.T) {
 	}
 }
 
-// bigVerifyOutcomesContent returns synthetic verify-outcomes.jsonl content of AT LEAST
-// minBytes, built from repeated realistic rows — not a single run of one repeated byte the
-// way strings.Repeat("x", n) is. It exercises the sidecar's real shape (many short JSON
-// lines) without also tripping BodyCheck's long-high-entropy-run secret heuristic, which a
-// giant single unbroken token (over a few hundred bytes) is exactly shaped to trip.
-func bigVerifyOutcomesContent(minBytes int) string {
-	var b strings.Builder
-	for i := 0; b.Len() < minBytes; i++ {
-		fmt.Fprintf(&b, `{"ts": "2026-09-07T01:19:23Z", "brief": "desk-tools/%d", "outcome": "verified", "rows_passed": 5, "rows_total": 5, "sha": "67abbac"}`+"\n", i)
-	}
-	return b.String()
-}
-
-// TestVerifyOutcomesSidecarOversizeAllowed is #1338's fail-first case: a sidecar just over the
-// general 262144-byte cap — the same size class that filed the issue (whose own trigger was
-// 291722 bytes). Before the fix this refused with "evidence file exceeds 262144 bytes (N)" —
-// the same shape as the cited "…(291722)" — because verify-outcomes.jsonl was judged against
-// the general maxBytes cap like any other evidence file. After the fix the override cap
-// (verifyOutcomesMaxBytes, 4 MiB) applies instead and the commit succeeds.
-func TestVerifyOutcomesSidecarOversizeAllowed(t *testing.T) {
+// TestVerifyOutcomesJsonlWriteRefusedRegardlessOfSize: #882's class guard
+// refuses ANY write to a shared appended docs/streams/*.jsonl log BEFORE the size check ever
+// runs — #1338's raised write-size override for this log is retired along with the log it
+// existed for; see TestAppendedLogWriteRefused for the class guard's own dedicated coverage.
+// This test is the narrow regression pin that the retirement did not silently leave the OLD
+// cap-allowed path reachable.
+func TestVerifyOutcomesJsonlWriteRefusedRegardlessOfSize(t *testing.T) {
 	f, errBuf := setupFake(t)
-	content := bigVerifyOutcomesContent(maxBytes + 1) // over the general cap, #1338's own size class
-	evidencePath := "docs/streams/verify-outcomes.jsonl"
-	root := rootWithFile(t, evidencePath, content)
-
-	if code := run([]string{"example-org/tracker", "main", "--evidence-file", evidencePath, "--root", root}); code != deskkit.ExitOK {
-		t.Fatalf("verify-outcomes.jsonl at %d bytes exit = %d (stderr %q), want %d",
-			len(content), code, errBuf.String(), deskkit.ExitOK)
-	}
-	if f.putCalls != 1 {
-		t.Fatalf("expected exactly 1 write to land, got %d (hits %v)", f.putCalls, f.hits)
-	}
-	if got := len(f.putContent); got != len(content) {
-		t.Fatalf("landed content length = %d, want %d", got, len(content))
-	}
-}
-
-// TestVerifyOutcomesSidecarStillCapped: the override is a raised ceiling, not an exemption
-// (#439's "an unscoped exemption fails OPEN" property, restated for this cap) — a
-// verify-outcomes.jsonl write past verifyOutcomesMaxBytes still refuses, naming that cap in
-// the message rather than the general one.
-func TestVerifyOutcomesSidecarStillCapped(t *testing.T) {
-	f, errBuf := setupFake(t)
-	content := strings.Repeat("x", verifyOutcomesMaxBytes+1)
+	content := strings.Repeat(`{"ts":"2026-09-07T01:19:23Z","brief":"example-stream/1","outcome":"verified"}`+"\n", 10)
 	evidencePath := "docs/streams/verify-outcomes.jsonl"
 	root := rootWithFile(t, evidencePath, content)
 
 	if code := run([]string{"example-org/tracker", "main", "--evidence-file", evidencePath, "--root", root}); code != deskkit.ExitRefused {
-		t.Fatalf("over-the-override-cap exit = %d, want %d", code, deskkit.ExitRefused)
+		t.Fatalf("verify-outcomes.jsonl write exit = %d (stderr %q), want %d (refused, class guard)", code, errBuf.String(), deskkit.ExitRefused)
 	}
 	if len(f.hits) != 0 {
-		t.Fatalf("oversize refusal still reached the forge: %v", f.hits)
-	}
-	wantMsg := fmt.Sprintf("evidence file exceeds %d bytes (%d)", verifyOutcomesMaxBytes, len(content))
-	if !strings.Contains(errBuf.String(), wantMsg) {
-		t.Fatalf("stderr = %q, want it to contain %q", errBuf.String(), wantMsg)
+		t.Fatalf("class-guard refusal still reached the forge: %v", f.hits)
 	}
 }
 
-// TestVerifyOutcomesShardOversizeAllowed: a future ROTATION shard (verify-outcomes-<tag>.jsonl,
-// #1338 part 2) gets the same raised cap as the canonical unsharded file — the write side must
-// not silently drop back to the general cap the moment the file is renamed for rotation.
-func TestVerifyOutcomesShardOversizeAllowed(t *testing.T) {
-	f, errBuf := setupFake(t)
-	content := bigVerifyOutcomesContent(maxBytes + 1)
-	evidencePath := "docs/streams/verify-outcomes-2026-10.jsonl"
-	root := rootWithFile(t, evidencePath, content)
-
-	if code := run([]string{"example-org/tracker", "main", "--evidence-file", evidencePath, "--root", root}); code != deskkit.ExitOK {
-		t.Fatalf("rotation shard at %d bytes exit = %d (stderr %q), want %d",
-			len(content), code, errBuf.String(), deskkit.ExitOK)
-	}
-	if f.putCalls != 1 {
-		t.Fatalf("expected exactly 1 write to land, got %d", f.putCalls)
-	}
-}
-
-// TestVerifyOutcomesSidecarNameNotOverridenOutsideDocsStreamsRoot: the override is keyed on
-// the file sitting DIRECTLY under docs/streams/ — a same-named file nested one level deeper
-// (a different stream's own artifact that happens to share the basename) must NOT inherit the
-// raised cap.
+// TestVerifyOutcomesSidecarNameNotOverridenOutsideDocsStreamsRoot: a same-named file nested one
+// level deeper than docs/streams/ (a different stream's own artifact that happens to share the
+// basename) is neither the retired shared-log shape NOR the new per-file record shape, so it is
+// judged by the general maxBytes cap alone — unchanged by #1338's retirement.
 func TestVerifyOutcomesSidecarNameNotOverridenOutsideDocsStreamsRoot(t *testing.T) {
 	f, _ := setupFake(t)
 	content := strings.Repeat("x", maxBytes+1)
@@ -1223,7 +1390,8 @@ func TestAppendOnlyFlagBlocksNonJSONLShrink(t *testing.T) {
 // statusgen PROBLEM or lands outside docs/streams/) ---
 
 // TestTargetOutsideDocsStreamsRefused: a target path at the repo root (the "stray root
-// file" main-red shape the issue names) is refused before any network call.
+// file" main-red shape the issue names) is refused before the landing reads the branch —
+// after the mint and admission (admitLanding), which this suite stubs.
 func TestTargetOutsideDocsStreamsRefused(t *testing.T) {
 	f, _ := setupFake(t)
 	target := "STRAY-ROOT-FILE.md"

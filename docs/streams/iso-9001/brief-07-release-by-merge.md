@@ -49,7 +49,7 @@ sources:
   - "`docs/streams/desk-supervision/brief-10-workflow-app-wiring.md` — the workflow App (workflows:write) provisioning gate. This brief does NOT depend on it: creating a TAG needs contents:write, not workflows:write, and the staged-copy route lands the workflow FILES today."
   - "GitHub docs, GITHUB_TOKEN + `Triggering a workflow from a workflow` (docs.github.com/actions) — push/tag events authorized by GITHUB_TOKEN do not create a new workflow run; workflow_dispatch/repository_dispatch via GITHUB_TOKEN do (post-2022-09, needs actions:write); a GitHub App installation token or a PAT is a distinct identity whose push/tag DOES trigger downstream workflows."
   - "freshness-checked 2026-09-22 @ origin/main — `git grep -n 'not recorded' .github/workflows/release.yml` returns the tag-push authorizer line; `test -f .github/workflows/release-on-merge.yml` is absent."
-version: 1
+version: 2
 id: 843f8df0-5723-4f26-a653-a1e508def1fa
 ---
 
@@ -70,18 +70,10 @@ touchpoint, in a different place, independent of the merge. None of the three is
 marker, and none shares its failure signal.
 
 files:
-- **new (staged)** `ci/staged-workflows/release-on-merge.yml` — the merge-detect-and-tag
-  workflow. Lands under `.github/workflows/` only by a maintainer promote (no App holds
-  workflow-push permission; GitHub hard-rejects an App push to `.github/workflows/*`).
-- **edit (staged)** `ci/staged-workflows/release.yml` — a staged twin of the LIVE release.yml,
-  re-based on it, adding ONLY the tag-push-path authorizer resolution + unmarked-tag refusal in
-  the `resolve` job. Additive; no step reordered.
-- **edit** `ci/staged-workflows/README.md` — the entries describing both files and their
-  one-time maintainer promote.
-- **new** `tools/desk/internal/deskkit/release_on_merge_test.go` — a source-coupling test in
-  the shape of `release_authorizer_test.go`, reading the STAGED workflow files (the live files
-  do not carry the wiring until promotion) and reddening if the release-by-merge wiring is
-  dropped, with a mutation control proving every guarded string is caught.
+- **new (staged)** `ci/staged-workflows/release-on-merge.yml` — the merge-detect-and-tag workflow. Lands under `.github/workflows/` only by a maintainer promote (no App holds workflow-push permission; GitHub hard-rejects an App push to `.github/workflows/*`).
+- **edit (staged)** `ci/staged-workflows/release.yml` — a staged twin of the LIVE release.yml, re-based on it, adding ONLY the tag-push-path authorizer resolution + unmarked-tag refusal in the `resolve` job. Additive; no step reordered.
+- **edit** `ci/staged-workflows/README.md` — the entries describing both files and their one-time maintainer promote.
+- **new** `tools/desk/internal/deskkit/release_on_merge_test.go` — a source-coupling test in the shape of `release_authorizer_test.go`, reading the STAGED workflow files (the live files do not carry the wiring until promotion) and reddening if the release-by-merge wiring is dropped, with a mutation control proving every guarded string is caught.
 - **specify only (task, not implemented here)** `deskrelease propose vX.Y.Z` — the desk verb
   that opens the release PR. Left as a task because opening a PR is a forge-write flow larger
   than this brief's diff; the interim is the documented worker flow below.
@@ -228,7 +220,7 @@ dispatches NO workflow — the merge does that.
 | 11 | `cd tools/desk && go test ./internal/deskkit/ -count=1 -run TestReleaseByMergeWiringMissingIsCaught` | exit 0 — mutation control: every removed guard string is caught |
 | 12 | `cd tools/desk && go test ./internal/deskkit/ -count=1 -run TestReleaseAuthorizerStampedFromReleaseWorkflow` | exit 0 — **neighbour row**: iso-9001/04's coupling test over the LIVE release.yml still passes (this brief did not touch the live file) |
 | 13 | `git grep -c 'NOT CAUGHT' -- ci/staged-workflows/release.yml` | exit 0; count ≥ 6 — **neighbour row**: the six release-blocking mutation assertions carried into the staged twin are intact |
-| 14 | `git diff --stat $(git merge-base refs/remotes/origin/main HEAD)..HEAD -- .github/workflows/` | exit 0; EMPTY — no live workflow file is touched (the deliverable is the staged copies). Base pinned to the merge-base so the row is reproducible as main advances |
+| 14 | `M=66904497980ac4d24e484f99ae3baceb83fce42f && ! git diff --quiet "$M^1" "$M" -- ci/staged-workflows/ && git diff --quiet "$M^1" "$M" -- .github/workflows/` | exit 0 — no live workflow file is touched by the implementing change (the deliverable is the staged copies). Judged against the implementing squash-merge commit M (PR #1489) alone, `M^1` to `M`, so the row is reproducible as main advances and is not the empty `merge-base origin/main HEAD..HEAD` range (HEAD on merged main). The `!` leg is the positive control: the same range DOES change `ci/staged-workflows/`, so the zero on `.github/workflows/` is a real absence, not a vacuous empty diff. Exit 1 if either leg fails |
 | 15 | `cd statusgen && go run . --root .. --lint` | exit 0 — the tree still lints clean |
 
 ## Evidence

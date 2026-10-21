@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -45,8 +46,24 @@ func cmdCheck(cell, cfgArg string) {
 	if policyErr != nil {
 		die("%s", policyErr)
 	}
+	if c.Harness == "cursor" {
+		if err := cursorConfigurationError(c.Kind, c.Env.Get("CELL_PROVIDER"), policy != nil); err != nil {
+			die("check: %v", err)
+		}
+	}
 	if policy != nil && (c.Kind == "container" || c.Kind == "scrubbed") {
 		die("model policy requires a house or k8s cell")
+	}
+	// The cheap-default reset a boot runs first, applied read-only before any model row
+	// resolves, so the rows report what the next boot runs.
+	resetMoves, resetErr := c.pendingModelReset(c.Env.Get("CELL_PROVIDER"))
+	modelResetRows := func() {
+		if resetErr != nil {
+			k.chk(false, "model reset: cell.env %v", resetErr)
+		}
+		for _, m := range resetMoves {
+			k.warn("model reset pending: %s (the next boot writes it)", m.notice())
+		}
 	}
 
 	if c.Kind == "container" {
@@ -63,18 +80,37 @@ func cmdCheck(cell, cfgArg string) {
 			}
 			fmt.Printf("[model] role=%s harness=%s model=%s\n", role, c.Harness, rm.Model)
 		}
+		c.checkCellDefaults(k)
+		modelResetRows()
+		// Every launch of a container cell refuses CELL_ROLE_CONTEXT, so its check must say so
+		// instead of passing: the row is a MISS and the exit is non-zero. The container's own
+		// check still runs. Nothing is printed for a cell that does not set the key.
+		if _, err := c.cellRoleContext(); err != nil {
+			k.chk(false, "%s", err)
+		}
 		c.containerRun("check")
+		if !k.ok {
+			exitWith(1)
+		}
 		return
 	}
 
 	fmt.Printf("[check] cell=%s dir=%s kind=%s forge=%s\n", c.Name, c.Dir, c.Kind, c.Forge)
+	c.checkCellDefaults(k)
+	modelResetRows()
 	// A scrubbed cell's whole point is that it never touches the operator's real config home —
 	// this row is n/a there (checkScrubbed proves the cell's OWN config home instead), unlike
 	// k8s/house where the cell's custody IS (a copy of, or a symlink to) that directory.
-	real := realConfigHome(c.Env)
+	// A scrubbed cell needs no operator home at all, so an unresolvable one only changes the
+	// wording of its n/a row and never stops the check; the k8s/house arm still refuses.
 	if c.Kind == "scrubbed" {
+		real, err := configHomeFor(runtime.GOOS, c.Env)
+		if err != nil {
+			real = "the operator's config home"
+		}
 		k.na("operator config home — not applicable on a scrubbed cell (it never reads %s; see the config-home rows below)", real)
 	} else {
+		real := realConfigHome(c.Env)
 		k.chk(isDir(real), "operator config home (symlink targets): %s", real)
 	}
 	k.chk(isRegular(filepath.Join(c.Config, "roster.env")), "roster: %s/roster.env", c.Config)
@@ -85,7 +121,9 @@ func cmdCheck(cell, cfgArg string) {
 	// affected by --model / DESK_MODEL_OVERRIDE: it has no --model flag and does not read the
 	// override, so this row reports what a PLAIN boot would resolve to.
 	theDeskModel := c.Env.GetOr("DESK_MODEL_the_desk", c.Env.Get("DESK_MODEL_DEFAULT"))
-	if policy != nil {
+	if c.Harness == "cursor" {
+		k.na("Claude coordinator pin — Cursor uses its own model namespace")
+	} else if policy != nil {
 		k.na("legacy coordinator pin — model policy takes precedence")
 	} else if isOpusPin(theDeskModel) {
 		k.chk(false, "the-desk model: the-desk runs on the top tier; an Opus pin is refused for the coordinator — resolved DESK_MODEL_the_desk=%s (from DESK_MODEL_the_desk or DESK_MODEL_DEFAULT); set DESK_MODEL_the_desk=fable (or another non-Opus id) in cell.env", theDeskModel)
@@ -105,6 +143,14 @@ func cmdCheck(cell, cfgArg string) {
 				continue
 			}
 			k.chk(true, "role %s: provider=%s harness=%s model=%s effort=%s source=%s sha256=%s", role, route.Provider, route.Harness, route.Model, route.Effort, policySource, policy.SHA256)
+			// The same per-role preflight `up` runs before opening windows (credential, harness
+			// on PATH, Claude version floor, settings conflict scan) — a MISS here is a boot `up`
+			// would refuse.
+			if err := c.policyPreflight(route, policyConfigDir(c.Env, cfgArg)); err != nil {
+				k.chk(false, "model policy: %s — %s", role, err)
+			} else {
+				k.chk(true, "model policy: %s", role)
+			}
 			continue
 		}
 		rm := c.resolveRoleModel(role, c.Harness)
@@ -117,6 +163,15 @@ func cmdCheck(cell, cfgArg string) {
 			k.chk(true, "model pin: role=%s harness=%s model=%s (from %s)", role, c.Harness, rm.Model, rm.Src)
 		}
 	}
+	// Per-role starting context (#2438). No rows at all unless CELL_ROLE_CONTEXT is set.
+	c.checkRoleContext(k, cfgArg, func(role string) string {
+		if policy != nil {
+			if route, err := policy.Resolve(role, "", "", ""); err == nil {
+				return route.Harness
+			}
+		}
+		return c.Harness
+	})
 
 	// The cell's DEFAULT provider. Unset is a legitimate n/a (Anthropic, the long-standing
 	// default) rather than a MISS — a provider is opt-in per cell. Values shown are the
@@ -158,6 +213,8 @@ func cmdCheck(cell, cfgArg string) {
 		} else {
 			k.na("provider %s: model — no %s and no preset; the role pin is exported as is", p, providerVar(p, "MODEL"))
 		}
+	} else if c.Harness == "cursor" {
+		k.na("provider — Cursor uses native harness authentication")
 	} else {
 		k.na("provider — CELL_PROVIDER unset (Anthropic, the default; set CELL_PROVIDER + CELL_PROVIDER_<NAME>_BASE_URL/_TOKEN_ENV in cell.env to switch it)")
 	}
@@ -209,12 +266,21 @@ func cmdCheck(cell, cfgArg string) {
 		}
 	}
 
-	k.chk(onPath("tmux"), "tmux (the always-works cockpit, and every other cockpit's fallback)")
+	if c.Kind != "house" {
+		k.chk(onPath("tmux"), "tmux (the always-works cockpit, and every other cockpit's fallback)")
+	}
 	// The COCKPIT row resolves exactly as `up` will and says why, so "which surface will my role
 	// windows appear in" is answerable before booting. An explicit CELL_COCKPIT that is not
 	// available is a MISS (it is what `up` would refuse on); `auto` can never MISS.
 	want, src := c.cockpitWant("")
 	if res := c.resolveCockpit(want, src); res.Err == "" {
+		if c.Kind == "house" {
+			if res.Cockpit == "tmux" {
+				k.chk(onPath("tmux"), "tmux (the selected cockpit)")
+			} else {
+				k.na("tmux — not required by selected %s cockpit", res.Cockpit)
+			}
+		}
 		fmt.Printf("  ok    cockpit: %s (%s)\n", res.Cockpit, res.Why)
 		// The same resolved value is what every role window exports as ASSAY_COCKPIT — the
 		// worker-desk worktree-create arm — so the row says which arm that is, not only which
@@ -312,10 +378,21 @@ func (c *Cell) checkK8s(k *checker) {
 // exists), every stream root in the map is a checkout carrying docs/streams/, the desk verbs are
 // installed, and the assay plugin is enabled for the checkout the windows will open in.
 func (c *Cell) checkHouse(k *checker, cfgArg string) {
-	cfg := resolveCfg(c.Env, cfgArg)
 	k.chk(isGitCheckout(c.Repo), "cell.env CELL_REPO is a git checkout: %s", c.Repo)
-	link, _ := os.Readlink(c.Config)
-	k.chk(link == realConfigHome(c.Env), "config home linked to the operator's: %s -> %s", c.Config, realConfigHome(c.Env))
+	// Require an independent expected resource: one that is not cell-owned (the
+	// cell link under any spelling, or anything inside a cell home), the same
+	// test capture applies. Active desk-tool config must agree with it.
+	// Directory identity still permits relative links and alternate spellings.
+	real := realConfigHome(c.Env)
+	active := mustResolve(configHomeFor(runtime.GOOS, c.Env))
+	linkNode, nodeErr := os.Lstat(filepath.Clean(c.Config))
+	linked, linkErr := os.Stat(c.Config)
+	target, targetErr := os.Stat(real)
+	used, usedErr := os.Stat(active)
+	k.chk(nodeErr == nil && linkNode.Mode()&os.ModeSymlink != 0 &&
+		!cellOwnedConfig(real, c.Home, c.Config) && linkErr == nil && targetErr == nil && usedErr == nil &&
+		linked.IsDir() && target.IsDir() && os.SameFile(linked, target) && os.SameFile(used, target),
+		"config home linked to the operator's: %s -> %s", c.Config, real)
 	k.chk(exists(filepath.Join(c.Home, ".gitconfig")), "gitconfig linked: %s/.gitconfig", c.Home)
 	k.chk(exists(filepath.Join(c.Home, ghConfigRelPath)), "gh config linked: %s/.config/gh", c.Home)
 	k.chk(c.rosterParses(), "roster parses under the cell home: deskroster repos --scope scan")
@@ -327,8 +404,17 @@ func (c *Cell) checkHouse(k *checker, cfgArg string) {
 	for _, v := range strings.Fields(houseVerbs) {
 		k.chk(isExecFile(filepath.Join(deskToolsBin(c.Env), v)), "desk verb: %s/%s", deskToolsBin(c.Env), v)
 	}
-	k.chk(onPath("claude"), "claude on PATH")
-	k.chk(c.pluginEnabled(cfg), "plugin assay@assay enabled for %s (config %s)", c.Repo, cfg)
+	if c.Harness == "cursor" {
+		k.chk(onPath("agent"), "Cursor Agent (agent) on PATH")
+		k.chk(c.cursorSkillsDiscoverable(), "Cursor role skills and bindings installed in actual role workspaces under %s/worktrees (deskinstall --harness cursor)", c.Dir)
+		k.na("Claude config/plugin — not required by Cursor")
+	} else if c.Harness == "codex" && c.Env.Get("CELL_MODEL_POLICY") == "" {
+		k.na("Claude config/plugin — not required by Codex")
+	} else {
+		cfg := resolveCfg(c.Env, cfgArg)
+		k.chk(onPath("claude"), "claude on PATH")
+		k.chk(c.pluginEnabled(cfg), "plugin assay@assay enabled for %s (config %s)", c.Repo, cfg)
+	}
 	k.na("cells config / apps.env / deskd App key — not applicable on a house cell (the operator's own config home is used as is)")
 }
 
@@ -438,56 +524,18 @@ func (c *Cell) checkCodexHarness(k *checker) {
 	authed := onPath("codex") && (exec.Command("codex", "login", "status").Run() == nil ||
 		exec.Command("codex", "login", "status", "--json").Run() == nil)
 	k.chk(authed, "codex authenticated (codex login status, or equivalent)")
-	k.chk(c.codexMultiAgentOn(), "[features] multi_agent = true (effective config, or a -c override applied)")
+	k.chk(c.codexMultiAgentOn(), "Codex multi_agent effective state is enabled (codex features list)")
+	for _, role := range c.Roles {
+		args, err := c.codexCapacityArgs(role)
+		if err != nil {
+			k.chk(false, "Codex %s capacity: %v", role, err)
+			continue
+		}
+		k.chk(true, "Codex %s launch capacity: %s (cell roster; excludes primary thread)", role, args[1])
+	}
 	k.chk(fileContains(filepath.Join(c.Repo, "AGENTS.md"), "Assay resident operating rules"),
 		"resident-rules fragment present: %s/AGENTS.md", c.Repo)
 	k.chk(c.codexSkillsDiscoverable(), "skills discoverable: marketplace plugin assay@assay, or .agents/skills/ placed")
-}
-
-// codexMultiAgentOn is true when `[features] multi_agent = true` resolves in codex's effective
-// config. Probed via a `codex config get`-style verb where the installed build advertises one —
-// codex's config-read surface has moved across releases, so it is never hard-coded to a single
-// spelling — falling back to a literal read of config.toml under CODEX_HOME. A `-c` override
-// given on the invocation itself is not visible here, which is why the row's text says "or -c
-// override applied".
-func (c *Cell) codexMultiAgentOn() bool {
-	home := c.Env.Get("CODEX_HOME")
-	if home == "" {
-		home = filepath.Join(c.Env.Get("HOME"), ".codex")
-	}
-	if helpHas("get", "codex", "config") {
-		out, err := exec.Command("codex", "config", "get", "features.multi_agent").Output()
-		if err == nil && strings.TrimSpace(string(out)) == "true" {
-			return true
-		}
-	}
-	f, err := os.Open(filepath.Join(home, "config.toml"))
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	insec := false
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := sc.Text()
-		if strings.HasPrefix(line, "[features]") {
-			insec = true
-			continue
-		}
-		if strings.HasPrefix(line, "[") {
-			insec = false
-		}
-		if insec && strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), " ")) == "multi_agent = true" {
-			return true
-		}
-		if insec {
-			t := strings.Join(strings.Fields(line), " ")
-			if t == "multi_agent = true" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // codexSkillsDiscoverable: either discovery arm satisfies invoke-by-name — arm A (marketplace

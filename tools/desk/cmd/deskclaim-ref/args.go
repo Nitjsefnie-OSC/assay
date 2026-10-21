@@ -3,7 +3,10 @@ package main
 import (
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -17,7 +20,17 @@ var buildStore = newForgeStore
 // positional <id> (anything not starting with "-") then flags, and routes to the verb.
 // It preserves the script's refusal/ordering exactly — repo resolution and the forge/credential
 // setup are checked before the verb runs, and an unknown flag or verb is a refusal (exit 5).
-func dispatchVerb(args []string) int {
+func dispatchVerb(args []string, sinks ...func(perfrec.Context)) int {
+	var pc perfrec.ContextInput
+	var once sync.Once
+	selectContext := func() {
+		once.Do(func() {
+			if len(sinks) > 0 && sinks[0] != nil {
+				sinks[0](perfrec.ResolveContext(pc))
+			}
+		})
+	}
+	defer selectContext()
 	verb := args[0]
 	rest := args[1:]
 
@@ -42,11 +55,15 @@ func dispatchVerb(args []string) int {
 		case "-h", "--help":
 			return dieUsage()
 		default:
+			if cli.ManualPerformance(&pc, rest[i], func() string { v, j := next(rest, i); i = j; return v }) {
+				continue
+			}
 			errf("refused: unknown flag %s", rest[i])
 			return exitRefused
 		}
 	}
 
+	selectContext()
 	repo := resolveRepo(repoFlag)
 	if repo == "" {
 		errf("unverifiable: could not resolve the target repo (pass --repo owner/name)")
@@ -57,8 +74,9 @@ func dispatchVerb(args []string) int {
 	}
 	// The store is the RESOLVER's answer, never this tool's choice: there is no flag that
 	// selects one. The forge-ref opener is installed so that, should the resolver resolve to
-	// the legacy store, it is built here with this invocation's credential; a configured store
-	// whose preconditions fail is a refusal (exit 6) and never becomes the forge-ref store.
+	// the legacy store (an unset key, or a valid key naming a store this build does not ship —
+	// medici-finance/assay#2753), it is built here with this invocation's credential; a shipped
+	// store whose preconditions fail is a refusal (exit 6) and never becomes the forge-ref store.
 	deskkit.SetForgeRefClaimStoreOpener(func(r string) (deskkit.ClaimStore, error) {
 		return buildStore(r, tokenFile)
 	})
@@ -100,7 +118,7 @@ func dispatchVerb(args []string) int {
 			}
 			return cmdProgress(id, owner, branch)
 		case "release":
-			return cmdRelease(id)
+			return cmdRelease(id, repo)
 		case "steal":
 			return cmdSteal(id, owner, reason)
 		case "show":

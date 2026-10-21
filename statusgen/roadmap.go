@@ -58,6 +58,10 @@ var roadmapHealthRules = []roadmapHealthRule{
 			}
 			// Find the critical-path briefs: in-progress or todo whose typed
 			// depends are ALL done/verified. Among those, the highest wave.
+			// Divergence (named, not aligned): this display read is
+			// status-only and does NOT apply targetSatisfies' depends: branch
+			// (a gate:human target at implemented with a strict PASS), so a
+			// brief Next-up already offers can be missing from this set.
 			type cand struct {
 				brief  Brief
 				stream *Stream
@@ -287,7 +291,7 @@ func stageCounts(s *Stream) map[string]int {
 func nextWave(s *Stream) int {
 	next := 0
 	for _, b := range s.Briefs {
-		if b.Status == "done" || b.Status == "verified" {
+		if b.Status == "done" || b.Status == "verified" || isWithdrawn(b.Status) {
 			continue
 		}
 		if next == 0 || b.Wave < next {
@@ -724,6 +728,9 @@ func renderRoadmap(streams []*Stream, rows []roadmapStreamRow, exceptions []road
 	totalBriefs := 0
 	for _, s := range streams {
 		for _, b := range s.Briefs {
+			if isWithdrawn(b.Status) {
+				continue // terminal, out of the portfolio denominator
+			}
 			totalCounts[b.Status]++
 			totalBriefs++
 		}
@@ -1099,6 +1106,15 @@ func runRoadmap(root, cadence string) int {
 	savedFindings := activeFindings
 	activeFindings = findings
 	defer func() { activeFindings = savedFindings }()
+
+	// Sibling-merge-unreconciled (siblingmerge.go) MUST run before nextUp() here
+	// too, same reasoning and same call shape as runNextUp (dispatchqueue.go): it
+	// mutates each checked-failed TODO row's Brief.MergedInSibling in place, which
+	// is what makes nextUp()'s eligibleBase exclusion (nextup.go) fire. Without it
+	// the roadmap deck's Next-up panel would show a row the STATUS.md board holds
+	// back as "merged in a sibling" as dispatchable. Notices are discarded — the
+	// deck renders its own health/blocker prose, never board NOTICE text.
+	_, _ = runSiblingMergeIfOptedIn(streams, root) // opt-in only: --sibling-merge or ASSAY_SIBLING_MERGE=1
 
 	// Compute Next-up (reuse nextUp from nextup.go without claim filtering).
 	// The zero ClaimView says so honestly, which also means a stream that

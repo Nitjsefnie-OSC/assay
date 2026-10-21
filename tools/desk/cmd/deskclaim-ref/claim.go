@@ -27,6 +27,14 @@ const (
 	exitUnverifiable = deskkit.ExitUnverifiable // 6
 )
 
+// exitPartial is the `list`-only PARTIAL-BLINDNESS code: the enumeration succeeded, at least one
+// claim was read and printed, and at least one claim ref could not be read. It sits outside the
+// deskkit refusal classes (3..6) on purpose, as loopengine's tool-local 7 does, so a caller can
+// tell "these claims, and these refs I could not see" apart from both a full listing (0) and a
+// total failure (6). It is never a pass: the listing it accompanies is incomplete, and a caller
+// that cannot act on a partial view treats it like 6 (fail closed), never like 0.
+const exitPartial = 7
+
 // refPrefix is the claim ref namespace on the forge — IDENTICAL to the bash script's
 // REF_PREFIX. See main.go's SCOPE NOTE on why it is not deskkit.ClaimRefsPrefix.
 const refPrefix = "refs/dispatch"
@@ -181,9 +189,16 @@ func dashOrValue(s string) string {
 
 // --- verbs ------------------------------------------------------------------
 
+// semantic: S-claim
 func cmdAcquire(id, owner, branch string) int {
+	if rc, stop := checkAliases(id, "pre"); stop {
+		return rc
+	}
 	switch store.CreateIfAbsent(id, claimMessage(id, owner, "claimed", branch, "")) {
 	case deskkit.ClaimWriteApplied:
+		if rc, stop := checkAliases(id, "post"); stop {
+			return rc
+		}
 		logf("acquired %s (owner=%s state=claimed) — %s/%s", id, owner, refPrefix, id)
 		return exitOK
 	case deskkit.ClaimWriteUnverifiable:
@@ -195,7 +210,7 @@ func cmdAcquire(id, owner, branch string) int {
 	ref, status := store.Read(id)
 	switch status {
 	case deskkit.ClaimReadFree:
-		errf("unverifiable: creating %s/%s was rejected but no claim exists", refPrefix, id)
+		errf("unverifiable: creating %s/%s was rejected but no claim exists%s", refPrefix, id, causeSuffix())
 		return exitUnverifiable
 	case deskkit.ClaimReadUnverifiable:
 		errf("unverifiable: creating %s/%s was rejected and the claim could not be read%s", refPrefix, id, causeSuffix())
@@ -240,6 +255,10 @@ func cmdProgress(id, owner, branch string) int {
 		errf("refused: %s is held by %s, not %s — only the holder advances its own claim", id, holder, owner)
 		return exitRefused
 	}
+	// Advancing a claim is still a claim on the PR: refuse while another spelling is live.
+	if rc, stop := checkAliases(id, "pre"); stop {
+		return rc
+	}
 	switch store.UpdateFrom(id, ref.Version, claimMessage(id, owner, "dispatched", branch, "")) {
 	case deskkit.ClaimWriteApplied:
 		logf("progressed %s (state=dispatched branch=%s owner=%s) — TTL now %dm", id, dashIfEmpty(branch), owner, dispatchedTTL())
@@ -257,12 +276,13 @@ func cmdProgress(id, owner, branch string) int {
 	}
 }
 
-func cmdRelease(id string) int {
+func cmdRelease(id, repo string) int {
 	outcome, existed := store.Remove(id)
 	switch outcome {
 	case deskkit.ClaimWriteApplied:
 		if existed {
 			logf("released %s", id)
+			writeReleasedRecord(id, repo)
 		} else {
 			logf("released %s (no claim — no-op)", id)
 		}
@@ -273,10 +293,35 @@ func cmdRelease(id string) int {
 	}
 }
 
+// writeReleasedRecord appends the `released` dispatch record after a
+// release that removed an EXISTING claim. dispatch_ref is the cwd worktree's assay.dispatchRef
+// only when it is a well-formed ref minted for THIS claim key — a release run from another
+// checkout, from a worktree of another item, or over a malformed ref gets null and pairs by
+// claim key. Every
+// dispatch-only field is null. Best-effort: a write failure warns on stderr and never changes the
+// release's exit code — the claim is already gone, and that is what the caller asked for.
+func writeReleasedRecord(id, repo string) {
+	rec := deskkit.DispatchRecord{
+		Event:    deskkit.DispatchEventReleased,
+		ClaimKey: id,
+		Repo:     repo,
+	}
+	if ref := deskkit.WorktreeDispatchRef(); deskkit.ValidDispatchRef(id, ref) {
+		rec.DispatchRef = &ref
+	}
+	if err := deskkit.AppendDispatchRecord(&rec); err != nil {
+		errf("WARNING: could not write dispatch record: %v", err)
+	}
+}
+
 func cmdSteal(id, owner, reason string) int {
 	if reason == "" {
 		errf("refused: steal requires --reason (a takeover with no recorded reason is a hand-delete)")
 		return exitRefused
+	}
+	// Before anything is read or replaced: a refused steal leaves the existing claim untouched.
+	if rc, stop := checkAliases(id, "pre"); stop {
+		return rc
 	}
 	msg := claimMessage(id, owner, "claimed", "", reason)
 	ref, status := store.Read(id)
@@ -289,6 +334,9 @@ func cmdSteal(id, owner, reason string) int {
 		// CAS losing, reported as "re-claimed during the steal".
 		switch store.CreateIfAbsent(id, msg) {
 		case deskkit.ClaimWriteApplied:
+			if rc, stop := checkAliases(id, "post"); stop {
+				return rc
+			}
 			logf("stole %s (owner=%s reason=%s)", id, owner, reason)
 			return exitOK
 		case deskkit.ClaimWriteRejected:
@@ -304,6 +352,9 @@ func cmdSteal(id, owner, reason string) int {
 	// old DELETE-then-POST race window).
 	switch store.UpdateFrom(id, ref.Version, msg) {
 	case deskkit.ClaimWriteApplied:
+		if rc, stop := checkAliases(id, "post"); stop {
+			return rc
+		}
 		logf("stole %s (owner=%s reason=%s)", id, owner, reason)
 		return exitOK
 	case deskkit.ClaimWriteRejected:
@@ -320,17 +371,47 @@ func cmdShow(id string) int {
 	switch status {
 	case deskkit.ClaimReadFree:
 		logf("FREE %s (no %s/%s in the repo)", id, refPrefix, id)
-		return exitOK
+		return printAliasHeld(id)
 	case deskkit.ClaimReadUnverifiable:
 		errf("unverifiable: could not read the claim on %s%s", id, causeSuffix())
 		return exitUnverifiable
 	}
+	printHeld(id, ref)
+	return printAliasHeld(id)
+}
+
+// printHeld writes the one HELD line `show` and `list` share — the wire contract
+// desksupervise/deskdispatch parse.
+func printHeld(id string, ref deskkit.ClaimStoreRecord) {
 	ageStr := "?"
 	if age, ok := ageMinutes(ref.Date); ok {
 		ageStr = strconv.Itoa(age)
 	}
-	logf("HELD %s — %s at=%s age=%sm", id, ref.Msg, ref.Date, ageStr)
-	return exitOK
+	logf("HELD %s — %s at=%s age=%sm%s", id, ref.Msg, ref.Date, ageStr, preparedNotLaunchedSuffix(ref.Msg, ref.Date))
+}
+
+// preparedNotLaunchedSuffix is what `show` and `list` append to a claim that was acquired and
+// never advanced: state=claimed past the claimed TTL. Its dispatcher prepared the dispatch
+// (claim, worktree, prompt) but never reached `progress`, so no agent is known to be running
+// behind the claim. The text goes AFTER age=, so the state=/age=/owner=/branch= readers
+// (desksupervise, deskdispatch) extract the same values with and without it. It is empty for
+// every other claim, so those lines are byte-identical to what they were. An unreadable date
+// yields no marker: a claim this tool cannot age is never reported as stalled.
+//
+// The window is claimedTTL(), the same value `acquire` reclaims at, so the marker and the
+// takeover flip at the same age. It states the age and the window rather than promising a
+// takeover: a claim whose recorded branch is on the remote is a branch-as-claim, which
+// `acquire` keeps whatever its age.
+func preparedNotLaunchedSuffix(msg, date string) string {
+	if fieldOf(msg, "state") != "claimed" {
+		return ""
+	}
+	age, ok := ageMinutes(date)
+	if !ok || age < claimedTTL() {
+		return ""
+	}
+	return fmt.Sprintf(" PREPARED-NOT-LAUNCHED (claimed %dm ago, no progress within the %dm window; "+
+		"the next acquire reclaims it unless its branch is on the remote)", age, claimedTTL())
 }
 
 func cmdList() int {
@@ -344,11 +425,35 @@ func cmdList() int {
 		logf("(no dispatch claims in the repo)")
 		return exitOK
 	}
-	rc := exitOK
+	// One unreadable ref must not blind the caller to every other claim (issue 2831): each ref is
+	// read on its own, a readable one prints its HELD line exactly as `show` does, and an
+	// unreadable one is named as could-not-check WITH its own cause — never dropped, never FREE.
+	// Removing or repairing a bad ref is a maintainer act; this verb only reports it.
+	listed, blind := 0, 0
 	for _, id := range ids {
-		if c := cmdShow(id); c != exitOK {
-			rc = c
+		ref, status := store.Read(id)
+		switch status {
+		case deskkit.ClaimReadHeld:
+			printHeld(id, ref)
+			listed++
+		case deskkit.ClaimReadFree:
+			// Advertised by the enumeration, gone by the read: released in between. Not a claim.
+			logf("FREE %s (no %s/%s in the repo)", id, refPrefix, id)
+		default:
+			errf("could-not-check: %s/%s%s", refPrefix, id, causeSuffix())
+			blind++
 		}
 	}
-	return rc
+	switch {
+	case blind == 0:
+		return exitOK
+	case listed == 0:
+		errf("unverifiable: none of the %d dispatch claim refs could be read — this listing shows nothing", blind)
+		return exitUnverifiable
+	default:
+		errf("partial: listed %d dispatch claim(s); %d claim ref(s) could not be read (exit %d) — "+
+			"the listing is INCOMPLETE, never idle; removing or repairing an unreadable ref is a maintainer act",
+			listed, blind, exitPartial)
+		return exitPartial
+	}
 }

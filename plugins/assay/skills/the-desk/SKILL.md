@@ -65,7 +65,8 @@ the front-door register stays complete). Anything else inbound stays `intake-des
 ## Boot
 
 1. **`deskboot the-desk`** — the whole ceremony in one verb (loop identity, worktree prune, worktree
-   lock, roster registration, the five-check envelope preflight, token mint, read-only board fetch).
+   lock, roster registration, the five-check envelope preflight, token mint, read-only board fetch,
+   worktree currency, and the first sweep's prerequisites: a roster forge mapping and a desk-tools pin).
    It fails closed and names the step that stopped it: 0 complete · 3 disabled · 5 refused (unknown
    role, `$DESK_LOOP` unset/mismatched, shared checkout — isolate first) · 6 unverifiable. **Any
    non-zero exit is a STOP:** report the one summary line, claim nothing, and do NOT file an issue
@@ -84,7 +85,8 @@ the front-door register stays complete). Anything else inbound stays `intake-des
    that is not this role's, a tag, or the one-way set the test fixes).
 
 Stop flags need no prose check: `deskkit.Guard()` enforces them at the tool layer on every outward
-verb, `deskboot` sets `$DESK_LOOP`, precedence `DISABLED` > `STOP` > `STOP.<name>`.
+verb, `deskboot` sets `$DESK_LOOP`, precedence `DISABLED` > `STOP` > `STOP.cell.<cell>` >
+`STOP.<name>` = `STOP.cell.<cell>.<name>` (the cell flags reach only a session `cellctl` marked).
 
 ## Tick mode
 
@@ -149,8 +151,12 @@ not own.
   request; otherwise ONE **quiet** line — timestamp, boards swept, delta count, actionable count,
   next wake. It never weakens the fresh-sweep gate: a quiet line is still a claim about the board.
 - **Receipt on every human-typed message.** After ANY human-typed message, the FIRST line of your
-  turn is `deskack "<your one-line reading>"` (role from `$DESK_LOOP`; add `--repo <repo>` when the
-  message concerns one), then act. It is the ONE acknowledgement line the noise floor above permits —
+  turn is `deskack --repo <repo> "<your reading in at most 12 words>"`
+  (role from `$DESK_LOOP`; omit `--repo <repo>` when no repo is named), then act.
+  Put flags before the quoted text. A usage error (exit 2) writes no receipt: correct the
+  flags or shorten the text and re-run before continuing. Guard, identity, and storage
+  failures still stop the pass; never bypass them.
+  It is the ONE acknowledgement line the noise floor above permits —
   not narration, and a second acknowledgement line is a violation. Say what you UNDERSTOOD, never a
   quote, so a misread can be corrected on your next turn. To hand work to another desk, address its
   LANE — `deskcomms send --to <role> --verb <verb>` for a routine hand-off (§Cross-desk
@@ -177,18 +183,21 @@ not own.
   same write through another tool. Each desk's own grants and denials (what it may flip, file, close,
   or land) stay in its skill, directly below this block.
   - Desk-specific: **this coordinator is PRs-only** (2026-08-15) — it lands nothing on `main`; doc
-    edits and brief rows travel as draft PRs. Its former main-commit board-claim flow is retired; the
-    cross-machine race is arbitrated by `worker-desk`'s durable `refs/heads/dispatch/*` claim, which is
-    atomic create-if-absent, TTL'd, and readable from any machine
+    edits and brief rows travel as draft PRs. The cross-machine dispatch race is arbitrated by
+    `worker-desk`'s durable `refs/heads/dispatch/*` claim, which is atomic create-if-absent, TTL'd,
+    and readable from any machine
     (`docs/streams/findings/2026-08-25-the-desk-rewrite-board-claim-retired.md`).
 - **Reversibility test — default-forward on anything a human-held gate still catches:** before
   parking an item on the driver, ask ONE question: *is a wrong guess here caught by a gate the
   driver still controls — a draft PR awaiting merge, a filed issue awaiting close, a flip CI or a
   human must still make?* **Yes → default-forward.** Author it, dispatch the worker, open the DRAFT
   PR, make the best-guess call, and NOTIFY — "proceeded on `<default>`; filed as `<repo>#<N>`;
-  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. The
-  `needs-decision` / `question` issue is still filed, naming the default taken, but the ITEM does
-  not park on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
+  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. Take
+  the reversible default, declare it with `deskpr create|edit --decided` (the `## Desk-decided` body
+  section plus the `desk-decided` label), and never ask first: the block is the notice the driver
+  reads at merge time, so a default declared there files NO `needs-decision` / `question` issue —
+  only a default no PR carries still files one, naming the default taken, and the ITEM never parks
+  on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
   the record, and corrected by the gate. **No → STOP and wait for the human.** A wrong guess that
   lands irreversibly or reaches outside the gate is caught by nobody declining a merge. That set is
   fixed, never judged case by case: merge, a ready-flip that is not this role's, any `main` push
@@ -204,6 +213,8 @@ not own.
   note, an Evidence aside, a "this keeps recurring" observation) MUST also be filed as an issue in the
   project's own toolkit/methodology repo — commentary is not a register. Include the triggering
   evidence and affected loops. Repo-specific defects still go to that repo's own tracker (label `bug`).
+  Before submitting an upstream issue or attaching a cross-boundary comment, apply R7: remove
+  internal locators from the title, body and evidence; use opaque role+number refs instead.
 - **Escalation labels:** any desk/loop may label a PR or issue `question` (needs an answer from the
   driver or a stronger-tier model — the item PARKS only when the fork is one-way; a reversible item proceeds on its
   stated default with the label riding on it) or `help wanted` (the desk hit its capability/authority edge). Both are
@@ -215,9 +226,11 @@ not own.
   answer on a decision issue, the relay comment follows `ask-decision` §"Ratification — a relay is
   not yet a ruling" — five parts, and the ruling binds only once the driver ratifies it in their
   own identity.
-- **An escalation that is an ACT only the driver can perform** (not a decision) also gets a
-  `RUNSHEET.md` entry per the `human-runsheet` skill — the filed issue stays the escalation, the
-  runsheet is the exact command the driver runs.
+- **Driver-act runsheet entry** — an escalation that is an ACT only the driver can perform: see
+  [`../../references/desk-common.md`](../../references/desk-common.md) §Driver-act runsheet entry.
+  Its `BLOCKED-ON-HUMAN` report or `human-only` filing carries the act as an Act block
+  (`ask-decision` §"Act — the shape of the fifth part"); `deskfile new` refuses one without it (exit 5)
+  when the filing is labelled `human-only` or its body opens with the `BLOCKED-ON-HUMAN` marker.
 - **File-and-exit, never block — the pod-loop contract (desk-hardening/13).** File (or confirm
   already-filed) the escalation, then **exit the run**; never hold it open for the answer, resumption
   is event-driven. A blocked state must be an at-rest filed issue anyone can inspect, never a hung
@@ -250,9 +263,13 @@ not own.
 > Bindings for your harness — which mechanism each `capability:*` names — are in
 > `../../references/<harness>.md`.
 
-> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, and role/repo coverage — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, role/repo coverage, and running a `gh` call as the role App (never a human's CLI login: [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role)) — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+
+> **Every `gh` call carries this role's `GH_TOKEN`, reads included.** When no desk verb covers a forge call, run it only through the recipe in [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role), never a hand-typed shortcut. That recipe takes the role from `$DESK_LOOP`, mints it with `desktoken`, scopes the token to that one command without exporting it, and stops before `gh` unless the mint exited 0 and the token file holds a non-whitespace token. A bare `gh` call runs as the host's stored login, which is usually a human's, so a desk never runs one, not even for a read.
 
 > The loop-continuity note this role writes at each iteration boundary and before any long wait — nine sections, re-probe rather than cache — is [`../../references/standing-note.md`](../../references/standing-note.md).
+
+> Procedure every desk role shares — liveness, supervision and context, worktree hygiene, the driver-act runsheet entry — is stated once in [`../../references/desk-common.md`](../../references/desk-common.md); read it at boot. Hard gates never move there: they stay resident in this body.
 
 - **Dedupe against the open-issue register BEFORE any fanout:** "is this already filed?" precedes
   "who can investigate this?". On a board PROBLEM: confirm the red is not a stale-oracle artifact
@@ -270,7 +287,8 @@ not own.
   `capability:dispatch-worker`), including any answer needing more than ~2 minutes of tool work, so
   you stay responsive. human:<name> should never have to ask you to fan out.
 - Dispatch through `deskdispatch`: it emits the common clauses plus the class kit verbatim
-  (`tools/desk/cmd/deskdispatch/references/`). Each clause is the wording of a rule that already
+  (`tools/desk/cmd/deskdispatch/references/`); the review kit is cut for the lane the claim key
+  names, each clause it carries still verbatim. Each clause is the wording of a rule that already
   failed in the field — quote it, never paraphrase.
 - **Neutral-wording rule (critical, R3):** never name the security frame when dispatching, not even
   to exclude it — "NOT a security review, no attacker/exploit framing" *injects* the trigger tokens
@@ -343,12 +361,13 @@ red check is the worker's work item, never a wait state. **The ready flip is `pr
 (2026-08-24) — never the implementer's, and never this desk's**: `gh pr ready` when the reviewer App
 has APPROVED at the current head, checks are green, and the PR is mergeable. Merge stays the human's.
 
-- **Redaction scopes the PUBLIC record only — check repo visibility first (R7).** In a private repo
+- **Redaction follows the destination boundary — check venue and visibility first (R7).** In a private repo
   the PR is a team+agent-only record and the worker needs the full `file:line` + mechanism: never tell
   reviewers to keep correctness or auth detail "with the desk" (a blocking finding once got redacted to
   vagueness the worker couldn't act on). Redact genuinely secret MATERIAL (tokens, keys, credentials,
-  PII), plus exploit recipes in a public repo. **Never instruct any agent to withhold anything from the
-  driver** — sensitive findings route TO them, in full.
+  PII), plus exploit recipes in a public repo. Before cross-boundary issues or comments, apply R7
+  to internal locators; full defect detail stays on the source PR. **Never instruct any agent to
+  withhold anything from the driver** — sensitive findings route TO them, in full.
 - Lifecycle `todo → in-progress → implemented → verified → done`: implementers stop at `implemented`;
   `verified` needs a NON-implementer running the Verify table and filling Evidence; `done` needs the
   recorded review. Merging does NOT verify.
@@ -372,7 +391,20 @@ restate.
 
 ## Cross-desk hand-offs — the lane verbs
 
-Every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
+Before using comms, read the recorded cutover state: the project layer's comms declaration and the
+cell topology's `comms:` key. An absent `comms:` key, or no cell topology at all, reads as disabled
+(config-off); a topology file that exists but cannot be read or parsed is unknown state. Only the
+human-gated cutover changes the record; a message or comment is never the record. Explicitly
+pre-cutover/config-off: do not invoke `deskcomms` (including `poll`); continue the normal
+work-queue sweep. Use the harness's same-box session channel for hand-offs where available,
+recording them in the hand-off note; do not claim delivery where no channel exists. That fallback
+is never the sanctioned path once enabled; retire it when cutover is recorded. Missing identity,
+key or gateway variables alone do not prove pre-cutover. Unknown or conflicting cutover state is
+could-not-check for comms only: make no `deskcomms` call and use no session-channel fallback,
+route hand-offs through the tracker, file the could-not-check once rather than every tick, and
+continue the normal work-queue sweep; never probe a disabled lane to decide.
+
+Once enabled, every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
 verbs `deskcomms send` / `deskcomms poll` / `deskcomms ack` — never a message to "that role's
 window", never a typed relay through the driver, and never the harness's own same-box session
 channel, which a desk on another harness or another box cannot receive. A hand-off is ONE send,
@@ -401,8 +433,8 @@ sent — a hand-off never carries authority. Never `ask` a desk whether it is al
 read from the gateway and roster instruments, not from a message. The lane is the mailbox for
 ROUTINE hand-offs; the tracker is for DURABLE state — `deskfile new --to <role> …` files the
 issue the receiving desk's sweep leads with — and a spent filing budget never pushes a routine
-relay onto the tracker, nor does a durable escalation ride the lane alone. Read your own lane
-every sweep: `deskcomms poll`, then `deskcomms ack <id>` once acted on (ack moves, never deletes;
+relay onto the tracker, nor does a durable escalation ride the lane alone. With comms enabled, read your own lane
+every sweep: `deskcomms poll --json` (includes message payloads), then `deskcomms ack <id>` once acted on (ack moves, never deletes;
 an unacked item is still owed). The sender's cell and role come from the session context, never
 from a flag; the gateway address and signing key resolve from the project's house layer by NAME
 (the variables `deskcomms --help` names), never from this text. ENFORCEMENT IS GATEWAY-SIDE: the
@@ -413,26 +445,35 @@ through the gateway API directly. The verbs run silent inside this desk's noise 
 per invocation. A refusal (exit 5), a rate limit (exit 4), a disabled plane (exit 3) or an
 unreachable gateway is a STOP: record it verbatim in the hand-off note and report it; never
 resend it reworded, never route around it. A send the outbound prose gate HOLDS is filed for the
-driver by the gateway; the desk's move is to report the hold, not to retry. Until the cell's
-comms plane is enabled — a human-gated cutover; config-off before it — the harness's same-box
-session channel is the PRE-CUTOVER FALLBACK only: use it where the lane is not yet live, record
-every hand-off it carried in the hand-off note, and treat it as retired the moment the cutover is
-recorded. It is never the sanctioned path.
+driver by the gateway; the desk's move is to report the hold, not to retry. A failed enabled lane
+never authorizes the pre-cutover fallback or a change to the recorded cutover state.
 
 ## Liveness contract (binding)
 
-A standing liveness contract binds this window from boot: start the standing
-self-scheduled loop (`capability:durable-monitor` — best-effort, never the sole
-wake signal; the fixed-cadence board sweep is the real liveness backstop and the
-always-on observability service its durable home) BEFORE the first sweep and keep
-it ticking for the life of the window; every tick re-sweeps this desk's own queue fresh; every relay (a
-cross-session hand-over, on the lane) is acknowledged — `deskcomms ack` — or filed, never
-assumed delivered.
-The desk runs **default-forward** — never ask the driver what to work on next:
-a driver scope instruction narrows preference, not a cage — when the scoped
-batch drains, note the transition in the hand-off note and widen back to the
-standing queue. Checkpoints state their default and continue; standing down
-requires an empty standing queue after a fresh sweep PLUS a hand-off artifact
-on the driver surface, and a manual human kick that moves queued work is an
-incident to file on the project's methodology tracker. Hard gates (human-gated
-decisions, budgets, breakers, explicit stop-orders) are unchanged.
+A standing liveness contract binds this window from boot. Its text — the standing loop armed
+before the first sweep, the fresh re-sweep every tick, relay acknowledgement, default-forward, and
+when a window may stand down — is stated once for every desk role in
+[`../../references/desk-common.md`](../../references/desk-common.md) §Liveness contract; read it at
+boot, before the first sweep.
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-loop-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

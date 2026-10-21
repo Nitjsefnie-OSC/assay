@@ -76,8 +76,7 @@ files:
   `Cause()`; `RefusedWithCause`)
 - `tools/desk/internal/deskkit/trace_test.go` (NEW)
 - `tools/desk/internal/deskkit/trace-mutations.json` (NEW - the `muhar` spec for row 16)
-- `tools/desk/cmd/deskdispatch/` (`exec.go`, `dispatch.go`, `worktree.go`, `main.go`, and a
-  new `trace_test.go`)
+- `tools/desk/cmd/deskdispatch/` (`exec.go`, `dispatch.go`, `worktree.go`, `main.go`, and a new `trace_test.go`)
 - `tools/desk/cmd/deskwt/` (`exec.go`, `main.go`, `trace_test.go`)
 - `tools/desk/cmd/desktoken/` (`desktoken.go`, `main.go`, `trace_test.go`)
 - `tools/desk/cmd/deskfile/` (`exec.go`, `main.go`, `trace_test.go`)
@@ -268,6 +267,365 @@ run reported **4 NOT CAUGHT** — the three per-shape redactor mutations and the
 one — because the mutation spec's `-run` filter did not reach the tests that cover them. The
 tests were right; the spec was under-scoped. Widening the filter brought all four to CAUGHT with
 no change to any assertion.
+### Non-implementer verifier run — 2026-09-16 verify-desk (desk-tools/21 dispatched verifier) — **VERIFY: PASS**
+
+Runner ≠ implementer. Own detached temp worktree off `origin/main`, offline (`KUBECONFIG=/dev/null`). Merged main `a4700d2b`.
+
+| # | Command | Expected | Observed | Date | Runner |
+|---|---------|----------|----------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0 | exit 0, silent | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 2 | `TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage` + `TestToolRunFailShapeAndCarriedDetail` | exit 0 | exit 0/0, both PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 3 | `TestReportErrorOffIsByteIdentical` + `TestReportErrorOnPrintsChainCommandsAndTimings` | exit 0 | exit 0/0, both PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 4 | `TestScrubRedactsEveryTransportShape` | exit 0 incl. negative control | exit 0; 7 subtests PASS, negative control confirmed | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 5 | `TestTraceNeverPrintsACredential` (SPOF row) | exit 0 | exit 0, PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 6 | `TestRefusedWithCauseStaysARefusal` + `TestTraceEnabledReadsTheEnvSpellings` | exit 0 | exit 0/0, both PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 7 | `TestClaimAcquireFailureNamesTheClaimToolsOwnMessage` + `TestGitOutFailureCarriesGitStderr` | exit 0 | exit 0/0, both PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 8 | `TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine` + `TestTraceIsOffByDefaultAndOutputIsUnchanged` | exit 0 | exit 0/0, both PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 9 | `TestRunGitFailureCarriesStderrCommandAndExitStatus` + `TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand` | exit 0 | exit 0/0, both PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 10 | `TestTokenPathNoticeIsPrintedOnStderrNotStdout` | exit 0 | exit 0, PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 11 | `TestDedupeSearchOutageNamesTheAPIStatus` + `TestGhStderrStripsControlBytes` (row's literal names) | exit 0 | exit 0 but "no tests to run" for BOTH — **neither name exists in the shipped `cmd/deskfile/` package** (false-green if trusted at face value). Actual shipped tests covering the same fact: `TestDedupeSearchPropagatesTheForgeDiagnosis` + `TestDedupeSearchControlBytesStrippedByBackend`, both run directly: PASS, satisfy the row's Expect column exactly. Documentation-currency drift (provisional names never updated post-merge), not a missing capability — filed as a light follow-up in this Evidence entry rather than a separate issue (session's per-repo new-issue budget already spent on this brief's own risk-value question) | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 12 | `go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | exit 0 | exit 0, all 6 packages `ok` | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 13 | `-run 'TestS2'` + `-run 'TestCorpus'` | exit 0 | exit 0/0; 9/10 S2 PASS, 1 SKIP by design (fixture absent, matches implementer's note); all 5 Corpus PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 14 | `gofmt -l` on brief-owned files + touched cmd dirs | empty | exit 1 whole-dir — a phantom_test.go file under cmd/deskdispatch is flagged, but that file predates this brief (commit 91a7f9208, unrelated), not in brief's `files:` list, untouched by this diff. Every brief-owned file independently confirmed gofmt-clean | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 15 | `cd statusgen && go run . --root .. --lint` | exit 0 | exit 0, LINT: PASS | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+| 16 | `go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0, baseline GREEN, mutations CAUGHT | exit 0 — baseline GREEN; 10/10 named mutations CAUGHT, 0 not-caught, 0 could-not-mutate | 2026-09-16 | verify-desk (desk-tools/21 dispatched verifier) |
+
+No invented scope — every row maps to a real brief requirement. Row 11's finding (above) is the only anomaly, and is a documentation/test-name drift, not a functional gap.
+
+**Risk-bearing value.**
+
+**RISK-VALUE: DERIVED** — `reSecretEnvAssign` credential-name allowlist (`scrub.go:41-42`, matching `TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|PAT`) — cross-checked against every uppercase env-var assignment in `tools/desk`: the only credential-bearing child-env override actually set anywhere (`GH_TOKEN`) is caught; non-secrets (`ASSAY_RUN_KEY`, `ASSAY_VERIFIER_PUBKEY`) correctly fall outside. A heuristic, not closed-form, matching the brief's stated over-redact-not-exhaustive posture.
+
+**RISK-VALUE: DERIVED** — `reURLUserinfo` / `reAuthHeader` transport regexes (`scrub.go:31,36`) match exactly the two concrete leak shapes the brief names, verified against the actual `GH_TOKEN`-authenticated URL construction the codebase performs.
+
+**RISK-VALUE: NAMED, NOT DERIVED** — `traceStepCap = 200` @ `internal/deskkit/trace.go:54` — an arbitrary ledger-length bound, low irreversibility (truncation is announced, not silent; bounds output size, not a security/authority boundary). Filed as a question: medici-finance/assay#1240 — not a blocker to this brief's flip.
+
+**VERIFY: PASS** — all 16 rows pass on merged main (row 11's stale-name issue resolved by running the actual shipped tests, which satisfy the fact). No FAIL, no could-not-check.
+
+### Non-implementer verifier run — VERIFY: BLOCKED — 2/16 pass, 14 could-not-check, 0 fail — 2026-09-23 claude-opus-4-8-verifier
+
+Runner is not the implementer; rows executed non-hermetically on darwin/arm64, go1.26.5, offline
+(`KUBECONFIG=/dev/null`), from a worktree cut detached at merged main
+`2a5c230efe9c29f17b9acf6aa798e3a0a2285fbb`. Fourteen of the sixteen Verify rows are `check:ci`;
+the hermetic `statusgen verifyrun` witness recorded all fourteen as could-not-run (its network-off
+sandbox needs Linux `unshare --net`; this host is darwin), so each is held COULD-NOT-CHECK with its
+direct non-hermetic run recorded (every one passed). Rows 5 and 16 are `check +mutation`, which
+verifyrun DID run and reported pass and which also passed directly — those two are PASS. The block
+is BLOCKED on the darwin execution-witness environment, not on the implementation. Supersedes the
+2026-09-16 pass on the open draft #1241.
+
+| # | Command | Expected | Observed (exit + key output) | Date | Runner |
+|---|---------|----------|------------------------------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0, no churn | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both silent across the module) | 2026-09-23 | claude-opus-4-8-verifier |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestToolRunSaid.*OwnMessage$' -count=1 && go test ./internal/deskkit/ -run '^TestToolRunFail.*CarriedDetail$' -count=1` | exit 0 — child's message not the config echo; the tool-said shape; errors.As reaches ExitError | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both tests pass; child's own message, the tool-said shape, errors.As reaches the exit-error) | 2026-09-23 | claude-opus-4-8-verifier |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestReportErrorOff.*Identical$' -count=1 && go test ./internal/deskkit/ -run '^TestReportErrorOn.*Timings$' -count=1` | exit 0 — OFF byte-identical; ON carries chain/commands/codes/timings | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both tests pass; OFF byte-identical, ON carries chain/commands/codes/timings) | 2026-09-23 | claude-opus-4-8-verifier |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestScrubRedacts.*TransportShape$' -count=1` | exit 0 — every transport shape redacted, negative control passes through unaltered | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (every transport shape redacted; negative control passes through unaltered) | 2026-09-23 | claude-opus-4-8-verifier |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | exit 0 — SPOF: token in argv+env+stderr absent from trace, redaction marked | PASS — exit 0 (SPOF row: a token planted in argv, environment and child stderr is absent from the trace, redaction marked); verifyrun witness also pass (sha256:d6dea0c13f7d) | 2026-09-23 | claude-opus-4-8-verifier |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestRefusedWithCause.*Refusal$' -count=1 && go test ./internal/deskkit/ -run '^TestTraceEnabled.*EnvSpellings$' -count=1` | exit 0 — a cause does not soften exit 5; empty/0 DESK_TRACE is OFF | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both tests pass; a cause does not soften exit 5; empty/0 DESK_TRACE is OFF) | 2026-09-23 | claude-opus-4-8-verifier |
+| 7 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestClaimAcquire.*OwnMessage$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestGitOutFailure.*GitStderr$' -count=1` | exit 0 — facts 1 and 2 closed | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both tests pass; facts 1 and 2 closed) | 2026-09-23 | claude-opus-4-8-verifier |
+| 8 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestWorktreeCreate.*CommandLine$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestTraceIsOff.*Unchanged$' -count=1` | exit 0 — deskwt's refusal (5) passes through, trace names argv+status, default output unmoved | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both tests pass; deskwt's refusal 5 passes through, trace names argv+status, default output unmoved) | 2026-09-23 | claude-opus-4-8-verifier |
+| 9 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestRunGitFailure.*ExitStatus$' -count=1 && go test ./cmd/deskwt/ -run '^TestDeskwtTraceOff.*TheCommand$' -count=1` | exit 0 — fact 5 closed, both directions of the switch | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both tests pass; fact 5 closed, both directions of the switch) | 2026-09-23 | claude-opus-4-8-verifier |
+| 10 | `cd tools/desk && go test ./cmd/desktoken/ -run '^TestTokenPathNotice.*NotStdout$' -count=1` | exit 0 — fact 3 closed; stdout EXACTLY the path, token value on neither stream | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (fact 3 closed; stdout is exactly the path, the token value reaches neither stream) | 2026-09-23 | claude-opus-4-8-verifier |
+| 11 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestDedupeSearchPropagates.*Diagnosis$' -count=1 && go test ./cmd/deskfile/ -run '^TestDedupeSearchControl.*Backend$' -count=1` | exit 0 — 401/403/429 tell apart, exit 6 unchanged, pre-existing control-strip survived | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (both deskfile tests pass — 401/403/429 tell apart, exit 6 unchanged, the pre-existing control-strip survived). Brief's literal test names — the outage-names-the-API-status and gh-stderr-strips-control-bytes tests — were renamed on merged main (post write-verbs-C migration off gh to the Forge backend); the corrected names run. Tracked in #1306 (the renamed row-11 test names) | 2026-09-23 | claude-opus-4-8-verifier |
+| 12 | `cd tools/desk && go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | exit 0 — every existing test of the five packages unchanged | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (6 ok packages — deskkit, untrustcorpus, deskdispatch, deskwt, desktoken, deskfile — 0 FAIL) | 2026-09-23 | claude-opus-4-8-verifier |
+| 13 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | exit 0 — control leak sweep, both halves | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (ok internal/deskkit for both the TestS2 and TestCorpus runs — the control leak-sweep passes; one S2 sweep-exclusions test skips by design, its private-tree fixture absent, matching the implementer note) | 2026-09-23 | claude-opus-4-8-verifier |
+| 14 | `cd tools/desk && gofmt -l internal/deskkit/trace.go internal/deskkit/runtool.go internal/deskkit/scrub.go internal/deskkit/exitcodes.go cmd/deskdispatch cmd/deskwt cmd/desktoken cmd/deskfile > /tmp/dt21-fmt.out; test ! -s /tmp/dt21-fmt.out` | exit 0 | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (gofmt list empty, no unformatted brief-owned file) | 2026-09-23 | claude-opus-4-8-verifier |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | 0 | COULD-NOT-CHECK — hermetic witness owed (darwin); direct run: exit 0 (LINT: PASS; NOTICEs only, none blocking) | 2026-09-23 | claude-opus-4-8-verifier |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0 — baseline GREEN, positive control CAUGHT, all ten mutations CAUGHT | PASS — exit 0 ("Harness healthy: baseline GREEN, positive control CAUGHT." "Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate."); verifyrun witness also pass (sha256:ae9535c6028c) | 2026-09-23 | claude-opus-4-8-verifier |
+
+RISK-VALUE (kit §4 — enumerated over the diff scope: the new deskkit files trace.go / scrub.go /
+runtool.go / exitcodes.go and the four verb retrofits; trigger fired fail-safe because the change
+touches a disclosure surface the brief itself flags):
+
+- RISK-VALUE: DERIVED — RefusedWithCause.Code = ExitRefused (5) @ tools/desk/internal/deskkit/exitcodes.go:158 — this is the top-ranked entry because a wrong value here is the named security hazard: a fail-closed refusal that gains a cause must NOT soften to ExitUnverifiable (6, retryable). Right value derived from definition + the brief's ground rule "a refusal stays a refusal, no exit code changes": RefusedWithCause is "Refused with the underlying cause preserved", and Refused = ExitRefused (5) at exitcodes.go:144, so the two must share the code. Independently pinned by row 6 (the refused-with-cause-stays-a-refusal test) and by row 16's inverse mutation (soften to exit 6 → CAUGHT).
+- RISK-VALUE: NAMED, NOT DERIVED — the three transport-shape redaction regexes reURLUserinfo @ scrub.go:31, reAuthHeader @ scrub.go:36, reSecretEnvAssign @ scrub.go:42 (the SPOF, deskkit.Scrub) — each is a literal pattern at a source line, but regex EXHAUSTIVENESS against every real-world secret shape is not closed-form derivable; the design is deliberately over-redaction-biased and bounded by the row-5 planted-secret table plus row 16's per-shape removal mutations (each CAUGHT). Missing derivation: proof the pattern set is complete rather than merely test-covered — inherent to a heuristic redactor, sanctioned by the brief's "biased to over-redact" posture. Not routed to human because the item is model-gated (all four risk answers no) and the bounding controls (rows 4, 5, 16) are green.
+- Reversible operational knobs ranked LAST, no derivation required (edit + redeploy fixes each): traceStepCap = 200 @ trace.go:54 (ledger cap, over-cap drops reported, not hidden); chain-depth guard = 32 @ trace.go:199 (cyclic-chain truncation); redactedMarker = "<redacted>" @ scrub.go:49 (display string). DESK_TRACE truthy set {1,true,yes,on} @ trace.go:98 is an enum, not a threshold; its negative control (empty/0 → OFF) is pinned by row 6.
+
+Supersedes the 2026-09-16 pass on the open draft #1241. RISK-VALUE carries one NAMED, NOT DERIVED entry (the three Scrub transport regexes); that question is filed as #1616 and must be answered before any flip. Row 11's literal test names are stale; corrected forms ran.
+
+**Evidence correction (2026-09-24).** Row 13's Observed says one S2 sweep-exclusions test skips by design, but its recorded command runs without `-v`, so it prints only `ok` — not the skip line. The command that supports the claim is `cd tools/desk && go test -v ./internal/deskkit/ -run 'TestS2' -count=1`; re-run at the verified sha `2a5c230e` it prints `--- SKIP: TestS2SweepExclusionsAreLive (0.00s)` among the TestS2 results, followed by `ok github.com/medici-finance/assay/tools/desk/internal/deskkit`. No state, count or heading changes.
+
+### Non-implementer verifier run — VERIFY: BLOCKED — 2/16 pass, 14 could-not-check, 0 fail — 2026-09-25 assay-verifier-app[bot]
+
+Runner is not the implementer. Run offline (`KUBECONFIG=/dev/null`) on darwin/arm64 against the
+merged tree `bb226e7d3ebb` (this PR's branch with main `89042b8f` merged in). The table below is
+the execution witness written by `statusgen verifyrun`, built from this tree. It is not
+hand-authored. Fourteen rows are `check:ci`, and verifyrun recorded each one as could-not-run
+because its network-off sandbox needs Linux `unshare --net` and this host is darwin (the same
+environment blocker as the 2026-09-23 run, tracked in #1800). Rows 5 and 16 (`check +mutation`)
+ran and passed. This run supersedes the 2026-09-16 PASS above, which predates the
+execution-witness gate. The board Status stays `implemented`.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage$' -count=1 && go test ./internal/deskkit/ -run '^TestToolRunFailShapeAndCarriedDetail$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestReportErrorOffIsByteIdentical$' -count=1 && go test ./internal/deskkit/ -run '^TestReportErrorOnPrintsChainCommandsAndTimings$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestScrubRedactsEveryTransportShape$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | pass exit=0 | sha256:049edd052a39 | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestRefusedWithCauseStaysARefusal$' -count=1 && go test ./internal/deskkit/ -run '^TestTraceEnabledReadsTheEnvSpellings$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestClaimAcquireFailureNamesTheClaimToolsOwnMessage$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestGitOutFailureCarriesGitStderr$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 8 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestTraceIsOffByDefaultAndOutputIsUnchanged$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 9 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestRunGitFailureCarriesStderrCommandAndExitStatus$' -count=1 && go test ./cmd/deskwt/ -run '^TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 10 | `cd tools/desk && go test ./cmd/desktoken/ -run '^TestTokenPathNoticeIsPrintedOnStderrNotStdout$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 11 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestDedupeSearchOutageNamesTheAPIStatus$' -count=1 && go test ./cmd/deskfile/ -run '^TestGhStderrStripsControlBytes$' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 12 | `cd tools/desk && go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 13 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 14 | `cd tools/desk && gofmt -l internal/deskkit/trace.go internal/deskkit/runtool.go internal/deskkit/scrub.go internal/deskkit/exitcodes.go cmd/deskdispatch cmd/deskwt cmd/desktoken cmd/deskfile > /tmp/dt21-fmt.out; test ! -s /tmp/dt21-fmt.out` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | could-not-run exit=- — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | pass exit=0 | sha256:76384c3d026e | 2026-09-25 | assay-verifier-app[bot] @ bb226e7d3ebb (on-behalf-of human:ian) (forge-identity) |
+
+Direct runs, recorded for information only; they do not replace the witness above. Same tree,
+darwin/arm64, offline, each Verify row's own command:
+
+- Rows 1–4, 6–10, 12–14: exit 0. Row 1 build and vet are silent. Rows 2–4, 6–10 and 13 print
+  `ok` for every package they name. Row 12 prints `ok` for all six packages (deskkit,
+  untrustcorpus, deskdispatch, deskwt, desktoken, deskfile). Row 14's gofmt list is empty.
+- Row 5: exit 0, `--- PASS: TestTraceNeverPrintsACredential`.
+- Row 11: exit 0, but both halves print `ok … [no tests to run]`. The row's literal test names
+  no longer exist in the deskfile package, so its exit 0 is vacuous and proves nothing (#1306;
+  lint flags the row `gotest-run-vacuous`). The renamed tests,
+  `TestDedupeSearchPropagatesTheForgeDiagnosis` and
+  `TestDedupeSearchControlBytesStrippedByBackend`, run directly: both `--- PASS`, exit 0. A
+  Linux witness of row 11 as written would record a pass it did not observe, so the row must be
+  re-pointed before any witness of it counts.
+- Row 15: exit 0, `LINT: PASS` on the final tree of this commit.
+- Row 16: exit 0, matching the witness pass.
+
+Security follow-up, re-checked at this tree: the error-composition path the security lane
+raised on this PR was fixed on main by #1443 (issue #1440). `FailVerbatim` now scrubs the
+caller's message, and the worktree-create step composes from the scrubbed `SaidAll()`. Both
+regression tests from that fix pass here: `TestFailVerbatimScrubsCallerComposedMessage` and
+`TestWorktreeCreateFailureScrubsDeskwtsSecretShapedStderr`, each `--- PASS`, exit 0. They are
+not in this brief's Verify table, and the SPOF row (5) still builds its error through `Fail`
+only. The table does not yet witness that path.
+
+RISK-VALUE (kit §4). Enumerated over the same scope as the 2026-09-23 run: trace.go, scrub.go,
+runtool.go and exitcodes.go in deskkit, plus the four verb retrofits. Every literal is
+unchanged at the line cited there. The #1443 delta adds a `Scrub(msg)` call and no literal.
+
+- RISK-VALUE: DERIVED — RefusedWithCause.Code = ExitRefused (5) @ tools/desk/internal/deskkit/exitcodes.go:158. A refusal that gains a cause must keep the code of `Refused` (exitcodes.go:144, ExitRefused = 5 at exitcodes.go:27). Softening it to 6 would make a fail-closed refusal read as retryable. Pinned by row 6 and by row 16's inverse mutation.
+- RISK-VALUE: NAMED, NOT DERIVED — reURLUserinfo @ scrub.go:31, reAuthHeader @ scrub.go:36, reSecretEnvAssign @ scrub.go:42. No test can show that a heuristic regex set covers every shape. Question #1616 is still open, and the security lane has since named two shapes these patterns miss. It must be answered before any flip.
+- Reversible knobs, ranked last: traceStepCap = 200 @ trace.go:54 (#1240), chain-depth guard 32 @ trace.go:199, redactedMarker @ scrub.go:49.
+
+**VERIFY: BLOCKED** — 2/16 pass, 14 could-not-check, 0 fail. Status stays `implemented`. To
+close it, three things are needed: a Linux (or in-container, #1491) witness of the 14
+`check:ci` rows, row 11 re-pointed (#1306), and an answer to #1616.
+
+### Non-implementer verifier re-run: 2026-10-02T21:29:46Z (UTC), assay-verifier-app[bot] (claude-opus-5-5[1m]) (on-behalf-of human:ian), merged main 5a108baba705c5f9b458501065fc52a12557c969
+
+Hand run of every Verify row on darwin/arm64, go1.27.1, in a temporary detached worktree at the
+merged head, with a throwaway HOME for every `go test`. This is NOT the execution witness; the
+witness result is recorded separately below. Verdict is unchanged from the 2026-09-25 record:
+BLOCKED.
+
+| # | Command | Expect | Observed (exit + key output line) | Date / runner |
+|---|---------|--------|-----------------------------------|---------------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0 | exit 0 — both silent across the module | 2026-10-02 assay-verifier-app[bot] |
+| 2 | `go test ./internal/deskkit/` for TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage, then TestToolRunFailShapeAndCarriedDetail | exit 0 | exit 0 — `ok  .../tools/desk/internal/deskkit 0.421s` and `ok ... 0.214s` | 2026-10-02 assay-verifier-app[bot] |
+| 3 | `go test ./internal/deskkit/` for TestReportErrorOffIsByteIdentical, then TestReportErrorOnPrintsChainCommandsAndTimings | exit 0 | exit 0 — `ok  .../internal/deskkit 0.208s` and `ok ... 0.229s` | 2026-10-02 assay-verifier-app[bot] |
+| 4 | `go test ./internal/deskkit/ -run '^TestScrubRedactsEveryTransportShape$' -count=1` | exit 0 | exit 0 — `ok  .../internal/deskkit 0.320s` | 2026-10-02 assay-verifier-app[bot] |
+| 5 | `go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | exit 0 | exit 0 — `ok  .../internal/deskkit 0.540s` | 2026-10-02 assay-verifier-app[bot] |
+| 6 | `go test ./internal/deskkit/` for TestRefusedWithCauseStaysARefusal, then TestTraceEnabledReadsTheEnvSpellings | exit 0 | exit 0 — `ok  .../internal/deskkit 0.195s` and `ok ... 0.211s` | 2026-10-02 assay-verifier-app[bot] |
+| 7 | `go test ./cmd/deskdispatch/` for TestClaimAcquireFailureNamesTheClaimToolsOwnMessage, then TestGitOutFailureCarriesGitStderr | exit 0 | exit 0 — `ok  .../cmd/deskdispatch 0.353s` and `ok ... 0.117s` | 2026-10-02 assay-verifier-app[bot] |
+| 8 | `go test ./cmd/deskdispatch/` for TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine, then TestTraceIsOffByDefaultAndOutputIsUnchanged | exit 0 | exit 0 — `ok  .../cmd/deskdispatch 0.202s` and `ok ... 0.167s` | 2026-10-02 assay-verifier-app[bot] |
+| 9 | `go test ./cmd/deskwt/` for TestRunGitFailureCarriesStderrCommandAndExitStatus, then TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand | exit 0 | exit 0 — `ok  .../cmd/deskwt 0.492s` and `ok ... 0.399s` | 2026-10-02 assay-verifier-app[bot] |
+| 10 | `go test ./cmd/desktoken/ -run '^TestTokenPathNoticeIsPrintedOnStderrNotStdout$' -count=1` | exit 0 | exit 0 — `ok  .../cmd/desktoken 0.438s` | 2026-10-02 assay-verifier-app[bot] |
+| 11 | `go test ./cmd/deskfile/` for TestDedupeSearchOutageNamesTheAPIStatus, then TestGhStderrStripsControlBytes | exit 0 — 401/403/429 tell apart, exit 6 unchanged, control-sequence strip survived | exit 0 but VACUOUS, counted as a non-pass — both invocations print `ok  .../cmd/deskfile 0.505s [no tests to run]`: neither named test exists on main. The package's trace tests are now TestDedupeSearchPropagatesTheForgeDiagnosis and TestDedupeSearchControlBytesStrippedByBackend; the row has not been re-pointed (#1306, open) | 2026-10-02 assay-verifier-app[bot] |
+| 12 | `go test -timeout 300s` over deskkit, deskdispatch, deskwt, desktoken, deskfile package trees, `-count=1` | exit 0 | exit 0 — six `ok` lines: deskkit 81.556s, deskkit/untrustcorpus 0.248s, deskdispatch 20.659s, deskwt 81.356s, desktoken 8.381s, deskfile 12.829s | 2026-10-02 assay-verifier-app[bot] |
+| 13 | `go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | exit 0 | exit 0 — `ok  .../internal/deskkit 1.083s` and `ok ... 0.863s` | 2026-10-02 assay-verifier-app[bot] |
+| 14 | `gofmt -l` over the four deskkit files and four cmd directories, redirected to a file, then `test ! -s` on it | exit 0 | exit 0 — listing file is 0 bytes. Deviation from the authored row: the listing was redirected to the verifier's own scratch directory rather than the system temp directory, to stay inside the isolation floor; the gofmt arguments are as authored | 2026-10-02 assay-verifier-app[bot] |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | 0 | exit 0 — `LINT: PASS` then `0` (NOTICE lines only, none on this brief) | 2026-10-02 assay-verifier-app[bot] |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0, every mutation CAUGHT | exit 0 — `Harness healthy: baseline GREEN, positive control CAUGHT.` and `Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate.` | 2026-10-02 assay-verifier-app[bot] |
+
+Hand-run tally: 15 of 16 rows pass (1-10, 12-16); row 11 exits 0 without executing any test.
+
+**Execution witness** (`statusgen verifyrun --brief <this brief> --dry-run`, statusgen v1.0.31, exit 2): 2 of 16 rows pass.
+
+- Rows 5 and 16 (class `check +mutation`): `pass exit=0` (sha256:8faac02138e6, sha256:ad915c0aecda).
+- Rows 1-4 and 6-15 (class `check:ci`, 14 rows): `could-not-run exit=-` — "check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin."
+- A second attempt with `--in-container` (the pinned harness image, digest-pinned) pulled the image and then REFUSED before running any row: "could-not-attribute — no executing identity is available (no GITHUB_ACTOR under GitHub Actions, no git user.name/user.email in this repo). Refusing to write a witness with no runner". Stopped there; no identity was supplied to get past it.
+- Nothing was written to the brief (dry-run); the worktree stayed clean.
+
+**Findings**
+
+1. Environment blocker unchanged — #1800 is still OPEN. The 14 `check:ci` rows still have no network-off witness; the hand run above shows the code is green but a hand run is not the witness the row class requires. These rows clear on a Linux runner that provides `unshare --net`.
+2. Check-definition defect unchanged — #1306 is still OPEN. Row 11 names two tests that no longer exist in the deskfile package, so its exit 0 proves nothing. Row 12 does run the two renamed successors (the whole deskfile package is green), so the behaviour is covered, but row 11 as authored cannot pass or fail until it is re-pointed. Even with a Linux witness, row 11 would record a vacuous pass.
+3. What changed on main since the 2026-09-25 record: the four command packages and the exit-code table file moved under later merges; the runner, trace, scrub, mutation-spec and the four trace test files are byte-identical to the recorded inputs. None of that changes a row result: no row that was could-not-run now runs under the witness, and no row regressed in the hand run.
+4. Row 16 lists ten mutations; all ten are still CAUGHT, including the three redactor shapes, the unconditional-trace mutation and the softened-refusal mutation.
+
+**Risk-bearing value** (carried from the previous record; scrub source is unchanged)
+
+- RISK-VALUE: NAMED, NOT DERIVED — reURLUserinfo = `://([^:/@\s]+):([^@\s]+)@` @ tools/desk/internal/deskkit/scrub.go:31, with reAuthHeader @ line 36 and reSecretEnvAssign @ line 42 — the tests and the mutation harness prove each shape redacts and that removing one is caught; they do not prove the three-shape set is SUFFICIENT against every credential form a child process can print. That sufficiency question is open on #1616 and was not derived here.
+- Reversible knobs, ranked last, no derivation owed: redactedMarker = `<redacted>` @ scrub.go:49; the DESK_TRACE truthy spellings in trace.go.
+
+VERIFY: BLOCKED — execution witness is 2 of 16: the 14 check:ci rows could-not-run on a darwin host with no network-off sandbox (#1800, open), and row 11 names tests that no longer exist (#1306, open); 15 of 16 rows are green by hand, status stays implemented
+
+### Non-implementer verifier re-run: 2026-10-11T10:30:01Z (UTC), assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian), merged main 251e9473928e6e8c8c5ffbd331833900331043f1
+
+Attestation: the admission receipt for this run is issue #2574, run 6f4be5f3bb8e6b9b5e80a90bea2934d4cec9326bb7a4cfdd1cac4e5574c28838, source 251e9473928e6e8c8c5ffbd331833900331043f1, model claude-opus-5-5, tier any. The witness below carries the Verification-Attestation line.
+
+Admission: `deskdispatch --check-verifier` exit 0 for this detached home at the source above,
+before any row ran. Hand run of every Verify row on darwin/arm64, go1.27.1, git 2.56.0, with a
+throwaway HOME, KUBECONFIG=/dev/null and no forge credential in the environment. Logs and the
+row 14 listing file were kept in the verifier's scratch directory, outside the home (row 14's
+redirect target is the only deviation from the authored command text).
+
+Two passes. The FIRST pass ran in the ambient house-cell environment on a heavily loaded host
+(load average 17-27 on 16 cores, about 13 concurrent go test processes from sibling verifiers).
+Rows 7, 8, 12 and 16 went red there for environmental reasons, recorded in the table. The
+SECOND pass re-ran exactly those four rows, same command text, with one change: the house
+variable ASSAY_GO_CACHE_POLICY unset (no CI runner carries it). All four went green.
+
+| # | Command | Expect | Observed (exit + key output line) | Date | Runner |
+|---|---------|--------|-----------------------------------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0 | exit 0, both silent across the module | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 2 | `go test ./internal/deskkit/` for TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage, then TestToolRunFailShapeAndCarriedDetail | exit 0 | exit 0, both `--- PASS`; `ok .../internal/deskkit 0.293s` and `ok ... 0.264s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 3 | `go test ./internal/deskkit/` for TestReportErrorOffIsByteIdentical, then TestReportErrorOnPrintsChainCommandsAndTimings | exit 0 | exit 0, both `--- PASS`; `ok ... 0.248s` and `ok ... 0.315s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 4 | `go test ./internal/deskkit/ -run '^TestScrubRedactsEveryTransportShape$' -count=1` | exit 0 | exit 0, `--- PASS: TestScrubRedactsEveryTransportShape`; `ok ... 0.233s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 5 | `go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | exit 0 | exit 0, `--- PASS: TestTraceNeverPrintsACredential`; `ok ... 0.272s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 6 | `go test ./internal/deskkit/` for TestRefusedWithCauseStaysARefusal, then TestTraceEnabledReadsTheEnvSpellings | exit 0 | exit 0, both `--- PASS`; `ok ... 0.260s` and `ok ... 0.267s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 7 | `go test ./cmd/deskdispatch/` for TestClaimAcquireFailureNamesTheClaimToolsOwnMessage, then TestGitOutFailureCarriesGitStderr | exit 0 | first pass exit 1: the test's dispatch stopped at storage admission (house cache policy, `advisory lock is held by another process`), so the claim step never ran (#2491). Second pass, policy unset: exit 0, both `--- PASS`; `ok .../cmd/deskdispatch 0.225s` and `ok ... 0.197s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 8 | `go test ./cmd/deskdispatch/` for TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine, then TestTraceIsOffByDefaultAndOutputIsUnchanged | exit 0 | first pass exit 1, same storage-admission cause as row 7 (#2491). Second pass, policy unset: exit 0, both `--- PASS`; `ok ... 0.228s` and `ok ... 0.226s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 9 | `go test ./cmd/deskwt/` for TestRunGitFailureCarriesStderrCommandAndExitStatus, then TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand | exit 0 | exit 0, both `--- PASS`; `ok .../cmd/deskwt 0.498s` and `ok ... 0.494s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 10 | `go test ./cmd/desktoken/ -run '^TestTokenPathNoticeIsPrintedOnStderrNotStdout$' -count=1` | exit 0 | exit 0, `--- PASS: TestTokenPathNoticeIsPrintedOnStderrNotStdout`; `ok .../cmd/desktoken 1.501s` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 11 | `go test ./cmd/deskfile/` for TestDedupeSearchOutageNamesTheAPIStatus, then TestGhStderrStripsControlBytes | exit 0, 401/403/429 tell apart, exit 6 unchanged, strip survived | exit 0 but VACUOUS, counted as a non-pass: both invocations print `ok .../cmd/deskfile [no tests to run]` because neither named test exists at this commit (#1306, open). The renamed successors TestDedupeSearchPropagatesTheForgeDiagnosis and TestDedupeSearchControlBytesStrippedByBackend were run separately: exit 0, both `--- PASS` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 12 | `go test -timeout 300s` over the deskkit, deskdispatch, deskwt, desktoken and deskfile package trees, `-count=1` | exit 0 | first pass exit 1: deskdispatch storage-admission failures (#2491) plus a 300s timeout, deskwt hit the 300s timeout under load, and deskkit's TestGuardStopFlags boundary subtest failed (`age 24h0m0s > 24h0m0s`). Second pass, policy unset: exit 0, six `ok` lines: deskkit 170.994s, untrustcorpus 0.116s, deskdispatch 91.806s, deskwt 215.309s, desktoken 24.324s, deskfile 79.600s | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 13 | `go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | exit 0 | exit 0, `ok .../internal/deskkit 1.531s` and `ok ... 1.020s`; not vacuous: `go test -list` matches 10 TestS2 and 5 TestCorpus tests | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 14 | `gofmt -l` over the four deskkit files and the four cmd directories, redirected to a file, then `test ! -s` on it | exit 0 | exit 0, listing file is 0 bytes (redirected into the verifier's scratch directory, not the system temp directory) | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | 0 | exit 0, `LINT: PASS` then `0` (NOTICE lines only) | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0, every mutation CAUGHT | first pass exit 1: `HARNESS BROKEN`, baseline RED because deskdispatch's trace tests hit the same storage-admission refusal (#2491). Second pass, policy unset: exit 0, `Harness healthy: baseline GREEN, positive control CAUGHT.` and `Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate.` | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+
+Hand-run tally: 15 of 16 rows green (1-10, 12-16), four of them (7, 8, 12, 16) only once the house
+cache policy was unset; row 11 exits 0 without executing a test.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage$' -count=1 && go test ./internal/deskkit/ -run '^TestToolRunFailShapeAndCarriedDetail$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestReportErrorOffIsByteIdentical$' -count=1 && go test ./internal/deskkit/ -run '^TestReportErrorOnPrintsChainCommandsAndTimings$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestScrubRedactsEveryTransportShape$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | pass exit=0 | sha256:d36b75c43761 | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestRefusedWithCauseStaysARefusal$' -count=1 && go test ./internal/deskkit/ -run '^TestTraceEnabledReadsTheEnvSpellings$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestClaimAcquireFailureNamesTheClaimToolsOwnMessage$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestGitOutFailureCarriesGitStderr$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 8 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestTraceIsOffByDefaultAndOutputIsUnchanged$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 9 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestRunGitFailureCarriesStderrCommandAndExitStatus$' -count=1 && go test ./cmd/deskwt/ -run '^TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 10 | `cd tools/desk && go test ./cmd/desktoken/ -run '^TestTokenPathNoticeIsPrintedOnStderrNotStdout$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 11 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestDedupeSearchOutageNamesTheAPIStatus$' -count=1 && go test ./cmd/deskfile/ -run '^TestGhStderrStripsControlBytes$' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 12 | `cd tools/desk && go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 13 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 14 | `cd tools/desk && gofmt -l internal/deskkit/trace.go internal/deskkit/runtool.go internal/deskkit/scrub.go internal/deskkit/exitcodes.go cmd/deskdispatch cmd/deskwt cmd/desktoken cmd/deskfile > /tmp/dt21-fmt.out; test ! -s /tmp/dt21-fmt.out` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | pass exit=0 | sha256:68bf1d41769d | 2026-10-11 | assay-verifier-app[bot] @ 251e9473928e+dirty (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#2574 run=6f4be5f3bb8e6b9b5e80a90bea2934d4cec9326bb7a4cfdd1cac4e5574c28838 source=251e9473928e6e8c8c5ffbd331833900331043f1 brief=docs/streams/desk-tools/brief-21-desk-trace-and-cause-carrying-errors.md model=claude-opus-5-5 tier=any
+
+**Execution witness** (the table directly above, written by `statusgen verifyrun --brief <this brief>`,
+statusgen v1.0.37, run from the home with ASSAY_GO_CACHE_POLICY unset, exit 2): 2 of 16 rows pass.
+
+- Rows 5 and 16 (class `check +mutation`): `pass exit=0` (sha256:d36b75c43761, sha256:68bf1d41769d).
+  The runner shows `+dirty` because the only change in the home at witness time was this
+  Evidence section.
+- Rows 1-4 and 6-15 (class `check:ci`, 14 rows): `could-not-run exit=-`. The check:ci network-off
+  sandbox is `unshare --net`, a Linux facility, and this host is darwin (#1800, open). The hand run
+  above covers these rows, but a hand run is not the witness this row class requires.
+
+**Findings**
+
+1. Environment blocker unchanged: #1800 is still open. The 14 `check:ci` rows have no
+   network-off witness. They clear on a Linux runner that provides `unshare --net`.
+2. Check-definition defect unchanged: #1306 is still open. Row 11 names two deskfile tests that
+   do not exist at this commit, so its exit 0 proves nothing. The renamed successors pass, both on
+   their own and inside row 12, so the behaviour is covered. Row 11 as authored cannot pass or
+   fail until it is re-pointed.
+3. Test hermeticity, already filed as #2491 (open): the deskdispatch package tests read the ambient
+   ASSAY_GO_CACHE_POLICY. In a house-cell shell whose cache lock is held by a sibling process,
+   every test that reaches storage admission fails with `storage-deferred`. That turned rows 7, 8
+   and 12 red, and it made row 16's mutation baseline RED (`HARNESS BROKEN`, run discarded). With
+   the variable unset, all four rows are green. This is about the test environment, not the
+   desk-tools/21 deliverable.
+4. Load sensitivity, NEW (no existing issue was found). On the first pass, host load was about 17-27 on 16
+   cores. In row 12, deskwt and deskdispatch hit the row's `-timeout 300s`. deskwt took 215s even on
+   the green second pass, against 81s on 2026-10-02. deskkit's TestGuardStopFlags subtest
+   "HEARTBEAT exactly at boundary → not stale" failed once (`age 24h0m0s > 24h0m0s`), which looks
+   like a wall-clock boundary race. It passed on the second pass. Neither is in this brief's code.
+   Row 12's 300s budget has little headroom on a shared host, and the boundary subtest is timing-fragile.
+5. Since the 2026-10-02 record, the runner, trace and scrub sources and the deskkit trace tests
+   have not changed. The exit-code file gained a ReadClass field and its accessor. The mutation
+   spec's deskwt-flatten entry was re-anchored to `held.settle(...)`, and that mutation is still
+   CAUGHT. All ten mutations are CAUGHT.
+
+**Risk-bearing value** (enumerated over the scrub, trace and runtool sources at this commit; the scrub source is byte-identical to the 2026-10-02 record)
+
+- RISK-VALUE: NAMED, NOT DERIVED — reURLUserinfo = `://([^:/@\s]+):([^@\s]+)@` @ tools/desk/internal/deskkit/scrub.go:31, with reAuthHeader @ line 36 and reSecretEnvAssign @ lines 42-43 — the tests and the mutation harness prove that each shape redacts and that removing any one of them is caught. They do not prove that the three-shape set is SUFFICIENT for every credential form a child process can print. That question is still open on #1616 and was not derived here.
+- Reversible knobs, ranked last, no derivation owed: redactedMarker = `<redacted>` @ scrub.go:49; traceStepCap = 200 @ trace.go:54; the DESK_TRACE truthy spellings `1`/`true`/`yes`/`on` @ trace.go:98.
+
+VERIFY: BLOCKED — the execution witness covers 2 of 16 rows. The 14 check:ci rows could not run on a darwin host with no network-off sandbox (#1800, open), and row 11 names tests that no longer exist (#1306, open). By hand, 15 of 16 rows are green; rows 7, 8, 12 and 16 needed the house cache policy unset (#2491). Status stays implemented.
+
+### Non-implementer verifier re-run: 2026-10-15, assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk), merged main 8efe5579d9253813835db650d45180eea76cf33e
+
+Run window: 2026-10-15T04:16:09Z (admission) to 2026-10-15T04:46:10Z (last row and probe finished), UTC.
+Delivering change: PR #729, squash commit 1003557e167b97c74534d83bf5e47811118fa39c (parent e82c565e).
+Later changes to the same files: #1443, #2364, #2719, #2853.
+
+Admission: `deskdispatch --check-verifier` exit 0 for this detached home at the source above, before
+any row ran. Every row was run by hand on darwin/arm64, go1.27.2, git 2.56.0. The environment was
+cleared and rebuilt with a throwaway HOME, GOCACHE and TMPDIR in the verifier's scratch directory
+outside the home, GOPROXY=off, GOTOOLCHAIN=local and KUBECONFIG=/dev/null. No house environment
+variables and no forge credential were set. Host load average was 16-38 on 16 cores throughout.
+Row 14's listing file was redirected into the scratch directory instead of the system temp
+directory. That is the only change from the authored command text.
+
+| # | Command | Expect | Observed (exit + key output line) | Date | Runner |
+|---|---------|--------|-----------------------------------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0 | exit 0, both silent | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 2 | row 2 as authored: two anchored `go test ./internal/deskkit/` runs, one per named test | exit 0 | exit 0; `ok .../internal/deskkit 0.324s` and `ok ... 0.276s`, neither says no tests to run | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 3 | row 3 as authored: two anchored `go test ./internal/deskkit/` runs (report-error off and on) | exit 0 | exit 0; `ok ... 0.267s` and `ok ... 0.367s`, neither says no tests to run | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 4 | row 4 as authored: one anchored `go test ./internal/deskkit/` run (scrub transport shapes) | exit 0 | exit 0; `ok ... 0.293s`, the test matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | exit 0 | exit 0; `ok ... 0.309s`, the test matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 6 | row 6 as authored: two anchored `go test ./internal/deskkit/` runs (refusal stays exit 5; env spellings) | exit 0 | exit 0; `ok ... 0.315s` and `ok ... 0.268s`, both matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 7 | row 7 as authored: two anchored `go test ./cmd/deskdispatch/` runs (claim step message; gitOut stderr) | exit 0 | exit 0; `ok .../cmd/deskdispatch 0.358s` and `ok ... 0.233s`, both matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 8 | row 8 as authored: two anchored `go test ./cmd/deskdispatch/` runs (worktree-create stderr; trace off by default) | exit 0 | exit 0; `ok ... 0.354s` and `ok ... 0.342s`, both matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 9 | row 9 as authored: two anchored `go test ./cmd/deskwt/` runs | exit 0 | exit 0; `ok .../cmd/deskwt 0.639s` and `ok ... 0.540s`, both matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 10 | row 10 as authored: one anchored `go test ./cmd/desktoken/` run | exit 0 | exit 0; `ok .../cmd/desktoken 0.699s`, the test matched | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 11 | row 11 as authored: two anchored `go test ./cmd/deskfile/` runs (the dedupe-search outage test, then TestGhStderrStripsControlBytes) | exit 0, 401/403/429 tell apart, exit 6 unchanged, strip survived | exit 0 but VACUOUS, counted as a non-pass: both print `ok .../cmd/deskfile [no tests to run]`. Neither named test is declared anywhere in the tree at this commit; they were renamed in #783. As a supplementary run, not counted as this row, the two renamed successors in deskfile's trace test file (forge-diagnosis propagation, with subtests 403, 429 and 401, and control bytes stripped by the backend), plus deskkit's TestForgeGitlabTierErrors, all exit 0 with `--- PASS` | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 12 | `cd tools/desk && go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | exit 0 | exit 1 on both passes, from the 300s package timeout only, with zero `--- FAIL` lines in either. Pass 1: deskkit, deskdispatch and deskwt all hit `panic: test timed out after 5m0s`; untrustcorpus, desktoken (61.1s) and deskfile (261.1s) were ok. Pass 2: deskkit ok 272.9s, untrustcorpus ok, deskdispatch ok 240.5s, desktoken ok 67.9s, deskfile ok 196.7s; deskwt timed out again. A diagnostic run of deskwt alone with a 900s budget gave exit 0, `ok .../cmd/deskwt 494.534s`, 247 PASS and 0 FAIL. Its slowest tests are not this brief's | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 13 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | exit 0 | exit 0; `ok ... 2.450s` and `ok ... 1.416s`. Not vacuous: `go test -list` matches 10 TestS2 and 5 TestCorpus tests | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 14 | `gofmt -l` over the four deskkit files and the four cmd directories, redirected to a listing file, then `test ! -s` on it | exit 0 | exit 0; the listing file is 0 bytes | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | 0 | `LINT: PASS` then `0`, with NOTICE lines only. For this brief, the notices flag vacuity-prone row shapes, the two dangling row-11 test names, and a risk-files cross-read: the brief declares a deskkit path that matches the security-path trigger while all four risk answers are no | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0, every mutation CAUGHT | exit 0; `Harness healthy: baseline GREEN, positive control CAUGHT.` and `Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate.` The home was unchanged afterwards (git status clean) | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+
+Tally: 14 of 16 rows pass (1-10, 13-16). Row 11 exits 0 without running a test. Row 12 is red on its
+300s budget, with no assertion failure.
+
+**Findings**
+
+1. Check-definition, row 11. The two named tests do not exist at this commit; they were renamed in
+   #783, previously recorded as #1306. The row cannot pass or fail until it is re-pointed. The
+   successors pass, but they cover a narrower deskfile-side property. The 401/403/429 tiers moved to
+   deskkit forge tests. The control-byte successor builds its fake from an already-stripped string,
+   so it shows only that deskfile does not reintroduce control bytes, not that the strip happens.
+2. Environment, row 12. On a host at load 16-38 on 16 cores, three packages exhausted the fixed
+   `-timeout 300s` with zero assertion failures. The deskwt package alone needs about 494s at this
+   load. The 300s budget has no headroom on a shared host. Re-run on an idle host or CI runner, with
+   the same command.
+3. NEW, security-relevant: the redactor misses two GitHub token prefixes. Scrub reuses the body
+   scanner's GitHub token pattern, which lists ghp_, github_pat_, ghs_ and gho_. GitHub's documented
+   prefixes also include ghu_ (user-to-server) and ghr_ (refresh). A probe test run against the real
+   Scrub on a scratch copy of this commit planted each prefix bare in a child-stderr-shaped line, with
+   no URL, header or NAME= around it. ghp_, gho_, ghs_ and github_pat_ were redacted; ghu_ and ghr_
+   were printed unredacted. The same pattern backs the outward-write body scan that the Context's
+   single-point-of-failure note names as the independent second layer. For these two prefixes, then,
+   both layers share one blind spot. Whether the body scan's other checks catch them was not probed.
+   This is outside every Verify row, and the brief's own risk note routes a credential that reaches
+   a trace to the human gate.
+
+**VERIFY: BLOCKED** — 14/16 rows pass. Row 11 is a check-definition defect (vacuous, renamed tests). Row 12 is environment-blocked (300s timeout under host load, zero assertion failures). Finding 3 (ghu_/ghr_ not redacted) needs a human decision on the sensitive-data answer. Status stays implemented.
+
+- RISK-VALUE: NAMED, NOT DERIVED — reGitHubToken = `(ghp_|github_pat_|ghs_|gho_)[A-Za-z0-9_]+` @ tools/desk/internal/deskkit/bodycheck.go:16, used by Scrub at scrub.go:75 — derivation against GitHub's documented token prefixes FAILS: ghu_ and ghr_ are absent, and a probe at this commit shows a bare token with either prefix passes Scrub unredacted (Finding 3).
+- RISK-VALUE: NAMED, NOT DERIVED — reURLUserinfo = `://([^:/@\s]+):([^@\s]+)@` @ tools/desk/internal/deskkit/scrub.go:31, with reAuthHeader @ line 36 and reSecretEnvAssign @ lines 42-43 — row 16 shows each shape redacts and that removing any one is caught. The sufficiency of the three-shape set for every transport form a child can print is not derived.
+- Reversible knobs, ranked last, no derivation owed: traceStepCap = 200 @ trace.go:54; redactedMarker = `<redacted>` @ scrub.go:49; DESK_TRACE truthy spellings `1`/`true`/`yes`/`on` @ trace.go:98, with empty and `0` off, matching the brief.
+
+Verification-Attestation: medici-finance/assay#3011 run=8bfbf62f9d7f0234acb60382953ea36f8badff1ee55da2bc89f1530010f37c25 source=8efe5579d9253813835db650d45180eea76cf33e brief=docs/streams/desk-tools/brief-21-desk-trace-and-cause-carrying-errors.md model=claude-opus-5-5 tier=any
 
 ## Review
 

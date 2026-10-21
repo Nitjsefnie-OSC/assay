@@ -4,8 +4,8 @@ package main
 //
 // deskevidence commits Evidence AS the verifier App via the Contents API, but derives the
 // witness Runner from the verifier WORKTREE's identity — the value #1490 saw come out wrong.
-// This gate refuses, before any network call, when the worktree the landing is authored from
-// carries commits ahead of the target branch that are not the verifier's.
+// This gate refuses, before the landing reads the branch, when the worktree the landing is
+// authored from carries commits ahead of the target branch that are not the verifier's.
 //
 // setupFake stubs the gate no-op for the general suite (its roots are not git repos); these
 // tests build a real git root and restore the real gate.
@@ -80,6 +80,20 @@ func gitRoot(t *testing.T, aheadName, aheadEmail string) string {
 
 func useRealPublishIdentityGate(t *testing.T) {
 	t.Helper()
+	admission := verifierEvidenceAdmissionFn
+	verifierEvidenceAdmissionFn = func(root, repo, target string, fg deskkit.Forge) (deskkit.VerifierReceipt, error) {
+		r, err := admission(root, repo, target, fg)
+		if err == nil {
+			c := exec.Command("git", "-C", root, "rev-parse", "HEAD")
+			b, e := c.Output()
+			if e != nil {
+				t.Fatal(e)
+			}
+			r.Binding.Source = strings.TrimSpace(string(b))
+		}
+		return r, err
+	}
+	t.Cleanup(func() { verifierEvidenceAdmissionFn = admission })
 	stub := publishIdentityGateFn
 	publishIdentityGateFn = productionPublishIdentityGateFn
 	t.Cleanup(func() { publishIdentityGateFn = stub })
@@ -126,7 +140,7 @@ func TestPublishIdentityGateSeamIsRealInProduction(t *testing.T) {
 	}
 	if err := productionPublishIdentityGateFn(deskkit.PublishIdentityInput{
 		Role: "verifier",
-		Commits: func(string, string) ([]deskkit.PublishCommit, error) {
+		Commits: func(string, deskkit.PublishRange) ([]deskkit.PublishCommit, error) {
 			return nil, deskkit.Unverifiable("seam probe", nil)
 		},
 	}); err == nil {

@@ -112,6 +112,30 @@ func (s *glStampServer) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		enc(s.mrJSON())
 	case r.Method == http.MethodPut && path == mrPath:
+		var payload struct {
+			Add    string `json:"add_labels"`
+			Remove string `json:"remove_labels"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		for _, l := range strings.Split(payload.Remove, ",") {
+			if l == "" {
+				continue
+			}
+			var keep []string
+			for _, v := range s.labels {
+				if v != l {
+					keep = append(keep, v)
+				}
+			}
+			s.labels = keep
+			s.events = append(s.events, glLabelEvt{Action: "remove", Label: l, User: "example-desk-bot[bot]"})
+		}
+		for _, l := range strings.Split(payload.Add, ",") {
+			if l != "" && !labelsPresent(s.labels, []string{l}) {
+				s.labels = append(s.labels, l)
+				s.events = append(s.events, glLabelEvt{Action: "add", Label: l, User: "example-desk-bot[bot]"})
+			}
+		}
 		enc(s.mrJSON())
 	case r.Method == http.MethodPost && path == "/api/v4/projects/example-org%2Fexample-project/labels":
 		w.WriteHeader(http.StatusCreated)
@@ -174,7 +198,7 @@ func glStampRun(t *testing.T, s *stub, root string, extra ...string) int {
 		{match: "remote get-url origin", stdout: "git@gitlab.com:" + glProject + ".git"},
 		{match: "deskwt add", stdout: "/private/tmp/worker-home"},
 	}
-	args := []string{"item-1", "--root", root, "--repo", glProject, "--pr", glMRIID,
+	args := []string{"example-project--pr-7", "--root", root, "--repo", glProject, "--pr", glMRIID,
 		"--model", "example-model-1", "--tier", "strong",
 		"--prompt-file", filepath.Join(t.TempDir(), "p.md")}
 	return run(append(args, extra...))
@@ -247,8 +271,8 @@ func TestGitLabStampReplacesAForeignAppliedStamp(t *testing.T) {
 	home, root := s.install(t)
 	plantScripts(t, root)
 	gl := installGLStamp(t, home)
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	gl.labels = []string{model, tier}
 	gl.events = []glLabelEvt{{"add", model, "some-other-user"}, {"add", tier, "some-other-user"}}
 
@@ -271,7 +295,7 @@ func TestGitLabStampReplacesAForeignAppliedStamp(t *testing.T) {
 }
 
 // A stamp already standing under the dispatcher is a NO-OP on GitLab too: no MR update
-// touches a dispatched-* label, so a re-dispatch neither churns the label events nor leaves
+// touches an authored-* label, so a re-dispatch neither churns the label events nor leaves
 // the MR briefly unstamped.
 func TestGitLabStampLeavesItsOwnStampAlone(t *testing.T) {
 	s := &stub{}
@@ -282,8 +306,8 @@ func TestGitLabStampLeavesItsOwnStampAlone(t *testing.T) {
 	if !ok {
 		t.Fatalf("the planted roster binds no App to the dispatcher role %q", deskkit.DispatcherRole)
 	}
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	gl.labels = []string{model, tier}
 	gl.events = []glLabelEvt{{"add", model, d}, {"add", tier, d}}
 
@@ -292,7 +316,7 @@ func TestGitLabStampLeavesItsOwnStampAlone(t *testing.T) {
 	}
 	noForgeCLI(t, s)
 	for _, b := range gl.puts() {
-		if strings.Contains(b, "dispatched-") {
+		if strings.Contains(b, "authored-") {
 			t.Errorf("the dispatcher rewrote its OWN standing stamp — an identical stamp is a no-op: %q", b)
 		}
 	}
@@ -306,7 +330,7 @@ func TestGitLabStampRefusesWhenTheHistoryReadFails(t *testing.T) {
 	home, root := s.install(t)
 	plantScripts(t, root)
 	gl := installGLStamp(t, home)
-	gl.labels = []string{deskkit.DispatchedModelPrefix + "example-model-1"}
+	gl.labels = []string{deskkit.AuthoredModelPrefix + "example-model-1"}
 	gl.failEv = true
 
 	rc := glStampRun(t, s, root)

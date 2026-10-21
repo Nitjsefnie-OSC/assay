@@ -1,4 +1,4 @@
-# Skills — assay methodology skills v0.1.0
+# Skills — assay methodology skills
 
 The Assay methodology skills, each as `<name>/SKILL.md`. When the plugin is
 installed they surface **namespaced** as `assay:<name>` — that namespacing is
@@ -16,10 +16,13 @@ domain-neutral, project skills carry a domain token; descriptions are triggers o
 |-------|---------------|------|
 | install | `assay:install` | Turnkey installer — invoke → self-installs the whole project setup (Unix-first) |
 | adopt | `assay:adopt` | Install/adopt runbook — scenario routing + PRIMITIVEs the turnkey installer wraps |
+| author-spec | `assay:author-spec` | Create, adopt or revise a sufficient specification before brief decomposition |
 | author-brief | `assay:author-brief` | Brief authoring methodology (portable core) |
+| cut-release | `assay:cut-release` | Cuts a versioned release and carries it to every consumer pin — four preconditions, both release runs (dry run first, then the publish) and their approvals handed to the driver as exact commands, hashes harvested only from the published `checksums.txt`, fix forward, never move a tag |
 | system-demo | `assay:system-demo` | Storyboard or build a seekable system demonstration around one user outcome, with explicit evidence provenance |
 | ask-decision | `assay:ask-decision` | Puts the pending human decisions to the driver one at a time — context, options with a recommended default, reply shape, verification — and relays each ruling back onto its issue |
 | human-runsheet | `assay:human-runsheet` | Writes the acts owed to the driver — not decisions, acts only the driver can perform — as exact `! <command>` lines with why, what was done instead, and the resume step |
+| session-coach | `assay:session-coach` | Reviews a session's own history and writes a three-part coaching note (what was worked on, what it cost with one cheaper routing choice, one process correction) outside any repository, never committed and never into a memory file |
 
 These are the portable, domain-neutral methodology skills every Assay bundle ships. A project
 authoring its own project-local skills follows the same naming convention above and keeps them in

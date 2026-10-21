@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,8 @@ import (
 
 	"github.com/medici-finance/assay/tools/desk/internal/acp"
 	"github.com/medici-finance/assay/tools/desk/internal/comms"
+	"github.com/medici-finance/assay/tools/desk/internal/commstransport"
+	"github.com/medici-finance/assay/tools/desk/internal/deskfilestub"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/runnertable"
 )
@@ -67,7 +70,9 @@ func TestMain(m *testing.M) {
 		runFakeContainedReader(mode)
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	// The gateway's quarantine filer runs deskfile from PATH: no test here may
+	// reach the real one.
+	os.Exit(deskfilestub.Run(m))
 }
 
 // runFakeContainedReader implements just enough of the ACP agent side to play
@@ -180,7 +185,11 @@ func runFakeContainedReader(mode string) {
 						},
 					})
 				}
-				report = fmt.Sprintf("fs-outcome=%s perm-outcome=%s\n%s\n", fsOut, permOut, os.Getenv("COMMSGW_FAKE_REPLY"))
+				// The outcomes ride on the answer's own line (the advisor
+				// journals the line naming its answer as the justification),
+				// behind a runner-CLI warning line, as a real runner can print.
+				report = fmt.Sprintf("Warning: Code Mode is unavailable; tool calls will fail closed.\nfs-outcome=%s perm-outcome=%s %s\n",
+					fsOut, permOut, os.Getenv("COMMSGW_FAKE_REPLY"))
 			default:
 				report = os.Getenv("COMMSGW_FAKE_REPLY") + "\n"
 			}
@@ -362,6 +371,9 @@ func startSocketServer(t *testing.T, s SocketServer) string {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
 	path := filepath.Join(dir, "gw.sock")
+	if runtime.GOOS == "windows" {
+		path = fmt.Sprintf(`\\.\pipe\assay-gw-test-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.ListenAndServe(path) }()
@@ -372,7 +384,7 @@ func startSocketServer(t *testing.T, s SocketServer) string {
 			t.Fatalf("SocketServer.ListenAndServe exited early: %v", err)
 		default:
 		}
-		if c, err := net.Dial("unix", path); err == nil {
+		if c, err := commstransport.Dial(path, 100*time.Millisecond); err == nil {
 			_ = c.Close()
 			return path
 		}
@@ -384,7 +396,7 @@ func startSocketServer(t *testing.T, s SocketServer) string {
 
 func socketSubmit(t *testing.T, path string, raw []byte) gwResponse {
 	t.Helper()
-	conn, err := net.DialTimeout("unix", path, 2*time.Second)
+	conn, err := commstransport.Dial(path, 2*time.Second)
 	if err != nil {
 		t.Fatalf("dial gateway socket: %v", err)
 	}

@@ -25,7 +25,10 @@ import (
 //	(e) if the PR is risk-classed — repo visibility (a PUBLIC repo always is, the public-repo risk rule)
 //	    or the repo's path triggers — an App review at the CURRENT head carries the
 //	    literal `Security-Review: pass` line (#216)
-//	TOCTOU: re-read the head immediately before the flip; if it moved, refuse
+//	(f) desk-decided (attention-budget/19, #1694): the SAME condition deskflip enforces —
+//	    deskkit.DeskDecidedRefusal, one shared implementation
+//	TOCTOU: re-read the PR immediately before the flip; if the head moved, refuse; and
+//	    re-run (f) against the re-read body, labels and reviews
 func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 	repo := owner + "/" + name
 
@@ -81,8 +84,9 @@ func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 		// unstamped (claimLiveness → deskkit review-claim family). This is the SAME shared reader
 		// the verdict path uses (review.go), so a flip and a verdict clear the floor on identical
 		// evidence; every uncertain path is Unknown, which leaves the stamp exactly as it stood.
-		fd := deskkit.ModelCapabilityFloor(tl, deskkit.IsDispatcherLogin, deskkit.ModelFloorOverrideEngaged(),
-			client.claimLiveness(repo, pr))
+		claim := client.claimLiveness(repo, pr)
+		fd := deskkit.ModelCapabilityFloor(tl, deskkit.IsStampAuthorityLogin, deskkit.ModelFloorOverrideEngaged(), claim)
+		fd.Message += claimReleaseNote(repo, pr, claim)
 		switch fd.Outcome {
 		case deskkit.FloorRefuse:
 			return refused("ready", repo, pr, head, fd.Message)
@@ -116,7 +120,16 @@ func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 		if err != nil {
 			return fromReadErr("ready", repo, pr, head, err)
 		}
-		state, vhead, found, noOpApproval := latestAppVerdict(reviews)
+		// #3093: the forge can re-anchor an older review's commit_id onto a newer head. Every
+		// GRANT this verb reads (gate (b)'s APPROVED, the external-prerequisite exemption's
+		// citing APPROVEs, gate (e)'s security pass) is decided on grantReviews — the same
+		// list with each grant at head that was submitted BEFORE the head commit's committer
+		// date removed. Blocks are never removed. An unreadable head date refuses here.
+		grantReviews, err := withoutStaleGrants(client, reviews, head, stderr)
+		if err != nil {
+			return fromReadErr("ready", repo, pr, head, err)
+		}
+		state, vhead, found, noOpApproval := latestAppVerdict(grantReviews)
 		if !found {
 			return refused("ready", repo, pr, head,
 				"no APPROVED/CHANGES_REQUESTED CORRECTNESS verdict from "+reviewerBotDisplay()+
@@ -138,7 +151,7 @@ func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 			// securityFail is passed in so the exemption and gate (e0) cannot disagree about
 			// the same retraction. A declared-but-unverified claim refuses WITH its reason;
 			// an undeclared CR keeps the ordinary refusal verbatim.
-			out := clearedByExternalPrereq(reviews, head, securityVerdictStanding(reviews, head) == secFail)
+			out := clearedByExternalPrereq(grantReviews, head, securityVerdictStanding(grantReviews, head) == secFail)
 			if out.declared && out.decision.Cleared {
 				fmt.Fprintln(stderr, "deskpost: external-prerequisite exemption cleared the standing "+
 					"CHANGES_REQUESTED at "+short(head)+" — "+out.decision.Reason)
@@ -215,7 +228,7 @@ func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 		// reduction. Open-PR heads have relied on exactly that accident; splitting the
 		// lanes without this check would have converted them from blocked to flippable on
 		// any non-risk-classed path.
-		secv := securityVerdictStanding(reviews, head)
+		secv := securityVerdictStanding(grantReviews, head)
 		if secv == secFail {
 			return refused("ready", repo, pr, head,
 				"an App review carries a standing 'Security-Review: fail' — the security verdict is "+
@@ -249,22 +262,48 @@ func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 			}
 		}
 
-		// TOCTOU: re-read the head immediately before the flip. If it moved since the
+		// (f) desk-decided (attention-budget/19, #1694). deskflip refuses a PR whose
+		// Desk-decided block does not parse, whose desk-decided label and block disagree, or
+		// that carries a standing reviewer `Undeclared-desk-decision:` finding at head. This
+		// verb performs the identical markPullRequestReadyForReview mutation, so it must clear
+		// the identical condition — the same "both flip verbs MUST clear the same floor"
+		// invariant the model floor above states. It is the ONE shared implementation
+		// (deskkit.DeskDecidedRefusal), not a port, so the two verbs cannot drift apart. The
+		// body and labels come from the getPR read above and the reviews from gate (b)'s
+		// read; either read failing has already returned could-not-check, so this is never
+		// evaluated on an unread label or block.
+		if reason := deskDecidedRefusal(pr, info, reviews, head); reason != "" {
+			return refused("ready", repo, pr, head, reason)
+		}
+
+		// TOCTOU: re-read the PR immediately before the flip. If the head moved since the
 		// checks above, refuse — the verified state is stale (GitHub's ready mutation has
 		// no compare-and-swap).
-		head2, err := client.getPRHead(pr)
+		info2, err := client.getPR(pr)
 		if err != nil {
 			return fromReadErr("ready", repo, pr, head, err)
 		}
+		head2 := info2.Head.SHA
 		if head2 != head {
 			return refused("ready", repo, pr, head,
 				"head moved during checks ("+short(head)+" -> "+short(head2)+") — no flip; re-run against the new head")
+		}
+		// A stable head is not a stable desk-decided answer: an `Undeclared-desk-decision:`
+		// finding posted at this same head during the checks, or a label/body edit between the
+		// reads, moves no head. (f) is re-run against a fresh read of both, exactly as
+		// deskflip's head-stable re-gate re-runs it (review finding F2 on attention-budget/19).
+		reviews2, err := client.listReviews(pr)
+		if err != nil {
+			return fromReadErr("ready", repo, pr, head, err)
+		}
+		if reason := deskDecidedRefusal(pr, info2, reviews2, head); reason != "" {
+			return refused("ready", repo, pr, head, reason)
 		}
 
 		if opts.dryRun {
 			return dryRun("ready", repo, pr, head,
 				"DRY RUN: every ready precondition holds at "+short(head)+" (open+draft, trusted author, "+
-					"App APPROVED at head, CI green, security-review gate satisfied, head stable) — "+
+					"App APPROVED at head, CI green, security-review gate satisfied, desk-decided clear, head stable) — "+
 					"stopped before markPullRequestReadyForReview")
 		}
 		if err := client.markReadyForReview(info.NodeID); err != nil {
@@ -272,6 +311,19 @@ func runReady(owner, name string, pr int, args []string, opts postOpts) int {
 		}
 		return done("ready", repo, pr, head, "", "flipped PR #"+fmt.Sprint(pr)+" ready-for-human at "+short(head))
 	})
+}
+
+// deskDecidedRefusal lifts this verb's PR and review shapes into the shared desk-decided
+// condition (deskkit.DeskDecidedRefusal) and returns its refusal reason, or "" when the
+// condition holds. The reviewer identity is the bound reviewer role's login — the same
+// identity gate (b) reads verdicts from; gate (b) has already refused when that role is
+// unbound, so an empty login never reaches here as "no finding can stand".
+func deskDecidedRefusal(pr int, info *prInfo, reviews []reviewInfo, head string) string {
+	rs := make([]deskkit.DeskDecidedReview, 0, len(reviews))
+	for _, r := range reviews {
+		rs = append(rs, deskkit.DeskDecidedReview{Login: r.User.Login, State: r.State, CommitID: r.CommitID, Body: r.Body})
+	}
+	return deskkit.DeskDecidedRefusal(pr, info.labelNames(), info.Body, rs, reviewerBotDisplay(), head)
 }
 
 // ciReadErr wraps a failed CI rollup read so the refusal names the precondition that was
@@ -322,7 +374,11 @@ func ciReadErr(what, head string, err error) error {
 // KEEP IN SYNC with deskboard/board.go's reduceReviews, which mirrors this same reduction
 // for the advisory board (the board must never report FLIP/MERGE-NOW on a no-op approval
 // either — that is exactly what would have hidden the live-evidence forgeries from a human
-// reading the board instead of the raw review timeline by hand). NOT AN EXACT MIRROR: this
+// reading the board instead of the raw review timeline by hand). Both reductions also skip a
+// STALE grant — an APPROVED at head submitted before the head commit's committer date, which
+// the forge re-anchored from an older head (#3093): in both tools the CALLER removes it
+// before the reduction runs (withoutStaleGrants here, its twin in deskboard's
+// classifyPRFrom). NOT AN EXACT MIRROR: this
 // reduction is lane-filtered (correctness only, see classifyLane below) and the board's is
 // not, so the board can raise SUSPECT-APPROVAL on a cross-lane sequence this gate treats as
 // an ordinary block. The divergence flags on an advisory surface rather than granting on a
@@ -353,6 +409,7 @@ func ciReadErr(what, head string, err error) error {
 // real flip; admitting them to the SECURITY lane would let an unreadable body satisfy a
 // security gate, which is the direction that must never be guessed. Fail-closed here means
 // "an unreadable verdict blocks a flip it should have blocked", not "it grants one".
+// semantic: S-review-verdict
 func latestAppVerdict(reviews []reviewInfo) (state, head string, found, noOpApproval bool) {
 	var lastCommit string
 	var commitBlocked bool // a CHANGES_REQUESTED stands at lastCommit with no push since
@@ -392,9 +449,15 @@ func latestAppVerdict(reviews []reviewInfo) (state, head string, found, noOpAppr
 		// genuinely-different commits read as the SAME one, which suppresses the approval
 		// and REFUSES the flip. That is the fail-closed direction. The error that would
 		// fail this gate OPEN is the opposite one (commit_id differing when no push
-		// happened), and no observation of it exists. So: not proof the field is sound —
-		// its error direction remains could-not-check — but the residual is a gate that
-		// over-refuses, never one that over-grants.
+		// happened) — and #3093 OBSERVED it: an APPROVED submitted while A was the head,
+		// later reported at a merge commit B, read here as "a new verdict after a genuine
+		// push" and cleared a standing CHANGES_REQUESTED at A. commit_id alone therefore
+		// cannot carry this reduction. The independent second signal is time, applied by
+		// the caller BEFORE this reduction runs: withoutStaleGrants removes every grant at
+		// head whose submitted_at predates the head commit's committer date (fail closed
+		// when that date cannot be read), so a re-anchored APPROVED never reaches this loop
+		// as a grant. The residual is the committer date itself, which is client-set — see
+		// deskkit/reanchor.go.
 		if r.CommitID != lastCommit {
 			lastCommit = r.CommitID
 			commitBlocked = false

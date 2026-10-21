@@ -1,17 +1,30 @@
 # `cellctl` — running one Assay cell on a laptop
 
+For opt-in stable Go caches and disk budgets, see [Managed Go caches](cellctl-go-cache.md).
+
 `topology.yaml` (see `docs/adopting-assay.md` §5) says what a **cell** *is*: one lead plus its agent
 fleet, accountable for its own repo set. This document is the other half — how that cell **runs** on
 one machine: a persistent `deskd`, one window per desk role, and each of those windows resolving the
 cell's own roster and App keys rather than the operator's.
 
-`tools/cellctl/cellctl` is a single bash script that does it. It exists because doing it by hand is a
-dozen steps with three sharp edges (a harness login that vanishes when `HOME` is swapped, four
-windows racing on one `.git`, a tmux window name that has to match what `down` looks for), and a
-script is the only place those stay fixed.
+`cellctl` is a Go program (`tools/desk/cmd/cellctl`) that does it; releases ship it inside the
+desk-tools tarball (see [Install](#install)). It exists because doing it by hand is a dozen steps
+with three sharp edges (a harness login that vanishes when `HOME` is swapped, four windows racing
+on one `.git`, a tmux window name that has to match what `down` looks for), and a tool is the only
+place those stay fixed. The bash script it was ported from is kept in the tree only as a test
+fixture, `tools/cellctl/testdata/cellctl-shell-oracle.sh` — the oracle the Go program is proved
+against, never the launcher (see [Parity with the shell oracle](#parity-with-the-shell-oracle)).
 
 `cellctl` is **optional**, in the same sense as the desk-tools binaries: it automates a pipeline you
 can also stand up by hand. Nothing else in Assay depends on it.
+
+For local messages between desk roles, see [Host desk communications](cellctl-comms.md).
+
+The command line is Cobra commands with scoped settings resolution: the generated
+[command reference](cellctl-cli-reference.md) lists every verb and flag, and the
+[compatibility table](cellctl-cli-compat.md) lists every way the surface differs from the earlier
+hand-written parser. `cellctl --help`, `cellctl <verb> --help` and `--version` read no cell, no
+credential and no roster.
 
 For an existing container deployment, the **container** kind provides registration and lifecycle
 delegation instead of host worktrees and credential symlinks. See [Container cells](#container-cells).
@@ -87,6 +100,37 @@ and `CLAUDE_CONFIG_DIR`; every desk verb it invokes resolves the cell's roster a
 The split is exact: identity for the tools that write, the operator's own environment for the harness
 that hosts them.
 
+For Codex command subprocesses, `cellctl` composes the cell `HOME`, `USERPROFILE`
+and `ASSAY_CONFIG_HOME` directly. It first records the independently resolved
+operator config path in `CELLCTL_OPERATOR_CONFIG_HOME`; nested launches preserve
+that context. This is automatic launch metadata, not a replacement for the
+active roster override. Existing config aliases are resolved before composition;
+missing inputs remain missing and fail preflight. Operator Claude configuration,
+including an explicit positional override, is preserved for policy rechecks.
+When the composing environment is already cell-scoped, nothing is recorded:
+the context stays unset and the house check refuses, rather than accepting
+whatever the cell link points at. A config candidate is cell-scoped when the
+path, taken as written and resolved one element at a time as the OS resolves
+it, passes through a cell's config link (whatever the stored spelling of each
+link: absolute, relative, a trailing separator or dot element; and a parent
+element after a link applies to the resolved path, whether it sits in the path
+itself or in a link's stored target) or lies inside a cell home,
+including one that does not exist yet. "A cell" is this cell or any sibling
+under the same cells root. A path that cannot be resolved to the end (too many
+links, an unreadable element) counts as cell-scoped. The house check applies the
+same test to its expected target, so a config override that is an alias of the
+cell link is refused even when the link points at the right place: the link
+compared with itself establishes nothing.
+
+Only `cellctl` consumes this context: the operator-config resolver serves the
+common operator-directory check, the house config-link check, and configuration
+paths used by `new`/`new --kind house`; Codex composition carries it onward.
+Desk tools still read the cell's `ASSAY_CONFIG_HOME`. The house check requires the
+link, the active config and the independent operator target to agree; comparing
+the same named symlink to itself cannot establish that identity. Relative config
+links and distinct aliases of the same resource remain valid. Scrubbed and
+container launch paths keep their separate config contracts.
+
 The shims are regenerated on every `cellctl desk`, so installing a new desk-tools release picks up
 automatically.
 
@@ -115,7 +159,11 @@ one. A checkout build needs a Go toolchain; a tarball install does not.
 A packaged copy reports the umbrella release tag it shipped at via `cellctl --version` (or
 `cellctl version`) — the same contract `statusgen --version` uses, so a stale copy is detectable.
 The tag is stamped at link time (`-ldflags -X main.cellctlVersion=<tag>`) exactly as every other
-desk binary's is; a plain source build honestly reports `dev`.
+desk binary's is. A plain source build carries no tag and reports `dev-<commit>` instead — the
+first 12 hex characters of the commit it was built from, taken from the Go toolchain's embedded
+VCS stamp, plus `-dirty` when the tree had uncommitted changes (e.g. `dev-1a2b3c4d5e6f-dirty`) —
+so a stale checkout build is distinguishable from a fresh one. With no VCS stamp (`go run`,
+`-buildvcs=false`, a build outside a git tree) it reports a bare `dev`.
 
 **Windows.** The tarball's `windows-amd64` / `windows-arm64` legs carry a real `cellctl.exe`
 rather than a shell script no Windows shell runs — the package itself cross-compiles for
@@ -123,6 +171,18 @@ rather than a shell script no Windows shell runs — the package itself cross-co
 actually boots (and the `internal/deskkit` unix-only syscall sites brief
 `docs/streams/windows-port/` 00 owns) belongs to the windows-port stream, not here. Until that
 stream delivers, treat the Windows binaries as untested.
+
+Paths in `cell.env` on Windows: `cellctl new` writes every path it is handed, and every path it
+derives (the cell directory under `CELLS_CONFIG`, `DESKD_INDEX`), with forward slashes
+(`CELL_REPO=C:/src/x`), which every Windows API accepts and no shell reads as an escape. A path
+edited in by hand in native form (`C:\src\x`) still loads on Windows: the loader keeps a `\` that
+precedes a letter, a digit, one of `#%+-./:=@_~` (`~` and `#` only mid-value), a non-ASCII
+byte, or the end of the value. Before any other byte (a space, `(`, `,`, `$`, `{`, `!`, `&`,
+`[`, …) the `\` is still a shell escape, exactly as in a `printf %q`-quoted value, so
+`C:\{guid}` loads as `C:{guid}`; write such a path with forward slashes or single-quote it
+(`'C:\{guid}'`). A shell that sources the file (Git Bash) reads every unquoted `\` as an escape,
+so prefer the forward-slash form. A `--roots` path cannot contain a space at all: entries are
+split on whitespace.
 
 ---
 
@@ -169,6 +229,11 @@ when this cell's `apps.env` calls it something else.
 That writes `cell.env`, creates `home/`, `bin/`, `index/`, `worktrees/`, copies the cells slice in,
 and symlinks `.config/gh` + `.gitconfig` to the operator's real ones. It then prints a per-cell
 `README.md` naming what is left.
+
+The first `new` under a cells root also writes `defaults.env` beside the cells — the machine-wide
+defaults template, every line a comment — and says so in one `[defaults] created …` line. It
+sets nothing until a line is uncommented, and no later `new` touches it (see *Machine-wide
+defaults*).
 
 **Four steps remain, and `cellctl new` deliberately does not do them.** Each moves key material or
 states who the cell trusts — custody acts, which are the ones a human should perform knowingly:
@@ -277,18 +342,21 @@ links. It refuses an existing cell of the same name, exactly like every other ki
 ### The composed environment
 
 The launch is `env -i` plus an explicit allowlist — the parent shell contributes nothing by
-default. This is the exact list `cellctl` exports (the `SCRUBBED_ENV_KEYS` variable in the script
-is the single source this table, the `[plan]` lines below, and the live launch all trace back to):
+default. This is the exact list `cellctl` exports (`scrubbedEnvKeys` in
+`tools/desk/cmd/cellctl/env.go` is the single source this table, the `[plan]` lines below, and the
+live launch all trace back to; the shell oracle's `SCRUBBED_ENV_KEYS` declares the same set, and
+`tools/cellctl/tests/scrubbed-cell.test.sh` fails if the emitted set drifts from it):
 
 | Variable | Value |
 |---|---|
 | HOME | `<cell>/home` |
 | ZDOTDIR | `<cell>/home` |
-| SHELL | the bash `cellctl` itself runs under (never the operator's login shell) |
+| SHELL | the first `bash` on `PATH`, resolved by `cellctl` itself (never the operator's login shell) |
 | PATH | `<cell>/shim:<desk-tools bindir>:<dir of the resolved harness binary>:/usr/bin:/bin:/usr/sbin:/sbin` — exactly seven elements; `cell.env`'s `CELL_PATH` overrides only the trailing system part, never the shim prefix or the harness dir |
 | TMPDIR | `<cell>/tmp` (created 0700 if absent) |
 | KUBECONFIG | `/dev/null` |
 | ASSAY_CONFIG_HOME | `<cell>/home/.config/assay` |
+| ASSAY_TELEMETRY | Cell-resolved local logging: exactly `1` opts in; configured other values become `0`; absent stays off |
 | GH_CONFIG_DIR | `<cell>/home/.config/gh` |
 | GIT_CONFIG_GLOBAL | `<cell>/home/.gitconfig` |
 | GIT_CONFIG_NOSYSTEM | `1` |
@@ -427,6 +495,11 @@ cell instead checks the `GITLAB_GROUP`, the role token store directory, and the 
 on a gitlab cell) — never silently skipped, so a half-provisioned or mis-forged cell reads as such
 rather than clean.
 
+On a machine with a `$CELLS_ROOT/defaults.env`, two rows say that the file was read and where the
+managed Go cache's setting came from (see *Machine-wide defaults*). They print directly under the
+`[check]` header — for a container cell, which prints no such header, after its `[model]` lines
+and before the container's own check. They are never a `MISS`.
+
 Run it after `new`, and again after any key or token rotation.
 
 ---
@@ -541,17 +614,45 @@ thing the boot reads — so it is reported as a notice and the boot continues.
 **The whole cockpit:**
 
 ```bash
-cellctl up <cell> [--no-the-desk] [--no-attach] [--cockpit auto|tmux|herdr|orca] \
+cellctl up <cell> [--role <name>]... [--no-the-desk] [--no-attach] [--cockpit auto|tmux|herdr|orca] \
+                  [--lease-wait <duration>] [--plan | --apply <plan-id>] [--json] \
                   [--automate '<cron>'] [--model <m>] [--provider <name>] [--harness <claude|codex>] \
                   [CLAUDE_CONFIG_DIR]
 ```
 
-One window per role in `ROLES`, plus a `deskd` window (watching `/healthz` if it is already up,
-otherwise standing it — see *How far the attended affirmation carries* above), in whichever
-**cockpit** resolves for this run — see *Cockpits* below. On the default tmux cockpit that is a
-session named `<cell>-cell`, and `up` attaches unless you pass `--no-attach`; re-attach later with
-`tmux attach -t <cell>-cell`. Windows start two seconds apart in every cockpit, so they do not all
-arrive at the fetch lock together.
+`up` **converges** the cell: it brings every targeted role to running and leaves a running role
+alone, so it is safe to run again on a half-up cell. Targets are the roles in `ROLES` (plus
+`the-desk` unless `--no-the-desk`), or exactly the roles named by `--role <name>` (repeatable;
+`--no-the-desk` and `--with-the-desk` stay as aliases). Each target is classified from its cadence
+lease (`run/cadence/<role>/owner.lock`):
+
+| Disposition | Meaning | What `up` does |
+|---|---|---|
+| up | the lease is held by a live process | row `already-up`; never relaunched, its window never touched |
+| stale | a running checkpoint with no live holder | row `failed`, naming `up --plan`; plain `up` never reconciles it |
+| absent | no lease holder, no checkpoint | its window is opened |
+
+Windows are opened **one at a time**: role N+1 opens only after role N has taken its lease and
+passed the scratch sweep, or has failed. `--lease-wait` (default 2m) bounds how long `up` waits
+for one role; a window that never takes its lease is a `failed` row. On an existing cockpit
+session `up` adds only the missing windows. A cell with a `deskd` window or a configured comms
+window starts those first, as before.
+
+It ends with one table, one row per targeted role: `up`, `already-up`, `reconciled+up`, `scheduled` or `failed`
+(with the first line of the error, verbatim). `scheduled` is a cadenced role that took its lease and is
+resting until its next pass is due (its last pass was under one interval ago): it has no role child yet,
+and the detail names the next due time. The exit code is 0 when every role is `up`, `already-up`,
+`reconciled+up` or `scheduled`, otherwise 1. `--json` prints the `cell-op-result` document
+([the machine seam](cellctl-machine-seam.md)) with one entry per role and nothing else on stdout.
+
+**Stale roles.** A hand-closed window leaves a checkpoint behind; `up` does not clear it for you.
+`cellctl up <cell> --plan` writes ONE plan that clears every stale role among the targeted roles (`--role` limits them; otherwise the cell's `ROLES`) and stale comms state (it works off a
+terminal and changes nothing else; with nothing stale it writes no plan). `cellctl up <cell>
+--apply <plan-id>` works on a terminal only: it shows the plan, takes the typed confirm,
+re-measures each role, clears the stale state and then launches the targets, reporting the cleared
+roles as `reconciled+up`. A role that came alive between plan and apply is refused `plan-stale`
+(exit 5), naming the role, and nothing is launched. Stale comms state is refused the same way,
+with the reconcile inventory and a pointer to `up --plan`.
 
 `--model <m>` applies the per-run override (see *Pinned models* below) to **every** role window this
 run opens, the-desk included — there is no per-role `--model-<role>` form, since that case is
@@ -560,8 +661,13 @@ cockpit's `cellctl desk <cell> <role>` invocation itself that carries `--model`,
 actually boots resolves the same override the plan named. `--provider <name>` threads onto every
 role window the same way, for the same reason — see *Providers* below.
 
-`DRY_RUN=1 cellctl up <cell>` prints the resolved cockpit and the per-role commands and launches
-nothing. `--harness <h>` overrides `CELL_HARNESS` for **every** role window this run opens (the-desk
+`cellctl up <cell> --dry-run` (or `DRY_RUN=1 cellctl up <cell>`) prints the resolved cockpit and
+each role's disposition (an absent role shows the command its window would run) and launches
+nothing. On a house cell, stale comms checkpoints and orphaned processes carrying the cell's
+marker are inventoried by pid and start time; `up` refuses them with the whole inventory and the
+exact recovery commands (`up --plan`, then `up --apply`). A dry run prints the inventory and plan
+and changes nothing. `cellctl desk <cell> <role>` runs the same preflight for its one role. See
+[Reconcile preflight](cellctl-cadence.md#reconcile-preflight). `--harness <h>` overrides `CELL_HARNESS` for **every** role window this run opens (the-desk
 included — there is no per-role `--harness-<role>` form) by threading `--harness <h>` onto each
 role's own `cellctl desk <cell> <role>` invocation; `[dry-run] harness=<h> — applied to every role
 window below` announces it once. See *Harnesses* below.
@@ -572,9 +678,9 @@ when the session comes up. `--no-the-desk` opts out and leaves the four loop rol
 is accepted and does nothing — it was the flag when the coordinator was opt-in, and silently
 ignoring it is better than failing a command that asks for what already happens.
 
-Each window re-invokes `cellctl` by its **absolute** path, resolved once at startup from
-`BASH_SOURCE`. A tmux window runs in the cell directory, where the relative `$0` a shell-invoked
-script carries (`./cellctl`) does not resolve.
+Each window re-invokes `cellctl` by its **absolute** path, resolved once at startup (the running
+executable's own path). A tmux window runs in the cell directory, where a relative invocation path
+(`./cellctl`) does not resolve.
 
 **Down:**
 
@@ -684,8 +790,8 @@ seconds, 5 by default) once per window, dry runs included.
 
 | Cockpit | What `up` opens |
 |---|---|
-| **tmux** | a session `<cell>-cell`: the `deskd`/`cell` window plus one window per role. Unchanged |
-| **herdr** | one **labelled tab per window**, `<cell>-<role>`, each fed the same `cellctl desk <cell> <role>` command every other cockpit runs (via `herdr pane run`, into a pane the tab's own `tab create` cut). The first (`deskd`/`cell`) window is a tab too. If herdr has no window (a "workspace" in herdr's own grammar) open yet, `up` starts one first — the same trigger point and create-if-absent shape as tmux's `<cell>-cell` session — before any tab lands; an already-open window is unchanged |
+| **tmux** | a session `<cell>-cell`: the `deskd` window (only when the cell has one, i.e. `DESKD=1` on a house cell), the comms window when comms is configured, then one window per role. Whichever window comes first creates the session; a cell with no deskd gets no placeholder window |
+| **herdr** | one **labelled tab per window**, `<cell>-<role>`, each fed the same `cellctl desk <cell> <role>` command every other cockpit runs (via `herdr pane run`, into a pane the tab's own `tab create` cut). The `deskd` window is a tab too when the cell has one (`DESKD=1` on a house cell); a cell with no deskd gets no placeholder tab. If herdr has no window (a "workspace" in herdr's own grammar) open yet, `up` starts one first — the same trigger point and create-if-absent shape as tmux's `<cell>-cell` session — before any tab lands; an already-open window is unchanged |
 | **orca** | one **terminal per role** under the cell directory (registered with Orca via `orca repo add` first — Orca 404s an unregistered path), running the same `cellctl desk` command; or, with `--automate`, one scheduled automation per role instead |
 
 ### The `--automate` recipe (orca only)
@@ -758,7 +864,7 @@ a long-context variant. `DESK_MODEL_DEFAULT` itself falls back to `sonnet` if `c
 board, claim an item, open a worktree, and hand the actual judgment to the agent they dispatch. The
 coordinator window is where judgment happens in the loop itself. So the loops get the cheaper model
 and `the-desk` gets the top tier available — and the loops' pin can be moved per cell, which is the
-point of putting it in `cell.env` rather than in the script.
+point of putting it in `cell.env` rather than in the launcher's source.
 
 **The coordinator's pin cannot be moved down to Opus.** `opus` is no longer the top tier, and the
 coordinator role is defined to run on whichever model is. `cellctl desk <cell> the-desk` (including
@@ -815,7 +921,8 @@ TIER_MODEL_MID_CODEX=gpt-5.6-terra
 TIER_MODEL_FAST_CODEX=gpt-5.6-terra
 ```
 
-Resolution order, per role and per the ACTIVE harness (`resolve_role_model` in the script): (1) that
+Resolution order, per role and per the ACTIVE harness (`resolveRoleModel` in
+`tools/desk/cmd/cellctl/model.go`): (1) that
 harness's own per-role pin, (2) that harness's own default, (3) the tier map, by this role's tier
 and the harness's own column. Claude always resolves at step 2 today — `DESK_MODEL_DEFAULT` carries
 a compiled default (`sonnet`) — which is exactly what keeps `--harness claude` unaffected by any of
@@ -891,7 +998,8 @@ untouched) or **appends** a key that has no active line yet. Writes exactly **on
 `cell.env.bak-<ts>`, before the first edit of a call — a multi-key `set` is one backup for the
 whole call, not one per key. Refuses a key that is not a known `cell.env` key (see the table below;
 the `DESK_MODEL_<role>`, `CODEX_MODEL_<role>`, `TIER_MODEL_<TIER>_<HARNESS>` families count as
-known for each of the five roles / three tiers / two harnesses) unless `--force`, and a
+known for each of the five roles / three tiers / two harnesses; the known keys are those
+`cellctl defaults print` lists as a machine-wide default or under *Per-cell keys*) unless `--force`, and a
 refusal — unknown key **or** the Opus rule below — touches nothing: no backup, no edit. Prints each
 key's before/after value. Applies the **same** the-desk/Opus refusal to `DESK_MODEL_the_desk` as a
 live boot and `check` do (codex's `CODEX_MODEL_the_desk` is never subject to it — see *Harnesses*),
@@ -958,14 +1066,67 @@ cellctl show <cell>        [--kind <k>] [--cockpit <c>] [--harness <h>] [--provi
   itself persisted; without a role it is the `CELL_HARNESS` sugar. `--model` on `set` still needs a
   role (the harness-wide default is the `KEY=VALUE` form).
 - **`cellctl show <cell>` is a read.** One greppable line per choice — `[show] KEY=VALUE (source)`
-  with source `flag` (given on this invocation), `cell.env` (the file's own line) or `default`
-  (cellctl's compiled fallback; the provider prints `unset (default: anthropic)`) — then one
+  with source `flag` (given on this invocation), `cell.env` (the file's own line), `defaults.env`
+  (the machine-wide file supplied it and `cell.env` does not set it — see *Machine-wide defaults*)
+  or `default` (cellctl's compiled fallback; the provider prints `unset (default: anthropic)`) — then one
   `[show] model <role>=<m> (source)` line per role, resolved exactly as a plain `desk` boot on the
   shown harness would (`cell.env <KEY>`, `default: <KEY>` for a compiled default, `default:
   tier:<t> (<KEY>)` for the tier map, `flag` for an explicit `--model`). It accepts the same flags
   as `desk`/`up`, so "what would this invocation resolve to" is answerable before booting it, and a
   `--kind` the cell is not provisioned for refuses just as `desk` would. Nothing is launched or
   written.
+
+### Cheap-default reset
+
+A pin that nobody revisits drifts to the most expensive setting and stays there. The reset is the
+periodic pull-back for pins nobody chose: a **DEFAULT** model pin older than the TTL is lowered to
+the harness's mid-tier model, and people move back up only when they need to.
+
+- **Pin record.** Every model pin written through `cellctl set` (or `desk`/`up --set`) is recorded in
+  `<cell>/model-pins.json` with the value the loader reads, when it was set and who owns it. A pin an
+  operator sets is **EXPLICIT**: plain `set`, the role form and `--set` all record EXPLICIT, and the
+  reset never touches it. Only `cellctl set <cell> ... --default` records a **DEFAULT** pin, one the
+  reset may lower; `--default` on a call that sets no model pin is refused. The latest `set` decides
+  the kind. Clearing a pin (`KEY=`) drops its record.
+- **What moves.** A DEFAULT pin moves only when all of these hold: it is older than the TTL; its
+  `cell.env` line is still there, non-empty and equal to the record (a different value was
+  hand-edited: that is an operator's choice, so its record is dropped and the pin is explicit from
+  then on); the mid-tier model ranks strictly BELOW it (by the
+  cell's tier map, then by the Claude family name: haiku < sonnet < opus/fable; a model neither
+  places is never moved, and the reset never raises a pin); it is not a claude pin on a provider cell
+  (`CELL_PROVIDER` or `--provider`, whose endpoint rejects tier names); and it is not the
+  coordinator's model, meaning neither the `the-desk` pin nor a harness default (`DESK_MODEL_DEFAULT`,
+  `CODEX_MODEL_default`, `CURSOR_MODEL_default`) while `the-desk` has no pin of its own on that
+  harness. EXPLICIT pins and pins with no record (provenance unknown) are never touched. Pin keys are
+  the exact per-role and harness-default names; `DESK_MODEL_OVERRIDE` and other keys sharing the
+  prefix are never pins.
+- **Target.** `TIER_MODEL_MID_<HARNESS>` from the cell's own files (`cell.env`, the machine-wide
+  defaults file), else the compiled tier map, never a variable exported in the launching shell.
+- **When.** At every `cellctl desk` boot, and on demand with `cellctl models reset <cell>
+  [--model-ttl <Nd>]`. Each repin prints one line, `[model-reset] <role>: <old> -> <new> (...)`; a
+  boot with nothing to repin prints nothing. Under `DRY_RUN=1` both plan the repin, mark each line
+  `[dry-run: not written]` and write nothing. `show` and `check` apply the same rule read-only, so the
+  model they report is the one the next boot runs: `show` prints the pending line and tags the role
+  row `pending model-reset of cell.env <KEY>`, `check` prints a `warn  model reset pending:` row.
+- **Write.** A live reset writes one `cell.env.bak-<stamp>` backup, rewrites `cell.env` atomically
+  (temp file and rename) and keeps the previous value in the record (`prev`). Every writer of
+  `cell.env` and the record (`set`, a boot, `models reset`) holds `<cell>/.model-pins.lock`; a boot
+  that cannot take it within a few seconds skips its reset with one `[model-reset] skipped` line.
+  The lock is a directory holding the owner's pid. A dead owner's lock is taken over, and a release
+  removes the lock only while it still carries the releasing process's pid; two waiters that take
+  over the same dead lock together can both proceed, and the cost is a lost update, never a torn
+  file. A lock directory with no pid file is never taken over: `set` and `models reset` refuse and
+  name the directory to remove by hand once no `cellctl` is running; a boot skips its reset.
+- **Scope of the boot reset.** The boot reset runs early in `cellctl desk`, before the model is
+  resolved and before the boot's later refusals, for every role's DEFAULT pins, under a model policy
+  and under `--model` alike. A boot that is then refused (for its own role's model, say) has
+  already lowered other roles' aged DEFAULT pins, written the backup and updated the record.
+  Only pins recorded with `set --default` are ever touched.
+- **TTL.** `CELL_MODEL_TTL_DAYS` in `cell.env`, default `7` (weekly); `0` turns the reset off for the
+  cell. It takes `7d`, a bare number of days (up to five digits, optional fraction) or a Go duration
+  (`36h`); anything else, `NaN`, `Inf`, exponents and underscores included, is refused by `set`. A
+  hand-edited malformed value refuses a boot and is a `check` MISS. `--model-ttl` replaces the cell's
+  value for one `models reset` call, so it also works while the cell's line is malformed.
 
 ---
 
@@ -1000,8 +1161,12 @@ codex --sandbox danger-full-access -C <worktree> -m <model> "Invoke the \"assay:
 ```
 
 The same exported env the claude arm gets — `DESK_LOOP`, `DESK_SESSION`, `DESK_ROOTS` (when
-`cell.env` carries `CELL_ROOTS`), and `shim/` first on `PATH`. `CLAUDE_CONFIG_DIR` is irrelevant on
-this arm and is not passed; the model comes from the **codex namespace** — `CODEX_MODEL_<role>` /
+`cell.env` carries `CELL_ROOTS`), and `shim/` first on `PATH`. `cellctl` sets no
+`CLAUDE_CONFIG_DIR` on the Codex process itself (one the launching shell exports is inherited
+unchanged); the command environment `cellctl` composes for its subprocesses carries the
+resolved Claude config directory (a positional override when one is given, otherwise the operator's,
+resolved before `HOME` changes), so a policy recheck that routes through Claude reads that
+configuration. The model comes from the **codex namespace** — `CODEX_MODEL_<role>` /
 `CODEX_MODEL_default`, falling back to the tier map — never the claude arm's `DESK_MODEL_<role>` /
 `DESK_MODEL_DEFAULT` (`#986`: the two were conflated before this, which is why a Claude-only pin
 used to reach `codex -m` unchanged and fail there). See *Per-harness namespaces and the tier-map
@@ -1204,7 +1369,363 @@ is refused rather than launching codex against Anthropic with a provider the ope
 | `CELL_PROVIDER_<NAME>_TOKEN_ENV` | the **name** of an env var (never the token itself) whose value is exported as `ANTHROPIC_AUTH_TOKEN`; that env var must be set in the shell running `cellctl` |
 | `TMUX_SESSION` | override the tmux session name (default `<cell>-cell`) |
 
+### Machine-wide defaults — `defaults.env`
+
+A setting every cell on a machine should share is written once, in `defaults.env` directly
+under the cells root (`$CELLS_ROOT/defaults.env`; *What a cell is, on a laptop* gives the root's
+default), instead of once per `cell.env`:
+
+```dotenv
+# $CELLS_ROOT/defaults.env — applies to every cell under this cells root
+CELL_GO_CACHE=on
+```
+
+The file uses `cell.env`'s grammar (`KEY=VALUE`, an optional `export`, the same quoting, `#`
+comments) and is read by every verb that loads a cell. A value is taken from the highest layer
+that sets the key:
+
+| Order | Layer | |
+|---|---|---|
+| 1 (lowest) | cellctl's compiled default | |
+| 2 | the process environment | the shell `cellctl` was started from |
+| 3 | `$CELLS_ROOT/defaults.env` | this file |
+| 4 (highest) | the cell's own `cell.env` | |
+
+So a cell overrides the machine, and the machine overrides the shell — the same relation
+`cell.env` has always had to the shell. A flag given on one invocation (`--harness`, `--model`, …)
+still overrides all four for that run, as before.
+
+- **A file that sets no key changes no value.** The file is optional. With no file, or with the
+  file `cellctl new` writes (every line a comment), each cell resolves every key exactly as it did
+  before the file existed, and launches the same. What does differ is `cellctl check`'s output,
+  by the two rows described under *What `check` and `show` say*: a cells root that has a
+  defaults file prints them for every cell, and a root without one prints them only for a cell
+  that sets `CELL_GO_CACHE` somewhere.
+- **A file that is there is read strictly.** If it cannot be read, is not a regular file, or
+  carries a line that is neither blank, a `#` comment nor an assignment, every verb that loads a
+  cell refuses and names the file and the line. (A stray line in a `cell.env` is skipped, as it
+  always was; the shared file is held to more because one typo there is every cell's typo.)
+- **A line with an empty value sets nothing.** In this file an assignment whose value is empty
+  once it is unquoted and its `$VAR` references are expanded — `KEY=`, `KEY=""`, `KEY=''`,
+  `KEY=$A_VARIABLE_THAT_IS_NOT_SET` — is skipped, for every key: the layer below stands exactly
+  as if the line were still commented out, and `check` and `show` do not count it as a key the
+  file set. An empty line lower in the file does not undo a line above it that set the key. The
+  line is still checked, so an empty assignment to a key the file refuses is refused. The cost:
+  this file cannot blank a variable the shell exports, or remove a compiled default, for every
+  cell at once. A cell that needs a key empty says so in its own `cell.env`, where an empty
+  assignment sets the key to empty as it always has. Spaces inside quotes are a value, not an
+  empty one.
+- **cellctl writes it once, when there is none, and never changes it afterwards.** `cellctl new`
+  writes the template (below) into a cells root that has no `defaults.env` and says so in one
+  line; `cellctl defaults init` does the same for a cells root that already has cells, and
+  refuses when a file is there. Neither overwrites, appends to or replaces an existing file —
+  whatever it holds — and a `new` that cannot write it still scaffolds its cell and prints a
+  notice. `new` also prints a notice when what is already at the path is not a regular file (a
+  directory, a symlink to nothing): it leaves it alone, and no cell under the root loads until
+  it is replaced or removed. From then on the file is edited by hand. `cellctl set` and `--set`
+  resolve a cell through all four layers and write the cell's own `cell.env` only, so
+  `cellctl set <cell> KEY=VALUE` is how one cell departs from a machine default. `set` accepts
+  without `--force` every key the template lists as a machine-wide default or under *Per-cell
+  keys*; a key cellctl does not read, and a key the template lists under *Taken from the
+  command's environment*, still needs `--force` or a hand edit of that `cell.env`.
+- **It applies to every cell kind.** A scrubbed or container launch still composes its child
+  environment from its own fixed list of variables, so a key in this file reaches such a child
+  only where the same key in the shell already did; and host model policy
+  (`CELL_PROVIDER_DEFAULTS`, `CELL_MODEL_POLICY`, `CELL_ROLE_CONTEXT`) stays refused on those
+  kinds whichever layer names it.
+- **The file is as trusted as the cells root is.** It configures every cell under the root, so
+  whoever can write the root directory or the file configures them all. cellctl assumes the
+  cells root is writable by its owner only, and does not check: `cellctl new` creates a missing
+  cells root with mode `0755` (each cell directory inside it `0700`), the file cellctl writes is
+  `0600`, and a file made by hand takes whatever mode its author's umask gives it. On a machine
+  where another account can write the cells root, that account can already replace a cell's
+  directory, and can now also set a default for every cell at once — keep the root yours. The
+  file holds no secrets of its own. It is opened as `providers.json` is — a regular file only,
+  never a FIFO or a directory.
+- **A cell is named by ONE directory under the cells root, in `[a-z0-9-]`.** `demo` and
+  `cell-2` are cell names. A nested name (`team/demo`), an upper-case letter, `_` or `.` in the
+  name, an absolute path, `.`, and a name that leaves the root through `..` (`../other/x`,
+  `team/..`) are refused — by `new` (every kind, a container cell included), by `set` and by
+  every verb that loads a cell — in a message that names the name, the root and the rule. A
+  cell's `CELL=` value is held to the same rule, because it is what a launch stamps into every
+  child as `ASSAY_CELL` and what the cell-scoped stop flags (`STOP.cell.<cell>`) name the cell
+  by; a cell cellctl accepts is a cell those flags can address. The test is on the name as
+  written, so a cell directory that is a symlink to somewhere else still loads. `defaults.env`
+  is not available as a cell name. A cell made earlier under a name outside the rule (a nested
+  `team/demo`, `Demo`, `demo_1`) no longer loads: rename its directory and set `CELL=` to the
+  new name.
+- **There is one file per cells root.** Every cell takes the cells root's file. That holds for
+  the later cellctl processes a launch starts, as far as each is told where the cell is. The
+  model-policy hook, a container cell's console, the comms pane, a cadence-supervised role pane
+  and a managed scratch task are each handed the cells root the launch resolved and the cell's
+  name under it. An ordinary role pane is handed the cell's name and takes the root from its
+  own environment. Two commands are as they were before this file existed: the `deskd` stand
+  pane and the precheck of a scheduled (`--automate`) run name the cell by its `CELL=` value and
+  take the cells root from their own environment, so they reach the same cell only when
+  `CELLS_ROOT` is the same there.
+
+**The template, and the list of keys.** `cellctl defaults print` writes the template to
+standard output. It is generated from the one registry of keys cellctl keeps, and it prints
+every key in that registry except the four internal variables in the last row of the refused
+table below, which cellctl sets for its own child processes and which appear in that table only:
+
+```sh
+cellctl defaults print                                    # every key, its meaning, its compiled default
+cellctl defaults init                                     # write it as $CELLS_ROOT/defaults.env, if none
+cellctl defaults print | diff - "$CELLS_ROOT/defaults.env"   # what an existing file changed, or lacks
+```
+
+Every key that can be a machine-wide default appears as a commented-out `# KEY=<compiled default>`
+line under a one-line description, grouped (managed Go cache and task scratch; harness, cockpit
+and launch; cadence and boot; models and tiers; providers and model policy; policy). An empty
+value means the key is unset by default or its default is derived, and the description says
+which. After them, still as comments, come the keys the file refuses, each with its reason. The
+`cell.env` table above describes the keys a cell most often sets; where the two differ, the
+printed template is the fuller list.
+
+The template, unedited, sets nothing, and uncommenting a line whose value is empty still sets
+nothing. Uncommenting a line that shows a value sets that key to that value for every cell under
+the root. That changes nothing only where the process environment does not set the same key to
+something else: a value in this file outranks the environment, by design, also when it is the
+compiled default. With `CELL_GO_CACHE=on` exported in the shell, uncommenting
+`# CELL_GO_CACHE=off` turns the managed cache off for every cell that does not set it in its own
+`cell.env`.
+
+A test keeps the registry level with the program: it walks cellctl's source and fails when a
+key is read that the registry does not classify. It recognises three shapes of read — a call to
+`os.Getenv` or `os.LookupEnv`, a call to one of cellctl's own layered-environment readers, and
+a call to one of the two helpers that read the key they are handed. It does not see a scan of
+the whole environment for a name or a prefix, a `$VAR` reference inside a file value, or a
+variable that only a child process reads, so a key read in one of those ways alone can be
+missing from the registry and from the template.
+
+**Keys the file refuses.** The file may set a key that is a machine-wide lever, and any key
+cellctl does not read at all (it is carried in the environment as a `cell.env` line would be).
+Every other key cellctl reads is refused, naming the key, the file and the line. There are three
+kinds. A key that names or scopes one cell, or binds a resource one cell holds, cannot be a
+machine-wide default — the value would be wrong for every cell but one — and goes in the cell's
+own `cell.env`. A switch for one run of one command, and a location or host variable cellctl
+follows from the shell that started it, are refused because this file outranks the process
+environment: set here, no shell could take the value back, and several of them decide where this
+file and the operator's credentials are found. And the variables cellctl sets for its own child
+processes are not configuration.
+
+| Refused in `defaults.env` | Why |
+|---|---|
+| `CELL`, `CELL_KIND`, `ROLES` | what one cell is: its name, its kind (each kind has its own preconditions) and its role windows |
+| `CELL_REPO`, `CELL_REPO_SLUG`, `CELL_ROOTS`, `CELLS_CONFIG`, `CELL_COMMS_CONFIG` | what one cell is scoped to: its checkout, its one repository, its stream-root map, its `cells.yaml` slice, a comms manifest that names its single cell |
+| `DESKD`, `DESKD_ADDR`, `DESKD_INDEX`, `TMUX_SESSION` | what one running cell holds: whether it stands a `deskd`, the address that `deskd` binds, its index, the session `down` stops |
+| `CELL_GO_CACHE_ROOT` | a managed cache root is marked for exactly one cell, and a second cell is refused it |
+| `CELL_CONTAINER_CONFIG`, `CELL_CONTAINER_LAUNCHER` | bind one cell to its container definition or launcher |
+| `CELL_FORGE`, `GITHUB_HOST`, `FORGE_API_BASE`, `GITLAB_API_BASE`, `GITLAB_GROUP`, `GITLAB_TOKEN_STORE`, `DESKD_GITLAB_TOKEN_FILE`, `DESKD_APP_PEM`, `DESKD_APP_ID_VAR`, `ORGS` | one cell's forge binding: which forge its credentials are minted for, held in and sent to |
+| `CELLS_ROOT`, `XDG_DATA_HOME` | locate this file: the cells root, and the data directory its default is under, are resolved before the file is read |
+| `DRY_RUN`, `CELL_ATTENDED`, `DESK_MODEL_OVERRIDE` | switches for one run: a dry run, the statement that a person is at this command, and a model that outranks every pin — give them in the environment of the command they are for |
+| `ASSAY_PERF_PROFILE`, `ASSAY_PERF_SESSION_ID`, `ASSAY_PERF_AGENT_ID`, `ASSAY_PERF_PARENT_AGENT_ID`, `ASSAY_PERF_PARENT_INVOCATION_ID`, `ASSAY_PERF_ROLE`, `ASSAY_PERF_WORK`, `DESK_LOOP` | descriptive context for one invocation, validated from the launching environment; never persistent cell or machine defaults |
+| `ASSAY_CONFIG_HOME`, `XDG_CONFIG_HOME`, `GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` | locate the operator's own config homes — where the desk tools, the GitHub CLI and the harnesses find their credentials |
+| `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `PATH`, `TERM`, `LANG` | the host's own variables, taken from the launching shell (`DESK_TOOLS_BIN` and `CELL_PATH` are the levers for the parts of `PATH` cellctl composes) |
+| `CELL_KIND_OVERRIDE_INTERNAL`, `ASSAY_SCRATCH_ID`, `DESK_SESSION`, `CELLCTL_PARITY_MUTATE`, `CELLOP_FIXTURE_TRACE`, `CELLCTL_OPERATOR_CONFIG_HOME` | not configuration: set by cellctl for a process it starts and read back there, or a test hook |
+
+Typical uses of the file are `CELL_GO_CACHE` and its `_BYTES` / `_MIN_FREE` budget,
+`CELL_COCKPIT`, `CELL_HARNESS`, and the model keys (`DESK_MODEL_DEFAULT`, the `TIER_MODEL_*`
+map).
+
+**What `check` and `show` say.** When a defaults file was read, `cellctl check <cell>` prints
+the file and the keys it sets, and the managed Go cache's effective state with the layer that
+supplied `CELL_GO_CACHE` — directly under its `[check]` header, or for a container cell after
+its `[model]` lines:
+
+```text
+  ok    cell defaults: read <cells-root>/defaults.env (1 key(s): CELL_GO_CACHE; this cell's cell.env overrides each)
+  ok    managed Go cache: on (CELL_GO_CACHE=on from defaults file)
+```
+
+The layer reads `process environment`, `defaults file` or `cell.env`, or the row says
+`CELL_GO_CACHE unset`. A line with an empty value is not among the keys listed. A file with every
+line commented out — the one `cellctl new` writes — reads `(it sets no keys; …)`. With no defaults file the same two rows print only when
+`CELL_GO_CACHE` is set somewhere (`n/a   cell defaults: none read — no <path>`), and a cell that
+uses neither prints neither. Neither row is ever a `MISS`, so `check`'s exit code does not depend on them: a
+`CELL_GO_CACHE` value the cache refuses is a `warn` here and a refusal at launch. `cellctl show`
+labels a value the file supplied `defaults.env`.
+
+**Checking it.** From `tools/desk`:
+
+```sh
+go test ./cmd/cellctl/ -run 'TestCellDefaults|TestEnvKey|TestDefaultsVerb|TestNestedCellReentry|TestCellName' -count=1
+go run ./cmd/muhar -spec cmd/cellctl/defaults-mutations.json
+```
+
+The second command breaks the layer one way at a time — the overlay skipped, the order swapped, a
+refused key let through, an empty line allowed to set its key, a template line left uncommented,
+a cell name outside the root let through, a re-entry handed the wrong cells root — and reports
+whether the tests named in the spec notice each one. It is run by hand; no CI
+job runs it yet.
+
 ## Container cells
+
+### Native Docker runtime (Go)
+
+`cellctl` owns Docker launch, inspection, console recovery and shutdown when
+`CELL_CONTAINER_CONFIG` names a deployment JSON file. There is no host-side shell
+or Python launcher in this path. Docker and tmux must be installed locally.
+
+```sh
+cellctl new sample --kind container --container-config /absolute/cells.json
+cellctl check sample
+cellctl up sample
+cellctl status sample
+cellctl down sample
+```
+
+The deployment uses the `cell-containers-v1` schema. Paths and credentials remain
+operator-owned data; do not commit real deployment files. For example:
+
+```json
+{
+  "schema": "cell-containers-v1",
+  "docker_host": "unix:///absolute/docker.sock",
+  "image": "sha256:<64 lowercase hexadecimal characters>",
+  "platform": "linux/amd64",
+  "cells": {
+    "sample": {
+      "repo": "example-org/example-repo",
+      "incoming": "/absolute/incoming",
+      "roles": {
+        "desk": {
+          "harness": "codex",
+          "models": {"codex": "<model-id>"},
+          "volume": "sample-desk-work",
+          "config": "/absolute/desk-config",
+          "app_key": "/absolute/desk-key.pem",
+          "startup_action": "paused"
+        }
+      }
+    }
+  }
+}
+```
+
+The image must already exist locally by immutable ID; launching never pulls an
+image. Each role's named work volume must already exist. The image implements the
+`paused` and `handoff` entrypoint actions and consumes `CELL_HARNESS`, `CELL_MODEL`
+and the other cell environment values. `paused` mounts no forge key; `handoff`
+is coordinator-only and mounts the role's private key read-only. Image building,
+workspace provisioning and model login remain explicit provisioning operations.
+The native runtime does not require an implementation language inside the image.
+
+Roles are `desk`, `worker`, `reviewer`, `verifier`, `intake-loop` and `issue-loop`.
+They map to the existing role skill names. Register only one intake role per cell
+because both intake keys map to `intake-desk`. `new` imports the selected roles'
+harness/model pins into `cell.env`; subsequent `desk --harness/--model` overrides
+remain authoritative. The initial registry supports one default harness across
+its enabled roles, with explicit per-launch overrides available.
+
+`up`/`desk` inspect Docker independently of tmux. A matching running container is
+attached by immutable container ID. When its console has disappeared, a new tmux
+console runs Go `cellctl container-run`, which rechecks identity and attaches with
+`docker attach --sig-proxy=false`. When neither exists, the same runner launches
+the configured container. Repeated matching model/harness arguments reconnect;
+changed values refuse and require an explicit restart. Inspection failures are
+errors, never evidence that a container is absent. Failed runners retain their
+pane and diagnostic output until the next explicit `up` attempt. The console's
+runner command reaches tmux as separate arguments, so no shell (including the
+operator's default shell) parses the model or any other value. Model pins with
+control characters are refused when the deployment is loaded and when a launch is
+planned.
+
+Runtime checks compare the inspected container with the plan, each refusal naming
+the one setting that differs: name and immutable image ID, ownership labels (an
+`adopt_container_id` admits only an unlabelled container), every planned
+environment value, no environment beyond the plan and the image's own defaults,
+entrypoint (must be the image's) and arguments, user, terminal settings, read-only
+root, privilege, added and dropped capabilities, devices, bind mounts outside the
+plan, added groups, published ports, process/memory/CPU limits, process, IPC and
+user namespace modes, no-new-privileges, the `/tmp` tmpfs, the dedicated network
+and every mount's source, target and mode. Only an explicitly configured local Unix
+Docker socket is supported. `check` performs file and local Docker metadata checks
+for every registered role, reporting every role's file and Docker check failures
+together (a configuration or plan error stops at the first role), without launching
+a model, minting tokens, creating networks or contacting a forge. As the preflight
+for `up`, `check` plans from the registered model pins, so a container started with
+a `desk --harness/--model` override is reported as a mismatch. `DRY_RUN=1` makes
+no Docker calls.
+
+`status` and `down` act on what is running. They read the harness and model a
+container was launched with (so a `desk --harness/--model` override is reported
+and stopped) and still apply every other runtime check before reporting or
+stopping it. One role's refusal never skips the remaining roles; the command
+exits nonzero after all roles were handled, naming each refused one. `down` stops
+only verified containers before closing their consoles and never removes
+workspace volumes. `status` is a native-runtime verb; the external launcher
+contract below has none. The host user and Docker administrator remain outside
+this isolation boundary. Reconnecting compares the settings listed here
+(user, terminal, entrypoint and environment, read-only root, capabilities,
+devices and device requests, groups, ports, limits, namespaces, security options,
+tmpfs, network and mounts); other engine-level settings, such as the runtime,
+sysctls or ulimits, are not compared.
+
+These runtime settings are fixed, not configurable: user `501:501` (the image must
+work for that UID), 256 processes, 4 GiB memory, 2 CPUs, a `/tmp` tmpfs of 512 MiB
+(`rw,nosuid,nodev,mode=1777`), read-only root, all capabilities dropped and
+no-new-privileges. `platform` defaults to `linux/amd64`.
+
+The per-cell network `assay-product-<cell>` is a naming and attachment boundary,
+**not** an egress or host-isolation boundary: containers keep outbound network
+access and whatever the Docker host routes to them. `cellctl` creates the network
+with the label `assay.product-cell=<cell>` and refuses an existing network of that
+name without that label.
+
+Directory mounts (`incoming` and each role's `config`) are validated against
+protected paths: none may be the host root `/`, and none may equal or contain a
+configured credential (any role's `app_key` or `claude_token`), the Docker
+socket (the configured one and the standard locations), the operator's home
+directory, or the cell's own directory (and so the cells root above it). The
+check compares the configured paths as written when the deployment is loaded, and
+compares file identity (device and inode) whenever a plan is built and again
+immediately before launch, so any other spelling of a protected directory (a
+symlink, a case or Unicode-normalization variant, or a filesystem alias) is
+refused too. Only these paths are protected: other host data that a mount
+contains is the operator's choice.
+
+A cell can optionally set `host_lock` to an absolute advisory lock file shared
+with a previous host launcher. It is honoured for the `desk` role only: the Go
+runner holds it for that console's lifetime and refuses a held or unreadable lock.
+Other roles never take it. Retire the old host launcher during migration:
+a host-only file lock cannot establish mutual exclusion after its owning console
+process has died while Docker continues running.
+
+For Claude, supply `claude_token` as a private regular file. `codex_sandbox` defaults
+to `workspace-write`; `container` requires a nonempty
+`container_boundary_approved_by` record. That field only records who accepted the
+container as the sole boundary; `cellctl` verifies nothing about the decision or
+the person beyond the value being present. The selected image must enforce those
+settings. Credentials are mounted read-only; they are never copied to the workspace
+or supplied as command-line token values.
+
+#### Migrating an external launcher
+
+Keep the existing image, volume, config and credential paths in the deployment
+JSON. If preserving a running unlabelled container, record its **full** Docker ID
+in that role's `adopt_container_id`. Go still checks its runtime configuration;
+this field does not bypass ownership mismatches or isolation checks. Newly launched
+containers carry cell/role labels and do not need this migration field. Disconnect
+the previous console before reconnecting through Go, so its advisory lock is free.
+
+After installing a release containing the native runtime, switch the registration
+atomically (the setter saves a backup):
+
+```sh
+cellctl set sample CELL_KIND=container CELL_CONTAINER_LAUNCHER= \
+  CELL_CONTAINER_CONFIG=/absolute/cells.json
+cellctl check sample
+cellctl up sample
+```
+
+Both runtime selectors set at once is an error. Restore the saved registration to
+return to the previous launcher; neither registration change alters the work volume.
+Once migration is verified, retire the old host scripts. Keep the deployment JSON
+and image assets that the Go runtime still uses.
+
+### External launcher compatibility
 
 Register an existing container launcher to make the cell visible to `cellctl ls`
 and start it through the same command entry point:
@@ -1234,6 +1755,7 @@ it directly as an argument vector, never as a shell command string:
 | `desk sample the-desk` | `desk the-desk --harness claude --model <resolved-pin>` |
 | `up sample` | The same coordinator launch as `desk sample the-desk` |
 | `down sample` | `down` |
+| `status sample` | Not part of this contract: refuses without invoking the launcher |
 
 The default role list is `the-desk`. This first integration supports `up` only
 when that is the sole configured role. For additional roles, register them with
@@ -1281,14 +1803,18 @@ into an agent merely because those paths are available on its host.
 ## Parity with the shell oracle
 
 `cellctl` was a 3,000-line shell script before it was a Go program, and the script is still in
-the tree at `tools/cellctl/cellctl`. It is not dead weight and it is not a fallback: it is the
-**ORACLE** the Go program is proved against, and it stays until a human signs the cutover.
+the tree at `tools/cellctl/testdata/cellctl-shell-oracle.sh` — under `testdata/`, and with a
+banner saying so, because it is a test fixture and not the launcher. It is not dead weight and it
+is not a fallback: it is the **ORACLE** the Go program is proved against, and it stays until a
+human signs the cutover. Do not install or run it as `cellctl`; the launcher is the Go program
+(see [Install](#install)).
 
 **The harness.** `tools/cellctl/tests/parity.test.sh` runs both implementations over the same
 hand-built fixtures and diffs what they produce:
 
 ```bash
-CELLCTL_A=tools/cellctl/cellctl CELLCTL_B=tools/desk/cellctl bash tools/cellctl/tests/parity.test.sh
+CELLCTL_A=tools/cellctl/testdata/cellctl-shell-oracle.sh CELLCTL_B=tools/desk/cellctl \
+  bash tools/cellctl/tests/parity.test.sh
 ```
 
 For every cell in the matrix it runs `DRY_RUN=1 <impl> <verb> <args>` under both, normalises the
@@ -1303,6 +1829,14 @@ per kind × forge {github, gitlab}. `new` has no dry run, so parity there is a b
 whole tree each implementation scaffolds — paths, mode bits and file contents. `PARITY_ONLY=<substring>`
 narrows a run to one cell or one verb.
 
+**The machine-wide defaults file is outside the matrix too.** `$CELLS_ROOT/defaults.env` exists
+only in the Go program — the oracle neither reads nor writes it. A cells root without the file
+resolves every key as the oracle does, so the dry-run cells of the matrix still diff clean. The
+`new` cells differ by exactly the file: the Go `new` writes `defaults.env` into the cells root
+and prints one `[defaults] created …` line. The harness drops that line from both sides before
+comparing output, and the tree it compares is the scaffolded cell's own directory, which the
+file is not in. The layer's own behaviour is asserted by Go tests rather than by diff.
+
 **`deskd` is deliberately outside the matrix.** It has no `DRY_RUN` plan path in the oracle, so
 there is nothing to diff, and giving it one would mean editing the oracle. It is also the single
 most credential-sensitive verb — the script hand-built an RS256 App JWT with `openssl` and
@@ -1312,7 +1846,7 @@ travels, and the package contains no `crypto/rsa`, no `crypto/x509`, no JWT and 
 shell-out. That is asserted at the source level rather than by diff.
 
 **Two independent layers, not one.** The plan diff above is the first. The second is the
-seventeen behavioural suites beside it (`tools/cellctl/tests/*.test.sh`), which assert what was
+eighteen behavioural suites beside it (`tools/cellctl/tests/*.test.sh`), which assert what was
 WRITTEN, what a stub RECORDED and which exit code came back — so they fail for different reasons
 than a textual diff:
 
@@ -1335,7 +1869,8 @@ the harness must then go RED:
 
 ```bash
 cd tools/desk && go build -tags parity -o /tmp/cellctl-parity ./cmd/cellctl && cd ../..
-CELLCTL_PARITY_MUTATE=KUBECONFIG CELLCTL_A=tools/cellctl/cellctl CELLCTL_B=/tmp/cellctl-parity \
+CELLCTL_PARITY_MUTATE=KUBECONFIG CELLCTL_A=tools/cellctl/testdata/cellctl-shell-oracle.sh \
+  CELLCTL_B=/tmp/cellctl-parity \
   bash tools/cellctl/tests/parity.test.sh     # expected: exit 1, naming scrubbed/…/desk cells
 ```
 
@@ -1350,6 +1885,13 @@ For shared provider model defaults and per-desk effort with cell-level exception
 see [Shared provider defaults](cellctl-provider-defaults.md). For a complete standalone
 policy, see [Cell model policy](cellctl-model-policy.md); `CELL_MODEL_POLICY` takes
 precedence over shared defaults. Existing legacy cell pins apply when neither is configured.
+
+## Per-role starting context
+
+To give each role its own plugins, skills, memory directory, instruction file, dispatched-agent
+definitions and connector set — instead of one shared starting context for every window and
+every agent it dispatches — see [Per-role starting context](cellctl-role-context.md).
+`CELL_ROLE_CONTEXT` is unset by default, and a cell without it launches exactly as before.
 
 
 ### Claude prompt suggestions
@@ -1368,3 +1910,56 @@ Claude `settings.json`; this covers cron without relying on interactive shell rc
 files. Claude settings can override inherited environment variables, so remove any
 contradictory `true` from higher-priority settings. Existing processes do not acquire
 new shell exports; use `/config` or restart the affected session after rollout.
+
+### Claude auto-compact window
+
+A host `cellctl desk` Claude launch (house and k8s kinds, including provider-backed
+GLM/Kimi sessions) exports `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000`, so a long-running
+desk session compacts at 200K tokens instead of re-reading an ever-growing prefix on
+every turn — on a 1M-context model the window would otherwise never trip. It is neutral
+for 200K-context models, which compact there anyway. A non-empty value set in the
+cell's `cell.env` (or in the launching environment) wins over the default. An empty
+value is treated as unset, so it cannot switch the export off: the 200000 default
+still applies, and only a larger number widens the window. Scrubbed cells do not
+compose this variable — their launch environment is exactly the allowlist in
+[The composed environment](#the-composed-environment) — and neither do container
+cells, whose launch is delegated to the operator's own launcher.
+
+## Host desk cadence
+
+Codex desks default to interactive sessions whose bootstrap establishes and reads back
+a native standing Goal before invoking the role. Existing Goals and user pause/clear
+authority are preserved. Explicit `--cadence <duration>` selects repeated bounded
+headless passes; `--cadence off` explicitly selects interactive mode. Claude and Cursor
+retain their existing behavior. See [Host desk cadence](cellctl-cadence.md) for Goal
+admission, container-image limits, cadence setup, status and stop/recovery.
+
+### Configured comms startup
+
+For a house cell, `cellctl set <cell> CELL_COMMS_CONFIG=<absolute-manifest-path>`
+selects the existing comms manifest. `cellctl up` starts one configured interim
+gateway/drain supervisor in its own cockpit surface; absent or disabled config
+keeps desk-only startup. `cellctl down` stops the supervisor before closing its
+owned surface and preserves mailbox data. See [host desk communications](cellctl-comms.md)
+for configuration, quoting, recovery and cockpit requirements.
+
+## Local performance opt-in
+
+Set `ASSAY_TELEMETRY=1` with `cellctl set <cell>` or in the machine defaults.
+The effective cell value overrides machine defaults, which override the launching process.
+Explicit empty, `0`, and other non-`1` values turn collection off. `cellctl show <cell>`
+prints the normalized effective value and source when configured. Existing desk sessions retain their old
+process environment; restart a role normally to apply a changed launch setting.
+
+The normalized switch reaches house Claude/Codex/Cursor processes, Codex command-side
+configuration, pre-harness desk helpers, the comms service, scratch/cadence children,
+scrubbed desk/smoke processes and native/external container
+launcher environments. Only this non-secret bounded value is forwarded; scrubbed allowlists,
+credential boundaries and cluster quarantine are unchanged. Existing containers may require
+an explicit restart to apply a different opt-in; status/down can inspect their actual bounded
+launch selection. An external launcher must preserve this documented environment key when
+it creates the container. No upload or performance payload expansion is enabled.
+
+Logging remains optional and best-effort. Enabled does not prove the sink is writable or
+that every invocation completed. Inspect the local perf day file and report coverage; missing
+samples are unknown, never zero. No tool installation or live role restart occurs during tests.

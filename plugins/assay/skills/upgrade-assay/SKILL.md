@@ -55,6 +55,25 @@ neither local file exists — materialise the file first for an environment that
 *not pinned here*, not as a disagreement; a re-pin rewrites each `<artifact>-<platform>` line with
 that asset's own digest from `checksums.txt`.
 
+## Cursor bundle upgrades
+
+For a Cursor adopter, add `--harness cursor --forge <github|gitlab>` to preview,
+apply, and final `--check`. The same resolver selects the umbrella version; the
+selected composition must contain the `cursor-bundle.tar.gz` digest. Materialize
+`releases/<tag>.cursor-bundle.tar.gz` beside the selected checksums for offline use,
+or explicitly opt into `--fetch`. The exact archive hash, internal version, and
+closed file manifest are verified before migration or placement. This is integrity
+against the selected composition, not build provenance; binary installation keeps
+its separate mandatory verification.
+
+The dry-run shows generated writes and stale owned-file removals. Apply preserves
+unmanaged content, refuses local edits/collisions, places the verified bundle, and
+advances the marker last. It replaces the marketplace step below for this harness.
+Run `--check` afterward; exit 1 means generated content or the marker differs.
+Same-version requests still check the bundle. Legacy releases without an asset or
+digest refuse; never substitute a floating source tree. See the harness reference
+for the authoritative install and ownership contract.
+
 ## The three marker states are your spine
 
 Before you can move anyone, you ask the marker (`deskversion`, driven inside `upgrade-assay`) one
@@ -65,7 +84,7 @@ Its three-state answer decides everything:
 |---|---|
 | **known** | Proceed. This is the only state that moves anything. |
 | **known-inconsistent** (exit 5) | **Refuse.** Report which records disagree and stop. |
-| **could-not-determine** (exit 6) | **Refuse.** Never assume latest, never offer a "best guess" upgrade. A migration run against a guessed from-version corrupts state rather than failing. |
+| **could-not-determine** (exit 6) | **Refuse.** Never assume latest, never offer a "best guess" upgrade. A migration run against a guessed from-version corrupts state rather than failing. One cause has a supported way through: the refusal says `.assay-versions` carries **no `assay` umbrella line**. In that case only, re-run the same command with `--adopt-umbrella-from-pins`, as described below. |
 
 ## The flow — dry-run first, always
 
@@ -97,10 +116,10 @@ process result alone:
 | Exit | Refusal | Message shape |
 |---|---|---|
 | 5 | **inconsistent records** | names the disagreeing pair (e.g. a `statusgen` pin that disagrees with the umbrella composition) and stops |
-| 6 | **undetermined version** | names the missing/unreadable record (e.g. `.assay-versions`), prints no version, and uses no "assuming latest" wording |
+| 6 | **undetermined version** | names the missing/unreadable record (e.g. `.assay-versions`), prints no version, and uses no "assuming latest" wording. When the cause is **no umbrella line**, the refusal names `--adopt-umbrella-from-pins`. Re-run the same dry-run with that flag. It adopts the release the per-artifact lines pin only when every eligible line (not `-source`, not `same-tag: exempt`) pins one bare tag and every pinned sha256 matches that release's published `checksums.txt`, and it prints that evidence. The apply then writes the `assay <target>` line. With the flag, a digest mismatch is exit 5 (it names the line and both digests), and mixed or legacy tags, an unlisted asset, or no loadable `checksums.txt` are exit 6. Any other undetermined cause stays a refusal: **never guess** a version, and never hand-write the umbrella line |
 | 7 | **not a bare umbrella version** | a `<component>/`-prefixed per-artifact tag, or a malformed version — "this verb moves the whole umbrella; name a bare umbrella version, e.g. `v0.13.0`" |
 | 8 | **no such published release** | a bare `vX.Y.Z` that names no published umbrella — no manifest, no materialised `checksums.txt`, and none at the release home (or no `--fetch`, in which case the refusal names the flag); the refusal names where it looked. Unsupported / could-not-resolve, **never a nearest-match guess** |
-| 9 | **artifacts unavailable** | the target resolves but its artifacts can no longer be fetched (a release pruned from the cache) |
+| 9 | **artifacts unavailable** | the target resolves but its artifacts can no longer be fetched (a release pruned from the cache), or its `checksums.txt` lists no `<artifact>-linux-amd64` asset for a bare pin line the pin file carries — the refusal names the missing asset, and nothing is migrated or re-pinned |
 
 The `refus`-al wording never contains "assuming", "nearest", or "latest" on the undetermined and
 unknown-target paths — those words are how a guess sneaks in.
@@ -153,7 +172,7 @@ pointer.
 
 - NEVER `git push`, trigger a workflow, cut a tag, or run mutating infra. Re-pointing the
   marketplace is the adopter's own `/plugin` step; you print it, you do not run it.
-- The write surface is the adopter's own repo under `--root` (`.assay-versions` and the files the
+- The write surface is the adopter's own repo under `--root` (`.assay-versions`, Cursor managed files/bounded bindings when selected, and the files the
   migrations touch) — nothing above it, and never the platform install cache.
 - Stop at `implemented`; you do not set verified/done.
 - If anything is unclear or contradicts repo state, report it and stop — do not guess.

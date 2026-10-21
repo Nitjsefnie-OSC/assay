@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/gitcore"
+	"github.com/medici-finance/assay/tools/desk/internal/gitmaintenance"
 )
 
 // currency.go — the instrument. Everything here is READ-ONLY; the write path is
@@ -190,16 +193,25 @@ func resolveRepoRoot(repo, override string) (string, error) {
 	if err != nil {
 		return "", deskkit.Unverifiable("could-not-check: cannot resolve "+root, err)
 	}
-	gr, err := gitcore.Open(abs)
-	if err != nil {
+	if _, err := gitcore.Open(abs); err != nil {
 		return "", deskkit.Unverifiable(
 			"could-not-check: "+abs+" is not a git checkout", err)
 	}
-	url, err := gr.RemoteURL("origin")
+	// The identity check decides on origin's URL AS GIT RESOLVES IT for the `git fetch origin`
+	// that follows (#1623) — every config scope, insteadOf rewrites — never on a read of the
+	// repository config file alone, which can name this repo while git fetches another.
+	urls, err := originURLs(abs, false)
 	if err != nil {
 		return "", deskkit.Unverifiable(
-			"could-not-check: "+abs+" has no `origin` remote to fetch from", err)
+			"could-not-check: "+abs+" has no `origin` remote git can resolve to fetch from", err)
 	}
+	if len(urls) != 1 {
+		return "", deskkit.Refused(fmt.Sprintf(
+			"refused: %s's origin resolves to %d fetch URLs (%s) — a multi-valued remote.origin.url "+
+				"list names no single project, so deskmerge will not compute a merge in it. Set exactly one",
+			abs, len(urls), deskkit.StripControl(strings.Join(urls, ", "))))
+	}
+	url := urls[0]
 	if !originNames(url, repo) {
 		return "", deskkit.Refused(fmt.Sprintf(
 			"refused: %s's origin is %s, which does not name %s — deskmerge will not compute a merge "+
@@ -207,6 +219,31 @@ func resolveRepoRoot(repo, override string) (string, error) {
 			abs, deskkit.StripControl(url), deskkit.StripControl(repo)))
 	}
 	return abs, nil
+}
+
+// originURLs returns every URL git resolves for origin in dir: the fetch URL list (push=false)
+// or the push URL list (push=true — every pushurl value, else the url list, after insteadOf /
+// pushInsteadOf). It is `git remote get-url [--push] --all origin`, a config read that contacts
+// no remote, run through the same seam and environment as the fetch and push it gates.
+func originURLs(dir string, push bool) ([]string, error) {
+	args := []string{"remote", "get-url", "--all", "origin"}
+	if push {
+		args = []string{"remote", "get-url", "--push", "--all", "origin"}
+	}
+	out, err := runGit(dir, args...)
+	if err != nil {
+		return nil, err
+	}
+	var urls []string
+	for _, line := range strings.Split(out, "\n") {
+		if u := strings.TrimSpace(line); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("git resolved no URL for origin")
+	}
+	return urls, nil
 }
 
 // originNames reports whether a remote URL names owner/repo, across the ssh, https and
@@ -219,10 +256,71 @@ func originNames(url, repo string) bool {
 		strings.HasSuffix(u, ":"+strings.ToLower(repo))
 }
 
-// prHeadRef is the namespaced local ref deskmerge fetches a PR head into. It lives
-// under refs/deskmerge/ so it can never be mistaken for — or listed among — the
-// operator's own branches, and so a stale one cannot shadow a real branch name.
-func prHeadRef(pr int) string { return fmt.Sprintf("refs/deskmerge/pr-%d", pr) }
+// cleanupWarn receives best-effort temporary-ref cleanup warnings (a test seam).
+var cleanupWarn io.Writer = os.Stderr
+
+// fetchFn is the in-process fetch seam. Production opens root and runs gitcore's Fetch; a
+// test substitutes its own to observe or fail the fetch.
+var fetchFn = func(root string, opts gitcore.FetchOpts) error {
+	r, err := gitcore.Open(root)
+	if err != nil {
+		return err
+	}
+	return r.Fetch(opts)
+}
+
+// fetchEndpointFn resolves the https fetch endpoint (the forge's canonical URL for the gated
+// repo plus the in-memory credential) under this session's minted role. A test swaps it.
+var fetchEndpointFn = func(repo, originURL string) (deskkit.ForgeGitEndpoint, error) {
+	role, _, err := sessionRoleFn(toolName)
+	if err != nil {
+		return deskkit.ForgeGitEndpoint{}, deskkit.Unverifiable(
+			"could-not-check: cannot resolve the deskmerge App role to fetch "+deskkit.StripControl(repo), err)
+	}
+	return deskkit.ForgeGitEndpointForCheckout(repo, role, originURL)
+}
+
+// fetchFromOrigin fetches refSpecs from origin into root, in-process. origin's fetch URL is
+// re-resolved exactly as the identity gate (resolveRepoRoot) resolved it and must still be a
+// single URL naming repo — the gate's decision is re-made at the point of use rather than
+// trusted to have run. Where the fetch goes then depends on that URL's shape:
+//
+//   - https: the forge's canonical URL for the gated repo, with the role App's token held in
+//     memory and presented to that URL only (deskkit.ForgeGitEndpointForCheckout; the origin
+//     host never decides where the credential goes);
+//   - a local repository (an absolute path or file:// URL — the offline fixtures): that URL
+//     verbatim, with no credential at all;
+//   - anything else (ssh, scp-like, cleartext http, a remote-helper): refused as
+//     could-not-check — no in-process transport carries it, and none is faked.
+func fetchFromOrigin(root, repo string, refSpecs []string) error {
+	urls, err := originURLs(root, false)
+	if err != nil {
+		return err
+	}
+	if len(urls) != 1 {
+		return fmt.Errorf("origin resolves to %d fetch URLs; fetching from exactly one", len(urls))
+	}
+	url := urls[0]
+	if !originNames(url, repo) {
+		return fmt.Errorf("origin %s does not name %s", deskkit.StripControl(url), deskkit.StripControl(repo))
+	}
+	opts := gitcore.FetchOpts{RefSpecs: refSpecs, Force: true}
+	lower := strings.ToLower(url)
+	switch {
+	case strings.HasPrefix(lower, "https://"):
+		ep, eerr := fetchEndpointFn(repo, url)
+		if eerr != nil {
+			return eerr
+		}
+		opts.URL, opts.Auth = ep.Opts.URL, ep.Opts.Auth
+	case filepath.IsAbs(url) || strings.HasPrefix(lower, "file://"):
+		opts.URL = url
+	default:
+		return fmt.Errorf("origin %s is not an https URL or a local repository — no in-process transport carries it",
+			deskkit.StripControl(url))
+	}
+	return fetchFn(root, opts)
+}
 
 // fetchState fetches the base branch and the PR head, and returns their SHAs.
 //
@@ -232,10 +330,31 @@ func prHeadRef(pr int) string { return fmt.Sprintf("refs/deskmerge/pr-%d", pr) }
 // and quietly re-basing the question onto a different one would make the answer true of
 // a PR nobody asked about.
 func fetchState(root, repo string, p prInfo) (baseSHA, headSHA string, err error) {
-	if _, ferr := runGit(root, "fetch", "--quiet", "origin",
-		"+refs/heads/"+p.BaseRefName+":refs/remotes/origin/"+p.BaseRefName,
-		"+refs/pull/"+strconv.Itoa(p.Number)+"/head:"+prHeadRef(p.Number),
-	); ferr != nil {
+	tmp, err := gitmaintenance.BeginTempRef(root, "deskmerge")
+	if err != nil {
+		return "", "", deskkit.Unverifiable("could-not-check: cannot reserve the operation's temporary fetch reference", err)
+	}
+	// Consume the hash before declaring completion. Each fetch owns a distinct
+	// receipt/ref, so one same-PR run cannot read or remove another run's head.
+	observed := false
+	defer func() {
+		// A failed fetch may have written its private destination before failing
+		// elsewhere. Its child has stopped, so bind that owned residue as well.
+		if !observed {
+			_, _ = tmp.Observe()
+		}
+		// Cleanup is best-effort and never changes the verdict: both SHAs were
+		// observed before completion and everything downstream uses only them.
+		// Recovery can consume the retained receipt only after durable completion.
+		if _, cleanupErr := tmp.Complete(context.Background()); cleanupErr != nil {
+			fmt.Fprintf(cleanupWarn, "deskmerge: warning: temporary fetch ref %s was not removed (%s); its receipt is retained; recovery requires confirmed producer completion before a later `deskwt maintain objects --apply` pass\n",
+				deskkit.StripControl(tmp.Name), deskkit.StripControl(cleanupErr.Error()))
+		}
+	}()
+	if ferr := fetchFromOrigin(root, repo, []string{
+		"+refs/heads/" + p.BaseRefName + ":refs/remotes/origin/" + p.BaseRefName,
+		"+refs/pull/" + strconv.Itoa(p.Number) + "/head:" + tmp.Name,
+	}); ferr != nil {
 		return "", "", deskkit.Unverifiable(fmt.Sprintf(
 			"could-not-check: cannot fetch %s's %s and refs/pull/%d/head — an unfetched ref makes "+
 				"every currency verdict unverifiable. deskmerge reports could-not-check rather than "+
@@ -253,12 +372,12 @@ func fetchState(root, repo string, p prInfo) (baseSHA, headSHA string, err error
 			"could-not-check: cannot resolve origin/"+deskkit.StripControl(p.BaseRefName)+" after fetching it", err)
 	}
 	baseSHA = baseHash.String()
-	headHash, err := gr.Resolve(prHeadRef(p.Number))
+	headSHA, err = tmp.Observe()
 	if err != nil {
 		return "", "", deskkit.Unverifiable(
 			"could-not-check: cannot resolve the fetched PR head", err)
 	}
-	headSHA = headHash.String()
+	observed = true
 	if !strings.EqualFold(headSHA, p.HeadRefOid) {
 		return "", "", deskkit.Unverifiable(fmt.Sprintf(
 			"could-not-check: GitHub reported head %s but refs/pull/%d/head fetched %s — the PR moved "+
@@ -266,17 +385,6 @@ func fetchState(root, repo string, p prInfo) (baseSHA, headSHA string, err error
 			short(deskkit.StripControl(p.HeadRefOid)), p.Number, short(headSHA)), nil)
 	}
 	return baseSHA, headSHA, nil
-}
-
-// dropPRHeadRef removes the namespaced fetch ref. Best-effort: a leftover ref is
-// harmless (it is namespaced out of every branch listing), so its removal must never
-// turn a successful run into a failure.
-func dropPRHeadRef(root string, pr int) {
-	repo, err := gitcore.Open(root)
-	if err != nil {
-		return
-	}
-	_ = repo.DeleteLocalRef(prHeadRef(pr))
 }
 
 // ---------------------------------------------------------------------------

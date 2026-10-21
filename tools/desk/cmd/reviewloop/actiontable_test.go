@@ -15,9 +15,9 @@ import (
 // is a derivation of it, and this test is the diff (derive-or-diff). It lives in the same
 // Go module, so the tools/** path filter already triggers it — no cross-module registry
 // row is needed.
-const deskboardBoardGo = "../deskboard/board.go"
+const deskboardBoardGo = "../../internal/reviewflow/classify.go"
 
-var actionConstRe = regexp.MustCompile(`(?m)^\s*act[A-Za-z]+\s*=\s*"([A-Z][A-Z0-9-]*)"`)
+var actionConstRe = regexp.MustCompile(`(?m)^\s*Act[A-Za-z]+\s*=\s*"([A-Z][A-Z0-9-]*)"`)
 
 // deskboardActions parses the act* constant block out of deskboard's source. Parsing the
 // SOURCE rather than restating the list is the point: a hand-kept second list is exactly
@@ -105,6 +105,20 @@ func TestLookupUnknownActionIsUnverifiable(t *testing.T) {
 	}
 }
 
+// TestHumanOwnedRetiredClosed — #2028 retired the board's HUMAN-OWNED action (it
+// skipped review of a trusted human's own PR). The table must not carry it back as a
+// sanctioned no-op, and an older board that still emits it must read as an unknown action
+// (exit 6) — version skew fails closed, never into a silent skip.
+func TestHumanOwnedRetiredClosed(t *testing.T) {
+	if _, ok := actionTable["HUMAN-OWNED"]; ok {
+		t.Fatal("actionTable carries HUMAN-OWNED — the retired #177 authorship skip is back (#2028)")
+	}
+	_, err := LookupAction("HUMAN-OWNED")
+	if got := deskkit.ExitCodeOf(err); err == nil || got != deskkit.ExitUnverifiable {
+		t.Fatalf("LookupAction(HUMAN-OWNED) = (err %v, exit %d), want exit %d", err, got, deskkit.ExitUnverifiable)
+	}
+}
+
 // TestOnlyDispatchIsActionable pins the idle gate's input predicate: FLIP, SURFACE, WAIT
 // and NO-OP rows are real work states but they do not consume a reviewer slot, and folding
 // any of them into "actionable" would change what an idle claim means.
@@ -124,7 +138,7 @@ func TestOnlyDispatchIsActionable(t *testing.T) {
 func TestWaitingStatesAreVisibleNotDropped(t *testing.T) {
 	b := healthyBoard(t, row(t, "BLOCKED", 1), row(t, "WAIT-CI", 2), row(t, "READY", 3), row(t, "MERGE-CURR", 4), row(t, "CI-RED", 5))
 	var sb strings.Builder
-	b.RenderRows(&sb)
+	renderRows(b, &sb)
 	for _, want := range []string{"BLOCKED", "WAIT-CI", "READY", "MERGE-CURR", "CI-RED"} {
 		if !strings.Contains(sb.String(), want) {
 			t.Fatalf("row %s was dropped from the reactor's output — a waiting state must stay visible", want)
@@ -164,7 +178,7 @@ func TestSuspectApprovalSurfacesAndNeverFlips(t *testing.T) {
 	// And it must survive rendering: a row nobody sees is the same defect as no row.
 	b := healthyBoard(t, row(t, "SUSPECT-APPROVAL", 1))
 	var sb strings.Builder
-	b.RenderRows(&sb)
+	renderRows(b, &sb)
 	if !strings.Contains(sb.String(), "SUSPECT-APPROVAL") {
 		t.Fatal("SUSPECT-APPROVAL was dropped from the reactor's output — the one row that must not vanish")
 	}

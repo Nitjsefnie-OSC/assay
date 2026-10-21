@@ -48,10 +48,8 @@ a restatement of one already on a shipped page, or a statement of absence. A sen
 brief's deliverable that cannot be traced to an existing page is the review finding.
 
 files:
-- `docs/what-assay-is-and-is-not.md` (planned) — the deliverable; one page, written to be
-  handed over without a preamble.
-- `docs/evidence-bundle.md` and `docs/iso9001-mapping.md` — cross-links only; the substance
-  stays where it is.
+- `docs/what-assay-is-and-is-not.md` (planned) — the deliverable; one page, written to be handed over without a preamble.
+- `docs/evidence-bundle.md` and `docs/iso9001-mapping.md` — cross-links only; the substance stays where it is.
 
 facts:
 - **Extraction, not authorship.** The sentences exist. The work is selection, ordering and

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# gen-shims-gh-token.test.sh — assay#1145: gen_shims' generated shim (tools/cellctl/cellctl,
-# gen_shims()) resolves gh's ambient credential BEFORE swapping HOME for the wrapped desk verb,
-# and threads it through as GH_TOKEN, so a `gh` subprocess the verb shells out to still
-# authenticates even though the verb's own config/state is isolated to the cell home.
+# gen-shims-gh-token.test.sh — assay#1145: gen_shims' generated shim (the shell oracle,
+# tools/cellctl/testdata/cellctl-shell-oracle.sh, gen_shims()) resolves gh's ambient credential
+# BEFORE swapping HOME for the wrapped desk verb, and threads it through as GH_TOKEN, so a `gh`
+# subprocess the verb shells out to still authenticates even though the verb's own config/state is isolated to the cell home.
 #
 # What it proves (each an `assert` below):
 #   isolation   the wrapped verb's OWN $HOME is still the cell home, unchanged (the regression
@@ -15,6 +15,19 @@
 #               the shim never shells out to `gh auth token` to overwrite it
 #   no-gh       when `gh` is not on PATH at all, the shim falls back to its pre-fix behaviour
 #               (HOME swap only, no crash) — not a new failure mode
+#   no-override assay#1631: the wrapped verb's OWN environment carries NO GH_TOKEN — the ambient
+#               credential reaches only a `gh` child (through the cell's gh wrapper), never the
+#               verb's own code, which reads an inherited GH_TOKEN as an explicit operator
+#               override (deskdispatch skipped its role-App mint on it)
+#   role wins   a self-minting verb that hands its `gh` child its OWN token keeps it — the wrapper
+#               never replaces a GH_TOKEN the caller set
+#   nested      a shimmed verb running another shimmed verb still authenticates that verb's `gh`
+#               child, and the wrapper execs the real gh, never itself (it strips its own dir
+#               from PATH however many times it was prepended)
+#   no argv     the ambient credential is never an env(1) ARGUMENT in the shim or the wrapper
+#               (argv is readable by other local users while env runs; the environment is not),
+#               and the `gh` child's environment carries it only as GH_TOKEN — the wrapper drops
+#               CELLCTL_GH_AMBIENT before exec
 #
 # No network, no tmux, no real desk-tools, no real `gh`: everything on PATH is a fixture. The
 # fixture `gh` mimics real gh's OWN priority order (GH_TOKEN env wins; otherwise its ambient
@@ -28,9 +41,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The binary under test. $CELLCTL lets the SAME suite run against either implementation
 # (the bash oracle, the default, or the Go port) — desk-containers/10.
-CELLCTL="${CELLCTL:-$HERE/../cellctl}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
+CELLCTL="${CELLCTL:-$HERE/../testdata/cellctl-shell-oracle.sh}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
 T="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/cellctl-shim-gh.XXXXXX")" && pwd -P)"
-trap 'rm -rf "$T"' EXIT
+trap 'suite_status=$?; if declare -F private_deskwt_finish >/dev/null; then private_deskwt_finish || suite_status=1; fi; rm -rf "$T"; exit "$suite_status"' EXIT
 fails=0
 assert(){ if eval "$2"; then echo "  ok    $1"; else echo "  FAIL  $1"; fails=$((fails+1)); fi; }
 
@@ -41,6 +54,15 @@ unset CELL CELL_DIR CELL_HOME CELL_CONFIG CELL_KIND CELL_FORGE CELL_REPO CELL_RO
   GITLAB_API_BASE GITLAB_GROUP GITLAB_TOKEN_STORE DESKD_GITLAB_TOKEN_FILE \
   DESK_MODEL_DEFAULT DESK_MODEL_the_desk DESK_MODEL_worker_desk DESK_MODEL_OVERRIDE \
   DESK_ROOTS DESK_LOOP DESK_SESSION GH_TOKEN GH_ENTERPRISE_TOKEN 2>/dev/null || true
+# assay#1631: a cellctl shim exports CELLCTL_GH_AMBIENT (the operator's ambient credential) to
+# the shell that runs this suite, and the shim under test takes an inherited one as already
+# resolved, so the fixture `gh` below would never be asked. Clear every inherited CELLCTL_*
+# name, not a list of known ones. CELLCTL (the implementation under test) was read above and
+# has no underscore, so it is kept; the suite sets its own CELLCTL_* values after this point.
+while IFS= read -r v; do
+  case "$v" in CELLCTL_*) unset "$v" ;; esac
+done < <(compgen -e)
+unset v
 
 # ---------------------------------------------------------------- fixtures
 # The "REAL" (operator) HOME the live session keeps — the fixture `gh`'s ambient lookup only
@@ -61,7 +83,7 @@ REPO="$T/checkout"
 ROOTS="example-org/example-repo=$REPO"
 
 export DESK_TOOLS_BIN="$T/desk-tools"; mkdir -p "$DESK_TOOLS_BIN" "$T/bin"
-for v in deskboot deskroster deskwt deskdispatch deskpr deskfile deskpost desktoken; do
+for v in deskboot deskroster deskwt deskpr deskpost desktoken; do
   printf '#!/usr/bin/env bash\nexit 0\n' > "$DESK_TOOLS_BIN/$v"; chmod +x "$DESK_TOOLS_BIN/$v"
 done
 
@@ -73,12 +95,41 @@ cat > "$DESK_TOOLS_BIN/deskboard" <<EOF
 #!/usr/bin/env bash
 {
   echo "VERB_HOME=\$HOME"
+  echo "VERB_GH_TOKEN=\${GH_TOKEN-<unset>}"
   if out="\$(gh api some-endpoint 2>&1)"; then rc=0; else rc=\$?; fi
   echo "GH_CALL_RC=\$rc"
   echo "GH_CALL_OUT=\$out"
 } > "$MARKER"
 EOF
 chmod +x "$DESK_TOOLS_BIN/deskboard"
+
+# assay#1631: a SELF-MINTING verb (deskdispatch's shape). It records the GH_TOKEN its OWN code can
+# see — the value it would read as an operator override — then hands its `gh` child its own role
+# token exactly as a minting verb does, and finally runs ANOTHER shimmed verb (nested) with no
+# GH_TOKEN of its own, whose `gh` child must still authenticate.
+MINT_MARKER="$T/deskdispatch.out"
+NESTED_MARKER="$T/deskfile.out"
+cat > "$DESK_TOOLS_BIN/deskdispatch" <<EOF
+#!/usr/bin/env bash
+{
+  echo "VERB_GH_TOKEN=\${GH_TOKEN-<unset>}"
+  if out="\$(GH_TOKEN=ROLE_APP_TOKEN_1631 gh api some-endpoint 2>&1)"; then rc=0; else rc=\$?; fi
+  echo "ROLE_GH_RC=\$rc"
+  echo "ROLE_GH_OUT=\$out"
+} > "$MINT_MARKER"
+env -u GH_TOKEN "$T/cells/example-cell/shim/deskfile"
+EOF
+chmod +x "$DESK_TOOLS_BIN/deskdispatch"
+cat > "$DESK_TOOLS_BIN/deskfile" <<EOF
+#!/usr/bin/env bash
+{
+  echo "VERB_GH_TOKEN=\${GH_TOKEN-<unset>}"
+  if out="\$(gh api some-endpoint 2>&1)"; then rc=0; else rc=\$?; fi
+  echo "GH_CALL_RC=\$rc"
+  echo "GH_CALL_OUT=\$out"
+} > "$NESTED_MARKER"
+EOF
+chmod +x "$DESK_TOOLS_BIN/deskfile"
 
 # The fixture `gh`: `gh auth token` succeeds only under REAL_HOME (models the ambient
 # keychain/hosts.yml lookup being keyed to the real HOME, per the issue); any other invocation
@@ -93,6 +144,7 @@ if [[ "\${1:-}" == "auth" && "\${2:-}" == "token" ]]; then
     echo "gh: authentication failed: no credential found for HOME=\$HOME" >&2; exit 1
   fi
 fi
+echo "GH_CHILD_AMBIENT=\${CELLCTL_GH_AMBIENT-<unset>}" >> "$T/gh-child.env"
 if [[ -n "\${GH_TOKEN:-}" ]]; then
   echo "GH_API_OK token=\$GH_TOKEN"; exit 0
 else
@@ -113,8 +165,14 @@ exit 0
 EOF
 chmod +x "$T/bin/claude"
 
-export PATH="$T/bin:$PATH"
+# shellcheck source=SCRIPTDIR/private-path.sh
+source "$HERE/private-path.sh"
+private_path "$T/bin"
+private_deskwt "$T/bin"
 export CELLS_ROOT="$T/cells" CLAUDE_CONFIG_DIR="$T/claude-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
+# regression: #2738 — normal-path isolation and real-launch positive control.
+private_deskwt_check "$CELLCTL" "$REPO"
+
 
 # ---------------------------------------------------------------- boot the cell (real HOME, real gh on PATH)
 "$CELLCTL" new example-cell --kind house --repo "$REPO" --roots "$ROOTS" >/dev/null
@@ -130,12 +188,31 @@ assert "verb's own HOME is STILL isolated to the cell home (regression floor)" '
 assert "verb's gh subprocess authenticated (rc=0)" 'grep -qx "GH_CALL_RC=0" "$MARKER"'
 assert "verb's gh subprocess carried the ambient token resolved under the REAL home" 'grep -qxF "GH_CALL_OUT=GH_API_OK token=FIXTURE_TOKEN_9f8e7d" "$MARKER"'
 
+# ---------------------------------------------------------------- case: no manufactured override (assay#1631)
+echo "[assay#1631: the ambient credential never reaches a verb's own code as GH_TOKEN]"
+assert "the wrapped verb's OWN env carries no GH_TOKEN (a desk verb reads one as an operator override)" 'grep -qxF "VERB_GH_TOKEN=<unset>" "$MARKER"'
+assert "the generated shim never exports the ambient token as GH_TOKEN" '! grep -q "GH_TOKEN=\"\$gh_token\"" "$CELL/shim/deskboard"'
+assert "the cell gh wrapper was generated" '[[ -x "$CELL/shim-gh/gh" ]]'
+rm -f "$MINT_MARKER" "$NESTED_MARKER"
+"$CELL/shim/deskdispatch" >/dev/null 2>&1
+assert "a self-minting verb (deskdispatch) sees NO GH_TOKEN, so it mints its role token" 'grep -qxF "VERB_GH_TOKEN=<unset>" "$MINT_MARKER"'
+assert "a verb's own token for its gh child WINS over the ambient one (role wins)" 'grep -qxF "ROLE_GH_OUT=GH_API_OK token=ROLE_APP_TOKEN_1631" "$MINT_MARKER"'
+assert "nested: the inner shimmed verb's own env carries no GH_TOKEN either" 'grep -qxF "VERB_GH_TOKEN=<unset>" "$NESTED_MARKER"'
+assert "nested: the inner verb's gh child still authenticates with the ambient token (wrapper did not loop)" 'grep -qxF "GH_CALL_OUT=GH_API_OK token=FIXTURE_TOKEN_9f8e7d" "$NESTED_MARKER"'
+
+# ---------------------------------------------------------------- case: the token is never in an argv
+echo "[assay#1631 A1: the ambient credential is exported, never an env(1) argument]"
+assert "the shim never passes the token as an env(1) argument" '! grep -E "^[[:space:]]*exec env .*(gh_token|CELLCTL_GH_AMBIENT)" "$CELL/shim/deskboard"'
+assert "the gh wrapper never passes the token as an env(1) argument" '! grep -E "^[[:space:]]*exec env .*(GH_TOKEN|CELLCTL_GH_AMBIENT)" "$CELL/shim-gh/gh"'
+assert "every gh child ran with CELLCTL_GH_AMBIENT dropped (it sees the credential only as GH_TOKEN)" '[[ -s "$T/gh-child.env" ]] && ! grep -qv "^GH_CHILD_AMBIENT=<unset>$" "$T/gh-child.env"'
+
 # ---------------------------------------------------------------- case: explicit GH_TOKEN override wins, no re-resolve
 echo "[override: explicit GH_TOKEN in the caller env is never replaced]"
 rm -f "$MARKER"
 GH_TOKEN=OPERATOR_OVERRIDE_TOKEN "$CELL/shim/deskboard" >/dev/null 2>&1
 assert "override still isolates HOME" 'grep -qxF "VERB_HOME=$CELL/home" "$MARKER"'
 assert "override token passed through unchanged (never re-resolved to the fixture token)" 'grep -qxF "GH_CALL_OUT=GH_API_OK token=OPERATOR_OVERRIDE_TOKEN" "$MARKER"'
+assert "override: the verb's OWN env carries the operator's explicit export unchanged" 'grep -qxF "VERB_GH_TOKEN=OPERATOR_OVERRIDE_TOKEN" "$MARKER"'
 
 # ---------------------------------------------------------------- case: no gh on PATH — falls back, no crash
 echo "[no-gh: falls back to the pre-fix shape, does not crash]"
@@ -143,6 +220,7 @@ rm -f "$MARKER"
 PATH="/usr/bin:/bin" "$CELL/shim/deskboard" >/dev/null 2>&1
 assert "no-gh case still isolates HOME (no crash)" 'grep -qxF "VERB_HOME=$CELL/home" "$MARKER"'
 assert "no-gh case: verb's own gh call fails exactly as pre-fix (not a NEW failure mode — no gh on PATH at all, same as before this fix)" 'grep -qx "GH_CALL_RC=127" "$MARKER"'
+
 
 echo
 if [[ "$fails" -eq 0 ]]; then echo "gen-shims-gh-token.test.sh: OK"; else echo "gen-shims-gh-token.test.sh: $fails FAILED"; exit 1; fi

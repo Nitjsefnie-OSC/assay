@@ -30,6 +30,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
@@ -40,14 +41,23 @@ import (
 // and accepts the ensure/apply/remove writes, recording each request.
 type ghStampServer struct {
 	srv      *httptest.Server
+	mu       sync.Mutex // guards fields a fixture handler shares with the test goroutine
 	requests []ghStampReq
 
-	labels   []string     // the labels currently on PR 77
-	timeline []ghStampEvt // its label timeline, in order
-	failPR   bool         // the change read answers 500
-	failTL   bool         // the timeline read answers 500
-	minted   []mintCall   // every custody request the resolver made
-	mintErr  error        // when set, the custody minter refuses
+	labels     []string     // the labels currently on PR 77
+	timeline   []ghStampEvt // its label timeline, in order
+	dropWrites bool
+	failAfter  bool
+	wrongActor bool
+	failWrite  bool
+	state      string
+	writes     int
+	failPR     bool       // the change read answers 500
+	prBody     string     // the change's description
+	headRef    string     // the change's head branch; "" serves feat/x
+	failTL     bool       // the timeline read answers 500
+	minted     []mintCall // every custody request the resolver made
+	mintErr    error      // when set, the custody minter refuses
 }
 
 type ghStampReq struct {
@@ -100,7 +110,7 @@ func (s *ghStampServer) handle(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case r.Method == http.MethodGet && strings.HasSuffix(path, "/pulls/77"):
-		if s.failPR {
+		if s.failPR || (s.failAfter && s.writes > 0) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -109,8 +119,18 @@ func (s *ghStampServer) handle(w http.ResponseWriter, r *http.Request) {
 			labels = append(labels, map[string]any{"name": l})
 		}
 		enc(map[string]any{
-			"number": 77, "state": "open", "draft": true, "node_id": "PR_example_node",
-			"labels": labels, "head": map[string]any{"sha": "abc123", "ref": "feat/x"},
+			"number": 77, "state": func() string {
+				if s.state != "" {
+					return s.state
+				}
+				return "open"
+			}(), "draft": true, "node_id": "PR_example_node",
+			"labels": labels, "body": s.prBody, "head": map[string]any{"sha": "abc123", "ref": func() string {
+				if s.headRef != "" {
+					return s.headRef
+				}
+				return "feat/x"
+			}()},
 			"base": map[string]any{"ref": "main"}, "user": map[string]any{"login": "example-bot[bot]", "id": 1},
 		})
 	case r.Method == http.MethodGet && strings.HasSuffix(path, "/issues/77/timeline"):
@@ -131,10 +151,53 @@ func (s *ghStampServer) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		enc(evs)
 	case r.Method == http.MethodPost && strings.HasSuffix(path, "/labels"):
-		// Both the repo-level ensure (POST /labels) and the apply (POST /issues/77/labels).
+		// Model the standing set and append-only history for readback.
+		if strings.HasSuffix(path, "/issues/77/labels") {
+			s.writes++
+			if s.failWrite {
+				w.WriteHeader(500)
+				return
+			}
+			if !s.dropWrites {
+				var payload struct {
+					Labels []string `json:"labels"`
+				}
+				_ = json.Unmarshal([]byte(body.String()), &payload)
+				role := deskkit.DispatcherRole
+				if len(s.minted) > 0 {
+					role = s.minted[len(s.minted)-1].role
+				}
+				actor, _ := deskkit.RoleAppLogin(role)
+				if s.wrongActor {
+					actor = "example-worker[bot]"
+				}
+				for _, l := range payload.Labels {
+					if !labelsPresent(s.labels, []string{l}) {
+						s.labels = append(s.labels, l)
+						s.timeline = append(s.timeline, ghStampEvt{Event: "labeled", Label: l, Actor: actor})
+					}
+				}
+			}
+		}
 		w.WriteHeader(http.StatusCreated)
 		enc([]map[string]any{})
 	case r.Method == http.MethodDelete && strings.Contains(path, "/issues/77/labels/"):
+		s.writes++
+		if s.failWrite {
+			w.WriteHeader(500)
+			return
+		}
+		if !s.dropWrites {
+			_, l, _ := strings.Cut(path, "/issues/77/labels/")
+			var keep []string
+			for _, v := range s.labels {
+				if v != l {
+					keep = append(keep, v)
+				}
+			}
+			s.labels = keep
+			s.timeline = append(s.timeline, ghStampEvt{Event: "unlabeled", Label: l, Actor: "example-dispatcher"})
+		}
 		w.WriteHeader(http.StatusOK)
 	default:
 		w.WriteHeader(http.StatusNotFound)
@@ -173,7 +236,7 @@ func (s *ghStampServer) wrote() bool {
 
 func stampArgs(t *testing.T, root string, extra ...string) []string {
 	t.Helper()
-	args := []string{"item-1", "--root", root, "--repo", allowedRepo, "--pr", "77",
+	args := []string{"assay--pr-77", "--root", root, "--repo", allowedRepo, "--pr", "77",
 		"--model", "example-model-1", "--tier", "strong",
 		"--prompt-file", filepath.Join(t.TempDir(), "p.md")}
 	return append(args, extra...)
@@ -210,8 +273,8 @@ func TestStampAppliedAsDispatcherApp(t *testing.T) {
 				c.repo, allowedRepo)
 		}
 	}
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	if !gh.applied(model) {
 		t.Errorf("the model half was not applied to the PR: %+v", gh.requests)
 	}
@@ -356,8 +419,8 @@ func TestStampReplacesAForeignAppliedStamp(t *testing.T) {
 	_, root := s.install(t)
 	plantScripts(t, root)
 	s.replies = happyReplies("/private/tmp/worker-home")
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	gh := installGHStamp(t)
 	gh.labels = []string{model, tier}
 	gh.timeline = []ghStampEvt{labeled(model, "some-other-login"), labeled(tier, "some-other-login")}
@@ -391,10 +454,10 @@ func TestStampReplacesAForeignAppliedStamp(t *testing.T) {
 }
 
 // THE PRESENT-BUT-UNREADABLE DEADLOCK. An earlier run of the DISPATCHER itself left a stale
-// dispatched-model half, so the PR carries two model slugs — a conflicting stamp the floor
-// reads as unreadable and refuses. Both halves the re-dispatch wants are already standing
+// authored-model half (a worker-kit stamp writes the authored pair, #2760), so the PR
+// carries two model slugs — a conflicting stamp the reader treats as unreadable. Both halves the re-dispatch wants are already standing
 // under the dispatcher, so clearing only FOREIGN labels removes nothing and the conflict
-// survives: re-dispatch reports OK while every verdict on the PR keeps refusing. The re-stamp
+// survives: re-dispatch reports OK while the authored stamp remains unreadable. The re-stamp
 // must therefore drop the stale slug the dispatcher itself left, not just foreign labels.
 func TestStampClearsADispatcherAppliedConflictingStamp(t *testing.T) {
 	s := &stub{}
@@ -402,9 +465,9 @@ func TestStampClearsADispatcherAppliedConflictingStamp(t *testing.T) {
 	plantScripts(t, root)
 	s.replies = happyReplies("/private/tmp/worker-home")
 	d := dispatcherAppLogin(t)
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	staleModel := deskkit.DispatchedModelPrefix + "example-model-2"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	staleModel := deskkit.AuthoredModelPrefix + "example-model-2"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	gh := installGHStamp(t)
 	gh.labels = []string{model, staleModel, tier}
 	gh.timeline = []ghStampEvt{labeled(model, d), labeled(staleModel, d), labeled(tier, d)}
@@ -414,7 +477,7 @@ func TestStampClearsADispatcherAppliedConflictingStamp(t *testing.T) {
 	}
 	if !gh.removed(staleModel) {
 		t.Errorf("the stale dispatcher-applied slug %s was not removed — the conflicting stamp survives "+
-			"and the floor keeps refusing: %+v", staleModel, gh.requests)
+			"and authored readback stays indeterminate: %+v", staleModel, gh.requests)
 	}
 	// The intended pair, already standing under the dispatcher, must NOT be churned.
 	if gh.removed(model) {
@@ -435,8 +498,8 @@ func TestStampLeavesItsOwnStampAlone(t *testing.T) {
 	plantScripts(t, root)
 	s.replies = happyReplies("/private/tmp/worker-home")
 	d := dispatcherAppLogin(t)
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	gh := installGHStamp(t)
 	gh.labels = []string{model, tier}
 	gh.timeline = []ghStampEvt{labeled(model, d), labeled(tier, d)}
@@ -459,8 +522,8 @@ func TestStampDoesNotRemoveAnAlreadyRepairedStamp(t *testing.T) {
 	plantScripts(t, root)
 	s.replies = happyReplies("/private/tmp/worker-home")
 	d := dispatcherAppLogin(t)
-	model := deskkit.DispatchedModelPrefix + "example-model-1"
-	tier := deskkit.DispatchedTierPrefix + "strong"
+	model := deskkit.AuthoredModelPrefix + "example-model-1"
+	tier := deskkit.AuthoredTierPrefix + "strong"
 	gh := installGHStamp(t)
 	gh.labels = []string{model, tier}
 	gh.timeline = []ghStampEvt{
@@ -506,7 +569,7 @@ func TestStampRefusesWhenTheHistoryReadFails(t *testing.T) {
 	plantScripts(t, root)
 	s.replies = happyReplies("/private/tmp/worker-home")
 	gh := installGHStamp(t)
-	gh.labels = []string{deskkit.DispatchedModelPrefix + "example-model-1"}
+	gh.labels = []string{deskkit.AuthoredModelPrefix + "example-model-1"}
 	gh.failTL = true
 
 	rc := run(stampArgs(t, root))

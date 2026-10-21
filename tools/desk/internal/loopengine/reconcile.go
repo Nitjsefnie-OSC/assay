@@ -32,7 +32,9 @@ import (
 // fails, keep workers running" rule, which is also this house's three-state-instrument rule.
 
 // Status is one brief row's lifecycle token as it stands on origin/main
-// (todo / in-progress / implemented / verified / done / blocked).
+// (todo / in-progress / implemented / verified / done / blocked / withdrawn). withdrawn is the
+// terminal retired-or-merged status: like done it is never active, so a run on it is
+// ineligible-terminal.
 type Status string
 
 // activeStatuses are the ONLY two statuses under which a dispatched run is still eligible: a
@@ -120,7 +122,7 @@ func IneligibleTerminal(reason string) EligibilityVerdict {
 // fresh worker re-dispatch straight into the held state, or (for claim-reassigned) DELETE a
 // claim ref a DIFFERENT live holder now owns, re-freeing an item that holder is actively
 // working — a double-dispatch. reason is one of superseded, resolved-elsewhere, needs-decision,
-// question, claim-reassigned, board-row-blocked.
+// question, help-wanted, claim-reassigned, board-row-blocked.
 func IneligibleHeld(reason string) EligibilityVerdict {
 	return EligibilityVerdict{kind: kindIneligibleHeld, Reason: reason}
 }
@@ -185,10 +187,9 @@ func Eligibility(c ClaimRecord, r EligibilityReaders) (EligibilityVerdict, error
 	}
 	if cur.Holder != c.Holder {
 		// The ref has moved to a DIFFERENT live holder — the "stolen underneath the run"
-		// case. STOP this run, but HELD, not Terminal: releasing here is an unconditional
-		// delete-by-key (doReclaim/DeleteRef has no expected-holder guard), which would
-		// delete the NEW holder's live claim and re-free an item they are working (a
-		// double-dispatch). The next move is the new holder's, not ours.
+		// case. STOP this run, but HELD, not Terminal: the current claim belongs to the
+		// replacement holder. Even a version-guarded release must not use this reading
+		// as authority to retire that holder. The next move is theirs, not ours.
 		return IneligibleHeld("claim-reassigned"), nil
 	}
 
@@ -233,6 +234,9 @@ func Eligibility(c ClaimRecord, r EligibilityReaders) (EligibilityVerdict, error
 	}
 	if hasLabel(pr.Labels, "question") {
 		return IneligibleHeld("question"), nil
+	}
+	if hasLabel(pr.Labels, "help wanted") {
+		return IneligibleHeld("help-wanted"), nil
 	}
 	return Eligible, nil
 }

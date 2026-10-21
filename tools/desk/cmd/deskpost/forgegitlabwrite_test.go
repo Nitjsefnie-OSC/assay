@@ -79,7 +79,7 @@ func (g *glReviewFake) ListChangedFiles(deskkit.ForgeRepo, int) ([]deskkit.Chang
 	return []deskkit.ChangedFile{{Filename: "docs/desk-tools.md"}}, nil
 }
 func (g *glReviewFake) RepoVisibility(deskkit.ForgeRepo) (string, error) {
-	return "private", nil // the public-repo +1 gate is a no-op on a private repo
+	return "private", nil // the public-repo write gate passes a private repo
 }
 func (g *glReviewFake) GetCommit(_ deskkit.ForgeRepo, sha string) (*deskkit.RepoCommit, error) {
 	return &deskkit.RepoCommit{SHA: sha, AuthorLogin: g.commitLogin}, nil
@@ -115,6 +115,13 @@ func (g *glReviewFake) SetMergeHold(_ deskkit.ForgeRepo, _ int, in deskkit.Merge
 // GitLab twin of setupFake, minus the GitHub fake server (the forge backend never touches it).
 func setupGitLabReview(t *testing.T, f *glReviewFake) *bytes.Buffer {
 	t.Helper()
+	return setupGitLabForge(t, f)
+}
+
+// setupGitLabForge is setupGitLabReview for any fake Forge — a test that needs the reviews
+// read or the hold to answer differently wraps glReviewFake and hands the wrapper in here.
+func setupGitLabForge(t *testing.T, f deskkit.Forge) *bytes.Buffer {
+	t.Helper()
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -140,7 +147,7 @@ ASSAY_REPO_FORGES=gl-group/gl-repo=gitlab
 	t.Setenv("DESK_LOOP", "pr-review-desk")
 
 	oldFor := forgeForReviewer
-	forgeForReviewer = func(deskkit.ForgeRepo) (deskkit.Forge, error) { return f, nil }
+	forgeForReviewer = func(deskkit.ForgeRepo) (deskkit.Forge, error) { return deskkit.OutboundChecked(f, "reviewer"), nil }
 	t.Cleanup(func() { forgeForReviewer = oldFor })
 
 	var errBuf bytes.Buffer

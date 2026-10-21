@@ -46,18 +46,18 @@ type planOptions struct {
 func (o *planOptions) bind(fs *flag.FlagSet, withRun bool) {
 	fs.StringVar(&o.root, "root", ".", "repo root the scan is rooted at and placeholder state is read from")
 	fs.StringVar(&o.stateDir, "state-dir", "", "the inbound monitor's per-repo state dir (default: $"+EnvMonitorStateDir+")")
-	fs.StringVar(&o.monitor, "monitor", "", "explicit path to the inbound monitor script (default: search the plugin trees)")
+	fs.StringVar(&o.monitor, "monitor", "", "PARITY MODE: arm the bash oracle inbound-monitor.sh at this path instead of the deskmonitor verb (default: the deskmonitor verb from PATH)")
 	fs.StringVar(&o.inbound, "inbound", "", "file of captured monitor output (or - for stdin) supplying this pass's events")
 	fs.StringVar(&o.nowStr, "now", "", "RFC3339 instant to age the queue against (default: wall clock)")
 	fs.StringVar(&o.scanTarget, "scan-target", "", "repo the placeholder delta is committed to and the scan PR opened against (default: the --root checkout's origin)")
 	fs.DurationVar(&o.window, "coalesce-window", DefaultCoalesceWindow, "max age of an open scan PR that may still absorb this batch")
-	fs.IntVar(&o.scanPR, "scan-pr", 0, "this session's open scan PR number, if one is open")
+	fs.IntVar(&o.scanPR, "scan-pr", 0, "the open scan PR to decide against; omitted, 'run' reads the open scan PR of this App from the scan target ('plan' never reads the forge)")
 	fs.StringVar(&o.scanBranch, "scan-branch", "", "the open scan PR's branch")
 	fs.StringVar(&o.prCreated, "scan-pr-created", "", "the open scan PR's RFC3339 createdAt — an unread age never coalesces")
 	fs.StringVar(&o.prState, "scan-pr-state", "", "the open scan PR's draft/ready state: 'draft' (still in the review loop — the window decides) or 'ready' (flipped for-human — push-quiet, so a fresh PR is cut). Empty is unread and never coalesces")
 	if withRun {
 		fs.StringVar(&o.worktrees, "worktree-base", "", "ABSOLUTE dir the isolated scan worktrees are cut under (default: the parent of --root)")
-		fs.BoolVar(&o.dryRun, "dry-run", false, "print every lane step without running it")
+		fs.BoolVar(&o.dryRun, "dry-run", false, "print every lane step without running it; the poller runs against a throwaway copy of the state dir, so the real baselines are not advanced")
 		fs.BoolVar(&o.offline, "offline", false, "do not run the monitor or the trust probe; take events from --inbound only")
 	}
 }
@@ -80,11 +80,9 @@ func (o *planOptions) resolvedStateDir() string {
 	if v := strings.TrimSpace(os.Getenv(EnvMonitorStateDir)); v != "" {
 		return v
 	}
-	tmp := os.Getenv("TMPDIR")
-	if tmp == "" {
-		tmp = "/tmp"
-	}
-	return filepath.Join(tmp, "assay-inbound-monitor")
+	// os.TempDir() is `${TMPDIR:-/tmp}` on unix — the poller's own default, so an unset state dir
+	// resolves to the same place for both — and %TMP%/%TEMP% on Windows, where there is no /tmp.
+	return filepath.Join(os.TempDir(), "assay-inbound-monitor")
 }
 
 // repoSlugRe is GitHub's own owner/name alphabet, anchored. Anything else is not a repo slug and is
@@ -223,8 +221,8 @@ func cmdPlan(args []string, stdout io.Writer) error {
 	if len(state.Foreign) > 0 {
 		fmt.Fprintf(stdout, "  baselines outside the current scan scope: %s\n", strings.Join(state.Foreign, ", "))
 	}
-	if scriptPath, ferr := FindMonitorScript(o.root, o.monitor); ferr == nil {
-		fmt.Fprintf(stdout, "  poller: %s (wrapped, never copied)\n", scriptPath)
+	if poller, ferr := ResolvePoller(o.root, o.monitor); ferr == nil {
+		fmt.Fprintf(stdout, "  poller: %s (wrapped, never copied)\n", poller)
 	} else {
 		fmt.Fprintf(stdout, "  poller: NOT FOUND — %s\n", ferr.Error())
 	}
@@ -280,7 +278,7 @@ func cmdPlan(args []string, stdout io.Writer) error {
 		blessAuthority(), len(deskkit.TrustedLogins()))
 
 	// --- the queue ----------------------------------------------------------------
-	claims := loadClaims()
+	claims, claimsErr := loadClaims()
 	fmt.Fprintf(stdout, "\nQUEUE — %-28s %-8s %-16s %-10s %s\n", "ITEM", "AGE", "LANE", "TIER", "CLAIM")
 	if len(report.Inbound) == 0 {
 		fmt.Fprintf(stdout, "  (no events in hand — that is NOT the same as an empty inbound surface)\n")
@@ -324,6 +322,9 @@ func cmdPlan(args []string, stdout io.Writer) error {
 
 	// A pass that could not see the whole surface is could-not-check, not idle. rc=0 here would
 	// be read by anything scripting this tool as "nothing inbound".
+	if claimsErr != nil {
+		return deskkit.Unverifiable("scanloop plan: claims snapshot incomplete — unknown is never free", claimsErr)
+	}
 	if report.Blind() {
 		return deskkit.Unverifiable("scanloop plan: the inbound surface was not fully readable this pass "+
 			"(degraded repos or a suppressed burst) — blind is not idle", nil)
@@ -369,28 +370,28 @@ func renderAge(d time.Duration) string {
 	}
 }
 
-// loadClaims reads the shared claims dir once per plan. A dir that cannot be read yields NO claims
-// and the rows say `unknown` — never `free`, which is the "assume free" direction that produces
-// double dispatch.
-func loadClaims() map[string]deskkit.Claim {
+// loadClaims reads the shared claims dir once per plan. Any incomplete read
+// yields unknown rows and an error; the plan cannot report a successful count or
+// mark an unseen item free while a claim file remains unreadable.
+func loadClaims() (map[string]deskkit.Claim, error) {
 	out := map[string]deskkit.Claim{}
 	dir, err := deskkit.StateDir()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	claims, err := deskkit.List(deskkit.ClaimConfig{ClaimsDir: filepath.Join(dir, "claims")})
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	for _, c := range claims {
 		out[c.Item] = c
 	}
-	return out
+	return out, nil
 }
 
 func claimState(claims map[string]deskkit.Claim, id string) string {
 	if claims == nil {
-		return "unknown (claims dir unreadable — never read as free)"
+		return "unknown (claims snapshot incomplete — never read as free)"
 	}
 	c, ok := claims[id]
 	if !ok {

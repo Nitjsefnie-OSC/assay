@@ -208,8 +208,8 @@ func TestRun_ControlThatCannotBePlantedDiscardsRun(t *testing.T) {
 	if !rep.Broken {
 		t.Fatal("a control that cannot be planted must mark the run BROKEN")
 	}
-	if !strings.Contains(rep.BrokenReason, "could not be planted") {
-		t.Fatalf("broken reason should explain the control could not be planted, got: %s", rep.BrokenReason)
+	if !strings.Contains(rep.BrokenReason, "could not be validated") {
+		t.Fatalf("broken reason should explain the control could not be validated, got: %s", rep.BrokenReason)
 	}
 }
 
@@ -340,13 +340,7 @@ func mixedHarness(t *testing.T) (*Harness, string) {
 // src per worker.
 func tempWorkspace(t *testing.T, src string) func(int) (string, func(), error) {
 	t.Helper()
-	return func(id int) (string, func(), error) {
-		dir := filepath.Join(t.TempDir(), "ws")
-		if err := copyTree(src, dir); err != nil {
-			return "", nil, err
-		}
-		return dir, func() { _ = os.RemoveAll(dir) }, nil
-	}
+	return newWorkspace(src)
 }
 
 // --- the equivalence bar: -j changes the wall time, never the verdicts ---

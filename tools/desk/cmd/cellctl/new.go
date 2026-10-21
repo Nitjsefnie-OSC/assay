@@ -5,81 +5,61 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
 // cmdNew scaffolds a cell. Every template below is a BYTE CONTRACT with the shell oracle: the
 // parity harness diffs the whole tree each implementation writes — paths, mode bits and file
 // contents — so a stray space in a comment line here is a divergence, not a nit.
-func cmdNew(args []string) {
-	// --help before anything else, so `cellctl new --help` prints the kind- and forge-aware
-	// usage rather than dying on a missing cell name or flag.
-	for _, a := range args {
-		if a == "-h" || a == "--help" {
-			usage(0)
-		}
-	}
+func cmdNew(cell string, v *cli.Values) {
+	scaffoldCell(cell, v)
+	// Only after a scaffold that succeeded: a refused `new` returns through die and writes
+	// nothing, the machine-wide defaults file included.
+	seedCellDefaults()
+}
+
+func scaffoldCell(cell string, v *cli.Values) {
 	e := newEnvFromProcess()
 
 	// DESK_APP_ID is the default because `cellctl deskd` reads the CELL home's apps.env, and
 	// cell homes name their Apps by generic role.
-	kind, forge, idvar, port := "k8s", "github", "DESK_APP_ID", "8787"
-	cell, repo, yaml, orgs, pem := "", "", "", "", ""
-	group, gitlabAPIBase, tokenStore := "", "", ""
-	roots, launcher, repoSlug := "", "", ""
-	roles, rolesSet := rolesDefault, false
+	kind, forge, idvar, port := v.String("kind"), v.String("forge"), v.String("deskd-app-id-var"), v.String("port")
+	repo, yaml, orgs, pem := v.String("repo"), v.String("cells-yaml"), v.String("orgs"), v.String("deskd-app-pem")
+	group, gitlabAPIBase, tokenStore := v.String("group"), v.String("gitlab-api-base"), v.String("gitlab-token-store")
+	roots, launcher, repoSlug, containerConfig := v.String("roots"), v.String("launcher"), v.String("repo-slug"), v.String("container-config")
+	roles, rolesSet := v.String("roles"), v.Source("roles") == cli.Flag
 
-	for i := 0; i < len(args); i++ {
-		next := func(msg string) string { return needFlagValue(args, &i, msg) }
-		switch a := args[i]; a {
-		case "--kind":
-			kind = nextOrEmpty(args, &i)
-		case "--launcher":
-			launcher = next("--launcher needs an absolute executable")
-		case "--forge":
-			forge = nextOrEmpty(args, &i)
-		case "--repo":
-			repo = nextOrEmpty(args, &i)
-		case "--cells-yaml":
-			yaml = nextOrEmpty(args, &i)
-		case "--orgs":
-			orgs = nextOrEmpty(args, &i)
-		case "--repo-slug":
-			repoSlug = next("--repo-slug needs a value (<owner>/<repo>)")
-		case "--deskd-app-pem":
-			pem = nextOrEmpty(args, &i)
-		case "--deskd-app-id-var":
-			idvar = nextOrEmpty(args, &i)
-		case "--port":
-			port = nextOrEmpty(args, &i)
-		case "--group":
-			group = nextOrEmpty(args, &i)
-		case "--gitlab-api-base":
-			gitlabAPIBase = nextOrEmpty(args, &i)
-		case "--gitlab-token-store":
-			tokenStore = nextOrEmpty(args, &i)
-		case "--roots":
-			roots = nextOrEmpty(args, &i)
-		case "--roles":
-			roles = nextOrEmpty(args, &i)
-			rolesSet = true
-		default:
-			if strings.HasPrefix(a, "--") {
-				die("new: unknown flag %s", a)
-			}
-			// The cell name is a POSITIONAL that may appear anywhere among the flags. It is
-			// captured as the ONE bare token so that a missing CUSTODY input is diagnosed before
-			// a missing cell name — the forge-custody validation must fire whether or not a cell
-			// name was given.
-			if cell != "" {
-				die("new: unexpected extra argument '%s' (the cell name is '%s')", a, cell)
-			}
-			cell = a
-		}
+	// Every path below is written bare into cell.env, where a Windows `\` would read back as a
+	// shell escape: emit it with forward slashes on Windows (cellenvpath.go; identity elsewhere).
+	// A container cell's --repo is a repo id, not a path, so it is left as given.
+	if kind != "container" {
+		repo = cellEnvPathFor(runtime.GOOS, repo)
 	}
+	roots = cellEnvRootsFor(runtime.GOOS, roots)
+	pem = cellEnvPathFor(runtime.GOOS, pem)
+	tokenStore = cellEnvPathFor(runtime.GOOS, tokenStore)
 
 	root := cellsRoot(e)
+	// A cell directory at the defaults file's own path — or a nested cell below it — would make
+	// every cell on the machine refuse to load (the file would be a directory), so the name is
+	// not available to a cell.
+	if first, _, _ := strings.Cut(filepath.ToSlash(cell), "/"); strings.EqualFold(first, cellDefaultsFile) {
+		die("new: '%s' is not available as a cell name — %s is the machine-wide cell defaults file", cell, filepath.Join(root, cellDefaultsFile))
+	}
+	// A cell lives under the cells root: a name that is anything else is refused here, before
+	// anything is created, exactly as the loader would refuse to load it (cellNameLocal). A
+	// missing name is left to the usage refusal below.
+	if cell != "" && !cellNameLocal(cell) {
+		die("new: "+cellNameNotLocal, cell, root)
+	}
+	if containerConfig != "" && kind != "container" {
+		die("--container-config is only valid for --kind container")
+	}
 	switch kind {
 	case "container":
 		if !rolesSet {
@@ -88,7 +68,17 @@ func cmdNew(args []string) {
 		if anyGiven(yaml, orgs, pem, group, tokenStore) {
 			die("container new does not accept host credential or deskd configuration")
 		}
-		newContainer(e, root, cell, repo, launcher, roles, roots)
+		if containerConfig != "" {
+			if launcher != "" {
+				die("new: choose --container-config or --launcher")
+			}
+			if strings.TrimSpace(roles) == "" {
+				die("new: at least one role is required")
+			}
+			newNativeContainer(root, cell, repo, containerConfig, roles, roots)
+		} else {
+			newContainer(e, root, cell, repo, launcher, roles, roots)
+		}
 		return
 	case "scrubbed":
 		if anyGiven(yaml, orgs, pem, group, tokenStore, launcher) {
@@ -138,10 +128,13 @@ func cmdNew(args []string) {
 	if exists(d) {
 		die("%s already exists", d)
 	}
+	// Every home-derived path is resolved BEFORE the first directory is created: a refusal
+	// that lands mid-scaffold leaves a half-built cell that `new` then refuses to overwrite.
+	home, cfgHome := hostHome(e), realConfigHome(e)
 	mustMkdirAll(filepath.Join(d, "home", ".config", "assay"), filepath.Join(d, "bin"),
 		filepath.Join(d, "index"), filepath.Join(d, "worktrees"))
 	copyFile(yaml, filepath.Join(d, "cells-"+cell+".yaml"))
-	linkIfPresent(filepath.Join(e.Get("HOME"), ".gitconfig"), filepath.Join(d, "home", ".gitconfig"))
+	linkIfPresent(filepath.Join(home, ".gitconfig"), filepath.Join(d, "home", ".gitconfig"))
 	chmod700(filepath.Join(d, "home"), filepath.Join(d, "home", ".config"), filepath.Join(d, "home", ".config", "assay"))
 	githubHost := e.GetOr("GITHUB_HOST", "github.com")
 	rootsLine := "# CELL_ROOTS=<owner>/<repo>=<abs path>,...   (exported as DESK_ROOTS at boot; unset = placeholder topology)"
@@ -149,10 +142,13 @@ func cmdNew(args []string) {
 		rootsLine = "CELL_ROOTS=" + roots
 	}
 	today := time.Now().UTC().Format("2006-01-02")
+	// The cell dir is host-derived (filepath.Join), so on Windows it is native: written into
+	// cell.env with forward slashes like every other path (cellenvpath.go; identity elsewhere).
+	dEnv := cellEnvPathFor(runtime.GOOS, d)
 
 	if forge == "github" {
 		// The gh CLI config is a GitHub custody artifact; linked only on a github cell.
-		linkIfPresent(filepath.Join(e.Get("HOME"), ghConfigRelPath), filepath.Join(d, "home", ghConfigRelPath))
+		linkIfPresent(filepath.Join(home, ghConfigRelPath), filepath.Join(d, "home", ghConfigRelPath))
 		// The endpoint is DERIVED from the host, never spelled as a literal.
 		forgeAPIBase := "https://api." + githubHost
 		writeFile(filepath.Join(d, "cell.env"), fmt.Sprintf(`# cellctl cell.env — %s (k8s, github, scaffolded %s)
@@ -169,8 +165,8 @@ DESKD_APP_PEM=%s
 DESKD_APP_ID_VAR=%s
 ORGS=%s
 ROLES="%s"
-`+cockpitBlock+pinnedBlock, cell, today, cell, repo, rootsLine, d, cell, forgeAPIBase, port, d, pem, idvar, orgs, roles))
-		writeFile(filepath.Join(d, "README.md"), fmt.Sprintf(githubReadme, cell, cell, idvar, realConfigHome(e), idvar, cell, cell, cell))
+`+cockpitBlock+pinnedBlock, cell, today, cell, repo, rootsLine, dEnv, cell, forgeAPIBase, port, dEnv, pem, idvar, orgs, roles))
+		writeFile(filepath.Join(d, "README.md"), fmt.Sprintf(githubReadme, cell, cell, idvar, cfgHome, idvar, cell, cell, cell))
 	} else {
 		forgeAPIBase := gitlabAPIBase
 		if forgeAPIBase == "" {
@@ -195,7 +191,7 @@ DESKD_GITLAB_TOKEN_FILE=%s/gitlab-deskd.token
 DESKD_ADDR=127.0.0.1:%s
 DESKD_INDEX=%s/index/index.db
 ROLES="%s"
-`+cockpitBlock+pinnedBlock, cell, today, cell, repo, rootsLine, d, cell, forgeAPIBase, forgeAPIBase, group, store, store, port, d, roles))
+`+cockpitBlock+pinnedBlock, cell, today, cell, repo, rootsLine, dEnv, cell, forgeAPIBase, forgeAPIBase, group, cellEnvPathFor(runtime.GOOS, store), cellEnvPathFor(runtime.GOOS, store), port, dEnv, roles))
 		writeFile(filepath.Join(d, "README.md"), fmt.Sprintf(gitlabReadme, cell, cell, store, cell, forgeAPIBase, group, cell, cell))
 	}
 	fmt.Printf("[new] scaffolded %s (%s cell) — see %s/README.md for the hand steps\n", d, forge, d)
@@ -271,13 +267,19 @@ the group this cell reads is ` + "`%s`" + `. Then: ` + "`CELL_ATTENDED=1 cellctl
 
 // newContainer is REGISTRATION ONLY: no daemon, host checkout, credential directory or symlink.
 func newContainer(e *Env, root, cell, repo, launcher, roles, roots string) {
-	if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`).MatchString(cell) {
-		die("new: invalid container cell name")
+	// The one cell-name rule (cellNameLocal): lower-case letters, digits and '-', not leading
+	// with '-'. The cell-scoped stop flags name a cell by it, so a container cell outside it
+	// could not be stopped individually.
+	if !deskkit.ValidCellName(cell) || strings.HasPrefix(cell, "-") {
+		die("new: invalid container cell name '%s' — lower-case letters, digits and '-' only ([a-z0-9-]), not leading with '-'", cell)
 	}
 	if repo == "" {
 		die("container new needs --repo <repo-id>")
 	}
-	if !strings.HasPrefix(launcher, "/") || !isExecFile(launcher) {
+	if err := cellPathCheck(runtime.GOOS, launcher); err != nil {
+		die("container launcher: %v", err)
+	}
+	if !isExecFile(launcher) {
 		die("container new needs --launcher <absolute-executable>")
 	}
 	if strings.TrimSpace(roles) == "" {
@@ -336,16 +338,26 @@ func newHouse(e *Env, root, cell, repo, roots, roles, port string) {
 	if exists(d) {
 		die("%s already exists (cellctl new never overwrites a cell — remove it yourself, or pick another name)", d)
 	}
-	mustMkdirAll(filepath.Join(d, "home", ".config"), filepath.Join(d, "worktrees"), filepath.Join(d, "shim"))
-	if err := os.Symlink(realCfg, filepath.Join(d, "home", ".config", "assay")); err != nil {
-		die("new: cannot link the config home: %v", err)
+	// From here every step is journaled: a failure (a link a Windows host without the symlink
+	// privilege cannot make, above all) removes exactly what this run created and nothing else,
+	// so a retry is not blocked by a half-made cell (newlink.go).
+	// Resolved before the first directory is created, like realCfg above: a refusal here must
+	// leave no half-built cell behind.
+	home := hostHome(e)
+	mustMkdirAll(root)
+	l := newLinker()
+	s, err := beginCellScaffold(l.goos, d)
+	if err != nil {
+		die("new: %v", err)
 	}
-	linkIfPresent(filepath.Join(e.Get("HOME"), ghConfigRelPath), filepath.Join(d, "home", ghConfigRelPath))
-	linkIfPresent(filepath.Join(e.Get("HOME"), ".gitconfig"), filepath.Join(d, "home", ".gitconfig"))
-	chmod700(filepath.Join(d, "home"), filepath.Join(d, "home", ".config"))
+	s.must(s.mkdir(filepath.Join(d, "home"), filepath.Join(d, "home", ".config"), filepath.Join(d, "worktrees"), filepath.Join(d, "shim")))
+	s.must(s.link(l, realCfg, filepath.Join(d, "home", ".config", "assay"), "the config home"))
+	s.must(s.linkIfPresent(l, ghLinkSource(runtime.GOOS, e, home), filepath.Join(d, "home", ghConfigRelPath), "the gh config"))
+	s.must(s.linkIfPresent(l, filepath.Join(home, ".gitconfig"), filepath.Join(d, "home", ".gitconfig"), "the gitconfig"))
+	s.must(s.chmod700(filepath.Join(d, "home"), filepath.Join(d, "home", ".config")))
 	githubHost := e.GetOr("GITHUB_HOST", "github.com")
 	today := time.Now().UTC().Format("2006-01-02")
-	writeFile(filepath.Join(d, "cell.env"), fmt.Sprintf(`# cellctl cell.env — %s (house, scaffolded %s)
+	s.write(filepath.Join(d, "cell.env"), fmt.Sprintf(`# cellctl cell.env — %s (house, scaffolded %s)
 CELL=%s
 CELL_KIND=house
 CELL_FORGE=github
@@ -355,7 +367,7 @@ CELL_ROOTS=%s
 FORGE_API_BASE=https://api.%s
 ROLES="%s"
 `+houseCellEnvTail, cell, today, cell, repo, roots, githubHost, roles, cell, cell, port))
-	writeFile(filepath.Join(d, "README.md"), fmt.Sprintf(houseReadme, cell, repo, realCfg, cell, cell, cell))
+	s.write(filepath.Join(d, "README.md"), fmt.Sprintf(houseReadme, cell, repo, realCfg, cell, cell, cell))
 	fmt.Printf("[new] scaffolded %s (house cell) — cellctl check %s, then cellctl desk %s <role>\n", d, cell, cell)
 }
 
@@ -483,15 +495,6 @@ a second ` + "`desk`" + ` while one is live is refused, naming the live pid and 
 
 // ---- small write helpers ----
 
-func nextOrEmpty(args []string, i *int) string {
-	if *i+1 >= len(args) {
-		*i++
-		return ""
-	}
-	*i++
-	return args[*i]
-}
-
 func mustMkdirAll(paths ...string) {
 	for _, p := range paths {
 		if err := os.MkdirAll(p, 0o755); err != nil {
@@ -529,10 +532,13 @@ func copyFile(src, dst string) {
 }
 
 // linkIfPresent mirrors the oracle's `[[ -e <src> ]] && ln -s <src> <dst>`: absent is not an
-// error, it simply leaves the link unmade.
+// error, it simply leaves the link unmade. It links through newLinker, so on a Windows host
+// without the symlink privilege a directory is linked by junction and a file by hardlink
+// (newlink.go); it never replaces an existing dst. A k8s cell treats the link as best-effort,
+// as it always has — `cellctl check` names a missing one.
 func linkIfPresent(src, dst string) {
 	if !exists(src) {
 		return
 	}
-	_ = os.Symlink(src, dst)
+	_, _ = newLinker().link(src, dst)
 }

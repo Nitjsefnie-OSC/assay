@@ -116,7 +116,7 @@ func LogScanOverride(o ScanOverride) error {
 	if err := Log(Entry{
 		Tool:       o.Tool,
 		Verb:       ScanOverrideVerb,
-		Result:     ResultOK,
+		Result:     ResultLocal,
 		Detail:     StripControl(detail),
 		Repo:       o.Repo,
 		PR:         o.PR,
@@ -134,15 +134,98 @@ func LogScanOverride(o ScanOverride) error {
 }
 
 // OverrideIdentity is the best identity the process can establish for the audit row: the
-// desk session tag and the OS user. Both are SELF-REPORTED — this is forensics, not
-// authentication, the same posture SessionTag documents. What makes the row useful is not
-// that the identity is unforgeable but that a bypass leaves one at all.
+// desk session tag and the ROSTER login the acting OS account resolves to. Both halves are
+// SELF-REPORTED — this is forensics, not authentication, the same posture SessionTag
+// documents. What makes the row useful is not that the identity is unforgeable but that a
+// bypass leaves one at all.
+//
+// WHY THE ROSTER LOGIN. The row used to name the raw OS account name, and the row's whole
+// point is accountability to a roster identity: a machine account named differently from the
+// roster login (the OS account is not a key in ASSAY_HUMAN_LOGIN_MAP, which maps the human's
+// NAME) logged rows nobody could answer for. Resolution is pure lookup over the loaded
+// roster — see resolveOverrideWho.
+//
+// IT NEVER BLOCKS. LogScanOverride is deliberately fatal when the row cannot be WRITTEN; the
+// identity half must therefore never be a reason the row does not land. An OS account no map
+// resolves still produces a row, under a clearly-marked fallback spelling, and an unconfigured
+// or refused roster resolves to that same fallback — the audit trail degrades its LABEL,
+// never its existence.
 func OverrideIdentity() string {
-	who := "unknown"
-	if u, err := user.Current(); err == nil && u.Username != "" {
-		who = u.Username
+	return resolveOverrideWho(osUsername(), EffectiveConfig()) + "/" + SessionTag()
+}
+
+// osUsername is the OS account name this process runs under, "" when the platform cannot
+// say. Separated from user.Current so resolveOverrideWho stays a pure function of its
+// inputs.
+func osUsername() string {
+	if u, err := user.Current(); err == nil {
+		return u.Username
 	}
-	return who + "/" + SessionTag()
+	return ""
+}
+
+// resolveOverrideWho maps an OS account name to the identity the override audit row names,
+// in the first order that answers:
+//
+//  1. ASSAY_OS_USER_LOGIN_MAP (cfg.OSUserLogins) — the explicit osuser→login binding. This
+//     is the arm that fixes the observed misattribution: the OS account name is not a key in
+//     the human-name map, so without an explicit binding no amount of consulting that map
+//     resolves it.
+//  2. ASSAY_HUMAN_LOGIN_MAP (cfg.HumanLogins) — the OS account name happens to BE a mapped
+//     human name; resolve it to the same login that map's other consumers answer for.
+//  3. The trusted-human set (cfg.Humans) — the OS account name IS itself a roster login;
+//     nothing to map, render the canonical (lowercased) spelling.
+//  4. Fallback: the raw OS username under an "os:" prefix, so an unresolved row is
+//     DISTINGUISHABLE from a resolved one at a glance — `os:<user>` can never be mistaken
+//     for a roster login, and an empty OS username (the platform could not say) stays the
+//     long-standing "unknown".
+//
+// RESOLVED MEANS ROSTER-VALIDATED. A mapped login is printed only when it is a trusted
+// human of THIS roster (in cfg.Humans, not in cfg.Bots) — the loader enforces that for
+// arm 1, and the validRosterLogin guard re-enforces it here for every arm, so a value
+// arriving through a config built by any other path cannot be printed as resolved either.
+// A resolved row whose login differs from the account the platform reported carries the
+// observed account along — `<login>(os:<account>)` — because the audit log's location
+// stops implying the account once logs are collected centrally.
+//
+// All map keys are lowercased at load and the lookup lowercases the account name, so case
+// never decides attribution; the FALLBACK keeps the platform's own spelling for fidelity.
+// Nil maps (an unconfigured or refused roster) are the ordinary fallback path, not an
+// error: this function has no failure mode by construction.
+func resolveOverrideWho(osUser string, cfg Config) string {
+	if osUser == "" {
+		return "unknown"
+	}
+	lower := strings.ToLower(osUser)
+	login := ""
+	if l, ok := cfg.OSUserLogins[lower]; ok && validRosterLogin(l, cfg) {
+		login = l
+	} else if l, ok := cfg.HumanLogins[lower]; ok && validRosterLogin(l, cfg) {
+		login = l
+	} else if validRosterLogin(lower, cfg) {
+		login = lower
+	}
+	if login == "" {
+		return "os:" + osUser
+	}
+	if login == lower {
+		return login
+	}
+	return login + "(os:" + osUser + ")"
+}
+
+// validRosterLogin reports whether l names a trusted HUMAN of this roster — present in
+// cfg.Humans and absent from cfg.Bots. The audit row's resolved form makes an
+// accountability claim, so the value must be one the roster itself stands behind; a
+// configured App slug (affix-less ones defeat looksLikeBot, as the coupling vectors
+// record) or an off-roster string never qualifies.
+func validRosterLogin(l string, cfg Config) bool {
+	if l == "" {
+		return false
+	}
+	_, inHumans := cfg.Humans[l]
+	_, inBots := cfg.Bots[l]
+	return inHumans && !inBots
 }
 
 // impersonationMarker is the fragment of impersonationRefusal's message that identifies it.
@@ -152,6 +235,14 @@ func OverrideIdentity() string {
 // away — unlike a recorded Evidence command or a shipped lockfile, the two
 // cases that motivated the override at all.
 const impersonationMarker = "reads as a RULING/DECISION claim attributed to"
+
+// withheldMarker is the fragment of a self-containment refusal that names the withheld
+// register; RuleWithheldIdentifier is the outbound check's own spelling of the same rule.
+const withheldMarker = "withheld register identifier"
+
+func isWithheldRefusal(msg string) bool {
+	return strings.Contains(msg, withheldMarker) || strings.Contains(msg, "refused: "+RuleWithheldIdentifier+" at ")
+}
 
 // HandleScanRefusal is the ONE decision point every refusal verb routes its secret-scan
 // result through. Given the scan's verdict and whatever the operator passed to
@@ -187,7 +278,21 @@ func HandleScanRefusal(o ScanOverride, scanErr error) error {
 		}
 		return scanErr
 	}
+	if isWithheldRefusal(scanErr.Error()) {
+		// The withheld register (desktools-v2/10, ruled 2026-09-21 #1319 option 1): it only
+		// runs on a public or unknown-visibility target, and a written reason does not publish
+		// a withheld identifier — rewording does, or a human changing the configured set.
+		if reason != "" {
+			return Refused("refused: --" + ScanOverrideFlag + " does not apply to " +
+				RuleWithheldIdentifier + " — " + nonOverridableWhy(RuleWithheldIdentifier) +
+				" Original refusal: " + scanErr.Error())
+		}
+		return scanErr
+	}
 	if reason == "" {
+		if strings.Contains(scanErr.Error(), OverrideHint()) {
+			return scanErr // already annotated (an OutboundCheck refusal carries the hint)
+		}
 		// Re-wrap with the override hint but PRESERVE any ScanFinding, so a --explain caller
 		// still reaches the rule id and line through the annotated refusal (the message is
 		// unchanged bar the appended hint).

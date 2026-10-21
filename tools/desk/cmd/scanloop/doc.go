@@ -9,9 +9,10 @@
 //
 //   - SelectQueue — inbound items across the configured intake SCAN scope (deskkit.ScanRepos, the
 //     same roster key the scanner itself reads, so coverage cannot drift between them). The events
-//     come from the durable inbound monitor script, which is WRAPPED and never re-implemented: its
-//     three anti-blindness properties (explicit identity, per-repo retained state, burst cap) are
-//     not worth losing to a second hand-rolled poller.
+//     come from the durable inbound poller, the `deskmonitor inbound` verb, which is ARMED and never
+//     re-implemented here: its three anti-blindness properties (explicit identity, per-repo
+//     retained state, burst cap) are pinned by its own named tests and by its parity oracle, the
+//     plugin tree's inbound-monitor.sh (which --monitor still arms, in parity mode).
 //
 //   - TierPolicy — the MECHANICAL half only. A worker-legible item (a new issue needing a
 //     placeholder, a retire, a close-on-fix) is TierLocal and the scan-carrier lane executes it
@@ -65,6 +66,9 @@
 //     ready-for-human is push-quiet regardless of its age: a post-flip push re-signals the review
 //     loop, so a new batch opens the NEXT scan PR and leaves the flipped one sealed for merge. A
 //     draft/ready state that cannot be read does not coalesce either — the same bounded direction.
+//     The open scan PR is a fact about the scan target, not the session: `run` reads it from the
+//     forge (the youngest open draft scan PR by this App, from any session), and an open-PR list
+//     that cannot be read refuses the scan dispatch rather than cutting a possible duplicate.
 //
 //  2. THE BODY IS REGENERATED ON EVERY PUSH, not just the first. The title and body state counts
 //     describing a diff that grows with every coalesced commit, so a body written once is wrong by
@@ -82,6 +86,14 @@
 //	scanloop run --root <repo> ...
 //	    The drain. Arms the monitor if it is not armed, applies the trust gate BEFORE queueing,
 //	    executes the dispatch lanes and records one tracked exit per item.
+//
+//	scanloop run --dry-run ...
+//	    Prints every lane step without running it, and leaves the monitor's per-repo baselines
+//	    untouched. A live dry-run polls a THROWAWAY COPY of the state dir (removed when the pass
+//	    ends), so the preview reports the real delta without consuming it. A copy that cannot be
+//	    made refuses the pass (exit 5) before anything is polled, and there is no fallback to the
+//	    real dir: a preview that quietly became a real poll would drop the delta the next real run
+//	    needs. With --offline --inbound nothing is polled at all.
 //
 //	scanloop --version
 //

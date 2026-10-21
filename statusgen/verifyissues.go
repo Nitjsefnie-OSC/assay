@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // verifyRepoSlug is the GitHub owner/repo the rendered issue bodies link into —
@@ -55,6 +57,10 @@ var verifyMarkerRe = regexp.MustCompile(`<!-- verify-gate: [^>]*? -->`)
 // canonical form (rather than the colon form) keeps a NEW card matching every
 // pre-migration card, and keeps the extracted id inside the brief-name grammar
 // (<stream>/<NN>) the close side already speaks.
+//
+// It DROPS the repo alias unresolved, so it is a read-side identity only (the marker and the
+// consumers filter). A path that acts on the ref — the done-close — resolves it through the
+// alias registry with resolveLocalBriefRef instead (#1239); topology_guard_test.go pins that.
 func normalizeBriefKey(key string) string {
 	key = strings.TrimSpace(key)
 	if _, _, stream, num, ok := parseBriefV2ID(key); ok {
@@ -263,6 +269,20 @@ const (
 // verdict unchanged rather than inventing a sixth segment.
 func lastVerifyVerdict(evidence string) string {
 	verdict := verdictNone
+	walkVerdictLines(evidence, func(_ string, v string) {
+		if v != verdictNone {
+			verdict = v
+		}
+	})
+	return verdict
+}
+
+// walkVerdictLines visits every Evidence line lastVerifyVerdict reads, in
+// order: fenced code blocks and blockquote lines skipped, struck-through spans
+// removed. v is the line's last verdict token, or verdictNone. One walker, so
+// a reader that needs WHERE the live verdict sits (the awaiting board's
+// livePassDate) applies the same quotation rules as the verdict itself.
+func walkVerdictLines(evidence string, visit func(line, v string)) {
 	inFence := false
 	for _, line := range strings.Split(evidence, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -274,15 +294,16 @@ func lastVerifyVerdict(evidence string) string {
 			continue
 		}
 		line = strikethroughRe.ReplaceAllString(line, "")
+		v := verdictNone
 		for _, m := range verifyVerdictRe.FindAllStringSubmatch(line, -1) {
 			if m[1] == "PASS" {
-				verdict = verdictPass
+				v = verdictPass
 			} else {
-				verdict = verdictFail
+				v = verdictFail
 			}
 		}
+		visit(line, v)
 	}
-	return verdict
 }
 
 // strikethroughRe matches a struck-through span — a retracted or superseded
@@ -294,6 +315,582 @@ var strikethroughRe = regexp.MustCompile(`~~[^~]*~~`)
 // actually settled" even while the brief's Evidence also carries an overall
 // **VERIFY: PASS** marker.
 var heldOrCouldNotCheckRe = regexp.MustCompile(`(?i)\b(HELD|could-not-check)\b`)
+
+// heldOrCouldNotCheckRe is a bare word-boundary match: on its own it cannot
+// tell "this row IS held" from "this row is NOT held" or "there are ZERO held
+// rows", because all three contain the marker word. Clean, fully-passing
+// Evidence routinely says the latter two — "VERIFY: PASS ... no
+// could-not-check", "summary: 0 HELD, 7 PASS" — and refusing it is a false
+// positive. heldOccurrenceNegated below excuses exactly those shapes.
+//
+// It is a narrowing of a flip-refusal control, so every rule in it is written
+// to FAIL CLOSED: a wrongly excused occurrence is a false NEGATIVE — a PASS
+// proceeding over a genuinely held row — which is worse for a refusal gate
+// than the false positive it fixes. A cue word or a "0" directly in front of
+// the marker is therefore NOT enough on its own; what sits in front of the
+// cue, and what follows the marker, must also read as a count or a negation.
+// What may precede a cue is an ALLOWLIST, so anything not on it — including
+// punctuation or characters nobody thought of — refuses.
+//
+// "The text before the cue" is read with trailing whitespace (any Unicode
+// space, so a non-breaking space cannot hide a "?") and trailing markdown
+// emphasis ("*", "_") trimmed, so a bold label reads like a plain one:
+// "**row 3 green:** no HELD" is judged as "row 3 green: no HELD".
+//
+//   - Word cue: "no", "not" or "zero", then only ASCII whitespace, then the
+//     marker. It excuses only when the text before the cue is empty (line
+//     start) or a bare list marker ("- ", "1. "); ends in a count label and
+//     its colon (heldCountLabelRe: "summary: no could-not-check"); ends in a
+//     clause break — ",", ";", ".", "(", an em/en dash or "→" ("all rows
+//     ran — no could-not-check"); or ends in one of a few linking words
+//     (heldCuePrevWordRe: "row 3 is not HELD", "with zero could-not-check").
+//     Everything else refuses: a question ("available? no HELD"), a field or
+//     table-cell value ("runner=no HELD", "| no HELD |", "row 3 green: no
+//     HELD", "row 3: not HELD"), a closing parenthesis ("(runner up) no
+//     HELD"), a hyphen ("row 3 green - no HELD", "non-zero could-not-check"),
+//     struck text, and any other word — so an exit status spelled out
+//     ("rc zero HELD", "row 3 exit zero HELD") is not a negation.
+//   - Zero cue: a standalone "0", then only ASCII whitespace, then the marker.
+//     It excuses only in a COUNT position: at the start of the line or after
+//     a bare list marker, right after a count label and its colon ("summary:
+//     0 HELD"), or right after ", " / "; " that closes another count item
+//     whose noun is a verdict count (heldCountItemRe: "7 PASS, 0 HELD", "5/5
+//     rows, 0 HELD"). An exit code ("exit 0", "exit: 0", "rc: 0", "exit codes:
+//     1, 0", "row 3 exit, 0"), a row label ("row 0"), a decimal or version
+//     ("2.0", "v1.0") or a parenthesis ("(0 HELD)") is not a count position
+//     and never excuses.
+//   - Hold reason: an occurrence followed by a hold reason — after any run of
+//     whitespace, emphasis, ",", ";", ":", ".", "(", ")", "→" or dash
+//     (heldReasonAfterRe: "HELD pending runner", "HELD, pending runner",
+//     "HELD (awaiting runner)", "HELD — until …", "HELD. pending runner",
+//     "HELD → pending runner", "HELD) pending runner") — or by a colon that
+//     opens a value ("0 HELD: human read owed") is refused even behind a
+//     valid cue: a negated or zero count that also gives a reason for holding
+//     contradicts itself. A reason word that opens the next sentence ("0 HELD.
+//     For the record, …") therefore refuses too — the fail-closed side.
+//   - Struck text: a struck-through span (`~~…~~`) removed between a cue and
+//     its marker, or right before the cue, is replaced by a sentinel for this
+//     check, so struck text can never join a cue to a marker ("not ~~yet
+//     green, still~~ HELD") or stand in for what precedes a cue ("row 3
+//     ~~ok~~ no HELD") — the sentinel is on no allowlist.
+//
+// Checked per OCCURRENCE (on the text immediately around it, not anywhere on
+// the line), so a negated or zero-counted mention never excuses a different,
+// genuine occurrence elsewhere on the same line or another line. Each
+// physical line is judged on its own: a hard-wrapped line that happens to
+// begin "0 HELD" reads as a line-start count. Between cue and marker matching
+// is ASCII: a Unicode lookalike, a non-breaking space or markup there ("no
+// **HELD**") does not match and so refuses.
+//
+// Stated residuals: a clause break or linking word before the cue excuses
+// whatever precedes it, so "runner available — no HELD" and "row 3 exit, no
+// HELD" read as negations, exactly as "all rows ran — no could-not-check"
+// must; and a hold reason that uses none of heldReasonAfterRe's words ("0
+// HELD — runner offline") is not detected, because a free-text note after a
+// clean count ("0 HELD — live cluster access was available") has the same
+// shape.
+var (
+	heldWordCueRe = regexp.MustCompile(`(?i)\b(?:no|not|zero)[ \t]+$`)
+	heldZeroCueRe = regexp.MustCompile(`\b0[ \t]+$`)
+	// heldCountLabelRe is a count/summary label closed by a colon, as the
+	// text before a cue ends. Deliberately a short allowlist: an exit,
+	// status or result label is NOT a count label.
+	heldCountLabelRe = regexp.MustCompile(`(?i)\b(?:summary|totals?|counts?|tally):$`)
+	// heldListMarkerRe is a bare list marker with nothing before it.
+	heldListMarkerRe = regexp.MustCompile(`^(?:[-+*]|\d+[.)])$`)
+	// heldCountItemRe is a prior count item closed by "," or ";" ("7 PASS,",
+	// "5/5 rows,"). The noun is a short allowlist of verdict counts, so a
+	// number followed by an arbitrary word ("row 3 exit,") is not a count.
+	heldCountItemRe = regexp.MustCompile(`(?i)\b\d+[ \t]+(?:pass(?:ed|es)?|fail(?:ed|s|ures?)?|held|could-not-check|checked-clean|checked-failed|unrun|skip(?:ped|s)?|rows?|checks?)[,;]$`)
+	// heldCuePrevWordRe is a linking word allowed directly before a word cue.
+	heldCuePrevWordRe = regexp.MustCompile(`(?i)\b(?:is|are|was|were|has|have|had|with|and|but|otherwise|means)$`)
+	// heldReasonAfterRe is a hold reason after the marker, past any run of
+	// whitespace, emphasis, ",", ";", ":", ".", "(", ")", "→" or dash. The
+	// word may end at "_" as well as a word boundary, so "_pending_" counts.
+	heldReasonAfterRe = regexp.MustCompile(`(?i)^[\s\p{Z}*_,;:.()→–—-]*(?:pending|awaiting|waiting|until|because|blocked|due|for)(?:\b|_)`)
+	// heldValueAfterRe is a colon right after the marker: the marker is a
+	// label whose value follows ("0 HELD: human read owed").
+	heldValueAfterRe = regexp.MustCompile(`^[\s\p{Z}*_]*:`)
+)
+
+// struckSentinel stands in for a removed struck span in the negation lookback.
+const struckSentinel = "\x00"
+
+// heldCueBreaks are the clause breaks allowed as the last character before a
+// word cue. Anything else (":", "?", "=", "|", ")", "-", the struck
+// sentinel, …) refuses unless another allowlist rule admits it.
+const heldCueBreaks = ",;.(—–→"
+
+// heldTrimBefore trims trailing whitespace (any Unicode space) and markdown
+// emphasis from the text before a cue, so "**Label:** " reads as "Label:" and
+// a non-breaking space cannot hide what precedes the cue.
+func heldTrimBefore(s string) string {
+	return strings.TrimRightFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '*' || r == '_'
+	})
+}
+
+// heldWordCueAllowed reports whether before — the trimmed text in front of a
+// "no"/"not"/"zero" cue — is on the word-cue allowlist.
+func heldWordCueAllowed(before string) bool {
+	if before == "" || heldListMarkerRe.MatchString(before) ||
+		heldCountLabelRe.MatchString(before) || heldCuePrevWordRe.MatchString(before) {
+		return true
+	}
+	r, _ := utf8.DecodeLastRuneInString(before)
+	return strings.ContainsRune(heldCueBreaks, r)
+}
+
+// heldZeroCueAllowed reports whether before — the trimmed text in front of a
+// "0" cue — is a count position.
+func heldZeroCueAllowed(before string) bool {
+	return before == "" || heldListMarkerRe.MatchString(before) ||
+		heldCountLabelRe.MatchString(before) || heldCountItemRe.MatchString(before)
+}
+
+// heldOccurrenceNegated reports whether the HELD/could-not-check occurrence at
+// clean[h[0]:h[1]] is a negation or zero count rather than a live disposition,
+// under the rules on heldOrCouldNotCheckRe above. cuts are the offsets in
+// clean where struck spans were removed.
+func heldOccurrenceNegated(clean string, cuts []int, h []int) bool {
+	after := clean[h[1]:]
+	if heldReasonAfterRe.MatchString(after) || heldValueAfterRe.MatchString(after) {
+		return false
+	}
+	var b strings.Builder
+	prev := 0
+	for _, c := range cuts {
+		if c > h[0] {
+			break
+		}
+		b.WriteString(clean[prev:c])
+		b.WriteString(struckSentinel)
+		prev = c
+	}
+	b.WriteString(clean[prev:h[0]])
+	lookback := b.String()
+
+	if loc := heldWordCueRe.FindStringIndex(lookback); loc != nil {
+		return heldWordCueAllowed(heldTrimBefore(lookback[:loc[0]]))
+	}
+	if loc := heldZeroCueRe.FindStringIndex(lookback); loc != nil {
+		return heldZeroCueAllowed(heldTrimBefore(lookback[:loc[0]]))
+	}
+	return false
+}
+
+// stripStruck removes struck-through spans from a line. A span is cut only
+// where strikethroughRe finds it, at the same offsets, on BOTH line and masked
+// (the line with its inline code masked, inlineCodeScan): a "~~" inside a code
+// span never strikes anything, as in CommonMark, where code spans bind tighter
+// than strikethrough, and masking a "~" inside code never forms a strike the
+// unmasked line did not have. Cutting only what both readings agree on strikes
+// less, never more, than either alone. The cuts apply to both strings
+// (masking preserves length, so the offsets agree). clean is masked with the
+// spans removed: the text the held scan reads. view is line with the same
+// spans removed and its inline code intact: the text routing and the refusal
+// message read. cuts are the offsets in both where a span was removed.
+func stripStruck(line, masked string) (clean, view string, cuts []int) {
+	var locs [][]int
+	if raw := strikethroughRe.FindAllStringIndex(line, -1); raw != nil {
+		onLine := make(map[[2]int]bool, len(raw))
+		for _, l := range raw {
+			onLine[[2]int{l[0], l[1]}] = true
+		}
+		for _, l := range strikethroughRe.FindAllStringIndex(masked, -1) {
+			if onLine[[2]int{l[0], l[1]}] {
+				locs = append(locs, l)
+			}
+		}
+	}
+	if locs == nil {
+		return masked, line, nil
+	}
+	var c, v strings.Builder
+	cuts = make([]int, 0, len(locs))
+	prev := 0
+	for _, l := range locs {
+		c.WriteString(masked[prev:l[0]])
+		v.WriteString(line[prev:l[0]])
+		cuts = append(cuts, c.Len())
+		prev = l[1]
+	}
+	c.WriteString(masked[prev:])
+	v.WriteString(line[prev:])
+	return c.String(), v.String(), cuts
+}
+
+// inlineCodeMask overwrites every byte of an inline code span the held scan
+// excludes. It is the same byte as struckSentinel and, like it, sits on no
+// negation allowlist, so a masked span can never join a cue to a marker ("no
+// `see log` HELD") or stand in for what precedes a cue: the negation read is
+// unchanged or stricter wherever a span was.
+const inlineCodeMask = '\x00'
+
+// heldBareTokenRe is a code span holding nothing but the marker word (and
+// punctuation or emphasis around it): `HELD`, `could-not-check`, `**HELD:**`.
+// That is the verifier's own status token set in code formatting, not quoted
+// tool output, so inlineCodeScan keeps it and the scan still reads it.
+var heldBareTokenRe = regexp.MustCompile(`(?i)^[^\pL\pN]*(?:held|could-not-check)[^\pL\pN]*$`)
+
+// inlineCodeScan masks inline code spans out of Evidence lines, one line at a
+// time in document order, so the held scan does not read a marker QUOTED in
+// one (#2100: quoted tool output is not a disposition, the same reason fenced
+// code is stripped). mask returns a string the same length as its line.
+//
+// Spans follow CommonMark, read FAIL-CLOSED: a span is masked only where it is
+// certain to render as inline code, and every uncertainty masks nothing.
+//   - A span opens on a backtick run and closes on the next run of EXACTLY the
+//     same length; runs of other lengths in between are content.
+//   - A backslash-escaped backtick outside a span cannot open one; inside a
+//     span a backslash is literal.
+//   - A span never crosses an unescaped "|". GFM splits a table row into cells
+//     before it reads inline code, so a span cannot swallow a neighbouring
+//     cell's disposition ("| `cmd | HELD | `ok` |"). The split is applied on
+//     every line, table or not, which is stricter than CommonMark in prose: a
+//     quoted pipeline (`grep held | wc -l`) outside a table is still read.
+//   - A run with no equal-length closer in its cell is uncertain: in prose it
+//     may close in a later cell or on a later line of the paragraph, where
+//     CommonMark looks for it. Nothing from that run to the end of the line is
+//     masked, and the paragraph is marked open: every later line masks
+//     nothing, because a backtick on it might CLOSE a span rather than open
+//     one. Only a blank line the caller sees (between "\n" endings) ends the
+//     paragraph and clears the mark, and a line is blank only when it holds
+//     spaces and tabs alone, as CommonMark defines it (a no-break space or
+//     form feed continues the paragraph). Fences, blockquotes and a blank
+//     line inside a bare-CR line do not clear it (a stricter reading, never
+//     a looser one). A line the caller toggles a fence on that CommonMark does
+//     not read as a fence (fenceLine) is paragraph text the masker never
+//     sees, so it marks the paragraph open.
+//   - An inline link's destination and title, and a full reference's label,
+//     are read when CommonMark reaches "](" or "][", before a backtick inside
+//     them, so that backtick is literal. A tail that closes on the same line
+//     with no backtick, "<", backslash, quote or "(" inside is skipped whole
+//     (linkTailEnd): whether or not it forms a link, it ends at that closer
+//     and holds nothing that pairs. Any other "](" or "][" is uncertain:
+//     nothing is masked from it to the end of the line, and the paragraph is
+//     marked open (a title can run onto the next line).
+//   - When masking stops early, a backtick or "]" after the stop is never
+//     examined, so the paragraph is marked open whenever one remains.
+//   - An autolink or raw HTML outranks a code span that starts after it, so a
+//     backtick inside one is literal, and an HTML block is not read as inline
+//     text at all. The scan does not parse HTML: from a "<" that could open
+//     either, nothing is masked to the end of the line. The paragraph is then
+//     marked open as above (inline HTML can run onto the next line, and an
+//     HTML block runs to the next blank line), except after an HTML comment
+//     closed on the same line. A "<" that opens one of the HTML blocks that
+//     run ACROSS blank lines (<pre>, <script>, <style>, <textarea>, a comment,
+//     a processing instruction, a declaration, CDATA) masks nothing until the
+//     line that holds that block's end marker. A "<" inside a masked span is
+//     code and does not count.
+//   - GitHub recognises a bare URL ("://"), a "www." domain, and a "mailto:"
+//     or "xmpp:" URI as an extended autolink when it reaches the trigger, and
+//     the link runs to the next whitespace, so a backtick later in that run is
+//     literal (extendedLinkBefore). Such a backtick is uncertain, the same as
+//     an unpaired run: nothing is masked from it, and the paragraph is marked
+//     open. A span that opens before the trigger still wins, as in GFM.
+//   - A carriage return not followed by a line feed is a CommonMark line
+//     ending, but the caller splits on "\n" alone, so a line holding one
+//     before its last byte is several lines to a renderer, and a blank line or
+//     a heading among them ends the paragraph (hasBareCR). Such a line masks
+//     nothing and marks the paragraph open.
+//   - A line that may be a link reference definition ("[" first, then "]:")
+//     masks nothing and marks the paragraph open: its title is not rendered as
+//     text, and can run onto the next line (linkDefLine).
+//   - A span whose content is only the marker word (heldBareTokenRe) is kept.
+type inlineCodeScan struct {
+	paraOpen bool   // a backtick or "<" earlier in this paragraph may still be open
+	htmlEnd  string // inside an HTML block that ends at the line holding this marker
+}
+
+// blank records a blank line: the paragraph ends, and a backtick before it
+// can no longer pair with one after it. An HTML block of the kinds tracked in
+// htmlEnd does not end at a blank line.
+func (s *inlineCodeScan) blank() { s.paraOpen = false }
+
+// isBlankLine reports whether line is blank as CommonMark defines it: empty,
+// or spaces and tabs alone (a trailing "\r" from a CRLF ending is ignored).
+// strings.TrimSpace is wider: it also strips a no-break space, an ideographic
+// space or a form feed, which CommonMark reads as paragraph text.
+func isBlankLine(line string) bool { return strings.Trim(line, " \t\r") == "" }
+
+// fenceLine records a line the caller treats as a fence toggle. One that
+// CommonMark does not read as a fence (fenceLineValid) is paragraph text whose
+// backticks the masker never sees, so the paragraph is marked open.
+func (s *inlineCodeScan) fenceLine(line string) {
+	if !fenceLineValid(line) {
+		s.paraOpen = true
+	}
+}
+
+// fenceLineValid reports whether line opens a fence as CommonMark reads it:
+// at most three spaces of indentation, a run of three or more backticks or
+// tildes, and, for a backtick fence, no backtick after the run.
+func fenceLineValid(line string) bool {
+	i := 0
+	for i < len(line) && line[i] == ' ' {
+		i++
+	}
+	if i > 3 || i >= len(line) || line[i] != '`' && line[i] != '~' {
+		return false
+	}
+	c, n := line[i], 0
+	for i+n < len(line) && line[i+n] == c {
+		n++
+	}
+	return n >= 3 && (c == '~' || strings.IndexByte(line[i+n:], '`') < 0)
+}
+
+// mask returns line with each certain inline code span overwritten byte for
+// byte by inlineCodeMask, and records what the line leaves uncertain.
+func (s *inlineCodeScan) mask(line string) string {
+	if s.htmlEnd != "" {
+		if at := strings.Index(strings.ToLower(line), s.htmlEnd); at >= 0 {
+			from := at + len(s.htmlEnd)
+			s.htmlEnd = ""
+			s.paraOpen = true
+			s.noteAngles(line, from)
+		}
+		return line
+	}
+	if hasBareCR(line) || linkDefLine(line) {
+		s.paraOpen = true
+	}
+	if !strings.ContainsAny(line, "`<]") {
+		return line
+	}
+	if s.paraOpen {
+		s.noteAngles(line, 0)
+		return line
+	}
+	b := []byte(line)
+	start := 0
+	for i := 0; i <= len(line); i++ {
+		if i < len(line) {
+			if line[i] == '\\' {
+				i++ // an escaped character never delimits a cell
+				continue
+			}
+			if line[i] != '|' {
+				continue
+			}
+		}
+		if stop := maskCodeSpans(b, line, start, i); stop >= 0 {
+			// The stop itself is an unpaired run or an uncertain link tail,
+			// or a "<" with a backtick or "]" left after it unexamined.
+			if line[stop] != '<' || strings.ContainsAny(line[stop:], "`]") {
+				s.paraOpen = true
+			}
+			s.noteAngles(line, stop)
+			return string(b)
+		}
+		start = i + 1
+	}
+	return string(b)
+}
+
+// htmlBlockEnds maps the opening of each HTML block kind that runs across
+// blank lines (CommonMark HTML block types 1, 2, 3 and 5; type 4, a
+// declaration, is handled in noteAngles) to its end marker, lower case. A
+// type-1 opener must be followed by a space, a tab, ">" or the line end.
+var htmlBlockEnds = []struct{ open, end string }{
+	{"<pre", "</pre>"}, {"<script", "</script>"}, {"<style", "</style>"},
+	{"<textarea", "</textarea>"}, {"<!--", "-->"}, {"<?", "?>"},
+	{"<![cdata[", "]]>"},
+}
+
+// noteAngles records every "<" in line[from:] that could open an autolink,
+// raw HTML or an HTML block: each marks the paragraph open, except an HTML
+// comment closed later on the same line; one that opens an HTML block running
+// across blank lines enters that block unless its end marker follows on the
+// same line.
+func (s *inlineCodeScan) noteAngles(line string, from int) {
+	lower := strings.ToLower(line)
+	for i := from; i < len(line); i++ {
+		if !angleMayOpen(line, i) {
+			continue
+		}
+		end := ""
+		for _, k := range htmlBlockEnds {
+			if !strings.HasPrefix(lower[i:], k.open) {
+				continue
+			}
+			if k.end[1] == '/' { // type 1: the tag name must end here
+				if n := i + len(k.open); n < len(line) && strings.IndexByte(" \t>", line[n]) < 0 {
+					continue
+				}
+			}
+			end = k.end
+			break
+		}
+		if end == "" && i+2 < len(line) && line[i+1] == '!' && isASCIILetter(line[i+2]) {
+			end = ">" // a declaration, type 4
+		}
+		if end == "" {
+			s.paraOpen = true
+			continue
+		}
+		at := strings.Index(lower[i+2:], end)
+		if at < 0 {
+			s.htmlEnd = end
+			s.paraOpen = true
+			return
+		}
+		if end != "-->" {
+			s.paraOpen = true
+		}
+		i += 2 + at + len(end) - 1
+	}
+}
+
+func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+
+// hasBareCR reports whether line holds a carriage return anywhere but its last
+// byte. CommonMark reads a CR not followed by a line feed as a line ending, so
+// such a line is several lines to a renderer, and a blank line or a heading
+// among them ends the paragraph. The caller splits on "\n" alone; a trailing
+// "\r" is a CRLF ending.
+func hasBareCR(line string) bool {
+	return strings.IndexByte(strings.TrimSuffix(line, "\r"), '\r') >= 0
+}
+
+// linkDefLine reports whether line may be a link reference definition: a "["
+// after leading spaces and tabs, and a "]:" later on. Its title is not
+// rendered as text, so a backtick inside it pairs with nothing, and the title
+// can run onto the next line.
+func linkDefLine(line string) bool {
+	t := strings.TrimLeft(line, " \t")
+	return strings.HasPrefix(t, "[") && strings.Contains(t, "]:")
+}
+
+// extendedLinkBefore reports whether the backtick at line[at] may sit inside
+// a GFM extended autolink: the whitespace-delimited run that leads up to it
+// holds "://" (a bare URL), "www." (a www domain), or "mailto:" or "xmpp:",
+// ignoring case. GitHub recognises such a link when it reaches the trigger,
+// before the backtick, and the link runs to the next whitespace, so the
+// backtick is literal. The run is not cut at a "|" or a "<": a URL in prose
+// runs through both, and reading further back is the stricter choice.
+func extendedLinkBefore(line string, at int) bool {
+	start := at
+	for start > 0 && strings.IndexByte(" \t\v\f\r\n", line[start-1]) < 0 {
+		start--
+	}
+	run := strings.ToLower(line[start:at])
+	for _, trigger := range []string{"://", "www.", "mailto:", "xmpp:"} {
+		if strings.Contains(run, trigger) {
+			return true
+		}
+	}
+	return false
+}
+
+// angleMayOpen reports whether line[i] is a "<" that could start an autolink
+// (a scheme letter, or an email local-part character) or a raw HTML tag (a
+// letter, "/", "!" or "?"). A "<" at line end or before a space, "<", ">" or
+// other punctuation outside those sets can open neither.
+func angleMayOpen(line string, i int) bool {
+	if line[i] != '<' || i+1 >= len(line) {
+		return false
+	}
+	c := line[i+1]
+	return isASCIILetter(c) || c >= '0' && c <= '9' ||
+		strings.IndexByte("/!?.#$%&'*+=^_`{|}~-", c) >= 0
+}
+
+// linkTailEnd returns the offset of the closer of the link tail that opens at
+// line[open] — a "(" after "]" (a destination and title) or a "[" after "]"
+// (a full reference's label) — when that tail is certain: its closer is the
+// first ")" or "]" before hi, and nothing in between could hold a backtick or
+// move the closer (a backtick, "<", backslash, quote or "("). It returns -1
+// for any other tail.
+func linkTailEnd(line string, open, hi int) int {
+	closer := byte(')')
+	if line[open] == '[' {
+		closer = ']'
+	}
+	for j := open + 1; j < hi; j++ {
+		switch line[j] {
+		case closer:
+			return j
+		case '`', '<', '\\', '"', '\'', '(':
+			return -1
+		}
+	}
+	return -1
+}
+
+// maskCodeSpans masks, in b, the inline code spans of line[lo:hi] — one table
+// cell, or the whole of a pipe-free line — under inlineCodeScan's rules. It
+// returns -1 when every span in the cell was certain, or the offset of the
+// first uncertainty (an unpaired backtick run, a backtick that may sit inside
+// an extended autolink, a "<" that may open an autolink or raw HTML, or a
+// "](" or "][" whose tail linkTailEnd cannot settle); spans before that
+// offset are masked, nothing after.
+func maskCodeSpans(b []byte, line string, lo, hi int) int {
+	tickRun := func(at int) int {
+		n := 0
+		for at+n < hi && line[at+n] == '`' {
+			n++
+		}
+		return n
+	}
+	for i := lo; i < hi; {
+		switch line[i] {
+		case '\\':
+			i += 2 // an escaped backtick is literal and cannot open a span
+			continue
+		case '<':
+			if angleMayOpen(line, i) {
+				return i
+			}
+			i++
+			continue
+		case ']':
+			if i+1 < hi && (line[i+1] == '(' || line[i+1] == '[') {
+				end := linkTailEnd(line, i+1, hi)
+				if end < 0 {
+					return i
+				}
+				i = end + 1
+				continue
+			}
+			i++
+			continue
+		case '`':
+			if extendedLinkBefore(line, i) {
+				return i // may be literal inside a link, or open a span if not
+			}
+		default:
+			i++
+			continue
+		}
+		open, n := i, tickRun(i)
+		i += n
+		closeAt := -1
+		for j := i; j < hi; {
+			if line[j] != '`' {
+				j++
+				continue
+			}
+			m := tickRun(j)
+			if m == n {
+				closeAt = j
+				break
+			}
+			j += m
+		}
+		if closeAt < 0 {
+			return open // no closer in this cell: it may close further on
+		}
+		if !heldBareTokenRe.MatchString(line[i:closeAt]) {
+			for k := open; k < closeAt+n; k++ {
+				b[k] = inlineCodeMask
+			}
+		}
+		i = closeAt + n
+	}
+	return -1
+}
 
 // verifyPassHeldContradiction reports whether evidence both carries a strict
 // hasVerifyPass marker AND, on some line that is not a genuinely routed
@@ -323,22 +920,81 @@ var heldOrCouldNotCheckRe = regexp.MustCompile(`(?i)\b(HELD|could-not-check)\b`)
 //
 // Fenced code, blockquotes and struck-through spans are stripped first — the
 // same hygiene lastVerifyVerdict applies — so a marker QUOTED inside one of
-// those is not read as a live disposition.
+// those is not read as a live disposition. Inline code spans are excluded too
+// (#2100, inlineCodeScan): a span is quoted tool output, not a verifier's
+// disposition. That exclusion is this scan's alone — lastVerifyVerdict and
+// verdictFailAfterStrictPass still read verdict tokens inside inline code.
 func verifyPassHeldContradiction(evidence string) (bool, string) {
 	if !hasVerifyPass(evidence) {
 		return false, ""
 	}
+	return unroutedHeldLine(evidence)
+}
+
+// unroutedHeldLine is verifyPassHeldContradiction's line scan WITHOUT the
+// strict-PASS precondition: it reports the first line that says HELD or
+// could-not-check on an occurrence not genuinely routed to a follow-up AND
+// not negated or zero-counted (heldOccurrenceNegated), under exactly the hygiene and
+// routing rules documented on verifyPassHeldContradiction above (which is
+// this scan behind hasVerifyPass, unchanged). It exists for a caller whose
+// PASS claim is carried by something other than a strict marker —
+// closeVerify's `verified` path, where the README row itself already asserts
+// the pass — so that caller's read cannot be switched off by how (or
+// whether) the marker was written.
+//
+// What it reads is heldScanScope's decision (#1894): in an entry with a
+// results table, only the rows' result cells, plus the prose around the
+// table minus exit-code mappings that name no row ("could-not-check → exit
+// 6"). Lines outside that scope still pass through the fence and inline-code
+// trackers, so the markdown state the read lines are judged in is the
+// document's own. Every held line is collected; the earlier-entry ones are
+// dropped only when scope.supersedes them all — each a keyed results row the
+// last entry, closing on its own live strict PASS, re-ran to a clean outcome
+// — and otherwise the first held line in the whole section refuses, as before.
+func unroutedHeldLine(evidence string) (bool, string) {
 	inFence := false
-	for _, line := range strings.Split(evidence, "\n") {
+	var codeScan inlineCodeScan
+	scope := heldScanScope(evidence)
+	var hits []int
+	var quotes []string
+	for i, line := range strings.Split(evidence, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
 			inFence = !inFence
+			codeScan.fenceLine(line)
 			continue
 		}
-		if inFence || strings.HasPrefix(trimmed, ">") {
+		if inFence {
 			continue
 		}
-		clean := strikethroughRe.ReplaceAllString(line, "")
+		if trimmed == "" {
+			if isBlankLine(line) {
+				codeScan.blank()
+			}
+			continue
+		}
+		// Inline code is masked (same length, so offsets agree) before the
+		// struck spans are cut: the marker is matched and the negation read
+		// on clean, where a quoted span is gone; routing and the refusal
+		// message read view, which keeps the code text — a reference written
+		// in code ("deferred to `stream/05`") still routes, as before. A
+		// blockquote line is not scanned but still passes through the
+		// masker, so a backtick or "<" in it leaves the scan as uncertain as
+		// it is in the rendered text.
+		masked := codeScan.mask(line)
+		read := scope.lines[i]
+		if strings.HasPrefix(trimmed, ">") || read.skip {
+			continue
+		}
+		// A results-table row is read in its result cells only: the
+		// Command, Expect, Date and Runner cells are blanked in both
+		// readings (same length, so offsets agree). The "|" delimiters stay,
+		// so a cue in the result cell is judged against the same "|" before
+		// it as when the whole row was read.
+		// The refusal message still quotes the whole row.
+		_, whole, _ := stripStruck(line, masked)
+		line, masked = heldBlankRanges(line, read.blank), heldBlankRanges(masked, read.blank)
+		clean, view, cuts := stripStruck(line, masked)
 		heldLocs := heldOrCouldNotCheckRe.FindAllStringIndex(clean, -1)
 		if heldLocs == nil {
 			continue
@@ -366,9 +1022,24 @@ func verifyPassHeldContradiction(evidence string) (bool, string) {
 		// independent claim the deferral could not have been about, and is
 		// refused exactly like an un-routed mention with no deferral at
 		// all. This is ordering, not bare same-line proximity.
-		keywordLocs := routingKeywordRe.FindAllStringIndex(clean, -1)
-		refLocs := routingRefRe.FindAllStringIndex(clean, -1)
+		keywordLocs := routingKeywordRe.FindAllStringIndex(view, -1)
+		refLocs := routingRefRe.FindAllStringIndex(view, -1)
 		for _, h := range heldLocs {
+			// A negated or zero-counted occurrence ("no could-not-check",
+			// "summary: 0 HELD") is not a live disposition at all — it is
+			// excused outright, the same as a routed one, without needing a
+			// routing keyword+reference. Judged on this occurrence's own
+			// surroundings only (heldOccurrenceNegated), so a negated mention
+			// never excuses a different, genuine occurrence elsewhere.
+			if heldOccurrenceNegated(clean, cuts, h) {
+				continue
+			}
+			// Prose beside a results table that says what an exit code
+			// means ("could-not-check → exit 6") is not a disposition; the
+			// row's own result cell is (heldScanScope rule 2, #1894).
+			if read.prose && heldExitMapping(clean, h) {
+				continue
+			}
 			keywordAfter := false
 			for _, k := range keywordLocs {
 				if k[0] >= h[0] {
@@ -386,8 +1057,16 @@ func verifyPassHeldContradiction(evidence string) (bool, string) {
 			if keywordAfter && refAfter {
 				continue // knowingly routed to a named follow-up — excluded from the PASS, not contradicting it
 			}
-			return true, strings.TrimSpace(clean)
+			hits, quotes = append(hits, i), append(quotes, strings.TrimSpace(whole))
+			break
 		}
+	}
+	superseded := scope.supersedes(hits)
+	for k, i := range hits {
+		if superseded && i < scope.from {
+			continue
+		}
+		return true, quotes[k]
 	}
 	return false, ""
 }
@@ -403,13 +1082,16 @@ func verifyPassHeldContradiction(evidence string) (bool, string) {
 // Because splitRow splits on an UNESCAPED | (commands often contain an unescaped
 // pipe character, which GFM and splitRow alike read as a real cell delimiter),
 // the column indices from the header may not align with data rows. This function
-// works around that by reading Date and Runner from the RIGHTMOST two cells of
-// each data row: the last cell is Runner (by convention), second-to-last is Date.
+// works around that by reading Date and Runner counted from the RIGHT of each
+// data row: Runner is the last cell (by convention) and Date the one before it,
+// after skipping any columns the header places to the right of Runner (a
+// fail-first witness table's trailing Base).
 // It validates against the header row to confirm the table structure is recognized.
 func evidenceVerifierInfo(evidence string) (date, runner string) {
-	stripped := htmlCommentRe.ReplaceAllString(evidence, "")
+	stripped, _ := stripRowComments(evidence)
 	lines := strings.Split(stripped, "\n")
 	tableFound := false
+	trail := 0 // header columns to the RIGHT of Runner (a fail-first table's Base)
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if !strings.HasPrefix(line, "|") {
@@ -423,12 +1105,15 @@ func evidenceVerifierInfo(evidence string) (date, runner string) {
 		// names Date and Runner columns (anywhere, not at a fixed index).
 		if i+1 < len(lines) && separatorRowRe.MatchString(strings.Trim(strings.TrimSpace(lines[i+1]), "|")) {
 			hasDate, hasRunner := false, false
-			for _, c := range splitRow(line) {
+			hdr := splitRow(line)
+			trail = 0
+			for j, c := range hdr {
 				switch strings.ToLower(strings.TrimSpace(c)) {
 				case "date":
 					hasDate = true
 				case "runner":
 					hasRunner = true
+					trail = len(hdr) - 1 - j
 				}
 			}
 			tableFound = hasDate && hasRunner
@@ -441,11 +1126,11 @@ func evidenceVerifierInfo(evidence string) (date, runner string) {
 		// Data row: read Date from second-to-last cell, Runner from last cell.
 		// This survives splitRow miscounting when cell content contains |.
 		cells := splitRow(line)
-		if len(cells) < 2 {
+		if len(cells) < 2+trail {
 			continue
 		}
-		d := strings.TrimSpace(cells[len(cells)-2])
-		r := strings.TrimSpace(cells[len(cells)-1])
+		d := strings.TrimSpace(cells[len(cells)-2-trail])
+		r := strings.TrimSpace(cells[len(cells)-1-trail])
 		if d != "" && d != "—" && r != "" {
 			return d, r
 		}
@@ -460,7 +1145,7 @@ func unrunRowsText(evidence string) string {
 	if !strings.Contains(strings.ToUpper(evidence), "UNRUN") {
 		return ""
 	}
-	stripped := htmlCommentRe.ReplaceAllString(evidence, "")
+	stripped, _ := stripRowComments(evidence)
 	lines := strings.Split(stripped, "\n")
 	var out []string
 	for _, line := range lines {
@@ -861,21 +1546,59 @@ func flipRowToDone(raw, num, reviewedStamp, verifiedStamp string) (string, error
 // Reviewed cell stamped `human:<closer>` + the close date — the recorded independent
 // run, not the close time, is what the Verified cell attests. It refuses (error, NO
 // write) for any other state, and for an implemented brief lacking either the strict
-// **VERIFY: PASS** marker or a Date/Runner Evidence row (fail-closed). It never
+// **VERIFY: PASS** marker or a Date/Runner Evidence row (fail-closed). On BOTH
+// paths it also refuses a PASS contradicted by an un-routed HELD/could-not-check
+// row (closeVerifyHeldRefusal); on the verified path it further refuses when the
+// most recent recorded verdict is a FAIL (closeVerifyFailRefusal). It never
 // touches STATUS.md (single-writer rule) — status-regen regenerates it on the
 // resulting push.
 func closeVerify(root, briefID string, now time.Time) error {
-	streams, _, err := loadStreams(root)
+	readme, updated, _, err := closeVerifyPlan(root, briefID, now)
 	if err != nil {
 		return err
 	}
+	return os.WriteFile(readme, updated, 0o644)
+}
+
+// closeVerifyPlan is closeVerify without the write: it resolves the ref, runs
+// every refusal, and returns the README path, its flipped content and the local
+// <stream>/<NN> it resolved to. `statusgen verify-gate-close --dry-run` stops
+// here; closeVerify writes the result.
+//
+// The decision-gate hold (lifecycle-v1 §4.5) runs last, over the README the close
+// would write: a gate: human brief reaches done only with a human ruling on its
+// decision issue. The close lands on the default branch with no pull request, so
+// this is the only network check that sees it.
+func closeVerifyPlan(root, briefID string, now time.Time) (readme string, updated []byte, local string, err error) {
+	readme, updated, local, err = closeVerifyFlipPlan(root, briefID, now)
+	if err != nil {
+		return "", nil, "", err
+	}
+	if gerr := closeVerifyDecisionGateFn(root, readme, updated); gerr != nil {
+		return "", nil, "", gerr
+	}
+	return readme, updated, local, nil
+}
+
+// closeVerifyFlipPlan is closeVerifyPlan before the decision-gate hold.
+func closeVerifyFlipPlan(root, briefID string, now time.Time) (readme string, updated []byte, local string, err error) {
 	// Accept either brief-key form: a brief-v1 <stream>/<NN> id or a brief-v2
-	// <cell>:<repo>:<stream>:<NN> id (issue #804). Both name one brief in this
-	// tree; normalize to the canonical <stream>/<NN> the row lookup below uses.
-	briefID = normalizeBriefKey(briefID)
+	// <cell>:<repo>:<stream>:<NN> id (issue #804), plus the reference grammar's
+	// <alias>:<stream>/<NN> and <cell>:<alias>:<stream>/<NN> forms. Any repo
+	// alias resolves through docs/streams/graph-repos.yaml and must be THIS
+	// tree's own (topology.go) — it is never dropped unread, which flipped a
+	// same-numbered local brief for another repo's item.
+	briefID, err = resolveLocalBriefRef(root, briefID)
+	if err != nil {
+		return "", nil, "", err
+	}
+	streams, _, err := loadStreams(root)
+	if err != nil {
+		return "", nil, "", err
+	}
 	streamName, num, ok := strings.Cut(briefID, "/")
 	if !ok || streamName == "" || num == "" {
-		return fmt.Errorf("brief id %q is not a <stream>/<NN> or <cell>:<repo>:<stream>:<NN> id", briefID)
+		return "", nil, "", fmt.Errorf("brief id %q is not a <stream>/<NN>, <alias>:<stream>/<NN> or <cell>:<repo>:<stream>:<NN> id", briefID)
 	}
 	var s *Stream
 	for _, st := range streams {
@@ -885,7 +1608,7 @@ func closeVerify(root, briefID string, now time.Time) error {
 		}
 	}
 	if s == nil {
-		return fmt.Errorf("unknown stream %q", streamName)
+		return "", nil, "", fmt.Errorf("unknown stream %q", streamName)
 	}
 
 	var bf *BriefFile
@@ -900,20 +1623,20 @@ func closeVerify(root, briefID string, now time.Time) error {
 		}
 	}
 	if bf == nil {
-		return fmt.Errorf("no brief-v1 file found for %s", briefID)
+		return "", nil, "", fmt.Errorf("no brief-v1 file found for %s", briefID)
 	}
 	if bf.Gate != "human" {
-		return fmt.Errorf("refusing: brief %s gate is %q, not human — not a human sign-off gate", briefID, bf.Gate)
+		return "", nil, "", fmt.Errorf("refusing: brief %s gate is %q, not human — not a human sign-off gate", briefID, bf.Gate)
 	}
 	row := findRow(s, num)
 	if row == nil {
-		return fmt.Errorf("no README row for %s", briefID)
+		return "", nil, "", fmt.Errorf("no README row for %s", briefID)
 	}
 
-	readme := filepath.Join(s.Dir, "README.md")
+	readme = filepath.Join(s.Dir, "README.md")
 	raw, err := os.ReadFile(readme)
 	if err != nil {
-		return err
+		return "", nil, "", err
 	}
 	// Date-first, matching the repo/CLAUDE.md Reviewed-cell convention
 	// ("YYYY-MM-DD human:alex") and every existing row.
@@ -921,16 +1644,29 @@ func closeVerify(root, briefID string, now time.Time) error {
 
 	switch row.Status {
 	case "verified":
-		// Standard path: verified → done — after the floor read on the cell
-		// the done row will carry (two-stamp model).
+		// Standard path: verified → done. A `verified` row is no licence to
+		// skip the Evidence read the implemented path makes: a brief flipped
+		// to `verified` over an unresolved hold, or whose record shows a FAIL
+		// no later strict PASS answers, must not be closed to `done` with that
+		// record standing. So the SAME HELD/could-not-check scan the
+		// implemented path runs runs here — keyed on the row's own `verified`
+		// claim, NOT on how (or whether) a PASS marker was written — plus the
+		// FAIL read, both BEFORE the floor read on the cell the done row will
+		// carry (two-stamp model).
+		if err := closeVerifyHeldRefusal(briefID, row.Status, bf.Evidence); err != nil {
+			return "", nil, "", err
+		}
+		if err := closeVerifyFailRefusal(briefID, row.Status, bf.Evidence); err != nil {
+			return "", nil, "", err
+		}
 		if err := closeVerifyFloorRefusal(briefID, bf, row.Verified); err != nil {
-			return err
+			return "", nil, "", err
 		}
-		updated, err := flipRowToDone(string(raw), num, reviewedStamp, "")
+		out, err := flipRowToDone(string(raw), num, reviewedStamp, "")
 		if err != nil {
-			return fmt.Errorf("%s: %w", readme, err)
+			return "", nil, "", fmt.Errorf("%s: %w", readme, err)
 		}
-		return os.WriteFile(readme, []byte(updated), 0o644)
+		return readme, []byte(out), briefID, nil
 
 	case "implemented":
 		// One-step path: the implemented→verified README flip is a manual action
@@ -941,30 +1677,150 @@ func closeVerify(root, briefID string, now time.Time) error {
 		// the fail-closed gate; loosening WHICH briefs qualify never loosens WHAT
 		// evidence is required.
 		if !hasVerifyPass(bf.Evidence) {
-			return fmt.Errorf("refusing: brief %s status is %q (not verified) and Evidence has no **VERIFY: PASS** marker — a human-gated brief needs a recorded model verify pass before the human sign-off can advance it", briefID, row.Status)
+			return "", nil, "", fmt.Errorf("refusing: brief %s status is %q (not verified) and Evidence has no **VERIFY: PASS** marker — a human-gated brief needs a recorded model verify pass before the human sign-off can advance it", briefID, row.Status)
 		}
-		if held, why := verifyPassHeldContradiction(bf.Evidence); held {
-			return fmt.Errorf("refusing: brief %s carries **VERIFY: PASS** but Evidence also reads %q on a row not marked deferred — a PASS marker is not a flip signal while a non-deferred row still says HELD/could-not-check", briefID, why)
+		if err := closeVerifyHeldRefusal(briefID, row.Status, bf.Evidence); err != nil {
+			return "", nil, "", err
 		}
 		date, runner := evidenceVerifierInfo(bf.Evidence)
 		if date == "" || runner == "" {
-			return fmt.Errorf("refusing: brief %s has **VERIFY: PASS** but no verifier date/runner found in Evidence table — need a table with Date and Runner columns to stamp the Verified cell", briefID)
+			return "", nil, "", fmt.Errorf("refusing: brief %s has **VERIFY: PASS** but no verifier date/runner found in Evidence table — need a table with Date and Runner columns to stamp the Verified cell", briefID)
 		}
 		verifiedStamp := date + " " + runner
 		// The cell this path is about to WRITE comes from the brief file's
 		// Evidence, so the floor read is on that computed stamp (two-stamp model).
 		if err := closeVerifyFloorRefusal(briefID, bf, verifiedStamp); err != nil {
-			return err
+			return "", nil, "", err
 		}
-		updated, err := flipRowToDone(string(raw), num, reviewedStamp, verifiedStamp)
+		out, err := flipRowToDone(string(raw), num, reviewedStamp, verifiedStamp)
 		if err != nil {
-			return fmt.Errorf("%s: %w", readme, err)
+			return "", nil, "", fmt.Errorf("%s: %w", readme, err)
 		}
-		return os.WriteFile(readme, []byte(updated), 0o644)
+		return readme, []byte(out), briefID, nil
 
 	default:
-		return fmt.Errorf("refusing: brief %s status is %q, not verified (or implemented with a recorded **VERIFY: PASS**) — nothing to sign off", briefID, row.Status)
+		return "", nil, "", fmt.Errorf("refusing: brief %s status is %q, not verified (or implemented with a recorded **VERIFY: PASS**) — nothing to sign off", briefID, row.Status)
 	}
+}
+
+// closeVerifyHeldRefusal is the HELD/could-not-check read a human done close
+// makes BEFORE it writes, on BOTH starting states (verified and implemented):
+// a pass claim is not a flip signal while a row not genuinely routed to a
+// follow-up still reads HELD/could-not-check.
+//
+// The scan is unroutedHeldLine — verifyPassHeldContradiction's own line scan,
+// same hygiene, same routing rule — run WITHOUT the strict-marker
+// precondition. On the implemented path that changes nothing: closeVerify has
+// already refused any Evidence lacking the strict **VERIFY: PASS** marker, so
+// the two reads coincide. On the verified path it is the point: the README row
+// already claims a pass, so a loose-form marker (`**Non-implementer verifier
+// run — VERIFY: PASS**`) or no marker at all must not switch the read off.
+//
+// Where the strict marker is present the refusal text is ONE sentence for both
+// paths, so the two can never drift into refusing differently; the
+// no-strict-marker variant is reachable from the verified path only.
+//
+// Supersession is inferred at ONE granularity only (#1894, heldScanScope rule
+// 3): a held row in an earlier `### ` entry is not read when the last entry,
+// closing on its own live strict **VERIFY: PASS**, re-ran that row — the same
+// row key under the same key-column name, in a results table of its own, and
+// every row of that key in the entry reads, cell by whole cell, as a
+// recognised clean outcome (heldCovered, heldOutcome) — and every other
+// earlier hold is such a row too. A later entry that re-ran nothing, re-ran
+// other rows, or wrote anything but a clean outcome for the held row (a
+// placeholder, a carry-forward, a note after the outcome, a zero count, an
+// expectation in place of a result) replaces nothing; an earlier hold in
+// prose keeps every entry read.
+// Inside one entry it is NOT inferred: a
+// HELD/could-not-check row under the same heading stays live after a later
+// table runs that row green, because nothing ties the later row to the earlier
+// one. There the verifier who resolves a hold strikes the earlier line through
+// (`~~…~~`, which the scan strips) or routes it to a named follow-up; an
+// unstruck, unrouted hold refuses by design.
+func closeVerifyHeldRefusal(briefID, status, evidence string) error {
+	held, why := unroutedHeldLine(evidence)
+	if !held {
+		return nil
+	}
+	if hasVerifyPass(evidence) {
+		return fmt.Errorf("refusing: brief %s carries **VERIFY: PASS** but Evidence also reads %q on a row not marked deferred — a PASS marker is not a flip signal while a non-deferred row still says HELD/could-not-check", briefID, why)
+	}
+	return fmt.Errorf("refusing: brief %s status is %q, which claims a pass, but Evidence reads %q on a row not marked deferred and carries no strict **VERIFY: PASS** marker — a %q row is not a flip signal while a non-deferred row still says HELD/could-not-check", briefID, status, why, status)
+}
+
+// closeVerifyFailRefusal refuses a human done close whose Evidence records a
+// FAIL that no later strict **VERIFY: PASS** marker answers. It refuses when
+// EITHER read says so:
+//
+//   - lastVerifyVerdict is FAIL (the most recent verdict token of any form);
+//   - verdictFailAfterStrictPass: some FAIL token of any form occurs after the
+//     last strict **VERIFY: PASS** marker (or anywhere, when there is none).
+//
+// A brief that failed, was reworked and then recorded a strict PASS closes;
+// one whose latest recorded run failed does not, whatever its README row says.
+//
+// It runs on the verified path. The implemented path needs no separate read
+// for the FAIL-only case — it already refuses any Evidence without a strict
+// **VERIFY: PASS** marker — and is deliberately left unchanged here.
+//
+// Why two reads. lastVerifyVerdict's stated limit — a verdict token inside
+// ordinary prose still reads as a verdict — cuts BOTH ways: a prose FAIL
+// mention after a real PASS reads as a fail (refuses: the closed direction),
+// but a prose PASS mention after a real FAIL ("will record VERIFY: PASS once
+// green") reads as a pass, which alone would let the close through.
+// verdictFailAfterStrictPass closes that open direction: only the strict bold
+// marker can answer a FAIL, and a prose PASS never can. Either read refusing
+// refuses; the remedy is a recorded strict **VERIFY: PASS** after the FAIL, or
+// striking the superseded FAIL through.
+func closeVerifyFailRefusal(briefID, status, evidence string) error {
+	if lastVerifyVerdict(evidence) == verdictFail || verdictFailAfterStrictPass(evidence) {
+		return fmt.Errorf("refusing: brief %s status is %q but its Evidence records a VERIFY: FAIL that no later strict **VERIFY: PASS** marker answers — a failed run is not a flip signal; re-run the Verify table to a recorded **VERIFY: PASS** before the human sign-off", briefID, status)
+	}
+	return nil
+}
+
+// verdictFailAfterStrictPass reports whether a FAIL verdict token of ANY form
+// (verifyVerdictRe) occurs after the last strict bold **VERIFY: PASS** marker
+// (verifyVerdictBoldRe), or anywhere when the Evidence has no strict PASS.
+// Positions are compared in document order, within a line by offset. Fenced
+// code, blockquotes and struck-through spans are stripped first — the same
+// hygiene lastVerifyVerdict applies — so a quoted or retracted FAIL is not
+// read as a live one. A PASS token that is not in the strict bold form never
+// answers a FAIL: that asymmetry is what keeps prose from opening the gate.
+func verdictFailAfterStrictPass(evidence string) bool {
+	failOpen := false
+	inFence := false
+	for _, line := range strings.Split(evidence, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || strings.HasPrefix(trimmed, ">") {
+			continue
+		}
+		line = strikethroughRe.ReplaceAllString(line, "")
+		type ev struct {
+			pos      int
+			strictOK bool // a strict bold PASS marker starts here
+		}
+		var evs []ev
+		for _, m := range verifyVerdictBoldRe.FindAllStringSubmatchIndex(line, -1) {
+			if line[m[2]:m[3]] == "PASS" {
+				evs = append(evs, ev{m[0], true})
+			}
+		}
+		for _, m := range verifyVerdictRe.FindAllStringSubmatchIndex(line, -1) {
+			if line[m[2]:m[3]] == "FAIL" {
+				evs = append(evs, ev{m[0], false})
+			}
+		}
+		sort.Slice(evs, func(i, j int) bool { return evs[i].pos < evs[j].pos })
+		for _, e := range evs {
+			failOpen = !e.strictOK
+		}
+	}
+	return failOpen
 }
 
 // closeVerifyFloorRemedy is the two-stamp remedy every floor refusal names, so

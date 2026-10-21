@@ -23,7 +23,9 @@ import (
 // admitted; a blessing of such a thread waits for a human look).
 
 // IssueTrustQuery fetches an issue's body-edit time and its comment content events.
-const IssueTrustQuery = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){lastEditedAt comments(first:100){pageInfo{hasNextPage} nodes{createdAt lastEditedAt author{login __typename ...on User{databaseId} ...on Bot{databaseId}}}}}}}`
+const issueTrustSelection = `lastEditedAt comments(first:100){pageInfo{hasNextPage} nodes{createdAt lastEditedAt author{login __typename ...on User{databaseId} ...on Bot{databaseId}}}}`
+
+const IssueTrustQuery = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){` + issueTrustSelection + `}}}`
 
 // IssueEventsQuery reads ONE page of an issue's comment content events for the ESCALATION
 // CLOCK — walked to exhaustion under a hard page cap by GitHubForge.IssueContentEvents.
@@ -61,6 +63,17 @@ func (a *gqlActor) renderedLogin() string {
 	return a.Login
 }
 
+// gqlActorAccount maps a GraphQL actor onto an Account: the REST-rendered login (a Bot
+// re-suffixed with "[bot]"), the numeric databaseId read through the concrete-type fragments,
+// and the forge's own kind (__typename) as Type. A nil actor (a deleted account) is the zero
+// Account — ID 0 and Type "", which is could-not-check, never a match.
+func gqlActorAccount(a *gqlActor) Account {
+	if a == nil {
+		return Account{}
+	}
+	return Account{Login: a.renderedLogin(), ID: a.DatabaseID, Type: a.Typename}
+}
+
 type gqlPageInfo struct {
 	HasNextPage bool `json:"hasNextPage"`
 }
@@ -85,10 +98,11 @@ type gqlThreadConn struct {
 }
 
 type gqlItem struct {
-	LastEditedAt  string        `json:"lastEditedAt"`
-	Comments      gqlConn       `json:"comments"`
-	Reviews       gqlConn       `json:"reviews"`
-	ReviewThreads gqlThreadConn `json:"reviewThreads"`
+	bodyHistoryKnown bool
+	LastEditedAt     string        `json:"lastEditedAt"`
+	Comments         gqlConn       `json:"comments"`
+	Reviews          gqlConn       `json:"reviews"`
+	ReviewThreads    gqlThreadConn `json:"reviewThreads"`
 }
 
 type gqlEnvelope struct {
@@ -177,7 +191,7 @@ func trustFromEnvelope(env gqlEnvelope, pr bool) (TrustPayload, error) {
 	if cerr != nil {
 		return TrustPayload{}, cerr
 	}
-	return TrustPayload{BodyEdited: bodyEdited, Events: events, Complete: complete}, nil
+	return TrustPayload{BodyEdited: bodyEdited, Events: events, Complete: complete, BodyHistoryKnown: item.bodyHistoryKnown}, nil
 }
 
 func collectEvents(item *gqlItem, pr bool) (bodyEdited time.Time, events []ContentEvent, complete bool, err error) {
@@ -234,4 +248,23 @@ func collectEvents(item *gqlItem, pr bool) (bodyEdited time.Time, events []Conte
 		}
 	}
 	return bodyEdited, events, complete, nil
+}
+
+// UnmarshalJSON distinguishes a provider's explicit null lastEditedAt from an
+// omitted field. Only the pre-work immutable-record reader requires this proof;
+// legacy content-event consumers retain their existing contract.
+func (g *gqlItem) UnmarshalJSON(raw []byte) error {
+	type plain gqlItem
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	field, present := fields["lastEditedAt"]
+	decoded.bodyHistoryKnown = present && (string(field) == "null" || decoded.LastEditedAt != "")
+	*g = gqlItem(decoded)
+	return nil
 }

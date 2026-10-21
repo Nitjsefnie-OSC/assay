@@ -3,15 +3,16 @@
 # stamp (#850: ship cellctl in desk-tools-<platform>.tar.gz with a --version stamp).
 #
 # What it proves (each an `assert` below):
-#   source tree   `cellctl --version` and `cellctl version` both print "dev" — a checkout install
-#                 (docs/cellctl.md) is honest about not being a pinned release
+#   source tree   `cellctl --version` and `cellctl version` both report an unstamped version — a
+#                 checkout install (docs/cellctl.md) is honest about not being a pinned release:
+#                 "dev" from the shell oracle; "dev" or "dev-<12 hex>[-dirty]" from a Go build
 #   sole-arg only a version query combined with any other argument is NOT recognised (falls
 #                 through to normal dispatch), mirroring statusgen's contract
 #   packaging     re-running the EXACT sed/grep one-liner release.yml's "Build and package
 #                 desk-tools binaries" step uses (kept byte-identical here — see the comment
-#                 below) against the real tools/cellctl/cellctl stamps CELLCTL_VERSION to the
-#                 given release tag, changes NOTHING else in the file, the result is executable,
-#                 and it reports the stamped tag when run
+#                 below) against the shell oracle (tools/cellctl/testdata/cellctl-shell-oracle.sh)
+#                 stamps CELLCTL_VERSION to the given release tag, changes NOTHING else in the
+#                 file, the result is executable, and it reports the stamped tag when run
 #   fail-closed   the release workflow's own guard — grep the stamped copy for the exact stamped
 #                 line, aborting the release if absent — actually trips when the source line's
 #                 shape drifts (proves the guard is live, not decorative)
@@ -25,7 +26,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The binary under test. $CELLCTL lets the SAME suite run against either implementation
 # (the bash oracle, the default, or the Go port) — desk-containers/10.
-CELLCTL="${CELLCTL:-$HERE/../cellctl}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
+CELLCTL="${CELLCTL:-$HERE/../testdata/cellctl-shell-oracle.sh}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
 # is_shell_impl: is the implementation under test the shell oracle? The sed-stamp packaging case
 # below is a property of the SCRIPT's release packaging — the exception brief desk-containers/10
 # removes — and has no meaning for a binary, which is stamped by `-ldflags -X` instead. It states
@@ -37,14 +38,25 @@ fails=0
 assert(){ if eval "$2"; then echo "  ok    $1"; else echo "  FAIL  $1"; fails=$((fails+1)); fi; }
 
 echo "[source tree]"
+# The shell oracle reports a bare "dev". An unstamped Go build reports "dev-<12 hex>[-dirty]" when
+# the toolchain embedded a VCS stamp, and a bare "dev" when it did not (go run, -buildvcs=false, a
+# build outside a git tree) — tools/desk/cmd/cellctl/version.go, versionString.
+if is_shell_impl; then
+  source_re='^dev$'
+else
+  source_re='^dev(-[0-9a-f]{1,12}(-dirty)?)?$'
+fi
 out="$("$CELLCTL" --version)"
-assert '--version prints "dev" in a source checkout' '[[ "$out" == "dev" ]]'
+assert '--version prints the unstamped source-tree version' '[[ "$out" =~ $source_re ]]'
 out="$("$CELLCTL" version)"
-assert 'version prints "dev" in a source checkout' '[[ "$out" == "dev" ]]'
+assert 'version prints the unstamped source-tree version' '[[ "$out" =~ $source_re ]]'
 
 echo "[sole-arg only]"
-out="$("$CELLCTL" --version --lint 2>&1)" && rc=0 || rc=$?
-assert '--version combined with another arg falls through (not treated as a bare version query)' '[[ "$rc" -ne 0 || "$out" != "dev" ]]'
+# stdout only: the Go build echoes its effective roster config on stderr on every run, and a
+# multi-line capture could never match the anchored version pattern, so the assertion below
+# would pass even if `--version --lint` were wrongly answered as a version query.
+out="$("$CELLCTL" --version --lint 2>/dev/null)" && rc=0 || rc=$?
+assert '--version combined with another arg falls through (not treated as a bare version query)' '[[ "$rc" -ne 0 || ! "$out" =~ $source_re ]]'
 
 if is_shell_impl; then
   echo "[packaging: the release.yml one-liner, byte-for-byte]"

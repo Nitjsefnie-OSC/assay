@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -246,9 +247,10 @@ var acceptedApprovalPhrases = []string{
 //
 // This is a HEURISTIC BLOCKLIST, not a decision procedure. It catches common
 // negated and conditional phrasings but will miss novel or indirect negations.
-// hasApprovalPhrase has one caller, --corroborate, which is now a LIVE gate — wired
-// into the pull_request lint job of .github/workflows/statusgen.yml, where an
-// unmatched refusal that reads as approval would let a self-issued human stamp pass.
+// hasApprovalPhrase has one caller, --corroborate, a gate wherever a pull_request
+// job runs `statusgen --corroborate --pr <pr>` (this repo's own workflows do not
+// run it yet); there an unmatched refusal that reads as approval would let a
+// self-issued human stamp pass.
 // The pattern should keep being tightened toward a broader negation grammar as new
 // refusal phrasings are observed.
 //
@@ -380,8 +382,8 @@ func hasApprovalPhrase(body string) bool {
 var humanStampRe = regexp.MustCompile(`(?:^|[^0-9A-Za-z_-])human:([0-9A-Za-z_]+)`)
 
 // onBehalfOfAnnotationRe matches the on-behalf-of ATTRIBUTION form — the Runner-cell
-// annotation `on-behalf-of human:<login>` and the commit/body trailer
-// `On-behalf-of: human:<login>` — so both corroboration lanes can strip it BEFORE
+// annotation `on-behalf-of human:<who>` and the commit/body trailer
+// `On-behalf-of: human:<who>` — so both corroboration lanes can strip it BEFORE
 // they look for sign-off vocabulary. It is attribution, never an acceptance / ruling /
 // sign-off claim: it records which human an App identity acted FOR, not that the
 // human approved anything, so there is nothing on the PR to corroborate and matching
@@ -390,16 +392,20 @@ var humanStampRe = regexp.MustCompile(`(?:^|[^0-9A-Za-z_-])human:([0-9A-Za-z_]+)
 //
 // TWO PRINCIPAL SPELLINGS, ON PURPOSE — do not "fix" one into the other:
 //
-//   - on-behalf-of is LOGIN-keyed (docs/on-behalf-of.md; principal.go): the token
-//     after `human:` is the GitHub login, resolved against the roster's human map
-//     VALUES (onBehalfOfPrincipalOf / attribution.go).
+//   - on-behalf-of names the principal in the form its TARGET's visibility calls for
+//     (docs/on-behalf-of.md; principal.go): the GitHub login (a human map VALUE) on a
+//     repo the roster states is private, the neutral name (the human map KEY) on every
+//     other target. Either is accepted here only as the principal of an on-behalf-of
+//     marker, and only when it is a CONFIGURED login or name
+//     (isConfiguredOnBehalfOfPrincipal).
 //   - a human:<name> STAMP and a prose citation are NAME-keyed (this file;
 //     citationcorroborate.go): the token is the configured NAME, the human map KEY,
 //     resolved to a login by HumanLogin.
 //
-// Fed to the stamp regex, a login-keyed annotation therefore fails one of two ways —
-// as an unmapped "name" (the login is a map value, not a key) or, when a login happens
-// to equal a name, as an uncorroborated stamp on a PR nobody has approved. Neither is
+// Fed to the stamp regex, an annotation therefore fails one of two ways — a login as
+// an unmapped "name" (the login is a map value, not a key), or a neutral name (or a
+// login that happens to equal a name) as an uncorroborated stamp on a PR nobody has
+// approved. Neither is
 // a forgery; both are the checker reading an attribution as a sign-off. Stripping the
 // MARKER (never the login — see stripOnBehalfOf) is the ONLY exemption: every
 // human:<name> outside it, and every sign-off the login is then read to have made,
@@ -437,8 +443,9 @@ func isConfiguredHumanLogin(token string) bool {
 }
 
 // stripOnBehalfOf removes the on-behalf-of MARKER (`on-behalf-of[:] human:`) from
-// every annotation / trailer in s whose principal is a configured human login, and
-// keeps the login token that followed it, so the sign-off scans that follow judge
+// every annotation / trailer in s whose principal is a configured human login or
+// neutral name (isConfiguredOnBehalfOfPrincipal), and keeps the principal token that
+// followed it, so the sign-off scans that follow judge
 // only what is left — and still see everything the human WROTE. Stripping the login
 // too would hide a real sign-off that follows the trailer: "On-behalf-of: human:ada
 // approved the prod flip on #12" must still read as "ada approved …" to the citation
@@ -447,8 +454,8 @@ func isConfiguredHumanLogin(token string) bool {
 // prefix) and is a citation only when a sign-off verb follows it.
 //
 // The principal token runs to the same boundary onBehalfOfPrincipalOf stops at — `)`,
-// `|`, whitespace or end of line — and the WHOLE token must pass isConfiguredHumanLogin
-// or the annotation is left untouched: `human:ada-approved` (login-shaped but not a
+// `|`, whitespace or end of line — and the WHOLE token must pass
+// isConfiguredOnBehalfOfPrincipal or the annotation is left untouched: `human:ada-approved` (login-shaped but not a
 // declared login) and `human:ada_approved` (not login-shaped) both stay in the text,
 // so the stamp lane still records their stamp and gates it (second reviewer finding:
 // a wider login class swallowed a hyphen-joined verb and both lanes lost it). RE2 has
@@ -457,12 +464,59 @@ func isConfiguredHumanLogin(token string) bool {
 // cell, so the pre-existing byte-identity comparison still sees the real cell.
 func stripOnBehalfOf(s string) string {
 	return onBehalfOfAnnotationRe.ReplaceAllStringFunc(s, func(m string) string {
-		login := onBehalfOfAnnotationRe.FindStringSubmatch(m)[1]
-		if !isConfiguredHumanLogin(login) {
+		principal := onBehalfOfAnnotationRe.FindStringSubmatch(m)[1]
+		if !isConfiguredOnBehalfOfPrincipal(principal) {
 			return m
 		}
-		return login
+		return principal
 	})
+}
+
+// withoutOnBehalfOfRelays removes every on-behalf-of relay from s: the marker AND the
+// principal it names. The offline human-AUTHORITY readers run it before they look for
+// a `human:` token. Those readers are `authorized-by:` (authorizedByVerifiedHuman),
+// `parked-by:` (parkAuthorizedByVerifiedHuman, parkIsAuthorizedVocab) and a deploy
+// record's `authority:` / `rollback-approver:` (hasHumanAuthority).
+//
+// It is stripOnBehalfOf's counterpart. The online lanes strip the marker, so a relay
+// needs no corroboration there. An authority reader that still read the principal as a
+// `human:` token would then let a relay pass BOTH lanes: an App writes
+// `authorized-by: on-behalf-of human:<name>` and the human never acts. Attribution
+// records which human an App acted for. It is never that human's sign-off, so on an
+// authority key it grants nothing.
+//
+// It removes the relay unconditionally. It does not first ask whether the principal is
+// configured, as stripOnBehalfOf does. It uses the same regex, so everything the online
+// strip exempts, this removes. A principal the online strip would leave in place is
+// removed here as well. The online lane then still gates it as a stamp, and this lane
+// no longer counts it as authority. Both effects are fail-closed. A `human:<name>`
+// written OUTSIDE a relay is untouched, and it authorizes (and is gated online) exactly
+// as before.
+func withoutOnBehalfOfRelays(s string) string {
+	return onBehalfOfAnnotationRe.ReplaceAllString(s, " ")
+}
+
+// isConfiguredOnBehalfOfPrincipal reports whether token is a principal an on-behalf-of
+// marker may legitimately name: a configured human LOGIN (isConfiguredHumanLogin — the
+// form written on a repo the roster states is private) or a configured neutral NAME (an
+// ASSAY_HUMAN_LOGIN_MAP key — the form written on every other target, principal.go's
+// onBehalfOfSubject and deskkit's resolver alike). The name half holds the login half's
+// two anchors: the whole token must be login-shaped, and it must be a key the adopter
+// DECLARED — `ada-approved` and `ada_approved` stay un-stripped whichever map half they
+// resemble. An empty map exempts nothing.
+func isConfiguredOnBehalfOfPrincipal(token string) bool {
+	if isConfiguredHumanLogin(token) {
+		return true
+	}
+	if token == "" || len(token) > 39 || !gitHubLoginShapeRe.MatchString(token) {
+		return false
+	}
+	for name := range scanEffectiveConfig().HumanLogins {
+		if strings.EqualFold(name, token) {
+			return true
+		}
+	}
+	return false
 }
 
 // looseHumanStampRe matches the same boundary-anchored "human:" prefix followed by
@@ -775,23 +829,34 @@ var briefRowsAtRef = func(root, ref, path string) (map[string]string, map[string
 // prMergeBaseSHA resolves the PR's merge-base commit against the local HEAD (the
 // PR head in CI), so `git show <merge-base>:<path>` reads the base version of a
 // board file. It reads the PR's base branch name from the API, then resolves the
-// merge-base locally. "" on any failure — the caller then exempts nothing.
+// merge-base locally. "" on any failure — the stamp lane then exempts nothing
+// and the register lane falls back to its fail-closed no-merge-base path.
+//
+// The base is read ONLY from the fully-qualified remote-tracking ref
+// refs/remotes/origin/<base>, never a short name: git resolves a short name
+// through refs/tags/ and refs/heads/ before refs/remotes/, so a tag named
+// `origin/main` (tag creation needs only write access) or a local branch named
+// `main` placed on the PR's own commit would make the merge-base the PR itself,
+// and every lane keyed on it would compare the PR with itself. There is no
+// bare-name fallback for the same reason — the same rule as remoteMainRef.
+//
+// Spelling the name in full is not enough on its own: when that exact ref is
+// ABSENT, git still expands the full name through refs/, refs/tags/, refs/heads/
+// and refs/remotes/, so a ref such as refs/tags/refs/remotes/origin/main on an
+// earlier commit of the PR would become the base. mergeBaseExact therefore shows
+// the exact ref exists and runs merge-base on its object id; an absent ref is
+// unresolvable ("").
 func prMergeBaseSHA(root, repo string, pr int) string {
-	baseRef := ghPRBaseRef(repo, pr)
+	baseRef := ghPRBaseRefFn(repo, pr)
 	if baseRef == "" {
 		return ""
 	}
-	for _, ref := range []string{"origin/" + baseRef, baseRef} {
-		out, err := exec.Command("git", "-C", root, "merge-base", ref, "HEAD").Output()
-		if err != nil {
-			continue
-		}
-		if s := strings.TrimSpace(string(out)); s != "" {
-			return s
-		}
-	}
-	return ""
+	return mergeBaseExact(root, "refs/remotes/origin/"+baseRef)
 }
+
+// ghPRBaseRefFn is the forge read of the PR's base branch name — a package seam
+// so a test drives the real merge-base resolver against a git fixture.
+var ghPRBaseRefFn = ghPRBaseRef
 
 // ghPRBaseRef returns the PR's base branch name (e.g. "main").
 func ghPRBaseRef(repo string, pr int) string {
@@ -867,55 +932,42 @@ func markPreExisting(stamps []stamp, baseRowsByFile map[string]map[string]string
 
 // stampsInDiff parses a unified diff and returns every human:<name> stamp found on
 // ADDED lines (lines starting with "+" but not "+++"). Each stamp records the name,
-// the file it was added to, and the line content for context.
+// the file it was added to, and the line content for context. Quoted notation is
+// not a claim (#1395, corroboratescope.go): the removed side of an embedded patch
+// and a line on a surface no stamp reader parses yield no stamp.
 //
 // root is the checkout root against which a declared fixture-corpus marker is
 // resolved (see isExcludedFixturePath / fixturecorpus.go). It is "" when there is
 // no checkout to consult, in which case only the hardcoded education prefix
 // excludes — the marker mechanism fails closed to "fully scanned".
 func stampsInDiff(root, diff string) []stamp {
-	lines := strings.Split(diff, "\n")
 	var out []stamp
-	curFile := ""
 	// curHeader holds the cells of the most recent board status-table HEADER row seen
 	// (as an ADDED line) in the current file — the branch table's own header. A board
 	// migration re-emits whole tables, so the re-shaped header lands on an added line
 	// right before its data rows; recording it lets each stamp carry its column NAME
 	// (stampRow.Header) for base-cell resolution. Reset on every file change.
 	var curHeader []string
-	for _, line := range lines {
-		trimmed := strings.TrimRight(line, "\r")
-		// Track the current file from diff headers.
-		if strings.HasPrefix(trimmed, "diff --git ") {
-			// "diff --git a/path b/path"
-			fields := strings.Fields(trimmed)
-			if len(fields) >= 4 {
-				curFile = strings.TrimPrefix(fields[3], "b/")
-			}
+	curSection := -1
+	// The ONE shared walker (corroboratescope.go) yields the added lines: it tracks
+	// the file, skips a declared fixture corpus — a stamp there is deliberately NOT
+	// corroborated, since the corpus carries human:<name> notation with fictional
+	// personas (or captured content) that can never map to a login; this covers the
+	// education tutorial-skeleton prefix AND any subtree that DECLARES itself a
+	// fixture corpus with the on-disk marker (Ian 2026-09-01 desk walk), a PATH
+	// check, so a forged human:<name> OUTSIDE a declared corpus is unaffected — and
+	// sets aside the removed side of an embedded patch (#1395).
+	for _, al := range addedDiffLines(root, diff) {
+		if al.Section != curSection {
+			curSection = al.Section
 			curHeader = nil
+		}
+		curFile, content := al.File, al.Content
+		// A line on a surface no stamp reader parses (a test source file, a YAML
+		// `#` line) quotes the notation; it is not a claim (#1395, stampClaimSurface).
+		if ok, _ := stampClaimSurface(curFile, content); !ok {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "+++ ") {
-			curFile = strings.TrimPrefix(trimmed, "+++ b/")
-			curHeader = nil
-			continue
-		}
-		// Only added lines (not the "+++" header itself).
-		if !strings.HasPrefix(trimmed, "+") || strings.HasPrefix(trimmed, "+++") {
-			continue
-		}
-		// A stamp on a file under a fixture corpus is deliberately NOT
-		// corroborated — the corpus carries human:<name> notation with fictional
-		// personas (or captured content) that can never map to a login. This
-		// covers the education tutorial-skeleton prefix AND any subtree that
-		// DECLARES itself a fixture corpus with the on-disk marker (Ian 2026-09-01
-		// desk walk). See isExcludedFixturePath. This is a PATH check, so a forged
-		// human:<name> anywhere OUTSIDE a declared corpus is unaffected.
-		if isExcludedFixturePath(root, curFile) {
-			continue
-		}
-		// Strip the leading "+" for matching.
-		content := strings.TrimPrefix(trimmed, "+")
 		lineCtx := content
 		if len(lineCtx) > 120 {
 			lineCtx = lineCtx[:120] + "..."
@@ -1052,6 +1104,10 @@ func (v verdict) String() string {
 type ghPRFile struct {
 	Filename string `json:"filename"`
 	Patch    string `json:"patch"`
+	// PreviousFilename is set on a rename: the path the file moved FROM. The
+	// findings-register transition lane reads both names so a renamed entry is
+	// still a touched entry.
+	PreviousFilename string `json:"previous_filename,omitempty"`
 }
 
 // prFilesToDiff reconstructs a unified-diff string (parseable by stampsInDiff)
@@ -1073,25 +1129,57 @@ func prFilesToDiff(files []ghPRFile) string {
 // fetchPRDiff returns a unified diff of the given repo's PR, reconstructed from
 // the paginated "List pull request files" REST API.
 func fetchPRDiff(repo string, pr int) (string, error) {
+	files, err := fetchPRFiles(repo, pr)
+	if err != nil {
+		return "", err
+	}
+	return prFilesToDiff(files), nil
+}
+
+// fetchPRFiles returns the given repo's PR file list from the paginated "List
+// pull request files" REST API — the structured form every --corroborate lane
+// reads (the diff lanes through prFilesToDiff, the register-transition lane
+// through the file names).
+func fetchPRFiles(repo string, pr int) ([]ghPRFile, error) {
 	// gh pr diff caps at 300 files (HTTP 406 on larger PRs). The paginated
-	// "List PR files" API has no such cap; reconstruct a unified diff from the
-	// per-file patch fields.
+	// "List PR files" API reaches further but still stops at 3000 files with no
+	// error, so a caller that decides anything from the ABSENCE of a path must
+	// check the listing's completeness (fetchPRChangedFiles) or derive the
+	// answer locally — the register-transition lane does both.
 	cmd := exec.Command("gh", "api", "--paginate", "--slurp",
 		fmt.Sprintf("repos/%s/pulls/%d/files", repo, pr))
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("gh api pulls/%d/files: %w", pr, err)
+		return nil, fmt.Errorf("gh api pulls/%d/files: %w", pr, err)
 	}
 	// --slurp + --paginate yields an array of per-page arrays: [[...],[...]].
 	var pages [][]ghPRFile
 	if err := json.Unmarshal(out, &pages); err != nil {
-		return "", fmt.Errorf("unmarshal PR %d files: %w", pr, err)
+		return nil, fmt.Errorf("unmarshal PR %d files: %w", pr, err)
 	}
 	var files []ghPRFile
 	for _, p := range pages {
 		files = append(files, p...)
 	}
-	return prFilesToDiff(files), nil
+	return files, nil
+}
+
+// fetchPRChangedFiles returns the forge's own count of a PR's changed files
+// (the REST `pulls/{n}` changed_files field). The "List pull request files"
+// listing stops at 3000 entries with no error, so a listing is shown complete
+// only when its length equals this count — the same refusal shapeFromListing
+// applies to the model-autoflip lane.
+func fetchPRChangedFiles(repo string, pr int) (int, error) {
+	out, err := exec.Command("gh", "api", fmt.Sprintf("repos/%s/pulls/%d", repo, pr),
+		"--jq", ".changed_files").Output()
+	if err != nil {
+		return 0, fmt.Errorf("gh api pulls/%d: %w", pr, err)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("PR %d changed_files %q: %w", pr, strings.TrimSpace(string(out)), err)
+	}
+	return n, nil
 }
 
 // ghPRData holds the subset of `gh pr view --json reviews,comments` that this check
@@ -1295,14 +1383,28 @@ func reviewURL(repo string, pr int, r ghReview) string {
 // (markPreExisting): that stamp was authored and corroborated on its own PR, so a
 // board migration that re-emits whole tables does not re-gate it here. PRE-EXISTING,
 // like CORROBORATED, does not fail the run.
+// The forge/git reads runCorroborate makes, as package seams so a test can drive
+// the whole command — every lane and the exit code — against a git fixture with no
+// network. Production values are the real readers.
+var (
+	corroborateRepoFn      = repoFromOrigin
+	corroborateFilesFn     = fetchPRFiles
+	corroborateDataFn      = fetchPRData
+	corroborateMergeBaseFn = prMergeBaseSHA
+	// corroborateChangedFilesFn reads the forge's own changed-file count, the
+	// completeness check for the PR file listing (see fetchPRChangedFiles).
+	corroborateChangedFilesFn = fetchPRChangedFiles
+)
+
 func runCorroborate(prsArg string) int {
+	defer perfPhase("corroborate")()
 	if prsArg == "" {
 		fmt.Fprintln(os.Stderr, "statusgen: --corroborate requires at least one PR number (comma-separated)")
 		return 2
 	}
 
 	// Discover the repo from git remote.
-	repo := repoFromOrigin()
+	repo := corroborateRepoFn()
 	if repo == "" {
 		fmt.Fprintln(os.Stderr, "statusgen: cannot determine GitHub repo from git remote origin")
 		return 1
@@ -1317,6 +1419,9 @@ func runCorroborate(prsArg string) int {
 	prStrs := strings.Split(prsArg, ",")
 	var allResults []corroborateResult
 	var allCitationResults []citationResult
+	var allQuotedNotices []string
+	var allRegisterResults []registerTransitionResult
+	var allGateResults []decisionGateResult
 	anyMissing := false
 
 	for _, prStr := range prStrs {
@@ -1331,10 +1436,34 @@ func runCorroborate(prsArg string) int {
 		}
 		// Fetch the PR diff ONCE and reuse it for both the stamp scan and the
 		// prose/commit acceptance-citation scan.
-		diff, err := fetchPRDiff(repo, pr)
+		files, err := corroborateFilesFn(repo, pr)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "statusgen: PR #%d: %v\n", pr, err)
 			return 1
+		}
+		diff := prFilesToDiff(files)
+		// The PR's reviews/comments and its merge-base are read at most once per
+		// PR, and only by a lane that needs them.
+		var (
+			prData    *ghPRData
+			prDataErr error
+			prDataOK  bool
+			mb        string
+			mbOK      bool
+		)
+		getData := func() (*ghPRData, error) {
+			if !prDataOK {
+				prData, prDataErr = corroborateDataFn(repo, pr)
+				prDataOK = true
+			}
+			return prData, prDataErr
+		}
+		getMergeBase := func() string {
+			if !mbOK {
+				mb = corroborateMergeBaseFn(".", repo, pr)
+				mbOK = true
+			}
+			return mb
 		}
 
 		// --- human:<name> STAMP corroboration ---
@@ -1356,7 +1485,7 @@ func runCorroborate(prsArg string) int {
 		if len(stamps) == 0 {
 			fmt.Printf("PR #%d: no human:<name> stamps found in diff — clean\n", pr)
 		} else {
-			data, err := fetchPRData(repo, pr)
+			data, err := getData()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "statusgen: PR #%d: %v\n", pr, err)
 				return 1
@@ -1374,7 +1503,7 @@ func runCorroborate(prsArg string) int {
 			// PR; a board migration that re-emits whole tables must not re-gate it
 			// here. A merge-base that cannot be resolved (or a base file that cannot
 			// be read) exempts nothing — the fail-closed direction.
-			mb := prMergeBaseSHA(".", repo, pr)
+			mb := getMergeBase()
 			baseRowsByFile := map[string]map[string]string{}
 			baseHeadersByFile := map[string]map[string]int{}
 			for i := range stamps {
@@ -1393,6 +1522,53 @@ func runCorroborate(prsArg string) int {
 				}
 			}
 		}
+
+		// --- findings-register TRANSITION lane (statusgen/06 §B) ---
+		// A PR that touches a findings entry has every caution-removing field
+		// transition re-derived against its merge-base and corroborated against
+		// the humans named in the entry's authorizing keys — including a key that
+		// was already on the entry and so adds no diff line for the stamp lane.
+		// The lane runs on EVERY PR: whether the PR touches the register is
+		// decided from the local tree against the merge-base, not from the
+		// forge listing (which truncates silently) — see registerTransitionLane.
+		{
+			countFn := func() (int, error) { return corroborateChangedFilesFn(repo, pr) }
+			rs, err := registerTransitionLane(".", repo, pr, files, getMergeBase(), countFn, getData)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "statusgen: PR #%d: %v\n", pr, err)
+				return 1
+			}
+			for i := range rs {
+				if rs[i].Rel == "" {
+					rs[i].Rel = fmt.Sprintf("PR #%d", pr)
+				}
+			}
+			allRegisterResults = append(allRegisterResults, rs...)
+			if registerTransitionsFail(rs) {
+				anyMissing = true
+			}
+		}
+
+		// --- decision-gate hold lane (lifecycle-v1 §4.5) ---
+		// Every PR: a gate: human brief this PR moves to implemented/verified/done,
+		// relabels, or drops needs its recorded ruling: link to resolve to a mapped
+		// human's unedited comment on its decision issue, naming the brief. Judged
+		// against the PR merge-base; an unresolvable base fails closed when the PR
+		// touches the board (decisionGatePRLane).
+		{
+			countFn := func() (int, error) { return corroborateChangedFilesFn(repo, pr) }
+			gs := decisionGatePRLane(".", repo, files, getMergeBase(), countFn)
+			for i := range gs {
+				gs[i].Board = fmt.Sprintf("PR #%d: %s", pr, gs[i].Board)
+			}
+			allGateResults = append(allGateResults, gs...)
+			if decisionGateRefused(gs) {
+				anyMissing = true
+			}
+		}
+
+		// --- quoted notation set aside as NOT-A-CLAIM (#1395) — announced, never silent ---
+		allQuotedNotices = append(allQuotedNotices, quotedClaimNotices(".", diff)...)
 
 		// --- human-acceptance / human-ruling CITATION corroboration ---
 		for _, r := range checkCitationCorroboration(".", repo, diff, pr) {
@@ -1449,6 +1625,27 @@ func runCorroborate(prsArg string) int {
 		fmt.Println("#  for approval such as \"is this lgtm?\" / \"please lgtm\", is not a sign-off)")
 	}
 
+	// --- findings-register transition section (statusgen/06 §B) ---
+	if len(allRegisterResults) > 0 {
+		fmt.Println()
+		fmt.Println("# findings-register transitions")
+		fmt.Println("# Scope: every caution-removing move of a finding's resolved/affects/ack/")
+		fmt.Println("# parked-until since the PR merge-base needs a human named in the entry's")
+		fmt.Println("# authorizing key (authorized-by; for a park, parked-by only) to have")
+		fmt.Println("# ACTED on this PR — whether or not this PR wrote that key. A park set or")
+		fmt.Printf("# extended more than %d days past its commit is MISSING whoever approved it.\n", parkHorizonDays)
+		fmt.Println()
+		for _, r := range allRegisterResults {
+			fmt.Println(registerReportLine(r))
+		}
+	}
+
+	// --- decision-gate hold section (lifecycle-v1 §4.5) ---
+	if len(allGateResults) > 0 {
+		fmt.Println()
+		printDecisionGateReport(allGateResults)
+	}
+
 	// --- acceptance/ruling CITATION section ---
 	// A separate lane from the stamp report above: it reads FREE-PROSE and
 	// commit-message claims that a named human accepted/ruled on something, and
@@ -1478,6 +1675,19 @@ func runCorroborate(prsArg string) int {
 		}
 	}
 
+	// --- quoted-notation section (#1395) ---
+	// Lines --corroborate did not read as claims: the removed side of a diff
+	// embedded in a committed patch, program source, and YAML comment lines. Each
+	// stamp or citation such a line would have produced is listed so the skip is
+	// reviewable; none of them affects the exit code.
+	if len(allQuotedNotices) > 0 {
+		fmt.Println()
+		fmt.Println("# quoted notation — NOT read as a claim (no verdict, listed for review)")
+		for _, n := range allQuotedNotices {
+			fmt.Println(n)
+		}
+	}
+
 	if anyMissing {
 		return 1
 	}
@@ -1486,7 +1696,17 @@ func runCorroborate(prsArg string) int {
 
 // repoFromOrigin returns the "owner/repo" portion of the git remote origin URL.
 func repoFromOrigin() string {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	return repoFromOriginAt("")
+}
+
+// repoFromOriginAt is repoFromOrigin for the checkout at root ("" = the current
+// directory).
+func repoFromOriginAt(root string) string {
+	args := []string{"remote", "get-url", "origin"}
+	if root != "" {
+		args = append([]string{"-C", root}, args...)
+	}
+	out, err := exec.Command("git", args...).Output()
 	if err != nil {
 		return ""
 	}

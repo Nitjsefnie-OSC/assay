@@ -104,5 +104,167 @@ RISK-VALUE: N/A — enumeration over this item's diff/deliverables on this repo 
 
 VERIFY: FAIL — held at implemented (matches what the README already shows, and what #393 already asks: hp/09 must not advance until the deliverable is actually ported/landed in this repo). Not a stale-anchor / renamed-test situation and not fabricated evidence — a real, reproducible gap from an incomplete re-home, already tracked.
 
+### Non-implementer verifier re-run — VERIFY: FAIL (deliverable still absent after the code de-house) — opus-5.5-verifier (verify-desk dispatch), @ merged main `cf56ddeebc187e7923c4c6349bbdf95291bdfe05`, 2026-09-27
+
+Runner is not the implementer. Own detached temp worktree off origin/main at the merged head. Offline envelope observed (`KUBECONFIG=/dev/null`). No PR, no push, no status flip. Execution witness below written by `statusgen verifyrun` (non-dry).
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `test -f docs/research/jcode-desk-harness-capabilities.md` | fail exit=1 | sha256:e3b0c44298fc | 2026-09-27 | assay-verifier-app[bot] @ cf56ddeebc18 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `grep -qiE -e absent -e workaround docs/research/jcode-desk-harness-capabilities.md` | fail exit=2 | sha256:1f4f1773d4ca | 2026-09-27 | assay-verifier-app[bot] @ cf56ddeebc18 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `(dereferencing) the measured RAM/boot figures in the doc are each backed by a named command whose output is quoted — a reader can re-run it` | fail exit=2 | sha256:4117c376c8f5 | 2026-09-27 | assay-verifier-app[bot] @ cf56ddeebc18 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `(dereferencing) the doc records the exec-tier probe (3) and the prose-vs-discrete split (4) as explicit verdicts, not TODOs` | fail exit=2 | sha256:5d664ea9d853 | 2026-09-27 | assay-verifier-app[bot] @ cf56ddeebc18 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `grep -q 'jcode-desk-harness-capabilities' freshness.yaml` | fail exit=1 | sha256:e3b0c44298fc | 2026-09-27 | assay-verifier-app[bot] @ cf56ddeebc18 (on-behalf-of human:ian) (forge-identity) |
+
+Per-row key output (real, observed at the SHA above):
+
+- Row 1 — `test -f` on the capability-matrix doc: exit 1. The file is absent on merged main; `git log --all` over that path returns nothing, and a repo-wide `git grep -il jcode` finds only board/brief/quality files, no research doc. **FAIL.**
+- Row 2 — `grep -qiE -e absent -e workaround` on the same doc: exit 2, `No such file or directory`. **FAIL** (target absent).
+- Row 3 — dereferencing row (prose, no command). The witness records exit 2 because `statusgen verifyrun` executed the prose cell as a shell command; that exit is a parse artefact, not an observation. Real state: **could-not-check** — there is no doc on this tree whose RAM/boot figures could be dereferenced.
+- Row 4 — dereferencing row, same mechanism as row 3 (witness exit 2 is the prose cell parsed as shell). Real state: **could-not-check** — no doc to dereference for the exec-tier verdict or the prose-vs-discrete split.
+- Row 5 — `grep -q` for the doc's name in the freshness registry: exit 1, no match. **FAIL.**
+
+Rows passed: 0 of 5 (3 checked-failed, 2 could-not-check).
+
+**Why the code de-house did not fix this.** Brief 14 (the code de-house, now implemented) lists this item's capability-matrix doc in its "Not in scope" table with the disposition "Dropped — out of scope" ("Brief 09's deliverable, not one of the five held briefs"). So the 2026-09-18 FAIL above still stands unchanged: the deliverable was produced in the private pre-re-home tree and was never landed in this repository, and brief 14 deliberately did not carry it. No PR since has landed it (a forge PR search for "jcode" on this repo returns only the 2026-09-18 evidence PR and the brief-14 authoring PR).
+
+**Stale vs real.** Real gap, not stale-shaped: the paths in rows 1, 2 and 5 are the brief's own planned deliverable paths, unchanged; nothing was renamed or moved — the files simply do not exist here. Already tracked by #393 (open), which names hp/09 with the identical root cause and identical row 1/2/5 failures. No new issue filed by this run.
+
+Risk-bearing value enumeration — scope: every file this item introduces or changes on merged main (none exist: the research doc and its freshness registration are both absent) plus every literal named in the brief's own Deliverables/Task (the brief names two planned files and no constant, bound, threshold, timeout or authority binding for them). Step 1 came back empty.
+
+RISK-VALUE: N/A — enumeration over this item's landed diff on this repository (empty — no deliverable file or freshness entry exists at the SHA above) and the brief's Deliverables (two planned paths, no literal) found no literal; the irreversible act here is none — the item is a reversible research document (risk: all "no", gate: model).
+
+Observation: the brief body still carries the 2026-08-24 PASS table produced in the private source tree; it is detached from this repository's state (the #393 ask 2 class). Rows 3 and 4 are prose rows that the execution witness cannot run meaningfully; a future re-author could give them executable anchors (for example a `grep` for a named measurement-command section) so the witness reports a real exit.
+
+VERIFY: FAIL — rows 1, 2, 5 checked-failed; rows 3, 4 could-not-check (no doc to dereference). Hold at implemented; blocker is implementation (deliverable never landed in this tree), tracked by #393.
+
+### Non-implementer verifier re-run: 2026-10-02T21:25:21Z (UTC), assay-verifier-app[bot] (claude-opus-5-5[1m]) (on-behalf-of human:ian), merged main 5a108baba705c5f9b458501065fc52a12557c969
+
+Runner is not the implementer. Own detached temp worktree off origin/main at the merged head. Offline envelope observed (`KUBECONFIG=/dev/null`). No PR, no push, no status flip. Every row was run by hand; the execution witness was run with `--dry-run`, so nothing was written to the brief.
+
+| # | Command | Expect | Observed (exit + key output line) | Date / Runner |
+|---|---------|--------|-----------------------------------|---------------|
+| 1 | `test -f docs/research/jcode-desk-harness-capabilities.md` | exit 0 — the matrix file exists | **PASS — exit 0.** File present, 331 lines, added by commit d73d7c996 (#1814, merged 2026-09-28) | 2026-10-02 assay-verifier-app[bot] |
+| 2 | `grep -qiE -e absent -e workaround docs/research/jcode-desk-harness-capabilities.md` | exit 0 — at least one non-trivial per-primitive verdict | **PASS — exit 0.** Section 3 tally: `absent` 1 (P6 isolation), `workaround` 2 (P2, P3), `present` 3 (P1, P4, P5) | 2026-10-02 assay-verifier-app[bot] |
+| 3 | (dereferencing) the measured RAM/boot figures in the doc are each backed by a named command whose output is quoted | every numeric claim cites its measurement command + output, not a vendor number | **FAIL — checked by reading the doc.** The doc contains no measured figure and quotes no command output. Section 6 states the our-workload numbers are "BLOCKED (needs live jcode)" and gives the measurement protocol as commands to run later. Every RAM/boot number present (27.8 MB, 167.1 MB, 386.6 MB, 14.0 ms, and the derived "~2.3x") is a vendor self-benchmark, labelled as such — which is the thing the Expect cell excludes | 2026-10-02 assay-verifier-app[bot] |
+| 4 | (dereferencing) the doc records the exec-tier probe (3) and the prose-vs-discrete split (4) as explicit verdicts, not TODOs | both questions answered with evidence, not left as TODOs | **PASS, with a caveat — checked by reading the doc.** Section 5 gives a full named discrete / LLM-judgment split for intake-desk (13 loop steps). Section 4 gives the exec-tier answer as "NO / per-session-only", evidenced from the public docs (no per-child model field on the spawn call), plus a probe design and a verdict rule. Caveat: that answer is a documentary lean; the doc marks the live exec-tier verdict BLOCKED | 2026-10-02 assay-verifier-app[bot] |
+| 5 | `grep -q 'jcode-desk-harness-capabilities' freshness.yaml` | exit 0 — the empirical file is registered | **PASS — exit 0.** Entry at lines 46-49 of the freshness registry: last-reviewed "2026-08-24", max-age-days 45, upstreams empty; added by the same commit d73d7c996 | 2026-10-02 assay-verifier-app[bot] |
+
+Rows passed: 4 of 5 (rows 1, 2, 4, 5 checked-clean; row 3 checked-failed). No row was left unexecuted: rows 1, 2, 5 are shell commands run at the SHA above, rows 3 and 4 are prose rows dereferenced by reading the doc in full.
+
+**Execution witness** (`statusgen verifyrun --dry-run`, tool v1.0.31, at 5a108baba705): 3 of 5, exit 1.
+
+- row 1: pass (exit=0, sha256:e3b0c44298fc)
+- row 2: pass (exit=0, sha256:e3b0c44298fc)
+- row 3: fail (exit=2, sha256:4117c376c8f5)
+- row 4: fail (exit=2, sha256:5d664ea9d853)
+- row 5: pass (exit=0, sha256:e3b0c44298fc)
+
+The witness exits for rows 3 and 4 are a parse artefact, not an observation: the Command cell of each is prose, and the witness executes it as shell. The hand result for those two rows is the one in the table above.
+
+**What changed since the 2026-09-27 FAIL.** Rows 1, 2 and 5 failed then because the capability-matrix doc and its freshness registration had never been landed in this repository. Commit d73d7c996 (#1814, "land the hp/09 and hp/10 spike findings docs", merged 2026-09-28) added the 331-line doc and the freshness entry. All three now pass. Rows 3 and 4 were could-not-check then (no doc to dereference); they are now checkable, and row 4 passes while row 3 does not.
+
+**Findings.**
+
+1. Row 3 is a real gap, not a stale-shaped one. The brief's Task 1, 2 and 6 (install jcode, run one desk skill under it, measure real per-session RSS and cold-boot on our workload) were not performed; the doc says so itself and marks them BLOCKED. A blocked measurement is reported as itself — it does not satisfy a row whose Expect is "measurement command + output, not a vendor number". The 2026-08-24 Evidence passed this row on "intent met"; this run reads the Expect cell literally and does not.
+2. Rows 3 and 4 have prose Command cells, so the execution witness can never report them green whatever the doc contains. Independently of finding 1, the item cannot reach a 5 of 5 witness until those two rows are given executable anchors (for example a `grep` for a quoted-output block and for the two verdict headings).
+3. #393 is still OPEN. Its ask for this item — land the dropped deliverable — is met by #1814 for rows 1, 2 and 5. What remains for this item is finding 1 and finding 2, neither of which #393 describes.
+4. The freshness entry carries last-reviewed "2026-08-24" with a 45-day leash, so it reaches its limit on 2026-10-08. The port on 2026-09-27 did not re-review the upstream facts (the doc says the findings are unchanged).
+
+**Risk-bearing value enumeration** — scope: the landed diff of commit d73d7c996 for this item (the research doc and its freshness entry) plus the brief's Deliverables.
+
+- `max-age-days = 45` @ freshness.yaml:48 — if wrong, the doc is re-measured too late or too early; undone by an edit. Reversible operational knob, ranks last.
+- `last-reviewed = "2026-08-24"` @ freshness.yaml:47 — if wrong, the staleness clock starts from the wrong day; undone by an edit. Reversible, ranks last.
+- The density figures in section 6 of the doc are vendor numbers quoted with source and caveat, not values this item asserts or that anything binds to.
+
+RISK-VALUE: DERIVED — `max-age-days = 45` @ freshness.yaml:48 — matches the leash on the sibling harness-capability entries in the same registry (the entry directly above it also carries 45), and the registry comment states the rule: third-party facts with no locally-tracked upstream rot on a clock. Reversible; no irreversible literal exists in this diff (risk: all "no", gate: model).
+
+VERIFY: FAIL — row 3 checked-failed: the doc contains no measured RAM/boot figure and no quoted command output; the our-workload measurement is marked BLOCKED in the doc itself. Rows 1, 2, 4, 5 pass. Hold at implemented.
+
+### Non-implementer verifier re-run: 2026-10-11T12:40Z (UTC), assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian), merged main 63bd67f01a01d007d3e63f18977d4265294013ea
+
+Runner is not the implementer. Own detached temp worktree off origin/main at the merged head, admitted by `deskdispatch --check-verifier` (exit 0, binding run 211d6d97eb23, source 63bd67f01a01, model claude-opus-5-5, tier any). Offline envelope observed (`KUBECONFIG=/dev/null`). No PR, no push, no status flip. Every row was run by hand; the execution witness was then run non-dry and its table follows the hand table. No row in this brief is a check:ci row or a Go test row, so neither the network-off sandbox nor the git-config diagnostic rerun applies.
+
+The deliverable has not changed since the 2026-10-02 run: the last commit touching the capability-matrix doc or the freshness registry is d73d7c996 (#1814, 2026-09-28).
+
+| # | Command | Expect | Observed (exit + key output line) | Date | Runner |
+|---|---------|--------|-----------------------------------|------|--------|
+| 1 | `test -f docs/research/jcode-desk-harness-capabilities.md` | exit 0 — the matrix file exists | **PASS — exit 0.** File present, 331 lines | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 2 | `grep -qiE -e absent -e workaround docs/research/jcode-desk-harness-capabilities.md` | exit 0 — at least one non-trivial per-primitive verdict | **PASS — exit 0.** 12 matching lines; section 3 tally: absent 1 (P6 isolation), workaround 2 (P2, P3), present 3 (P1, P4, P5) | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 3 | (dereferencing) the measured RAM/boot figures in the doc are each backed by a named command whose output is quoted — a reader can re-run it | every numeric claim cites its measurement command + output, not a vendor number | **FAIL — checked by reading the doc in full.** No measured figure and no quoted command output anywhere in it. Section 6 marks the our-workload numbers "BLOCKED (needs live jcode)" and gives the protocol as commands still to run. Every RAM/boot number present (27.8 MB, 167.1 MB, 386.6 MB, 14.0 ms, 3436.9 ms) is a labelled vendor self-benchmark, and the derived "~2.3x" in sections 6 and 7 is computed from those vendor numbers: exactly what the Expect cell excludes | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 4 | (dereferencing) the doc records the exec-tier probe (3) and the prose-vs-discrete split (4) as explicit verdicts, not TODOs | both questions answered with evidence, not left as TODOs | **PASS, with a caveat — checked by reading the doc in full.** Section 5 names the discrete / LLM-judgment split for intake-desk across 13 loop steps and states the split in prose. Section 4 answers exec-tier as "NO / per-session-only", evidenced from the public docs (no per-child model field on the swarm-spawn call), with a probe design and a verdict rule. No TODO marker in either section. Caveat: the exec-tier answer is documentary; the doc itself marks the live verdict BLOCKED | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+| 5 | `grep -q 'jcode-desk-harness-capabilities' freshness.yaml` | exit 0 — the empirical file is registered | **PASS — exit 0.** Entry at lines 46-49 of the freshness registry: last-reviewed "2026-08-24", max-age-days 45, upstreams empty | 2026-10-11 | assay-verifier-app[bot] (claude-opus-5-5) (on-behalf-of human:ian) |
+
+Rows passed: 4 of 5 (rows 1, 2, 4, 5 checked-clean; row 3 checked-failed). Rows 1, 2, 5 are shell commands run at the SHA above; rows 3 and 4 are prose rows dereferenced by reading the doc.
+
+**Execution witness** (`statusgen verifyrun`, tool v1.0.37, non-dry, at 63bd67f01a01): 3 of 5, exit 1. The witness exits for rows 3 and 4 are a parse artefact: each Command cell is prose and the witness runs it as shell. The hand result above is the observation for those two rows.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `test -f docs/research/jcode-desk-harness-capabilities.md` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 63bd67f01a01 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `grep -qiE -e absent -e workaround docs/research/jcode-desk-harness-capabilities.md` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 63bd67f01a01 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `(dereferencing) the measured RAM/boot figures in the doc are each backed by a named command whose output is quoted — a reader can re-run it` | fail exit=2 | sha256:4117c376c8f5 | 2026-10-11 | assay-verifier-app[bot] @ 63bd67f01a01 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `(dereferencing) the doc records the exec-tier probe (3) and the prose-vs-discrete split (4) as explicit verdicts, not TODOs` | fail exit=2 | sha256:5d664ea9d853 | 2026-10-11 | assay-verifier-app[bot] @ 63bd67f01a01 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `grep -q 'jcode-desk-harness-capabilities' freshness.yaml` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 63bd67f01a01 (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#2603 run=211d6d97eb237f70e0f004d498294d846c4a60201aa4132564a5f34e4b887e5b source=63bd67f01a01d007d3e63f18977d4265294013ea brief=docs/streams/harness-portability/brief-09-jcode-desk-harness-spike.md model=claude-opus-5-5 tier=any
+
+**Findings.**
+
+1. Row 3 is the same real gap as on 2026-10-02, not a stale-shaped one. Brief tasks 1, 2 and 6 (install jcode, run one desk skill under it, measure per-session RSS and cold boot on our workload) were never performed, and the doc says so. Already tracked: medici-finance/assay#1834 (open) carries hp/09 row 3 alongside hp/04 row 8 and hp/10 row 3, with the three end states (human-run live result, a "spike informs, does not gate" ruling, or a re-baseline). No new issue needed for it.
+2. Rows 3 and 4 have prose Command cells, so the witness can never report them green whatever the doc says. Also noted on medici-finance/assay#1834; any re-baseline should give them executable anchors.
+3. The doc is now past its freshness leash. Supplementary check, not a Verify row: the freshness tool, run with `--only` for this doc at the SHA above, printed `STALE ... max-age 45d exceeded (reviewed 2026-08-24, deadline 2026-10-08 ...)` and exit 1. The doc's documentary reads (P3, P6, P7) were taken against jcode around v0.54; a re-review is owed. Noted on medici-finance/assay#1834 as a separate offline follow-up, but no issue tracks it on its own.
+4. medici-finance/assay#393 is still open; its hp/09 ask (land the dropped deliverable) was met by #1814. What remains for hp/09 is finding 1.
+
+**Risk-bearing value enumeration**: scope is the landed diff of commit d73d7c996 for this item (the capability-matrix doc and its freshness entry) plus the brief's Deliverables, which name two planned files and no constant.
+
+- `max-age-days = 45` @ freshness.yaml:48. If wrong, the doc is re-reviewed too late or too early; an edit undoes it. Reversible operational knob, ranks last.
+- `last-reviewed = "2026-08-24"` @ freshness.yaml:47. If wrong, the staleness clock starts on the wrong day; an edit undoes it. Reversible, ranks last.
+- The density figures in section 6 of the doc are vendor numbers, quoted with source and caveat. This item does not assert them, and nothing binds to them.
+
+RISK-VALUE: DERIVED — `max-age-days = 45` @ freshness.yaml:48 — every other artifact in the same registry carries the same 45-day leash, including the sibling harness-capability docs (cursor at line 39, SpecMem at line 53). The registry comment added with this entry states the rule: third-party facts with no locally tracked upstream rot on a clock. Reversible; this diff has no irreversible literal (risk: all "no", gate: model).
+
+**VERIFY: FAIL** — row 3 checked-failed: the doc contains no measured RAM/boot figure and no quoted command output; the our-workload measurement is BLOCKED in the doc itself (tracked on medici-finance/assay#1834). Rows 1, 2, 4, 5 pass. Hold at implemented.
+
+### Non-implementer verifier re-run: 2026-10-15, assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk), merged main a1c0a9c1e8a3bbd4de6f223eabc10ed9a27a1e68
+
+Runner is not the implementer. Own detached temporary worktree off origin/main at the merged head, admitted by `deskdispatch --check-verifier` (exit 0, binding run 0e83836f0f3b, source a1c0a9c1e8a3, model claude-opus-5-5, tier any). Offline envelope observed (`KUBECONFIG=/dev/null`; no third-party tool installed or run; no network write). No PR, no push, no status flip. Every row was run by hand at the SHA above; no execution witness was run. Window: started 2026-10-15T05:11Z, finished 2026-10-15T05:16Z (UTC).
+
+Grounding, written from the brief before reading the deliverable: the merged work should add one research doc carrying a present / workaround / absent row per desk primitive (shell tools, MCP, session-start rules injection, persistent memory, parallel sub-agents, workspace isolation), real per-session RSS and cold-boot numbers on our workload each beside its measurement command and quoted output, an explicit exec-tier verdict (per-task or per-session), a named prose-vs-discrete split for one desk, a go/no-go read, and a freshness registry entry naming the doc.
+
+Delivering change: medici-finance/assay PR #1814, squash commit d73d7c99664590effae24d60d6260f48854a3dce (2026-09-28). Neither the doc nor the freshness registry has changed since that commit (empty diff from it to the SHA above for both paths).
+
+| # | Command | Expect | Observed (exit + key output line) | Date | Runner |
+|---|---------|--------|-----------------------------------|------|--------|
+| 1 | `test -f docs/research/jcode-desk-harness-capabilities.md` | exit 0 — the matrix file exists | **PASS — exit 0.** File present, 331 lines | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 2 | `grep -qiE -e absent -e workaround docs/research/jcode-desk-harness-capabilities.md` | exit 0 — at least one non-trivial per-primitive verdict | **PASS — exit 0.** 12 matching lines (grep -ciE count); section 3 tally reads absent 1 (P6 isolation), workaround 2 (P2 MCP, P3 rules injection), present 3 (P1, P4, P5) | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 3 | (dereferencing) the measured RAM/boot figures in the doc are each backed by a named command whose output is quoted — a reader can re-run it | every numeric claim cites its measurement command + output, not a vendor number | **FAIL — checked by reading all 331 lines.** The doc holds no measured RAM or boot figure and quotes no command output. Section 6 gives the measurement protocol as commands still to run and marks the our-workload numbers "BLOCKED (needs live jcode)". Every RAM/boot number present (27.8 MB, 167.1 MB, 386.6 MB, 117.0 MB, 2300.6 MB, 14.0 ms, 3436.9 ms and the rest of the section 6 table) is a labelled vendor self-benchmark, and the "~2.3x" claim in sections 6 and 7 is arithmetic on those vendor numbers (386.6 / 167.1 = 2.31). The Expect cell excludes vendor numbers, so the row is not met | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 4 | (dereferencing) the doc records the exec-tier probe (3) and the prose-vs-discrete split (4) as explicit verdicts, not TODOs | both questions answered with evidence, not left as TODOs | **PASS, with a caveat — checked by reading the doc.** Section 4 answers exec-tier as "NO / per-session-only", evidenced from public docs (model chosen per session or per provider profile; no per-child model field on the swarm-spawn call), plus a four-step probe design and a verdict rule. Section 5 names the split for intake-desk across 13 loop steps (discrete: preflight, board reads, scan-to-PR carrier, close-on-merge state machine, monitor, label filters, roster lookup; LLM judgment: routing test, triage exits, decision authoring, idea-to-brief scoping). A grep for TODO, TBD or FIXME in the doc exits 1 (no match). Caveat: the exec-tier answer is documentary; the doc marks the live verdict BLOCKED | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 5 | `grep -q 'jcode-desk-harness-capabilities' freshness.yaml` | exit 0 — the empirical file is registered | **PASS — exit 0.** Entry at lines 46-49 of the freshness registry: last-reviewed "2026-08-24", max-age-days 45, upstreams empty | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+
+Rows passed: 4 of 5 (rows 1, 2, 4, 5 checked-clean; row 3 checked-failed). Rows 1, 2 and 5 are shell commands run at the SHA above; rows 3 and 4 are prose rows dereferenced by reading the doc in full.
+
+**Findings.**
+
+1. Row 3 is the same real gap recorded on 2026-10-02 and 2026-10-11, unchanged. Brief tasks 1, 2 and 6 (install jcode, run one desk skill under it, measure per-session RSS and cold boot on our workload) were never performed; the doc says so itself. Closing it needs a live jcode run on a machine allowed to install the tool (a human act; an offline verifier may not install it), or a ruling that this spike informs without measured numbers, or a re-baseline of row 3. The 2026-10-11 run recorded it as tracked on medici-finance/assay#1834; that issue's state was not re-read in this run (offline envelope).
+2. Rows 3 and 4 have prose Command cells, so an execution witness cannot report them green whatever the doc says. Any re-baseline should give them executable anchors.
+3. Supplementary check, not a Verify row: the freshness tool at the SHA above, scoped with `--only` to this doc (run offline with scratch caches), printed `STALE docs/research/jcode-desk-harness-capabilities.md max-age 45d exceeded (reviewed 2026-08-24, deadline 2026-10-08, today 2026-10-14)` and exit 1. The tool reads the local-zone date, which was still 2026-10-14 at run time. A re-review of the documentary verdicts is owed.
+
+**Risk-bearing value enumeration.** Scope: the landed diff of commit d73d7c99664590effae24d60d6260f48854a3dce for this item (the capability-matrix doc and its freshness entry) plus the brief's Deliverables, which name two planned files and no constant.
+
+- `max-age-days = 45` @ freshness.yaml:48. If wrong, the doc is re-reviewed too late or too early; an edit undoes it. Reversible operational knob.
+- `last-reviewed = "2026-08-24"` @ freshness.yaml:47. If wrong, the staleness clock starts on the wrong day; an edit undoes it. Reversible.
+- `upstreams = []` @ freshness.yaml:49. If wrong, upstream changes would not trigger a re-review; an edit undoes it. Reversible.
+- Doc claim "~2.3x" (sections 6 and 7) and "~14x headline" (section 7). Arithmetic on vendor figures: 386.6 / 167.1 = 2.31 and 386.6 / 27.8 = 13.9, so both match their stated inputs. Prose in a reversible doc; nothing binds to them.
+- Probe protocol counts (at least 5 cold starts, in sections 3 and 6). Instructions for a future live run; reversible.
+
+Ranked: no entry is irreversible (risk: all "no", gate: model); the top entry is the staleness leash, because it decides when these third-party facts are re-checked.
+
+RISK-VALUE: DERIVED — `max-age-days = 45` @ freshness.yaml:48 — all eight artifacts in the same registry carry the same 45-day leash (lines 12, 34, 39, 48, 53, 62, 67, 72), and the registry comment added with this entry states the rule: third-party harness facts with no locally tracked upstream clone rot on a clock. The leash is doing its job: the doc is now flagged stale (finding 3). Reversible; this diff has no irreversible literal.
+
+**VERIFY: FAIL** — row 3 checked-failed: the doc contains no measured RAM/boot figure and no quoted command output; the our-workload measurement is BLOCKED in the doc itself. Rows 1, 2, 4, 5 pass. Hold at implemented.
+
+Verification-Attestation: medici-finance/assay#3021 run=0e83836f0f3baabf89f77ef737dfc762f8b21cdfa2316e7e34cea49af4fb8c8f source=a1c0a9c1e8a3bbd4de6f223eabc10ed9a27a1e68 brief=docs/streams/harness-portability/brief-09-jcode-desk-harness-spike.md model=claude-opus-5-5 tier=any
+
+
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the harness-portability README table.

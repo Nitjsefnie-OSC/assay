@@ -607,16 +607,16 @@ func TestUnreviewed_TemporalSubset_359(t *testing.T) {
 	})
 }
 
-// TestHumanOwned_TrustedHumanExcludedFromNeglect_177 pins the #177 fix: a trusted
-// human maintainer's OWN open PR with no reviewer-App verdict at head is HUMAN-OWNED,
-// not NEEDS-REVIEW, and is kept out of the UNREVIEWED neglect count — while an
-// App-authored or shared-machine-account PR in the identical state stays NEEDS-REVIEW
-// and DOES trip the alarm (the non-goal: the exemption is the accountable human's
-// alone). The maintainer here is `ada` (the fixture's bless authority + mapped human);
-// `shared-agent` (∈ ASSAY_TRUSTED_LOGINS but a shared machine account) and the worker
-// App are the controls. example-org/tracker is `:private` in the fixture, so all three
-// authors clear the trust gate and get an action row.
-func TestHumanOwned_TrustedHumanExcludedFromNeglect_177(t *testing.T) {
+// TestTrustedHumanCountsAsNeglect pins the #2028 reversal of #177: a trusted human
+// maintainer's OWN open PR with no reviewer-App verdict at head is NEEDS-REVIEW — the desk
+// reviews it like any other PR the trust gate admitted — and so it COUNTS toward the
+// UNREVIEWED neglect alarm, exactly like an App-authored or shared-machine-account PR in
+// the identical state. (Under #177 the maintainer's PR was HUMAN-OWNED and excluded from
+// the count; the desk now owns reviewing it, so an aged unreviewed one IS a dispatch miss.)
+// The maintainer here is `ada` (the fixture's bless authority + mapped human);
+// `shared-agent` (∈ ASSAY_TRUSTED_LOGINS) and the worker App are the controls.
+// example-org/tracker is `:private` in the fixture; all three authors clear the trust gate.
+func TestTrustedHumanCountsAsNeglect(t *testing.T) {
 	// A 12-hour-old non-draft PR, CI green, NO reviews — the exact neglect-alarm case.
 	pr := func(author string) string {
 		return `{"number":177,"title":"human-gated closure ruling","body":"","isDraft":false,` +
@@ -624,46 +624,29 @@ func TestHumanOwned_TrustedHumanExcludedFromNeglect_177(t *testing.T) {
 			`"labels":[],"headRefOid":"aaa111","headRefName":"b","mergeStateStatus":"CLEAN",` +
 			`"statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS","name":"ci"}]}`
 	}
-
-	t.Run("trusted human maintainer → HUMAN-OWNED, out of the neglect count", func(t *testing.T) {
-		installFakeGH(t)
-		onePR(t, pr("ada"))
-		rep := actionsJSON(t)
-		table := actionsTable(t)
-		row := findRow(t, rep, 177)
-		if row.Action != actHumanOwned {
-			t.Fatalf("action = %s, want %s (a maintainer's own un-reviewed PR is not desk neglect)", row.Action, actHumanOwned)
-		}
-		if rep.Header.UnreviewedCount != 0 || len(rep.Header.UnreviewedPRs) != 0 {
-			t.Errorf("HUMAN-OWNED must NOT trip the neglect alarm: count=%d prs=%v",
-				rep.Header.UnreviewedCount, rep.Header.UnreviewedPRs)
-		}
-		if strings.Contains(table, "UNREVIEWED:") {
-			t.Errorf("no UNREVIEWED line expected for a human-owned PR; got:\n%s", table)
-		}
-		// The non-goal: CI/mergeability display is preserved — only the neglect metric changes.
-		if row.CIPass != 1 {
-			t.Errorf("the HUMAN-OWNED row must still carry its CI state; got CIPass=%d", row.CIPass)
-		}
-	})
-
-	// The controls: an App and a shared machine account in the IDENTICAL state stay
-	// NEEDS-REVIEW and DO trip the alarm — the exemption is the accountable human's alone.
 	for name, author := range map[string]string{
-		"worker App author stays NEEDS-REVIEW":      "app/assay-worker-app",
-		"shared machine account stays NEEDS-REVIEW": "shared-agent",
+		"trusted human maintainer": "ada",
+		"worker App author":        "app/assay-worker-app",
+		"shared machine account":   "shared-agent",
 	} {
 		t.Run(name, func(t *testing.T) {
 			installFakeGH(t)
 			onePR(t, pr(author))
 			rep := actionsJSON(t)
+			table := actionsTable(t)
 			row := findRow(t, rep, 177)
 			if row.Action != actNeedsReview {
-				t.Fatalf("author %s: action = %s, want %s — only the accountable human is exempt (#177 non-goal)",
+				t.Fatalf("author %s: action = %s, want %s — authorship is not a reason to skip review (#2028)",
 					author, row.Action, actNeedsReview)
 			}
 			if rep.Header.UnreviewedCount != 1 {
 				t.Errorf("author %s: this PR IS desk-review neglect and must be counted; count=%d", author, rep.Header.UnreviewedCount)
+			}
+			if !strings.Contains(table, "UNREVIEWED:") {
+				t.Errorf("author %s: the UNREVIEWED line must name this PR; got:\n%s", author, table)
+			}
+			if row.CIPass != 1 {
+				t.Errorf("author %s: the row must carry its CI state; got CIPass=%d", author, row.CIPass)
 			}
 		})
 	}
@@ -1660,16 +1643,25 @@ func TestDecay_AgeUnknownIsItsOwnState_400N7(t *testing.T) {
 		return rep, out.String()
 	}
 
+	// #3093 tightened this input: an APPROVED at head whose submitted_at cannot be read
+	// cannot be shown to postdate the head commit (the forge can re-anchor an older review
+	// onto a newer head), so it is NOT approval at head — the same fail-closed rule the
+	// ready gate and deskflip apply. The row therefore never reaches MERGE-NOW, so it can
+	// neither be measured nor sit in the age-unknown lane; what this subtest still pins is
+	// that no unreadable age is ever reported as a measurement or printed as an age.
 	for _, unreadable := range []string{"", "not-a-timestamp", "2026-13-45T99:99:99Z"} {
 		t.Run("unreadable="+unreadable, func(t *testing.T) {
 			rep, _ := run400(t, unreadable)
 			r := findRow(t, rep, 42)
-			if r.Action != actMergeNow {
-				t.Fatalf("action = %s, want %s (the VERDICT is readable; only the age is not)", r.Action, actMergeNow)
+			if r.Action == actMergeNow || r.Action == actFlip || r.Action == actReady {
+				t.Fatalf("action = %s — an approval whose submitted_at is unreadable cannot be shown to "+
+					"postdate the head commit, so it is not approval at head (#3093)", r.Action)
 			}
-			if rep.Header.MergeNowAgeUnknownCount != 1 ||
-				len(rep.Header.MergeNowAgeUnknownPRs) != 1 || rep.Header.MergeNowAgeUnknownPRs[0] != 42 {
-				t.Errorf("an unreadable approval age must get its OWN lane; got count=%d prs=%v",
+			if !strings.Contains(r.Note, "#3093") {
+				t.Errorf("note does not say why the approval was ignored: %s", r.Note)
+			}
+			if rep.Header.MergeNowAgeUnknownCount != 0 {
+				t.Errorf("a row that is not MERGE-NOW must not enter the MERGE-NOW age-unknown lane; got count=%d prs=%v",
 					rep.Header.MergeNowAgeUnknownCount, rep.Header.MergeNowAgeUnknownPRs)
 			}
 			// It must NOT be folded into the measured list — that would claim a
@@ -1682,13 +1674,33 @@ func TestDecay_AgeUnknownIsItsOwnState_400N7(t *testing.T) {
 			if r.ApprovedAge != "" {
 				t.Errorf("approvedAge = %q — the board must not print an age it could not read", r.ApprovedAge)
 			}
-
-			_, table := run400(t, unreadable, "--table")
-			if !strings.Contains(table, "DECAY-AGE-UNKNOWN:") {
-				t.Errorf("--table must NAME the unmeasurable row; got:\n%s", table)
-			}
 		})
 	}
+
+	// The lane stays reachable after #3093 (so it is pinned here, not deleted): a submitted_at
+	// the re-anchor test reads (it trims surrounding whitespace before parsing) but the
+	// board's age parse does not. The approval is at head and postdates the head commit, so
+	// the row is MERGE-NOW — and its age is unmeasured, which must be NAMED, never dropped.
+	t.Run("at head but age unreadable to the decay parse", func(t *testing.T) {
+		padded := " " + time.Now().UTC().Add(-1*time.Minute).Format(time.RFC3339) + " "
+		rep, _ := run400(t, padded)
+		r := findRow(t, rep, 42)
+		if r.Action != actMergeNow {
+			t.Fatalf("action = %s (%s), want %s (the VERDICT is readable; only the age is not)", r.Action, r.Note, actMergeNow)
+		}
+		if rep.Header.MergeNowAgeUnknownCount != 1 ||
+			len(rep.Header.MergeNowAgeUnknownPRs) != 1 || rep.Header.MergeNowAgeUnknownPRs[0] != 42 {
+			t.Errorf("an unreadable approval age must get its OWN lane; got count=%d prs=%v",
+				rep.Header.MergeNowAgeUnknownCount, rep.Header.MergeNowAgeUnknownPRs)
+		}
+		if r.ApprovedAge != "" {
+			t.Errorf("approvedAge = %q — the board must not print an age it could not read", r.ApprovedAge)
+		}
+		_, table := run400(t, padded, "--table")
+		if !strings.Contains(table, "DECAY-AGE-UNKNOWN:") {
+			t.Errorf("--table must NAME the unmeasurable row; got:\n%s", table)
+		}
+	})
 
 	// Positive controls: neither readable state leaks into the new lane.
 	t.Run("readable and fresh", func(t *testing.T) {

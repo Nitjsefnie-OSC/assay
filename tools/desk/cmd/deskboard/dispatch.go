@@ -63,6 +63,13 @@ type dispatchView struct {
 	SerializedUnknown []string           `json:"serializedUnknown"`
 	MeasuresGated     []string           `json:"measuresGated"`
 	MeasuresUnknown   []string           `json:"measuresUnknown"`
+	// Drive worker-pool floor (statusgen drives phase 3). Absent (zero) from a
+	// statusgen that predates it, or when no drive is active — the aggregate floor
+	// below then does not apply to that root.
+	DriveWorkerCap       int    `json:"driveWorkerCap"`
+	DriveInFlight        int    `json:"driveInFlight"`
+	HeldByDriveWorkerCap int    `json:"heldByDriveWorkerCap"`
+	DriveWorkerUnknown   string `json:"driveWorkerUnknown"`
 }
 
 // statusgenDispRow is one row of `statusgen --next-up` before repo re-attribution.
@@ -88,6 +95,9 @@ type dispatchRow struct {
 	BlockedCount int    `json:"blockedCount"`
 	CriticalArm  string `json:"criticalArm,omitempty"`
 	DriveSlug    string `json:"driveSlug,omitempty"`
+	// ExecTier is the brief's `exec-tier:` as the admission filter read it, "" when the
+	// brief declares none or was not read (admission.go).
+	ExecTier string `json:"execTier,omitempty"`
 }
 
 // dispatchDegraded names a root whose claim filtering did NOT run: its rows are an
@@ -134,19 +144,41 @@ type dispatchReport struct {
 	HeldByStreamCap int `json:"heldByStreamCap"`
 	HeldBySpan      int `json:"heldBySpan"`
 	HeldByDriveCap  int `json:"heldByDriveCap"`
+	// Drive worker-pool floor, applied ACROSS roots. statusgen bounds each root's
+	// drive rows by its own in-flight drive work; the worker pool is shared, so the
+	// merge re-applies the SAME cap (read from statusgen's JSON, never restated
+	// here) against the SUM of in-flight drive work over every root. DriveWorkerCap
+	// is the tightest cap any root reported (0 = no root had an active drive, floor
+	// off); DriveInFlight the summed in-flight drive work; HeldByDriveWorkerCap the
+	// drive rows withheld per root plus by this aggregate pass. DriveWorkerUnknown
+	// names roots whose in-flight drive work could not be counted — while any is
+	// named, NO drive row is offered (could-not-check, fail closed).
+	DriveWorkerCap       int                `json:"driveWorkerCap,omitempty"`
+	DriveInFlight        int                `json:"driveInFlight,omitempty"`
+	HeldByDriveWorkerCap int                `json:"heldByDriveWorkerCap,omitempty"`
+	DriveWorkerUnknown   []dispatchDegraded `json:"driveWorkerUnknown,omitempty"`
 	// ClaimsDegraded names roots whose claim read did not run — their rows are an
 	// unfiltered superset. Non-empty means: do not dispatch from this board.
 	ClaimsDegraded []dispatchDegraded `json:"claimsDegraded"`
-	Rows           []dispatchRow      `json:"rows"`
+	// Admission filter (admission.go, medici-finance/assay#2744): the rows deskdispatch
+	// would refuse at claim-acquire, dropped from Rows and counted by reason. DispatchTier
+	// is the --tier the board was asked for ("" = none, no tier filter). AdmissionUnknown
+	// names rows KEPT because their brief or decision could not be read.
+	DispatchTier     string                  `json:"dispatchTier,omitempty"`
+	HeldByExecTier   int                     `json:"heldByExecTier"`
+	HeldByDecision   int                     `json:"heldByDecision"`
+	AdmissionHeld    []dispatchAdmissionHeld `json:"admissionHeld,omitempty"`
+	AdmissionUnknown []dispatchDegraded      `json:"admissionUnknown,omitempty"`
+	Rows             []dispatchRow           `json:"rows"`
 }
 
 // nextUpForRoot runs `statusgen --next-up` against ONE root and returns its view.
 // Every failure is Unverifiable and names the root — the caller aborts (fail-closed).
 func nextUpForRoot(bin, absRoot, repo string) (dispatchView, error) {
-	cmd := exec.Command(bin, "--next-up", "--root", absRoot)
+	cmd := exec.Command(bin, "--next-up", "--root", absRoot, "--role-claims")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := deskkit.OutputProcess(cmd)
 	if err != nil {
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
@@ -204,6 +236,18 @@ func mergeDispatch(hdr Header, verbUsed string, resolved []deskkit.RootConfig, v
 		rep.HeldByStreamCap += v.HeldByStreamCap
 		rep.HeldBySpan += v.HeldBySpan
 		rep.HeldByDriveCap += v.HeldByDriveCap
+		rep.HeldByDriveWorkerCap += v.HeldByDriveWorkerCap
+		if v.DriveWorkerCap > 0 {
+			if rep.DriveWorkerCap == 0 || v.DriveWorkerCap < rep.DriveWorkerCap {
+				rep.DriveWorkerCap = v.DriveWorkerCap
+			}
+			rep.DriveInFlight += v.DriveInFlight
+			if v.DriveWorkerUnknown != "" {
+				rep.DriveWorkerUnknown = append(rep.DriveWorkerUnknown, dispatchDegraded{
+					Repo: repo, Root: r.Path, Reason: v.DriveWorkerUnknown,
+				})
+			}
+		}
 		if !v.ClaimsKnown {
 			rep.ClaimsDegraded = append(rep.ClaimsDegraded, dispatchDegraded{
 				Repo: repo, Root: r.Path, Reason: v.ClaimsReason,
@@ -223,11 +267,18 @@ func mergeDispatch(hdr Header, verbUsed string, resolved []deskkit.RootConfig, v
 			})
 		}
 	}
-	rep.Shown = len(rep.Rows)
-	// Score descending, then repo/stream/brief for a deterministic board — same
-	// ordering as cmdAwaiting.
+	// Critical tier first, then score descending, then repo/stream/brief for a
+	// deterministic board. The critical key is statusgen's own lexicographic
+	// (criticalTier, score) order carried across roots: without it a critical row
+	// from one root sorts below higher-scored routine rows from another, and the
+	// drive worker floor below — which grants headroom in this order — withholds
+	// it. CriticalArm is set only while a drive is active, so a no-drive board
+	// keeps the plain score order (same as cmdAwaiting).
 	sort.SliceStable(rep.Rows, func(i, j int) bool {
 		a, b := rep.Rows[i], rep.Rows[j]
+		if ac, bc := a.CriticalArm != "", b.CriticalArm != ""; ac != bc {
+			return ac
+		}
 		if a.Score != b.Score {
 			return a.Score > b.Score
 		}
@@ -239,14 +290,47 @@ func mergeDispatch(hdr Header, verbUsed string, resolved []deskkit.RootConfig, v
 		}
 		return a.Brief < b.Brief
 	})
+	rep.Rows = applyDriveWorkerFloor(&rep)
+	rep.Shown = len(rep.Rows)
 	return &rep, nil
+}
+
+// applyDriveWorkerFloor re-applies the drive worker-pool floor across roots: drive
+// rows (driveSlug set) in queue order — critical tier first, as mergeDispatch
+// sorts it — take the headroom left by the summed
+// in-flight drive work; every drive row past it is withheld and counted. With any
+// root's in-flight count unknown the headroom is 0. Non-drive rows always pass.
+// With no root reporting an active drive (cap 0) the rows are returned unchanged.
+func applyDriveWorkerFloor(rep *dispatchReport) []dispatchRow {
+	if rep.DriveWorkerCap <= 0 {
+		return rep.Rows
+	}
+	headroom := rep.DriveWorkerCap - rep.DriveInFlight
+	if len(rep.DriveWorkerUnknown) > 0 || headroom < 0 {
+		headroom = 0
+	}
+	kept := make([]dispatchRow, 0, len(rep.Rows))
+	for _, r := range rep.Rows {
+		if r.DriveSlug != "" {
+			if headroom <= 0 {
+				rep.HeldByDriveWorkerCap++
+				continue
+			}
+			headroom--
+		}
+		kept = append(kept, r)
+	}
+	return kept
 }
 
 // dispatchFromRoots is the DEPTH-producing half of the dispatch verb: given an
 // already-resolved root set it reads each root and merges the views into the report. It is
 // split out so `throughput`, which reads one integer out of this report, can obtain it from
 // a root set it resolved once for the whole run rather than by re-running the whole verb.
-func dispatchFromRoots(hdr Header, verbUsed string, rs rootSet) (*dispatchReport, error) {
+//
+// tier is the dispatching --tier ("" = not given): the admission filter (admission.go) then
+// drops every row deskdispatch would refuse at claim-acquire, after every cap.
+func dispatchFromRoots(hdr Header, verbUsed string, rs rootSet, tier string) (*dispatchReport, error) {
 	// IO half: run the pinned statusgen once per root, CONCURRENTLY under the per-root pool
 	// (roots.go), fail-closed on any error — the lowest-index root's error wins, so which
 	// failure surfaces does not depend on which subprocess finished first. Results come back
@@ -261,12 +345,18 @@ func dispatchFromRoots(hdr Header, verbUsed string, rs rootSet) (*dispatchReport
 
 	// Pure half: merge/attribute/sum. Split out so the merge, repo-attribution
 	// fail-closed rule, and held-back accounting are unit-testable without a binary.
-	return mergeDispatch(hdr, verbUsed, rs.roots, views, rs.pinnedTag, rs.pinRepo, rs.running)
+	rep, err := mergeDispatch(hdr, verbUsed, rs.roots, views, rs.pinnedTag, rs.pinRepo, rs.running)
+	if err != nil {
+		return nil, err
+	}
+	applyBriefAdmission(rep, tier)
+	rep.Shown = len(rep.Rows)
+	return rep, nil
 }
 
 // cmdDispatch renders the cross-repo dispatch queue. verbUsed is the spelling the
-// caller invoked (dispatch / todo / next / next-up).
-func cmdDispatch(hdr Header, verbUsed string) (*Report, error) {
+// caller invoked (dispatch / todo / next / next-up); tier is its --tier, "" when not given.
+func cmdDispatch(hdr Header, verbUsed, tier string) (*Report, error) {
 	// The root/pin/version preamble is resolved ONCE, by the shared resolver (roots.go),
 	// which performs exactly the steps this function used to perform inline and in the same
 	// fail-closed order. `throughput` calls that resolver once for the whole run instead of
@@ -275,7 +365,7 @@ func cmdDispatch(hdr Header, verbUsed string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	rep, err := dispatchFromRoots(hdr, verbUsed, rs)
+	rep, err := dispatchFromRoots(hdr, verbUsed, rs, tier)
 	if err != nil {
 		return nil, err
 	}
@@ -300,6 +390,20 @@ func cmdDispatch(hdr Header, verbUsed string) (*Report, error) {
 				"superset; do not dispatch from this root until a run with a reachable origin regenerates it\n",
 				shortRepo(d.Repo), d.Root, d.Reason)
 		}
+		// Drive worker floor could-not-check: in-flight drive work unknown on a
+		// root, so no drive row is offered anywhere this run.
+		for _, d := range rep.DriveWorkerUnknown {
+			fmt.Fprintf(w, "COULD-NOT-CHECK drive worker floor %s (%s): %s — no drive row is offered this run\n",
+				shortRepo(d.Repo), d.Root, d.Reason)
+		}
+		// Admission could-not-check: the row is shown, but whether deskdispatch takes it
+		// was not read.
+		for _, d := range rep.AdmissionUnknown {
+			fmt.Fprintf(w, "COULD-NOT-CHECK admission %s (%s): %s — row kept\n", shortRepo(d.Repo), d.Root, d.Reason)
+		}
+		for _, h := range rep.AdmissionHeld {
+			fmt.Fprintf(w, "HELD %s %s: %s\n", shortRepo(h.Repo), h.Brief, h.Reason)
+		}
 		// Held-back decomposition: printed on EVERY run so an empty queue is never a
 		// bare "0". heldBackLine names which cap fired.
 		fmt.Fprintf(w, "queue: %d shown of %d eligible; %s\n", rep.Shown, rep.Eligible, dispatchHeldBackLine(rep))
@@ -313,17 +417,33 @@ func cmdDispatch(hdr Header, verbUsed string) (*Report, error) {
 		}
 		fmt.Fprintf(w, "%-8s %-24s %-6s %-12s %-3s %s\n", "REPO", "STREAM", "SCORE", "STATUS", "UNB", "BRIEF")
 		for _, r := range rep.Rows {
-			fmt.Fprintf(w, "%-8s %-24s %-6d %-12s %-3d %s\n",
-				shortRepo(r.Repo), trunc(r.Stream, 24), r.Score, r.Status, r.BlockedCount, r.Brief)
+			fmt.Fprintf(w, "%-8s %-24s %-6d %-12s %-3d %s%s\n",
+				shortRepo(r.Repo), trunc(r.Stream, 24), r.Score, r.Status, r.BlockedCount, r.Brief, driveRowTags(r))
 		}
 	}}, nil
+}
+
+// driveRowTags marks a row the drive machinery touched, so a reader of the text
+// board can tell which rows count against the drive worker floor (`drive:<slug>`)
+// and which sit in the critical tier (`critical:<arm>`). Both are empty unless a
+// drive is active, so a no-drive board renders exactly as before.
+func driveRowTags(r dispatchRow) string {
+	var s string
+	if r.CriticalArm != "" {
+		s += "  critical:" + r.CriticalArm
+	}
+	if r.DriveSlug != "" {
+		s += "  drive:" + r.DriveSlug
+	}
+	return s
 }
 
 // dispatchHeldBackLine explains the eligible briefs NOT shown, naming which cap
 // fired. It is the dispatch analog of statusgen's heldBackReason and is printed on
 // every run so "0 shown" is always accompanied by WHY.
 func dispatchHeldBackLine(rep *dispatchReport) string {
-	held := rep.HeldByStreamCap + rep.HeldBySpan + rep.HeldByDriveCap
+	held := rep.HeldByStreamCap + rep.HeldBySpan + rep.HeldByDriveCap + rep.HeldByDriveWorkerCap +
+		rep.HeldByExecTier + rep.HeldByDecision
 	if held == 0 {
 		return "0 held back"
 	}
@@ -336,6 +456,16 @@ func dispatchHeldBackLine(rep *dispatchReport) string {
 	}
 	if rep.HeldByDriveCap > 0 {
 		parts = append(parts, fmt.Sprintf("%d by the drive anti-starvation floor", rep.HeldByDriveCap))
+	}
+	if rep.HeldByDriveWorkerCap > 0 {
+		parts = append(parts, fmt.Sprintf("%d by the drive worker floor (%d in flight of %d)",
+			rep.HeldByDriveWorkerCap, rep.DriveInFlight, rep.DriveWorkerCap))
+	}
+	if rep.HeldByExecTier > 0 {
+		parts = append(parts, fmt.Sprintf("%d by exec-tier stricter than --tier %s", rep.HeldByExecTier, rep.DispatchTier))
+	}
+	if rep.HeldByDecision > 0 {
+		parts = append(parts, fmt.Sprintf("%d by an unruled human decision", rep.HeldByDecision))
 	}
 	return fmt.Sprintf("%d held back (%s)", held, strings.Join(parts, ", "))
 }

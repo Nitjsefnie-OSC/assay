@@ -84,6 +84,7 @@ Flags:
 // the "verifyclosure" token main() already stripped.
 func runVerifyclosure(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("verifyclosure", flag.ContinueOnError)
+	defer transitionFlags(fs)()
 	fs.SetOutput(stderr)
 	fs.Usage = func() {}
 	briefKey := fs.String("brief", "", "brief key <stream>/<NN> to evaluate")
@@ -147,7 +148,13 @@ func runVerifyclosure(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintf(stderr, "statusgen verifyclosure: could-not-check — cannot read the brief file for %s under %s\n", key, root)
 		return verifyclosureExitCouldNotCheck
 	}
-	findings := checkWitnesses(art.Verify, art.Evidence)
+	// This verb does not run the lint, so it refuses an unterminated `<!--`
+	// itself (#1939): a line-start one hides the witness table on the page.
+	findings, refusal := closureWitnesses(art.Verify, art.Evidence, art.Path)
+	if refusal != "" {
+		fmt.Fprintf(stdout, "%s: NOT accepted — %s\n", key, refusal)
+		return verifyclosureExitNotAccepted
+	}
 	if len(findings) == 0 {
 		// No Verify rows: nothing to witness. The stamp already passed.
 		fmt.Fprintf(stdout, "%s: accepted — Status %q with a stamped Verified cell; no Verify rows to witness\n", key, br.Status)
@@ -156,7 +163,7 @@ func runVerifyclosure(args []string, stdout, stderr *os.File) int {
 	if code := checkExitCode(findings); code != verifyrunExitPass {
 		var missing []string
 		for _, f := range findings {
-			if f.State != statePass {
+			if !closureSatisfied(f) {
 				missing = append(missing, fmt.Sprintf("row %s: %s", f.ID, f.State))
 			}
 		}
@@ -165,8 +172,16 @@ func runVerifyclosure(args []string, stdout, stderr *os.File) int {
 		return verifyclosureExitNotAccepted
 	}
 
-	fmt.Fprintf(stdout, "%s: accepted — Status %q, Verified cell stamped, and all %d Verify row(s) carry a passing execution witness\n",
-		key, br.Status, len(findings))
+	passed, supplemental := 0, 0
+	for _, f := range findings {
+		if f.State == statePass {
+			passed++
+		} else if f.State == stateAuthorAdded {
+			supplemental++
+		}
+	}
+	fmt.Fprintf(stdout, "%s: accepted — Status %q, Verified cell stamped, %d passing acceptance row(s), %d author-added row(s) with no acceptance credit\n",
+		key, br.Status, passed, supplemental)
 	return verifyclosureExitAccepted
 }
 

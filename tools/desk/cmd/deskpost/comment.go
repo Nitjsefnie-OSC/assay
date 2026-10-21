@@ -8,10 +8,10 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
-// runComment posts a plain comment AS THE REVIEWER APP on EITHER a pull request or an
+// runComment admits reviewer-role callers and posts AS THE REVIEWER APP on a PR or an
 // issue (#296) — the number is resolved to its object kind by resolveTarget,
-// never assumed. Comments get the size cap and the shared secret scan only, on both kinds
-// — no verdict schema.
+// never assumed. Comments get the size cap and the outbound-write check only, on both
+// kinds — no verdict schema.
 //
 // Idempotency keys on (repo, number, head, verb). A PR keeps the pre-#296 key exactly —
 // verb "comment:<digest>", head = the PR head — so existing audit history still suppresses
@@ -45,24 +45,37 @@ func runComment(owner, name string, num int, wantHead string, forcedKind *deskki
 	// repo + num are the budget scope, known from argv with no network call — so the gate
 	// runs upstream of the POST below rather than after it (writeflow.go, runOutward).
 	return runOutward(args, opts, repo, num, func(entries []deskkit.Entry, opts postOpts) writeResult {
+		// This backend has reviewer custody on both forges. Resolve the caller at the
+		// shared entry point before minting credentials or reading a target: ordinary
+		// comments must never silently borrow another role's identity (#2202).
+		role, loop, rerr := deskkit.SessionTokenRole("deskpost comment")
+		if rerr != nil {
+			return withDigest(fromReadErr(preVerb, repo, num, "", rerr), dig)
+		}
+		if role != "reviewer" {
+			return withDigest(refused(preVerb, repo, num, "", fmt.Sprintf(
+				"deskpost comment uses reviewer credentials, but loop %q acts as %q; refusing to post as another role. "+
+					"For issue comments use deskfile attach -R %s --to %d --kind issue --body-file F; "+
+					"for your own PR use deskreply %s %d --body-file F. Keep your own DESK_LOOP identity.",
+				loop, role, repo, num, repo, num)), dig)
+		}
 		if !deskkit.IsAllowedRepo(repo) {
 			return refused(preVerb, repo, num, "", "repo "+repo+" is not in the fixed desk repo set")
 		}
-		// Size + secret scan BEFORE any network — a bad body must refuse with zero side
-		// effects. This runs identically for both kinds: the checks are a
-		// property of the BODY, and nothing about targeting an issue relaxes them.
+		// Size cap, then the ONE outbound-write check (desktools-v2/10), BEFORE any network —
+		// a bad body must refuse with zero side effects. Both run identically for both kinds:
+		// they are a property of the BODY and the target repo, and nothing about targeting an
+		// issue relaxes them. The check covers the credential arms and the impersonation
+		// guard, personal data, and — on a target not stated private — the self-containment
+		// scan (a private repo name, an absolute machine path, a session id) and the withheld
+		// register. The checking Forge and the raw client re-run it at the write itself.
 		if err := bodycheck.Comment(body); err != nil {
 			deskkit.MaybeExplain(stderr, opts.explain, err)
 			return withDigest(fromReadErr(preVerb, repo, num, "", err), dig)
 		}
-		// #203: the PUBLIC-REPO SELF-CONTAINMENT scan — a body free of credentials can
-		// still carry a private repo name, an absolute machine path, a session id or a
-		// withheld register identifier, none of which the secret scan above can see. Also
-		// before any network, and a no-op on a known-private repo (SelfContainApplies).
-		// `num` is the object being commented on, so it is a number this repo owns and is
-		// the reference point for the bare-`#N` heuristic.
-		if err := deskkit.SelfContainCheck("comment body", body,
-			deskkit.SelfContainOpts{Repo: repo, NumberHint: num}); err != nil {
+		if err := deskkit.OutboundCheck(deskkit.OutboundWrite{Repo: repo, Kind: deskkit.OutboundKindComment, NumberHint: num,
+			Fields: []deskkit.OutboundField{{Name: "body", Text: string(body)}}}); err != nil {
+			deskkit.MaybeExplain(stderr, opts.explain, err)
 			return withDigest(fromReadErr(preVerb, repo, num, "", err), dig)
 		}
 		// On-behalf-of trailer (multi-principal/01): resolved BEFORE any network call, and
@@ -126,7 +139,7 @@ func runComment(owner, name string, num int, wantHead string, forcedKind *deskki
 		//
 		// The loosening is scoped to the author-trust/bless dimension ONLY. Every OTHER
 		// comment-path protection still runs on a PR comment: the size cap + body
-		// secret/impersonation scan (bodycheck.Comment, above) and the public-repo +1 gate
+		// secret/impersonation scan (bodycheck.Comment, above) and the public-repo write gate
 		// (PublicRepoGate, below).
 		//
 		// Note the verdict-safety here does NOT come from bodycheck: bodycheck.Comment is

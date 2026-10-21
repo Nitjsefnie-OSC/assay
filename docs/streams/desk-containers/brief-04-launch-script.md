@@ -3,7 +3,7 @@ brief: assay:assay:desk-containers:04
 title: interactive desktop launch script (desk-run.sh)
 wave: 3
 depends: ["desk-containers/02", "desk-containers/03"]
-unblocks: ["desk-containers/07"]
+unblocks: []
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
@@ -19,7 +19,7 @@ why: >-
   This is the primary aim of the request: one command on a desktop that fires up a
   chosen desk interactively, exactly like today's terminal sessions, with the
   credentials mounted correctly every time instead of hand-assembled docker flags.
-version: 1
+version: 2
 id: 8d6363a5-d747-4a47-b4da-52137ebcc3b9
 ---
 
@@ -29,8 +29,7 @@ id: 8d6363a5-d747-4a47-b4da-52137ebcc3b9
 
 files:
 - `containers/desk-run.sh` (new) — the launcher.
-- `containers/desk-run.test.sh` (new) — dry-run + negative-path tests (no docker
-  daemon required: tests exercise `--dry-run` output and refusal paths).
+- `containers/desk-run.test.sh` (new) — dry-run + negative-path tests (no docker daemon required: tests exercise `--dry-run` output and refusal paths).
 - `docs/docker.md` — add the "run a desk from your desktop" section.
 
 facts:
@@ -54,6 +53,7 @@ facts:
   coreutils.
 
 ## Ground rules
+- CLI built on the desktools-v2 Cobra/Viper foundation (desktools-v2 cli-contract.md §7): every new command, verb or launcher this brief adds uses that shared foundation (added 2026-10-18).
 - NEVER git push to main / trigger workflows / run mutating infra commands. Feature
   branch + draft PR only.
 - Stop at `implemented` — you do not set verified/done.
@@ -78,7 +78,7 @@ facts:
 | 3 | `containers/desk-run.sh pr-review-desk --dry-run` (with fixture PEM + env-file paths exported) | exit 0; output contains `-it`, `--name pr-review-desk`, `/work`, `/run/secrets/assay/app.pem`, `ro`, `--env-file`, `ghcr.io/medici-finance/assay/pr-review-desk` |
 | 4 | `containers/desk-run.sh nonsense-desk --dry-run` | exit non-zero; output lists the five valid desk names (negative-path row) |
 | 5 | `containers/desk-run.sh worker-desk --dry-run` with the PEM path pointing at a missing file | exit non-zero; output names the expected PEM location (fail-closed row) |
-| 6 | `containers/desk-run.sh worker-desk --dry-run \| grep -c 'BEGIN'` (fixture PEM in place) | count 0 — the script prints credential PATHS, never contents |
+| 6 | `test -x containers/desk-run.sh && containers/desk-run.sh worker-desk --dry-run \| { grep -c 'BEGIN' \|\| [ $? -eq 1 ]; }` (fixture PEM in place) | output is `0` — the script prints credential PATHS, never contents. Re-written 2026-10-03 (#1862): every grep stage tolerates only the no-match status, so a missing path or a grep error fails the row instead of passing it. While the script is absent the `test -x` leg fails the row. |
 
 ## Definition of Done
 - Verify rows green, recorded in Evidence by a non-implementer.

@@ -26,10 +26,8 @@ func TestPublicRepoGateWired(t *testing.T) {
 		if rc != deskkit.ExitRefused {
 			t.Fatalf("create on a refused repo rc = %d, want 5 (refused)", rc)
 		}
-		for _, c := range *calls {
-			if len(c) >= 2 && c[0] == "git" && c[1] == "push" {
-				t.Fatalf("gate refused -- must NOT make git push call; calls: %v", *calls)
-			}
+		if anyPush(*calls) {
+			t.Fatalf("gate refused -- must NOT push; calls: %v", *calls)
 		}
 	})
 
@@ -46,10 +44,8 @@ func TestPublicRepoGateWired(t *testing.T) {
 		if rc != deskkit.ExitRefused {
 			t.Fatalf("update on a refused repo rc = %d, want 5 (refused)", rc)
 		}
-		for _, c := range *calls {
-			if len(c) >= 2 && c[0] == "git" && c[1] == "push" {
-				t.Fatalf("gate refused -- must NOT make git push call; calls: %v", *calls)
-			}
+		if anyPush(*calls) {
+			t.Fatalf("gate refused -- must NOT push; calls: %v", *calls)
 		}
 	})
 
@@ -114,8 +110,11 @@ func TestPublicRepoGateFetcherRoutesThroughResolvedForge(t *testing.T) {
 				"wrapping the forge already resolved for this repo — a hardcoded GitHub-only client "+
 				"cannot answer for a GitLab-resolved repo (assay#1054)", captured)
 		}
-		if routed.Forge != fake {
-			t.Fatal("the fetcher wraps a different forge than the one forgeForFn resolved for this repo")
+		// forgeForFn hands the fake out behind the outbound-write check (desktools-v2/10), so
+		// the fetcher holds that decorator; the visibilityCalls assertion below proves the read
+		// behind it lands on THIS fake and no other forge.
+		if routed.Forge == nil || !deskkit.IsOutboundChecked(routed.Forge) {
+			t.Fatalf("the fetcher wraps %T, not the checked forge forgeForFn resolved for this repo", routed.Forge)
 		}
 		// Safe to exercise now: routed.Forge is the in-memory fake, so this makes no network
 		// call. The pre-fix path never reaches here — its type assertion above already failed.

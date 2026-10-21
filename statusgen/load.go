@@ -67,6 +67,12 @@ var reservedRegisterNames = map[string]bool{
 	requirementsDirName: true,
 	decisionsDirName:    true,
 	deploysDirName:      true,
+	// verify-outcomes (#882): one file per verify outcome, per-stream subdirectory — a
+	// register of per-brief records, not a stream board (no README brief-status table, no
+	// waves). Its own README additionally self-declares "register, not a stream" per
+	// spec/registers-v1.md §7, so an adopter tree that has not yet re-pinned this literal
+	// name still skips it via that declaration.
+	"verify-outcomes": true,
 }
 
 // selfDeclaredRegisterRe matches the canonical self-declaration a register's
@@ -105,6 +111,7 @@ func isSelfDeclaredRegisterREADME(path string) bool {
 // parseFindings reads findings from the docs/streams/findings/ per-entry
 // directory. Returns nil, nil when the directory does not exist (empty register).
 func parseFindings(path string) ([]Finding, error) {
+	defer perfEnter("parse")()
 	// Accept both old file-path form (backward compat during migration) and
 	// the new directory form. When the path ends in ".md", read the old
 	// single-file register. Otherwise treat it as the repo root and read
@@ -123,17 +130,20 @@ func parseFindings(path string) ([]Finding, error) {
 	findings := make([]Finding, len(entries))
 	for i, e := range entries {
 		findings[i] = Finding{
-			ID:           e.ID,
-			Date:         e.Date,
-			Title:        e.Title,
-			Affects:      e.Affects,
-			Ack:          e.Ack,
-			Resolved:     e.Resolved,
-			ParkedUntil:  e.ParkedUntil,
-			ParkedBy:     e.ParkedBy,
-			ParkedReason: e.ParkedReason,
-			Class:        e.Class,
-			Control:      e.Control,
+			ID:                e.ID,
+			Date:              e.Date,
+			Title:             e.Title,
+			Affects:           e.Affects,
+			Ack:               e.Ack,
+			Resolved:          e.Resolved,
+			ParkedUntil:       e.ParkedUntil,
+			ParkedBy:          e.ParkedBy,
+			ParkedReason:      e.ParkedReason,
+			Class:             e.Class,
+			Control:           e.Control,
+			Effectiveness:     e.Effectiveness,
+			EffectivenessDate: e.EffectivenessDate,
+			EffectivenessBy:   e.EffectivenessBy,
 		}
 	}
 	return findings, nil
@@ -194,6 +204,7 @@ func parseFindingsLegacy(path string) ([]Finding, error) {
 }
 
 func loadStreams(root string) ([]*Stream, []Finding, error) {
+	defer perfEnter("discover")()
 	streamsDir := filepath.Join(root, "docs", "streams")
 	entries, err := os.ReadDir(streamsDir)
 	if err != nil {
@@ -274,6 +285,7 @@ func loadStreams(root string) ([]*Stream, []Finding, error) {
 // into that one stream degrades to the pre-existing `unknown stream` PROBLEM
 // (still surfaced, never rounded to a pass), which is the safe direction.
 func loadArchivedStreams(root string) ([]*Stream, error) {
+	defer perfEnter("discover")()
 	archiveDir := filepath.Join(root, "docs", "archive")
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {

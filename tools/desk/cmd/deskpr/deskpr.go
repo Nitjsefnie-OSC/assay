@@ -16,7 +16,8 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/gitcore"
 )
 
-// deskprStderr is the seam for warnIfConflicting's advisory output. Production writes to
+// deskprStderr is the seam for warnIfConflicting's advisory output and run()'s terminal
+// error. Production writes to
 // os.Stderr; tests redirect it to a buffer to assert on the warning text without
 // capturing the real process stream.
 var deskprStderr io.Writer = os.Stderr
@@ -51,18 +52,20 @@ type gitFacts struct {
 	defaultRef    string // fully-qualified remote-tracking ref, e.g. "refs/remotes/origin/main" (unambiguous by construction, #840)
 	repo          string // owner/name
 	head          string // HEAD sha
+	originURL     string // origin's fetch URL as git resolves it (effectiveOriginURL)
 }
 
 // auditCtx accumulates the fields for the ONE audit line every invocation emits
 // (audit every path). finalize is deferred so exactly one line is written no
 // matter which branch returns.
 type auditCtx struct {
-	verb          string
-	repo          string
-	pr            *int
-	head          string
-	detail        string
-	successResult string // ResultOK unless a noop set it to ResultNoop
+	verb           string
+	repo           string
+	pr             *int
+	head           string
+	detail         string
+	successResult  string // ResultOK unless a noop set it to ResultNoop
+	writeAttempted bool   // set before any potentially mutating remote call
 }
 
 func (a *auditCtx) log(result, detail string) {
@@ -108,7 +111,10 @@ func (a *auditCtx) finalize(err error) {
 	case deskkit.ExitRefused:
 		result = deskkit.ResultRefused
 	default:
-		result = deskkit.ResultUnverifiable
+		result = deskkit.ResultUnwritten
+		if a.writeAttempted {
+			result = deskkit.ResultUnverifiable
+		}
 	}
 	a.log(result, err.Error())
 }
@@ -138,7 +144,9 @@ func cmdCreate(args []string) (err error) {
 	root := fs.String("root", ".", "repo root the Brief: trailer resolves against (docs/streams under it)")
 	scanOverride := fs.String(deskkit.ScanOverrideFlag, "", "override a secret-scan refusal, stating why; writes an audit row (tool, surface digest, reason, identity)")
 	explain := fs.Bool("explain", false, "on a secret-scan refusal, also print a scan-explain line naming the rule id and line number (never the offending span)")
-	check := fs.Bool("check", false, "run every LOCAL gate (flags, branch state, the Brief:/Issue: trailer, the secret scan, the public-repo self-containment scan, the push-transport gate, the publish-identity gate) and stop BEFORE minting a token or opening any connection — exit 0 only when every local gate passed; a category this cannot decide offline is reported, by name, as not checked")
+	decided := fs.String("decided", "", "path to a file declaring desk-taken decisions (decision:/alternative:/cost: triples, one item per numbered line) — writes the `## Desk-decided` block into the body and applies the desk-decided label; a PR that only transcribes recorded rulings passes none of this")
+	check := fs.Bool("check", false, "run every LOCAL gate (flags, branch state, the Brief:/Authors:/Issue: trailer, the secret scan, the public-repo self-containment scan, the push-transport gate, the publish-identity gate) and stop BEFORE minting a token or opening any connection — exit 0 only when every local gate passed; a category this cannot decide offline is reported, by name, as not checked")
+	checkRemote := fs.Bool("check-remote", false, "read-only preflight using the session App and confirmed push destination; no push, PR creation or write budget")
 	if perr := fs.Parse(args); perr != nil {
 		// TIER TWO: `-h`/`--help` in any spelling reaches flag.Parse as flag.ErrHelp.
 		// A help screen is not a refusal and writes no audit row — the finalizer
@@ -147,6 +155,9 @@ func cmdCreate(args []string) (err error) {
 			return deskkit.ErrHelpRequested
 		}
 		return deskkit.Refused("refused: bad flags: " + perr.Error())
+	}
+	if *check && *checkRemote {
+		return deskkit.Refused("refused: --check and --check-remote are mutually exclusive")
 	}
 	defer func() { explainScanRefusal(*explain, err) }()
 	if fs.NArg() != 0 {
@@ -172,6 +183,14 @@ func cmdCreate(args []string) (err error) {
 	if berr != nil {
 		return berr
 	}
+	// --decided (attention-budget/19): fold the desk-decided block into the body BEFORE any
+	// scan or network call — an empty file or an item missing a field refuses here (exit 5),
+	// with no PR call made. See decided.go for why create refuses on a hand-written heading
+	// where edit instead replaces one in place.
+	body, dberr := injectDecidedBlock(body, *decided, "create")
+	if dberr != nil {
+		return dberr
+	}
 	if serr := deskkit.HandleScanRefusal(deskkit.ScanOverride{
 		Tool: "deskpr", Verb: "create", Reason: *scanOverride,
 		Surface: "PR body", Content: body,
@@ -191,11 +210,41 @@ func cmdCreate(args []string) (err error) {
 	if terr != nil {
 		return terr
 	}
+	// Decision-gate banner (lifecycle-v1 §4.5): a PR delivering a gate: human brief
+	// carries a fixed banner naming its decision issue and whether it is ruled. Inserted
+	// when missing; it informs and never refuses. Its text is fixed apart from the
+	// trailer's own brief id and an issue number, and the public-repo self-containment
+	// scan below reads the body WITH it.
+	if nb, added := withDecisionGateBanner(body, *root, dir); added {
+		body = nb
+		fmt.Fprintln(deskprStderr, "deskpr: added the gate: human decision banner to the PR body (lifecycle-v1 §4.5; informs, blocks nothing)")
+	}
 	facts, perr := preflight(dir, *base)
 	if perr != nil {
 		return perr
 	}
 	ac.repo, ac.head = facts.repo, facts.head
+
+	// PUSH-destination gate (#1623): git's own resolved push URL list must be exactly one https
+	// URL naming facts.repo. It asks git where the push will actually go (pushurl from every
+	// scope, insteadOf / pushInsteadOf, multi-valued lists) and refuses anything else,
+	// fail-closed, naming each value's scope and a worktree-scoped remedy. It runs FIRST, so an
+	// SSH destination is refused here with that remedy; the transport gate below still runs for
+	// its https credential-helper NOTICE.
+	if derr := pushDestinationGate(facts.dir, "create", facts.repo, facts.originURL); derr != nil {
+		return derr
+	}
+
+	// #1339: a `Brief:` trailer on a branch that only AUTHORS the brief is refused before
+	// anything leaves the machine — it would make the brief read as delivered on merge. The
+	// mirror case (review F1 on #1641) is also refused here: an `Authors:` trailer on a
+	// branch whose diff is NOT provably authoring-only for every listed id, since `Authors:`
+	// switches off the security lane's brief-declared risk term for a `Brief:` PR. Local (git
+	// only), so it is part of --check. create only: update/edit act on an existing PR whose
+	// trailer is immutable, and refusing them would strand that PR.
+	if aerr := authoringTrailerGate(body, facts.dir, "refs/remotes/origin/"+*base); aerr != nil {
+		return aerr
+	}
 
 	// PUSH-transport custody gate (#861). An SSH push from a bot session goes out under
 	// whatever key this machine's agent holds — a human's — so the forge records the human
@@ -205,15 +254,14 @@ func cmdCreate(args []string) (err error) {
 		return terr
 	}
 
-	// PUBLISH-identity gate (#1490 lane B). Refuse before the push if any commit the push
-	// would publish (refs/remotes/origin/<base>..HEAD) is authored or committed by an
-	// identity other than this session role's bound bot. A worktree that acquired a stale
-	// `user.*` — from a shared checkout, a manual `git worktree add`, an editor's git —
-	// would otherwise publish commits attributed to the wrong actor; the provisioning fixes
-	// stop new such worktrees, this stops the publish from any route. Local (git + roster),
-	// so it runs before the token mint and is part of --check.
-	if ierr := publishIdentityGate(facts.dir, *base); ierr != nil {
-		return ierr
+	// Offline checking cannot establish what the destination already holds. Keep the
+	// conservative whole-range check, but explain why a published commit may refuse.
+	// A real run checks against the destination immediately before its push below.
+	if *check {
+		fmt.Fprintln(deskprStderr, "publish-identity: remote branch head was not checked (offline); judging the whole base-to-HEAD range. A real create confirms the destination before checking new commits.")
+		if ierr := publishIdentityGate(facts.dir, *base, "", facts.head); ierr != nil {
+			return ierr
+		}
 	}
 
 	// seatbelt: scan title, branch, and the diff-vs-default before any push.
@@ -250,26 +298,29 @@ func cmdCreate(args []string) (err error) {
 
 	// --check stops HERE, before the token mint and before any forge call. Every gate
 	// above it is local: flags, the secret scan (title/branch/diff, plus the body scan
-	// earlier), the Brief:/Issue: trailer, branch state (preflight), the push-transport
+	// earlier), the Brief:/Authors:/Issue: trailer, branch state (preflight), the push-transport
 	// gate, and the public-repo self-containment scan (its bare-#N category already
 	// reports itself "not checked" on stderr via SelfContainOpts.Notices when no local
 	// hint is available — see selfcontain.go — so nothing here rounds that up to a pass).
 	// It mints no token, opens no connection, and pushes nothing: a real `create` run
 	// past this point can still fail on remote state (an existing open PR, a red rate
 	// limit, a non-authorized public repo), which --check never claims to have checked.
-	// The publish-identity gate (#1490) ran above with the rest of the local gates.
+	// The conservative offline publish-identity gate ran above; live destination proof remains unchecked.
 	if *check {
 		ac.successResult = deskkit.ResultDryRun
 		ac.detail = "check: every local gate passed"
 		fmt.Println("check: ok — every local gate passed; no connection opened, nothing pushed. " +
 			"Not checked (needs the forge, not run here): an existing open PR on this branch, " +
-			"the outward-write rate limit, and the public-repo authorization gate.")
+			"the outward-write rate limit, the public-repo authorization gate, and the publish-identity range against the live destination branch.")
 		return nil
 	}
 
 	// Mint the session-role App installation token and resolve the forge that serves this
 	// repo under that App's custody. Every change read and write below goes through the
 	// resolved backend; there is no ambient-identity fallback (the retired --as-app path).
+	if *checkRemote {
+		fmt.Fprintf(deskprStderr, "check-remote: reading %s branch %s through the session App and push destination; no outward write\n", facts.repo, facts.branch)
+	}
 	if merr := mintWorkerToken(facts.repo); merr != nil {
 		return deskkit.Unverifiable("cannot mint the App token", merr)
 	}
@@ -290,24 +341,6 @@ func cmdCreate(args []string) (err error) {
 		return nil
 	}
 
-	// Outward-write rate limit — checked immediately before the push.
-	//
-	// REPO-WIDE, at the per-PR cap, because a create's own audit line records the number of
-	// the PR it is about to make (`ac.pr = &n`, below) — a new number every time. Scoping
-	// the gate on a PR number therefore reads a bucket this call site can never fill: an
-	// earlier fix aimed it at the repo's UNNUMBERED bucket, which left creates on the
-	// 100/hr per-repo tier while looking like a 10/hr cap, and inverted the meter so that
-	// only FAILED creates (which record no number) accumulated (#439, third
-	// review). The repo-wide scope counts every line this tool writes on this repo, so the
-	// bucket the gate reads is a superset of wherever the write lands — see
-	// deskkit.AllowWriteRepoWide.
-	//
-	// Held at the per-PR cap, not the per-repo one: this is the verb behind the
-	// PR-flood risk and it was hard-capped at 10/hr before the tiers existed.
-	if werr := deskkit.AllowWriteRepoWide("deskpr", facts.repo); werr != nil {
-		return werr
-	}
-
 	// Public-repo gate: refuse an outward write unless the repo is authorized.
 	// The authorization is repository-scoped (a listed `:public` allowed-repos entry,
 	// or private) — see deskkit.PublicRepoGate. A create no longer needs an issue/PR
@@ -326,14 +359,34 @@ func cmdCreate(args []string) (err error) {
 		return gerr
 	}
 
-	// Plain push. argv is constructed literally: no --force / --force-with-lease can
-	// ever be emitted, and no caller flag is forwarded to git.
-	if _, pushErr := git(facts.dir, "push", "-u", "origin", facts.branch); pushErr != nil {
-		return deskkit.Unverifiable("git push failed", pushErr)
+	// Plain push, in-process (push.go): the refspec is built here with no "+" and no Force,
+	// so a push that would need force is refused by the protocol; no caller flag reaches it.
+	spec, prepErr := prepareCreatePush(pushSpec{
+		dir: facts.dir, repo: facts.repo, originURL: facts.originURL,
+		srcRef: "refs/heads/" + facts.branch, dstBranch: facts.branch, setUpstream: true,
+	}, *base)
+	if prepErr != nil {
+		return prepErr
+	}
+	if *checkRemote {
+		ac.successResult = deskkit.ResultDryRun
+		ac.detail = "check-remote: confirmed destination and immutable source; no write"
+		fmt.Println("check-remote: ok — local gates and credentialed destination/source proof passed; nothing pushed, no PR created, no write budget spent. A later create rechecks all state; this is not a reusable authorization.")
+		return nil
+	}
+	// New PRs have a repository-wide creation counter independent of updates and
+	// body edits. The aggregate write budget and failure breakers still apply.
+	if werr := deskkit.AllowPRCreate(facts.repo); werr != nil {
+		return werr
+	}
+
+	ac.writeAttempted = true
+	if pushErr := pushFn(spec); pushErr != nil {
+		return pushErr
 	}
 
 	// On-behalf-of trailer (multi-principal/01), appended to the body sent to the forge
-	// only — every gate above (the Brief:/Issue: trailer parse, the secret/self-contain
+	// only — every gate above (the Brief:/Authors:/Issue: trailer parse, the secret/self-contain
 	// scans) already ran against the caller-supplied body, so this cannot change what any
 	// of them saw.
 	prBody, oerr := deskkit.AppendOnBehalfOf(body, "", facts.repo)
@@ -341,33 +394,43 @@ func cmdCreate(args []string) (err error) {
 		return oerr
 	}
 
-	// CreateDraftChange opens the change as a DRAFT — the frozen property of the seam; there
-	// is no path on which it opens ready. The body goes straight to the backend, so there is
-	// no temp file and no `--body-file` argv any more.
-	ref, cErr := fg.CreateDraftChange(fr, deskkit.DraftChangeInput{
+	// CreateHeldDraftChange opens the change as a DRAFT — the frozen property of the seam;
+	// there is no path on which it opens ready — and then opens the desk's merge-hold marker
+	// thread on it (the forge-gitlab merge-hold brief): a resolvable discussion thread that
+	// blocks GitLab's merge button (only_allow_merge_if_all_discussions_are_resolved) until the
+	// reviewer's approve verdict releases it at the current head. GitHub returns the typed
+	// not-applicable (its twin control is server-side branch protection), a no-op there. The
+	// pairing lives in deskkit so every verb that opens a change gets it (#2254). A hold-open
+	// failure is LOUD: the change already exists, and an operator who is not told it is
+	// missing its gate would not find out until a ready-flip refuses for a reason that reads
+	// like a different problem. The body goes straight to the backend, so there is no temp
+	// file and no `--body-file` argv any more.
+	ref, cErr := deskkit.CreateHeldDraftChange(fg, fr, deskkit.DraftChangeInput{
 		Title: *title, Body: string(prBody), Head: facts.branch, Base: *base,
 	})
 	if cErr != nil {
-		return deskkit.Unverifiable("create draft change failed", cErr)
+		if ref == nil {
+			return deskkit.Unverifiable("create draft change failed", cErr)
+		}
+		if ref.Number > 0 {
+			n := ref.Number
+			ac.pr = &n
+		}
+		return cErr
 	}
 	url := ref.URL
 	detail := "created " + url
 	if ref.Number > 0 {
 		n := ref.Number
 		ac.pr = &n
-		// Open the desk's merge-hold marker thread (the forge-gitlab merge-hold brief): a
-		// resolvable discussion thread that blocks GitLab's merge button
-		// (only_allow_merge_if_all_discussions_are_resolved) until the reviewer's approve
-		// verdict releases it at the current head. GitHub returns the typed not-applicable
-		// (its twin control is server-side branch protection) and this is a no-op there.
-		// Failure to open is LOUD: the change already exists, and an operator who is not
-		// told it is missing its gate would not find out until a ready-flip refuses for a
-		// reason that reads like a different problem.
-		if hErr := openMergeHoldFn(fg, fr, n); hErr != nil {
-			return deskkit.Unverifiable(fmt.Sprintf(
-				"%s was created, but opening its merge-hold marker thread failed: %v — the change exists "+
-					"WITHOUT its server-side merge gate armed. Open one by hand (or re-run this step) before "+
-					"the PR is reviewed.", url, hErr), hErr)
+		// --decided (attention-budget/19): the block is already IN the body the create call
+		// just published — this only mirrors it as the at-a-glance label. A PR with no
+		// --decided applies no label at all (the transcribe-only shape stays byte-for-byte
+		// what it was before this flag existed).
+		if *decided != "" {
+			if lerr := applyDeskDecidedLabel(fg, fr, n); lerr != nil {
+				return deskDecidedLabelFailure(url, "the PR was opened with its Desk-decided block", lerr)
+			}
 		}
 		// Post-create mergeable check (#770): a PR GitHub reports CONFLICTING gets zero
 		// pull_request runs at its head — indistinguishable, on the audit line or any
@@ -378,18 +441,6 @@ func cmdCreate(args []string) (err error) {
 	}
 	ac.detail = detail
 	fmt.Println(url)
-	return nil
-}
-
-// openMergeHoldFn is the seam for deskpr create's merge-hold open step, a package var so
-// tests can observe the call without a live GitLab instance. Production calls
-// deskkit.Forge.OpenMergeHold directly and treats the typed not-applicable (GitHub: the twin
-// control is server-side branch protection) as success — there is nothing to open there.
-var openMergeHoldFn = func(fg deskkit.Forge, fr deskkit.ForgeRepo, number int) error {
-	_, err := fg.OpenMergeHold(fr, number)
-	if err != nil && !deskkit.IsMergeHoldNotApplicable(err) {
-		return err
-	}
 	return nil
 }
 
@@ -459,7 +510,9 @@ func cmdUpdate(args []string) (err error) {
 	scanOverride := fs.String(deskkit.ScanOverrideFlag, "", "override a secret-scan refusal, stating why; writes an audit row (tool, surface digest, reason, identity)")
 	root := fs.String("root", ".", "repo root the Brief: trailer resolves against (docs/streams under it)")
 	explain := fs.Bool("explain", false, "on a secret-scan refusal, also print a scan-explain line naming the rule id and line number (never the offending span)")
-	check := fs.Bool("check", false, "run every LOCAL gate (flags, branch state, the secret scan, the push-transport gate, the publish-identity gate) and stop BEFORE minting a token or opening any connection; the Brief:/Issue: trailer lives on the EXISTING PR's forge-held body and is reported not checked, by name, rather than skipped silently")
+	check := fs.Bool("check", false, "run every LOCAL gate (flags, branch state, the secret scan, the push-transport gate, the publish-identity gate) and stop BEFORE minting a token or opening any connection; the Brief:/Authors:/Issue: trailer lives on the EXISTING PR's forge-held body and is reported not checked, by name, rather than skipped silently")
+	prNum := fs.Int("pr", 0, "push HEAD to THIS open PR's head branch instead of the PR whose head branch is this worktree's branch (#2085): for a worktree that cannot be on the PR's head branch (git allows one worktree per branch). HEAD must descend from the PR's current head commit")
+	remoteBranch := fs.String("branch", "", "push HEAD to the open PR whose head branch is this REMOTE branch name instead of this worktree's branch (#2085); same admission rule as --pr")
 	if perr := fs.Parse(args); perr != nil {
 		// TIER TWO: `-h`/`--help` in any spelling reaches flag.Parse as flag.ErrHelp.
 		// A help screen is not a refusal and writes no audit row — the finalizer
@@ -473,6 +526,21 @@ func cmdUpdate(args []string) (err error) {
 	if fs.NArg() != 0 {
 		return deskkit.Refused("refused: update takes no arguments")
 	}
+	if *prNum < 0 {
+		return deskkit.Refused(fmt.Sprintf("refused: --pr must be a positive PR number, got %d", *prNum))
+	}
+	if *prNum > 0 && *remoteBranch != "" {
+		return deskkit.Refused("refused: --pr and --branch both name the target PR — give one")
+	}
+	if *remoteBranch != "" && !baseRe.MatchString(*remoteBranch) {
+		return deskkit.Refused("refused: --branch " + fmt.Sprintf("%q", *remoteBranch) + " is not a valid branch name")
+	}
+	// override is true when the target PR is NAMED (--pr / --branch) rather than found by the
+	// worktree's own branch. Only then does the push destination come from the PR's head ref.
+	override := *prNum > 0 || *remoteBranch != ""
+	if isDefaultName(*remoteBranch) {
+		return deskkit.Refused("refused: --branch names the default branch (" + *remoteBranch + ") — deskpr only pushes feature branches")
+	}
 	if *scanOverride != "" {
 		if verr := deskkit.ValidateScanOverride(*scanOverride); verr != nil {
 			return verr
@@ -485,11 +553,31 @@ func cmdUpdate(args []string) (err error) {
 	// update has no --base flag: it refreshes an EXISTING PR's body, so the ahead-count
 	// stays pinned to the repo default (origin/HEAD) exactly as before — an empty base
 	// selects that default inside preflight.
-	facts, perr := preflight(dir, "")
+	// With --pr N the PR is named, so a detached HEAD is admitted (the local branch name plays
+	// no part in finding the PR or choosing the destination).
+	facts, perr := preflightMode(dir, "", *prNum > 0, detachedRefusal)
 	if perr != nil {
 		return perr
 	}
 	ac.repo, ac.head = facts.repo, facts.head
+	// --branch B: the REMOTE branch is known offline, so every offline stage below judges B
+	// where the default path judges the local branch name — the secret scan of the branch name
+	// and the publish-identity anchor (#2085). With --pr N the head ref is only known from the
+	// forge, so the offline stage keeps the local branch name for the scan and judges the
+	// whole range; the live stage below re-judges both against the PR's own head ref.
+	if *remoteBranch != "" {
+		facts.branch = *remoteBranch
+	}
+
+	// PUSH-destination gate (#1623): git's own resolved push URL list must be exactly one https
+	// URL naming facts.repo. It asks git where the push will actually go (pushurl from every
+	// scope, insteadOf / pushInsteadOf, multi-valued lists) and refuses anything else,
+	// fail-closed, naming each value's scope and a worktree-scoped remedy. It runs FIRST, so an
+	// SSH destination is refused here with that remedy; the transport gate below still runs for
+	// its https credential-helper NOTICE.
+	if derr := pushDestinationGate(facts.dir, "update", facts.repo, facts.originURL); derr != nil {
+		return derr
+	}
 
 	// PUSH-transport custody gate (#861) — same reason as create: this verb pushes.
 	if terr := pushTransportGate(facts.dir, "update"); terr != nil {
@@ -499,8 +587,32 @@ func cmdUpdate(args []string) (err error) {
 	// PUBLISH-identity gate (#1490 lane B) — same reason as create. update has no --base, so
 	// the published range is measured against the repo default (origin/HEAD), exactly the
 	// base preflight resolved for the ahead-count.
-	if ierr := publishIdentityGate(facts.dir, facts.defaultBranch); ierr != nil {
-		return ierr
+	//
+	// #1967: update pushes onto a PR head that may already carry commits by ANOTHER trusted
+	// App (a mixed-author PR). Those are already on the remote; re-judging them refused every
+	// update to such a PR. This OFFLINE stage (it is what --check runs) anchors the range on
+	// the local remote-tracking ref for the branch — absent, unresolvable, or not an ancestor
+	// of HEAD, it falls back to the whole range. It is an estimate of the remote, so the live
+	// stage below re-judges against the forge's own PR head before anything is pushed.
+	//
+	// #2432: with --pr N the PR's head branch is unknown offline, so this stage has no tip and
+	// would judge the whole range from the default branch — and refuse, before the live stage
+	// ran, every update to a PR whose published head already carries another App's commit. A
+	// real `update --pr N` therefore skips this stage: the live stage below always runs before
+	// the push, against the head the forge reports, which HEAD must descend from and the push
+	// destination must hold. Under --check there is no live stage, so the whole range is
+	// judged here (fail closed) and a refusal names the offline way to the narrow judgement.
+	offlineTip := remoteTrackingTip(facts.branch)
+	if *prNum > 0 {
+		offlineTip = "" // head ref unknown offline: judge the whole range, fail closed
+	}
+	if *prNum == 0 || *check {
+		if ierr := publishIdentityGate(facts.dir, facts.defaultBranch, offlineTip, facts.head); ierr != nil {
+			if *prNum > 0 {
+				return prCheckWideNote(ierr)
+			}
+			return ierr
+		}
 	}
 
 	if scanErr := scanWrite(facts, "", "update", *scanOverride); scanErr != nil {
@@ -509,7 +621,7 @@ func cmdUpdate(args []string) (err error) {
 
 	// --check stops HERE, before the token mint and before any forge call. Every gate
 	// above it is local: flags, branch state (preflight), the push-transport gate, and
-	// the secret scan (branch name + diff). The Brief:/Issue: trailer check is NOT run:
+	// the secret scan (branch name + diff). The Brief:/Authors:/Issue: trailer check is NOT run:
 	// update pushes commits to an EXISTING PR and validates the trailer against that
 	// PR's CURRENT body, which lives on the forge — there is no local copy to check it
 	// against, so it is reported as not checked, by name, rather than silently skipped
@@ -518,9 +630,11 @@ func cmdUpdate(args []string) (err error) {
 		ac.successResult = deskkit.ResultDryRun
 		ac.detail = "check: every local gate passed"
 		fmt.Println("check: ok — every local gate passed; no connection opened, nothing pushed. " +
-			"Not checked (needs the forge, not run here): the Brief:/Issue: trailer on the existing " +
+			"Not checked (needs the forge, not run here): the Brief:/Authors:/Issue: trailer on the existing " +
 			"PR's current body, whether an open PR exists for this branch, the outward-write rate " +
-			"limit, and the public-repo authorization gate.")
+			"limit, the public-repo authorization gate, and the publish-identity range against the " +
+			"PR's LIVE head (judged here against the local remote-tracking ref — with --pr N, the whole range " +
+			"from the default branch; the real run re-judges it against the live head).")
 		return nil
 	}
 
@@ -532,12 +646,27 @@ func cmdUpdate(args []string) (err error) {
 		return ferr
 	}
 
-	pr, lerr := fg.OpenChangeForBranch(fr, facts.branch)
-	if lerr != nil {
-		return deskkit.Unverifiable("cannot check for an open PR on the branch", lerr)
-	}
-	if pr == nil {
-		return deskkit.Refused("refused: no open PR for " + facts.branch + " — run `deskpr create` first")
+	var pr *deskkit.PullRequest
+	if *prNum > 0 {
+		// --pr N (#2085): read the named PR directly. It must be OPEN; the lineage rule that
+		// replaces the branch-name compare is enforced below, once the head ref is known.
+		named, nerr := fg.GetPullRequest(fr, *prNum)
+		if nerr != nil {
+			return deskkit.Unverifiable(fmt.Sprintf("cannot read PR #%d", *prNum), nerr)
+		}
+		if !strings.EqualFold(strings.TrimSpace(named.State), "open") {
+			return deskkit.Refused(fmt.Sprintf("refused: PR #%d is %s, not OPEN — deskpr update only pushes to open PRs", *prNum, named.State))
+		}
+		pr = named
+	} else {
+		var lerr error
+		pr, lerr = fg.OpenChangeForBranch(fr, facts.branch)
+		if lerr != nil {
+			return deskkit.Unverifiable("cannot check for an open PR on the branch", lerr)
+		}
+		if pr == nil {
+			return deskkit.Refused("refused: no open PR for " + facts.branch + " — run `deskpr create` first")
+		}
 	}
 	// #788: a ready-flipped (non-draft) OPEN PR is accepted here too. The draft-only
 	// refusal that used to sit here was an artifact of update being written for the
@@ -558,10 +687,59 @@ func cmdUpdate(args []string) (err error) {
 	if berr != nil {
 		return deskkit.Unverifiable("cannot read PR body for trailer check", berr)
 	}
-	// update ignores the trailer's issue number: the gate below is asked about the
-	// PR being updated (pr.Number), which is the reactions surface for an update.
+	// update ignores the trailer's issue number: the public-repo gate below is
+	// repository-scoped and takes no number.
 	if _, terr := requireTrailer([]byte(full.Body), *root, dir); terr != nil {
 		return terr
+	}
+
+	// Named-PR push destination (#2085). When the PR was named (--pr / --branch), the branch
+	// pushed to is the PR's OWN head branch as the forge reports it — never the worktree's
+	// local branch name, which may differ because git lets only one worktree hold a branch.
+	// The checkout is admitted by LINEAGE, not by name: HEAD must descend from the PR's
+	// current head commit, so the push is a fast-forward of that PR and nothing else (git
+	// would refuse a non-fast-forward anyway; this names the reason). Fail closed on a head
+	// the forge did not report or this checkout has not fetched.
+	pushDest := facts.branch
+	if override {
+		if full.HeadRef == "" {
+			return deskkit.Unverifiable("the forge did not report PR #"+strconv.Itoa(pr.Number)+"'s head branch — cannot choose a push destination", nil)
+		}
+		pushDest = full.HeadRef
+		if isDefaultName(pushDest) {
+			return deskkit.Refused("refused: PR #" + strconv.Itoa(pr.Number) + "'s head branch is the default branch (" + pushDest + ") — deskpr only pushes feature branches")
+		}
+		if *remoteBranch != "" && pushDest != *remoteBranch {
+			return deskkit.Refused(fmt.Sprintf("refused: the open PR #%d's head branch is %q, not %q", pr.Number, pushDest, *remoteBranch))
+		}
+		// The head ref is a bare branch NAME and origin is the BASE repository, so the push
+		// lands on the PR only when the PR's head lives in the base repository. A fork PR's
+		// head ref names a branch in the fork: pushing that name to origin would create a stray
+		// base-repo branch, or fast-forward a same-named branch backing a DIFFERENT PR.
+		if cerr := requireSameRepoHead(full.CrossRepo, pr.Number); cerr != nil {
+			return cerr
+		}
+		if serr := scanWrite(&gitFacts{dir: facts.dir, branch: pushDest, defaultRef: facts.defaultRef, repo: facts.repo}, "", "update", *scanOverride); serr != nil {
+			return serr
+		}
+		if lerr := requireDescendsFromPRHead(facts.dir, full.HeadSHA, pr.Number, pushDest, facts.defaultRef); lerr != nil {
+			return lerr
+		}
+		// Second, independent layer: the push destination itself must hold the head ref at
+		// the head commit the forge reported. This catches a forge read that is wrong or stale
+		// (a head ref the base repository does not hold) on a signal git reads, not the forge.
+		if rerr := requireRemoteHoldsHead(facts.dir, pushDest, full.HeadSHA, pr.Number); rerr != nil {
+			return rerr
+		}
+	}
+
+	// PUBLISH-identity gate, LIVE stage (#1967). The offline stage above anchored the range on
+	// this checkout's remote-tracking ref, which can be stale; the forge's own PR head is the
+	// authority on what the remote branch holds. Re-judge against it before anything is
+	// pushed. A head the forge did not report, one not fetched here, or one this branch does
+	// not descend from (a force-moved PR head) falls back to the whole range — fail closed.
+	if ierr := publishIdentityGate(facts.dir, facts.defaultBranch, full.HeadSHA, facts.head); ierr != nil {
+		return ierr
 	}
 
 	// idempotency: this exact head already pushed to this PR → noop.
@@ -588,8 +766,20 @@ func cmdUpdate(args []string) (err error) {
 		return gerr
 	}
 
-	if _, pushErr := git(facts.dir, "push", "-u", "origin", facts.branch); pushErr != nil {
-		return deskkit.Unverifiable("git push failed", pushErr)
+	spec := pushSpec{
+		dir: facts.dir, repo: facts.repo, originURL: facts.originURL,
+		srcRef: "refs/heads/" + facts.branch, dstBranch: facts.branch,
+		checkedSource: facts.head,
+	}
+	if override {
+		// Explicit refspec: HEAD onto the PR's head branch. The worktree's own branch has a
+		// different name, so its upstream config is left alone (git push <src>:<dst> never set
+		// one); the tracking ref for the PR head branch is still recorded (push.go recordPushed).
+		spec.srcRef, spec.dstBranch = "HEAD", pushDest
+	}
+	ac.writeAttempted = true
+	if pushErr := pushFn(spec); pushErr != nil {
+		return pushErr
 	}
 	// Post-update mergeable check (#1264): the push moved the head, so GitHub recomputes
 	// mergeability. A push that lands the PR in CONFLICTING gets zero pull_request runs at
@@ -602,11 +792,142 @@ func cmdUpdate(args []string) (err error) {
 	return nil
 }
 
+// requireDescendsFromPRHead is `deskpr update --pr/--branch`'s lineage rule (#2085): the
+// checkout's HEAD must be the PR's current head commit or a descendant of it, so the push is a
+// pure fast-forward of that PR's head branch. An unreported head, a head this checkout has not
+// fetched, and a HEAD that does not descend from it all refuse — never a guess.
+//
+// It also refuses a PR head that is already contained in the default branch (defaultRef): such
+// a PR carries nothing of its own, so a HEAD descending from it says nothing about whether this
+// is the PR the caller meant — a mistyped --pr naming a stale PR would otherwise pass.
+func requireDescendsFromPRHead(dir, headSHA string, prNum int, headRef, defaultRef string) error {
+	if strings.TrimSpace(headSHA) == "" {
+		return deskkit.Refused(fmt.Sprintf("refused: the forge reported no head commit for PR #%d — cannot prove HEAD descends from it", prNum))
+	}
+	r, oerr := gitcore.Open(dir)
+	if oerr != nil {
+		return deskkit.Unverifiable("cannot open the repository to check PR head lineage", oerr)
+	}
+	ok, aerr := r.IsAncestor(headSHA, "HEAD")
+	if aerr != nil {
+		return deskkit.Refused(fmt.Sprintf("refused: cannot prove HEAD descends from PR #%d's head commit %s (%v) — "+
+			"`git fetch origin %s` and merge it into this branch, then re-run", prNum, shortSHA(headSHA), aerr, headRef))
+	}
+	if !ok {
+		return deskkit.Refused(fmt.Sprintf("refused: HEAD does not descend from PR #%d's head commit %s on %q — "+
+			"merge origin/%s into this branch (never rebase), then re-run", prNum, shortSHA(headSHA), headRef, headRef))
+	}
+	inDefault, derr := r.IsAncestor(headSHA, defaultRef)
+	if derr != nil {
+		return deskkit.Unverifiable(fmt.Sprintf("cannot check whether PR #%d's head commit is already in %s", prNum, defaultRef), derr)
+	}
+	if inDefault {
+		return deskkit.Refused(fmt.Sprintf("refused: PR #%d's head commit %s is already contained in %s — the PR carries "+
+			"nothing of its own, so descending from it does not show this is the PR you meant; check the PR number",
+			prNum, shortSHA(headSHA), defaultRef))
+	}
+	return nil
+}
+
+// prCheckWideNote adds, to a publish-identity refusal from `update --pr N --check`, why the
+// whole range was judged and how to get the narrow judgement offline. The exit code and the
+// gate's own message are kept; only a refusal gains the note.
+func prCheckWideNote(err error) error {
+	var de *deskkit.DeskError
+	if !errors.As(err, &de) || de.Code != deskkit.ExitRefused {
+		return err
+	}
+	out := *de
+	out.Msg += " With --pr N the PR's head branch is unknown offline, so --check judged " +
+		"the whole range; a real `update --pr N` judges only the commits the push adds beyond the PR's head. " +
+		"To check that offline, name the head branch: `deskpr update --branch <head-branch> --check`."
+	return &out
+}
+
+// requireSameRepoHead refuses a named-PR push unless the forge established that the PR's head
+// branch lives in the BASE repository (#2085). A fork head is refused; an EMPTY answer (the
+// forge did not say — e.g. a deleted fork) is could-not-check and refuses too, never read as
+// "same". Same rule, same reading of the empty value, as deskmerge's eligibility gate.
+func requireSameRepoHead(crossRepo string, prNum int) error {
+	switch crossRepo {
+	case deskkit.CrossRepoSame:
+		return nil
+	case deskkit.CrossRepoFork:
+		return deskkit.Refused(fmt.Sprintf("refused: PR #%d's head branch lives in a fork — deskpr update pushes only "+
+			"to a PR whose head branch is in the base repository", prNum))
+	default:
+		return deskkit.Unverifiable(fmt.Sprintf("could-not-check: PR #%d did not report which repository its head "+
+			"branch lives in — deskpr update pushes only to a branch it has established is in the base repository", prNum), nil)
+	}
+}
+
+// requireRemoteHoldsHead reads the push destination's own copy of refs/heads/<headRef> and
+// requires it to be EXACTLY the head commit the forge reported (#2085). Absent → the push
+// would CREATE a branch rather than update the PR; a different commit → the forge read is
+// stale or names a different branch. Both refuse. The destination is read from the same push
+// URL the push uses (already pinned to one URL by the push-destination gate).
+func requireRemoteHoldsHead(dir, headRef, headSHA string, prNum int) error {
+	dest, uerr := git(dir, "remote", "get-url", "--push", "origin")
+	if uerr != nil || strings.TrimSpace(dest) == "" {
+		return deskkit.Unverifiable("cannot resolve origin's push URL to read the PR head branch", uerr)
+	}
+	ref := "refs/heads/" + headRef
+	out, lerr := git(dir, "ls-remote", "--refs", strings.TrimSpace(dest), ref)
+	if lerr != nil {
+		return deskkit.Unverifiable(fmt.Sprintf("cannot read %s from the push destination", ref), lerr)
+	}
+	got := ""
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && f[1] == ref {
+			got = f[0]
+		}
+	}
+	if got == "" {
+		return deskkit.Refused(fmt.Sprintf("refused: the push destination holds no %s, the head branch the forge reports "+
+			"for PR #%d — pushing would create a new branch rather than update the PR", ref, prNum))
+	}
+	if !strings.EqualFold(got, strings.TrimSpace(headSHA)) {
+		return deskkit.Refused(fmt.Sprintf("refused: the push destination's %s is at %s but the forge reports PR #%d's "+
+			"head as %s — re-run once they agree (fetch, merge, never rebase)", ref, shortSHA(got), prNum, shortSHA(headSHA)))
+	}
+	return nil
+}
+
 // preflight verifies the preconditions IN-TOOL and returns the positively-verified
 // facts. Ordering matters: the default-branch refusal fires on branch name alone
 // (exit 5) BEFORE origin/HEAD is consulted, so a missing origin/HEAD can never mask a
 // push to main; a detached HEAD or unreadable origin/HEAD is unverifiable (exit 6).
 func preflight(dir, base string) (*gitFacts, error) {
+	return preflightMode(dir, base, false, detachedRefusal)
+}
+
+// detachedRefusal is preflight's exit-6 message for a detached HEAD on create and update,
+// which push the branch and so need one.
+const detachedRefusal = "detached HEAD — check out a feature branch first"
+
+// editDetachedRefusal is the same exit-6 refusal for `deskpr edit` WITHOUT --pr (#1901). A
+// detached rework worker hits exactly this refusal, and for edit the remedy is not a branch:
+// it is naming the PR, so the message points at --pr N.
+const editDetachedRefusal = "detached HEAD — deskpr edit finds its PR by branch; name the PR with --pr N " +
+	"(admitted when HEAD is exactly that PR's head commit, or when that PR is in this repository and " +
+	"already carries a link trailer), or check out the PR's head branch"
+
+// preflightMode is preflight with one switch: allowDetached admits a detached HEAD, recorded
+// as branch "". Only `deskpr edit --pr N` passes true (#1901) — it pushes nothing and names
+// its PR explicitly, and findEditTarget then decides whether this checkout may edit that PR
+// (deskkit.CheckOwnPR, or a same-repo PR already carrying a link trailer — #2085). create and
+// update push the branch and keep refusing.
+// detachedMsg is the exit-6 message used when a detached HEAD is refused.
+func preflightMode(dir, base string, allowDetached bool, detachedMsg string) (*gitFacts, error) {
+	return preflightOpts(dir, base, allowDetached, detachedMsg, true)
+}
+
+// preflightOpts is preflightMode with the commits-ahead precondition switchable. requireAhead
+// false is only for `deskpr edit --pr N` (#2085): edit pushes nothing, so the checkout it runs
+// from needs no work of its own — a desk worktree with no commits ahead of the default branch
+// may correct a body — and the ahead-count measures a branch the verb never publishes.
+func preflightOpts(dir, base string, allowDetached bool, detachedMsg string, requireAhead bool) (*gitFacts, error) {
 	gitRepo, gerr := gitcore.Open(dir)
 	if gerr != nil || !gitRepo.InsideWorkTree() {
 		return nil, deskkit.Unverifiable("not inside a git worktree", gerr)
@@ -616,7 +937,10 @@ func preflight(dir, base string) (*gitFacts, error) {
 		return nil, deskkit.Unverifiable("cannot resolve current branch", err)
 	}
 	if branch == "HEAD" || branch == "" {
-		return nil, deskkit.Unverifiable("detached HEAD — check out a feature branch first", nil)
+		if !allowDetached {
+			return nil, deskkit.Unverifiable(detachedMsg, nil)
+		}
+		branch = ""
 	}
 	// Refuse the default branch names outright, even if origin/HEAD is unreadable.
 	if isDefaultName(branch) {
@@ -644,9 +968,12 @@ func preflight(dir, base string) (*gitFacts, error) {
 		return nil, deskkit.Refused("refused: on the default branch (" + branch + ")")
 	}
 
-	originURL, oerr := gitRepo.RemoteURL("origin")
+	// Decide the repo on origin's URL AS GIT RESOLVES IT (#1623), never on go-git's read of the
+	// repository config file alone: the push below resolves origin itself (worktree and global
+	// scope, insteadOf), and a gate that reads something else can pass a repo git never uses.
+	originURL, oerr := effectiveOriginURL(dir)
 	if oerr != nil {
-		return nil, deskkit.Unverifiable("cannot read remote.origin.url", oerr)
+		return nil, oerr
 	}
 	repo, rerr := parseRepo(originURL)
 	if rerr != nil {
@@ -695,12 +1022,14 @@ func preflight(dir, base string) (*gitFacts, error) {
 		return nil, deskkit.Unverifiable(
 			"base ref "+baseRef+" does not resolve — fetch the base branch (`git fetch origin`) first", verr)
 	}
-	cnt, cerr := gitRepo.AheadCount(baseRef, "HEAD")
-	if cerr != nil {
-		return nil, deskkit.Unverifiable("cannot count commits ahead of "+baseRef, cerr)
-	}
-	if cnt == 0 {
-		return nil, deskkit.Refused("refused: branch has no commits ahead of " + baseRef)
+	if requireAhead {
+		cnt, cerr := gitRepo.AheadCount(baseRef, "HEAD")
+		if cerr != nil {
+			return nil, deskkit.Unverifiable("cannot count commits ahead of "+baseRef, cerr)
+		}
+		if cnt == 0 {
+			return nil, deskkit.Refused("refused: branch has no commits ahead of " + baseRef)
+		}
 	}
 
 	headHash, herr := gitRepo.Resolve("HEAD")
@@ -710,7 +1039,7 @@ func preflight(dir, base string) (*gitFacts, error) {
 	head := headHash.String()
 	return &gitFacts{
 		dir: dir, branch: branch, defaultBranch: defaultBranch,
-		defaultRef: defaultRef, repo: repo, head: head,
+		defaultRef: defaultRef, repo: repo, head: head, originURL: originURL,
 	}, nil
 }
 
@@ -786,7 +1115,42 @@ func scanWrite(f *gitFacts, title, verb, override string) error {
 		[]byte(addedDiffLines(diff))); err != nil {
 		return err
 	}
-	return nil
+	// desktools-v2/10: the outbound-write check over what the push publishes — the branch
+	// name (kind ref), every commit message in the range (kind commit) and the range's ADDED
+	// lines per file (kind file). It is the SAME function the deskpushguard pre-push hook
+	// calls, so a push by any route meets one check. The credential arms above keep their
+	// whole-diff breadth; this pass adds the personal-data and, on a target that is not
+	// stated private, the self-containment and withheld-identifier layers. The audited
+	// override is deskpr's existing flag; a withheld identifier and a ruling claim stay
+	// non-overridable.
+	deskkit.SetOutboundContext(deskkit.OutboundContext{Tool: "deskpr", Verb: verb, OverrideReason: override})
+	// The pre-push hook re-runs this check on the push below: hand it exactly this verdict's
+	// override reason, and none when there is none (an ambient value never overrides).
+	var envErr error
+	if strings.TrimSpace(override) != "" {
+		envErr = os.Setenv(deskkit.EnvPushGuardScanOverride, override)
+	} else {
+		envErr = os.Unsetenv(deskkit.EnvPushGuardScanOverride)
+	}
+	if envErr != nil {
+		return deskkit.Unverifiable("cannot hand the override reason to the pre-push hook", envErr)
+	}
+	return deskkit.OutboundCheckPush(deskkit.OutboundPush{
+		Dir: f.dir, Repo: f.repo, Base: f.defaultRef, Head: "HEAD", Branch: f.branch, Role: pushRole(),
+	})
+}
+
+// pushRole is the App role the push goes out under, resolved the way mintWorkerToken
+// resolves it (the worker App when the session names none). It is recorded on an override
+// row; it never widens or narrows what the check refuses.
+func pushRole() string {
+	if mintedRole != "" {
+		return mintedRole
+	}
+	if r, _, err := deskkit.SessionTokenRole("deskpr"); err == nil {
+		return r
+	}
+	return "worker"
 }
 
 // reHunkHeader matches the deterministic RANGE part of a unified-diff hunk header —
@@ -931,9 +1295,12 @@ func parseRepo(raw string) (string, error) {
 }
 
 // requireTrailer enforces the example-stream/02 link grammar on a PR body: exactly one
-// `Brief: <stream>/<NN>` that resolves to a brief file under --root, or `Issue: #<N>` for
-// issue-only work. Absence, duplicates, both-kinds and non-resolving briefs are all
-// constraint refusals (exit 5). There is deliberately no bypass flag — a worker-typeable
+// `Brief: <stream>/<NN>` that resolves to a brief file under --root (the PR DELIVERS that
+// brief), `Authors: <stream>/<NN>[, …]` whose every entry resolves the same way (the PR only
+// AUTHORS those briefs — #1339), `Cross-repo-brief: <alias>:<stream>/<NN>` for a brief homed in
+// another repo (checked against --root's alias registry, never resolved to a file here —
+// medici-finance/assay#2748), or `Issue: #<N>` for issue-only work. Absence, duplicates,
+// mixed kinds and non-resolving briefs are all constraint refusals (exit 5). There is deliberately no bypass flag — a worker-typeable
 // bypass makes the edge asserted again.
 //
 // The one exempt body is the machine-derived issue-loop scan carrier, recognised by the
@@ -947,10 +1314,10 @@ func parseRepo(raw string) (string, error) {
 //
 // On success it also returns the trailer's issue number: the parsed `#<N>` for an
 // `Issue:` trailer, or 0 for a `Brief:` trailer (a brief resolves to a file, not an
-// issue, so it has no reactions surface) — and 0 for the exempt scan carrier likewise.
-// The create path feeds this to the public-repo gate so a non-blessed public repo gains
-// the per-issue-+1 path (a +1 on the named tracking issue admits the create) instead of
-// the structural no-number hard-fail (#1707).
+// issue) — and 0 for the exempt scan carrier likewise. The create path uses it only as the
+// self-containment scan's number hint (SelfContainOpts.NumberHint). It is NOT an input to
+// the public-repo write gate: deskkit.PublicRepoGate is repository-scoped (an explicit
+// `:public` allowed-repos entry agreeing with the live visibility) and takes no number.
 func requireTrailer(body []byte, root, dir string) (int, error) {
 	// Head-anchored, not a whole-body substring: the emitter writes ScanBodyMarker as
 	// the FIRST line (deskkit.ScanPRBody), so the exemption matches it only at the body
@@ -966,6 +1333,8 @@ func requireTrailer(body []byte, root, dir string) (int, error) {
 	if len(trs) == 0 {
 		return 0, deskkit.SchemaRefusal("deskpr", "--check", "refused: PR body carries no trailer — add exactly one line "+
 			"`Brief: <stream>/<NN>` naming the brief this PR delivers (e.g. `Brief: example-stream/02`), "+
+			"`Authors: <stream>/<NN>[, …]` naming the brief(s) a briefs-authoring PR writes, "+
+			"`Cross-repo-brief: <alias>:<stream>/<NN>` naming a brief homed in another repo, "+
 			"or `Issue: #<N>` for issue-only work")
 	}
 	if trs[0].Kind == deskkit.TrailerIssue {
@@ -978,22 +1347,192 @@ func requireTrailer(body []byte, root, dir string) (int, error) {
 		}
 		return n, nil
 	}
-	stream, nn, ok := splitBriefTrailer(trs[0].Value)
-	if !ok {
-		return 0, deskkit.Refused(fmt.Sprintf("refused: trailer %q does not name a brief as <stream>/<NN> or <stream>:<NN>", trs[0].Value))
-	}
 	// A relative --root resolves against the WORK DIR (the getwd seam), never the
 	// process cwd — tests call cmdCreate directly with a bound getwd, and a glob
 	// against the real process cwd would silently miss the fixture.
 	if !filepath.IsAbs(root) {
 		root = filepath.Join(dir, root)
 	}
-	matches, _ := filepath.Glob(filepath.Join(root, "docs", "streams", stream, "brief-"+nn+"-*.md"))
-	if len(matches) == 0 {
-		return 0, deskkit.Refused(fmt.Sprintf("refused: `Brief: %s` does not resolve to a brief under --root: no %s found",
-			trs[0].Value, filepath.Join(root, "docs", "streams", stream, "brief-"+nn+"-*.md")))
+	if trs[0].Kind == deskkit.TrailerAuthors {
+		ids, aerr := deskkit.SplitAuthorsTrailer(trs[0].Value)
+		if aerr != nil {
+			return 0, deskkit.Refused("refused: " + aerr.Error())
+		}
+		for _, id := range ids {
+			stream, nn, _ := splitBriefTrailer(id)
+			if rerr := resolveBriefFile(root, "Authors", id, stream, nn); rerr != nil {
+				return 0, rerr
+			}
+		}
+		return 0, nil
+	}
+	if trs[0].Kind == deskkit.TrailerCrossRepoBrief {
+		return 0, requireCrossRepoBrief(trs[0].Value, root)
+	}
+	stream, nn, ok := splitBriefTrailer(trs[0].Value)
+	if !ok {
+		return 0, deskkit.Refused(fmt.Sprintf("refused: trailer %q does not name a brief as <stream>/<NN> or <stream>:<NN>", trs[0].Value))
+	}
+	if rerr := resolveBriefFile(root, "Brief", trs[0].Value, stream, nn); rerr != nil {
+		return 0, rerr
 	}
 	return 0, nil
+}
+
+// resolveBriefFile refuses unless docs/streams/<stream>/brief-<NN>-*.md exists under root.
+// keyword and value name the trailer entry in the refusal, exactly as written.
+func resolveBriefFile(root, keyword, value, stream, nn string) error {
+	pattern := filepath.Join(root, "docs", "streams", stream, "brief-"+nn+"-*.md")
+	matches, _ := filepath.Glob(pattern)
+	if len(matches) == 0 {
+		return deskkit.Refused(fmt.Sprintf("refused: `%s: %s` does not resolve to a brief under --root: no %s found",
+			keyword, value, pattern))
+	}
+	return nil
+}
+
+// authoringTrailerGate refuses two mirror-image mismatches between a `Brief:`/`Authors:`
+// trailer and what the branch's diff actually is (#1339, hardened for review F1 on
+// medici-finance/assay#1641):
+//
+//   - `Brief:` on a branch whose diff only AUTHORS that brief. `Brief:` asserts delivery: the
+//     dispatcher's phantom check, the planner's reconciliation and the derived board all read
+//     it as "this PR delivers the brief", so a docs-only PR that merely wrote the brief file
+//     and carried `Brief:` made the brief read as delivered the moment it merged.
+//   - `Authors:` on a branch whose diff is NOT provably authoring-only for every listed id.
+//     `Authors:` asserts the opposite — "no delivery" — and nothing that reads `Brief:` as
+//     delivery matches it, INCLUDING the security lane's brief-declared risk term
+//     (deskkit.BriefRiskFromBody keys on Brief: only). A PR that actually delivers code or a
+//     document for a `gate: human` / `risk: yes` brief could therefore carry `Authors:` and
+//     switch that term off. deskflip's checkSecurityVerdict carries the binding half of this
+//     fix (deskkit.AuthorsRiskFromBody, read again at flip time so this client-side gate is
+//     not the only thing standing between the diff and the claim); this is the writer half,
+//     refusing before the mismatch ever leaves the machine.
+//
+// Both directions are judged by the SAME classification, deskkit.BriefAuthoringOnly — the
+// dispatcher applies it to already-merged PRs, so the writer and every reader agree on what
+// an authoring PR is. The branch's changed files come from the merge-base (baseRef to HEAD).
+// A rename's old path is not visible to this local diff read, so BriefAuthoringOnly cannot
+// prove authoring-only across one; the two directions treat that ONLY-WIDENING failure
+// oppositely, on purpose — `Brief:` is left alone (not provably authoring-only leaves the
+// existing "this is a delivery" answer standing), while `Authors:` is refused (not provably
+// authoring-only means the claim is not backed, so it is refused rather than trusted; #1339
+// review F1's "self-verifying" ask). `Issue:` bodies are never inspected by either direction.
+// There is no bypass flag: the remedy is to write the right trailer, which costs nothing.
+func authoringTrailerGate(body []byte, dir, baseRef string) error {
+	trs, err := deskkit.ParseTrailers(body)
+	if err != nil || len(trs) == 0 {
+		return nil
+	}
+	switch trs[0].Kind {
+	case deskkit.TrailerBrief:
+		return authoringTrailerGateBrief(trs[0].Value, dir, baseRef)
+	case deskkit.TrailerAuthors:
+		return authoringTrailerGateAuthors(trs[0].Value, dir, baseRef)
+	default:
+		return nil
+	}
+}
+
+// branchAuthoringFiles reads the branch's changed files (merge-base with baseRef to HEAD) in
+// the deskkit.ChangedFile shape deskkit.BriefAuthoringOnly takes. hadRename reports whether
+// the diff included a rename/copy, whose pre-image path this local git read does not surface
+// (git diff --name-status reports only the destination for an R/C entry without `-M`/`-C`
+// detection turned on here) — neither authoringTrailerGate direction can PROVE the authoring
+// shape across one, so the caller decides what "not provably authoring-only" means for its
+// trailer kind (see authoringTrailerGate's doc).
+func branchAuthoringFiles(dir, baseRef string) (files []deskkit.ChangedFile, hadRename bool, err error) {
+	repo, oerr := gitcore.Open(dir)
+	if oerr != nil {
+		return nil, false, oerr
+	}
+	mb, merr := repo.MergeBase(baseRef, "HEAD")
+	if merr != nil {
+		return nil, false, merr
+	}
+	changes, derr := repo.DiffNameStatus(strings.TrimSpace(mb), "HEAD")
+	if derr != nil {
+		return nil, false, derr
+	}
+	files = make([]deskkit.ChangedFile, 0, len(changes))
+	for _, c := range changes {
+		switch c.Status {
+		case "A":
+			files = append(files, deskkit.ChangedFile{Filename: c.Path, Status: "added"})
+		case "M":
+			files = append(files, deskkit.ChangedFile{Filename: c.Path, Status: "modified"})
+		case "D":
+			files = append(files, deskkit.ChangedFile{Filename: c.Path, Status: "removed"})
+		default:
+			hadRename = true
+		}
+	}
+	return files, hadRename, nil
+}
+
+// authoringTrailerGateBrief is the `Brief:` direction of authoringTrailerGate.
+func authoringTrailerGateBrief(value, dir, baseRef string) error {
+	id := deskkit.CanonicalBriefID(value)
+	if id == "" {
+		return nil
+	}
+	files, hadRename, rerr := branchAuthoringFiles(dir, baseRef)
+	if rerr != nil {
+		return deskkit.Unverifiable("cannot read the branch diff to check the Brief: trailer against it", rerr)
+	}
+	if hadRename {
+		return nil // not provably authoring-only: a rename's old path is not visible here
+	}
+	if !deskkit.BriefAuthoringOnly(id, files) {
+		return nil
+	}
+	return deskkit.Refused(fmt.Sprintf(
+		"refused: the body carries `Brief: %s`, but this branch only AUTHORS that brief — it adds the brief's "+
+			"file and touches nothing but stream board READMEs, brief files and changelog fragments. `Brief:` "+
+			"means the PR DELIVERS the brief, and every reader (the dispatcher's phantom check, the planner, the "+
+			"derived board) would then treat %s as delivered the moment this merges, so it could never be "+
+			"dispatched. Replace the line with `Authors: %s` (list every brief the PR writes, comma-separated), "+
+			"or `Issue: #<N>` if the authoring answers an issue.", value, id, id))
+}
+
+// authoringTrailerGateAuthors is the `Authors:` direction of authoringTrailerGate (#1339
+// review F1). It refuses unless the branch diff satisfies deskkit.BriefAuthoringOnly for
+// EVERY id the trailer lists — including refusing (not silently leaving alone) when the diff
+// carries a rename this local read cannot classify, since `Authors:` is refused whenever the
+// authoring shape is not PROVEN, not merely when it is disproven. A malformed/empty value is
+// left to the separate resolveBriefFile trailer-shape gate, which already refuses it.
+func authoringTrailerGateAuthors(value, dir, baseRef string) error {
+	ids, aerr := deskkit.SplitAuthorsTrailer(value)
+	if aerr != nil || len(ids) == 0 {
+		return nil
+	}
+	files, hadRename, rerr := branchAuthoringFiles(dir, baseRef)
+	if rerr != nil {
+		return deskkit.Unverifiable("cannot read the branch diff to check the Authors: trailer against it", rerr)
+	}
+	if hadRename {
+		return deskkit.Refused(fmt.Sprintf(
+			"refused: the body carries `Authors: %s`, but this branch's diff includes a rename whose old path "+
+				"this local read cannot see, so the authoring shape cannot be proven. `Authors:` asserts the "+
+				"branch ONLY authors the named brief(s) — including the security lane's brief-declared risk term, "+
+				"which does not consult a Brief: this trailer replaces — so an unprovable diff is refused rather "+
+				"than trusted. Split the rename out of this branch, or use `Brief:`/`Issue:` if the branch "+
+				"delivers code or a document.", value))
+	}
+	for _, id := range ids {
+		if deskkit.BriefAuthoringOnly(id, files) {
+			continue
+		}
+		return deskkit.Refused(fmt.Sprintf(
+			"refused: the body carries `Authors: %s`, but this branch's diff is not authoring-only for %s — it "+
+				"touches a path other than a stream board README, a brief file or a changelog fragment, or it "+
+				"does not ADD %s's own brief file. `Authors:` switches off the security lane's brief-declared "+
+				"risk term for %s (deskkit.BriefRiskFromBody reads `Brief:` only), so it is refused unless the "+
+				"diff provably authors only the listed brief(s). Use `Brief:` (singular) if this branch delivers "+
+				"%s's own content, drop %s from the list if this branch only modifies its brief file, or split the "+
+				"non-authoring change into its own PR.", value, id, id, id, id, id))
+	}
+	return nil
 }
 
 // splitBriefTrailer reduces the accepted trailer value forms to (stream, NN):

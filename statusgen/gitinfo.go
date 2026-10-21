@@ -98,6 +98,9 @@ func remoteBranchTimeout() time.Duration {
 // claimed" and never as "everything is claimed."
 // A package-level var so tests can substitute a fake lister without a network call.
 var listRemoteBranches = func(root string) (branches []string, err error) {
+	if roleClaimReads || os.Getenv("DESK_LOOP") != "" {
+		return roleRemoteBranches(root)
+	}
 	timeout := remoteBranchTimeout()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -324,7 +327,7 @@ func lookupPathAuthors(idx map[string]pathAuthors, root, relPath string) (first,
 // determine, degrade rather than guess" — NEVER as a pass or as confirmation of either outcome.
 func evidenceSectionTouchedByOtherIdentity(root, relPath, authoringID string) (touched, ok bool) {
 	slashPath := filepath.ToSlash(relPath)
-	content, err := exec.Command("git", "-C", root, "show", "HEAD:"+slashPath).Output()
+	content, err := gitShowObject(root, "HEAD", slashPath)
 	if err != nil {
 		return false, false
 	}

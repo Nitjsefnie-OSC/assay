@@ -30,7 +30,7 @@ USAGE:
   deskroster list
   deskroster mine  [--session NAME]
   deskroster width --role LOOP [--verbose]
-  deskroster repos [--scope write|scan|topology|all]
+  deskroster repos [--scope write|scan|topology|roots|all]
   deskroster apps
   deskroster preflight --role R [--root DIR] [--repo OWNER/NAME] [--remote NAME] [--branch NAME]
   deskroster liveness --repo OWNER/NAME
@@ -48,6 +48,10 @@ A set width DECAYS: it is honoured for one hour and then the loop reads its ship
 default again, so a coordinator that died cannot leave a pool permanently wide.
 Defaults live in ONE place (internal/deskkit/width.go) — the skill bodies point at
 that table rather than stating a number that could drift from it.
+
+"repos --scope roots" prints the configured board-root map: DESK_ROOTS replaces
+the compiled defaults, with malformed or disallowed entries refused before output.
+"topology" stays the compiled inventory; "all" retains write, scan and topology.
 
 "repos" and "apps" PRINT THE LIVE SETS the tools actually use, so a skill, a
 runbook or a session can READ them instead of carrying its own list. Carrying a
@@ -77,20 +81,22 @@ Storage (out-of-git, machine-local): ~/.config/assay/roster/<session>.json
 Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
 
 func main() {
-	// The roster class is an EXPLICIT declaration, never the zero value by accident
-	// (a correctness review found: SetToolClass had no caller anywhere,
-	// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
-	// the roster, so it is ciEligible=false: it reads the config-home file and never
-	// the environment, in CI as well as locally.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	// P3: echo the effective roster once per run. Every tool that reads a configured
-	// control surface echoes it — a value that lives in settings rather than in a diff
-	// is only visible at RUN time, and a NARROWING must be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("deskroster", nil, os.Args[1:], func([]string) int {
+		// The roster class is an EXPLICIT declaration, never the zero value by accident
+		// (a correctness review found: SetToolClass had no caller anywhere,
+		// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
+		// the roster, so it is ciEligible=false: it reads the config-home file and never
+		// the environment, in CI as well as locally.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		// P3: echo the effective roster once per run. Every tool that reads a configured
+		// control surface echoes it — a value that lives in settings rather than in a diff
+		// is only visible at RUN time, and a NARROWING must be as visible as a widening.
+		deskkit.EchoEffectiveConfig(os.Stderr)
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:])
+	}))
 }
 
 func run(args []string) int {

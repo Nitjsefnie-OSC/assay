@@ -584,6 +584,7 @@ func collect(t *testing.T, section string) []string {
 // TestUnfailableRowRules is the end-to-end table over whole Verify rows: each
 // case is a realistic row, and the false-positive half is the point — a rule that
 // fires on a sound row is as corrosive as the defect it hunts.
+// regression: #1915
 func TestUnfailableRowRules(t *testing.T) {
 	tests := []struct {
 		name string
@@ -622,14 +623,17 @@ func TestUnfailableRowRules(t *testing.T) {
 			want: []string{"pipeline-exit-sunk row 1"},
 		},
 		{
+			// Also fires gotest-run-vacuous (statusgen/14): the row asserts no
+			// `--- PASS` line either, and the two rules are independent — a `\|`
+			// selector is expected to get both findings.
 			name: "rE2-literal-pipe: mis-escaped alternation in go test -run (row 5 shape)",
 			row:  "| 5 | `go test ./tools/statusgen/ -run 'Dora\\|Weekly\\|Artifact'` | PASS |",
-			want: []string{"rE2-literal-pipe row 5"},
+			want: []string{"rE2-literal-pipe row 5", "gotest-run-vacuous row 5"},
 		},
 		{
 			name: "rE2-literal-pipe: fires on the `-run=` form too",
 			row:  "| 6 | `go test ./tools/statusgen/ -run='A\\|B'` | PASS |",
-			want: []string{"rE2-literal-pipe row 6"},
+			want: []string{"rE2-literal-pipe row 6", "gotest-run-vacuous row 6"},
 		},
 		{
 			// #374's other half: `-bench` compiles the same RE2 surface, and a
@@ -699,16 +703,20 @@ func TestUnfailableRowRules(t *testing.T) {
 		{
 			// #374's cell-splitter hazard: the raw pipe ends the cell, so the
 			// command is cut and the "Expect" column is another fragment of it.
+			// The surviving fragment (`-run 'Dora`, quote left open) tokenizes to
+			// a bare `-run Dora` with no assertion, so gotest-run-vacuous fires
+			// on the truncated text too — an accurate read of what the shredded
+			// row actually contains, not a false positive.
 			name: "shredded-cell: a RAW pipe cut the Command cell (#374)",
 			row:  "| 5 | `go test ./statusgen/ -run 'Dora|Weekly|Artifact'` | PASS |",
-			want: []string{"shredded-cell row 5"},
+			want: []string{"shredded-cell row 5", "gotest-run-vacuous row 5"},
 		},
 		{
 			// #639: the identical command returned exit 1 and exit 2 on
 			// consecutive runs because main advanced underneath it.
 			name: "moving-ref: --base on a moving ref (#639)",
 			row:  "| 4 | `statusgen --root . --consumers --base origin/main` | exit 0 |",
-			want: []string{"moving-ref row 4"},
+			want: []string{"consumer-delivery-range row 4", "moving-ref row 4"},
 		},
 		{
 			name: "moving-ref: a git range endpoint moves too",
@@ -775,13 +783,18 @@ func TestUnfailableRowRules(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "go test -run with a single unambiguous token — the recommended fix",
-			row:  "| 5 | `go test ./tools/statusgen/ -run Dora` | PASS |",
+			// A single unambiguous token is rule 4's recommended fix, but on its
+			// own it still trips gotest-run-vacuous (statusgen/14) — no `-run`
+			// selector is exempt just for being unambiguous, it still needs a
+			// `--- PASS` assertion. With the assertion added, the row is sound
+			// under BOTH rules.
+			name: "go test -run with a single unambiguous token, asserted — the recommended fix",
+			row:  "| 5 | `go test ./tools/statusgen/ -run Dora -v > \"${TMPDIR:-/tmp}/x.out\" 2>&1 && grep -F -e '--- PASS' \"${TMPDIR:-/tmp}/x.out\"` | exit 0 |",
 			want: nil,
 		},
 		{
-			name: "go test with &&-chained single-pattern runs — the other recommended fix",
-			row:  "| 5 | `go test ./statusgen/ -run Dora && go test ./statusgen/ -run Weekly` | PASS |",
+			name: "go test with &&-chained single-pattern runs, each asserted — the other recommended fix",
+			row:  "| 5 | `go test ./statusgen/ -run Dora -v > \"${TMPDIR:-/tmp}/a.out\" 2>&1 && grep -F -e '--- PASS' \"${TMPDIR:-/tmp}/a.out\" && go test ./statusgen/ -run Weekly -v > \"${TMPDIR:-/tmp}/b.out\" 2>&1 && grep -F -e '--- PASS' \"${TMPDIR:-/tmp}/b.out\"` | exit 0 |",
 			want: nil,
 		},
 		{
@@ -791,7 +804,7 @@ func TestUnfailableRowRules(t *testing.T) {
 		},
 		{
 			name: "go run expecting exit 0 is unaffected by the flattening",
-			row:  "| 6 | `go run . --root .. --consumers --brief gt/03` | exit 0 |",
+			row:  "| 6 | `go run . --root .. --consumers --brief gt/03 --base c7cd7ef` | pre-merge only; exit 0 |",
 			want: nil,
 		},
 		{
@@ -800,8 +813,8 @@ func TestUnfailableRowRules(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "the #639 fix: a computed merge-base is a pure function of the PR",
-			row:  "| 4 | `statusgen --consumers --base $(git merge-base origin/main HEAD)` | exit 0 |",
+			name: "the #639 fix: a pre-merge base is a pure function of the PR",
+			row:  "| 4 | `statusgen --consumers --base $(git merge-base origin/main HEAD)` | pre-merge only; exit 0 |",
 			want: nil,
 		},
 		{
@@ -931,6 +944,8 @@ func TestRuleFixturesGoRed(t *testing.T) {
 		{"literal-pipe", ruleRE2LiteralPipe, 3},
 		{"moving-ref", ruleMovingRef, 4},
 		{"portability", rulePortability, 5},
+		{"gotest-run-vacuous", ruleGoTestRunVacuous, 6},
+		{"grep-pipe-zero-count", ruleGrepPipeZeroCount, 6},
 	}
 	for _, tc := range tests {
 		t.Run(tc.dir, func(t *testing.T) {
@@ -976,7 +991,7 @@ func TestRuleTagsAreUnique(t *testing.T) {
 	tags := []string{
 		ruleERELiteralPipe, ruleGrepZeroCount, ruleExitSwallowed, ruleRE2LiteralPipe,
 		ruleMetavar, ruleGoRunExit, ruleBREAlternation, ruleShreddedCell,
-		ruleMovingRef, rulePortability,
+		ruleMovingRef, ruleConsumerRange, rulePortability, ruleGoTestRunVacuous, ruleGrepPipeZeroCount,
 	}
 	seen := map[string]bool{}
 	for _, tag := range tags {
@@ -987,6 +1002,134 @@ func TestRuleTagsAreUnique(t *testing.T) {
 			t.Errorf("duplicate rule tag %q", tag)
 		}
 		seen[tag] = true
+	}
+}
+
+// TestGoTestRunVacuous_Shapes pins Task 2's decision table for the
+// gotest-run-vacuous rule directly against rowFindings, positive and negative:
+// a negated grep and a `|| true`-neutralised grep are NOT assertions (they still
+// fire), a grep naming a different test does not satisfy a named selector, the
+// group-selector case accepts any `--- PASS` line, a row with no `-run` at all
+// is silent, and a `-bench` row (no `--- PASS:` lines exist for it) is silent.
+func TestGoTestRunVacuous_Shapes(t *testing.T) {
+	tests := []struct {
+		name string
+		row  string
+		want []string
+	}{
+		{
+			name: "bare unanchored named selector, no assertion at all",
+			row:  "| 1 | `go test ./statusgen/... -run TestShapesBare` | PASS |",
+			want: []string{"gotest-run-vacuous row 1"},
+		},
+		{
+			name: "the -run= form, no assertion",
+			row:  "| 2 | `go test ./statusgen/... -run=TestShapesEquals` | PASS |",
+			want: []string{"gotest-run-vacuous row 2"},
+		},
+		{
+			name: "negated grep does not count as an assertion",
+			row:  "| 3 | `go test ./statusgen/... -run '^TestShapesNegated$' -v > \"${TMPDIR:-/tmp}/s3.out\" 2>&1 && ! grep -F -e '--- PASS: TestShapesNegated' \"${TMPDIR:-/tmp}/s3.out\"` | exit 0 |",
+			want: []string{"gotest-run-vacuous row 3"},
+		},
+		{
+			name: "|| true neutralises the assertion",
+			row:  "| 4 | `go test ./statusgen/... -run '^TestShapesNeutral$' -v > \"${TMPDIR:-/tmp}/s4.out\" 2>&1 && grep -F -e '--- PASS: TestShapesNeutral' \"${TMPDIR:-/tmp}/s4.out\" \\|\\| true` | exit 0 |",
+			want: []string{"gotest-run-vacuous row 4"},
+		},
+		{
+			name: "a grep naming a DIFFERENT test does not satisfy a named selector",
+			row:  "| 5 | `go test ./statusgen/... -run '^TestShapesWanted$' -v > \"${TMPDIR:-/tmp}/s5.out\" 2>&1 && grep -F -e '--- PASS: TestShapesOther' \"${TMPDIR:-/tmp}/s5.out\"` | exit 0 |",
+			want: []string{"gotest-run-vacuous row 5"},
+		},
+		{
+			name: "two named selectors chained, only one asserted — the unasserted one fires alone",
+			row:  "| 6 | `go test ./statusgen/... -run '^TestShapesChainA$' -v > \"${TMPDIR:-/tmp}/s6a.out\" 2>&1 && grep -F -e '--- PASS: TestShapesChainA' \"${TMPDIR:-/tmp}/s6a.out\" && go test ./statusgen/... -run '^TestShapesChainB$' -v > \"${TMPDIR:-/tmp}/s6b.out\" 2>&1` | exit 0 |",
+			want: []string{"gotest-run-vacuous row 6"},
+		},
+		{
+			name: "positive control: anchored named selector, matching --- PASS — silent",
+			row:  "| 7 | `go test ./statusgen/... -run '^TestShapesSound$' -v > \"${TMPDIR:-/tmp}/s7.out\" 2>&1 && grep -F -e '--- PASS: TestShapesSound' \"${TMPDIR:-/tmp}/s7.out\"` | exit 0 |",
+			want: nil,
+		},
+		{
+			name: "group-selector case: any --- PASS line is sufficient (statusgen/13 row 4 form) — silent",
+			row:  "| 8 | `go test . -count=1 -run Cadence -v > \"${TMPDIR:-/tmp}/s8.out\" 2>&1 && grep -q -- '--- PASS' \"${TMPDIR:-/tmp}/s8.out\"` | exit 0 |",
+			want: nil,
+		},
+		{
+			name: "a row with no -run at all — silent",
+			row:  "| 9 | `go test ./statusgen/... -count=1` | exit 0 |",
+			want: nil,
+		},
+		{
+			name: "a -bench row — out of scope (no --- PASS: lines exist for -bench) — silent",
+			row:  "| 10 | `go test -bench TestShapesBench ./... -benchtime=1x` | PASS |",
+			want: nil,
+		},
+		{
+			name: "run-no-tests idiom paired with -bench (-run '^$') has no --- PASS line it could ever assert — silent",
+			row:  "| 11 | `go test -run '^$' -bench TestShapesBenchOnly ./... -benchtime=1x` | PASS |",
+			want: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := collect(t, verifySection(tc.row))
+			var filtered []string
+			for _, g := range got {
+				if strings.HasPrefix(g, ruleGoTestRunVacuous+" ") {
+					filtered = append(filtered, g)
+				}
+			}
+			if strings.Join(filtered, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("row %q\n  got  %v (gotest-run-vacuous only)\n  want %v", tc.row, filtered, tc.want)
+			}
+		})
+	}
+}
+
+// TestGoTestRunVacuous_ClosedBriefsExempt drives the real entrypoint
+// (unfailableRowNotices) over the gotest-run-vacuous fixture root, which
+// carries a THIRD brief beyond the usual red/green pair: brief-03-closed.md,
+// whose stream-README row is `done` and whose two Verify rows carry the same
+// defect as the red fixture. It pins Task 3: a closed brief gets no per-row
+// notice, and the run instead emits exactly one summary NOTICE counting its
+// rows and briefs.
+func TestGoTestRunVacuous_ClosedBriefsExempt(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS("testdata/verifyrows/gotest-run-vacuous")); err != nil {
+		t.Fatal(err)
+	}
+	streams, _, err := loadStreams(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streams) == 0 {
+		t.Fatal("fixture loaded 0 streams — a check that could not look must never report clean")
+	}
+	notices := unfailableRowNotices(streams)
+
+	var perRowOnClosed, summary int
+	var summaryLine string
+	for _, n := range notices {
+		if strings.Contains(n, "brief-03-closed.md") {
+			perRowOnClosed++
+		}
+		if strings.HasPrefix(n, "["+ruleGoTestRunVacuous+"]") {
+			summary++
+			summaryLine = n
+		}
+	}
+	if perRowOnClosed != 0 {
+		t.Errorf("closed brief must get NO per-row notice; got %d:\n%s", perRowOnClosed, strings.Join(notices, "\n"))
+	}
+	if summary != 1 {
+		t.Fatalf("want exactly 1 summary notice, got %d:\n%s", summary, strings.Join(notices, "\n"))
+	}
+	const want = "[gotest-run-vacuous] 2 Verify row(s) in 1 closed brief(s) carry an unasserted go test -run selector — closed records are not rewritten; the per-row notice covers open briefs only"
+	if summaryLine != want {
+		t.Errorf("summary notice\n  got  %q\n  want %q", summaryLine, want)
 	}
 }
 
@@ -1001,5 +1144,55 @@ func TestUnfailableRowNoticesAreDeterministic(t *testing.T) {
 		if got := strings.Join(unfailableRowNotices(streams), "\n"); got != first {
 			t.Fatalf("notice order is not stable across runs:\n%s\n---\n%s", first, got)
 		}
+	}
+}
+
+// TestGrepPipeZeroCount_Shapes pins rule 13 (#1862) directly against
+// rowFindings: the unguarded shapes fire, and the three forms the rule must stay
+// silent on (a leading `!`, the guarded `{ … || … ; } |` form, a `≥ 1` Expect)
+// plus the neighbours it must not claim (no later stage, no grep, `|| true`).
+// regression: #1862
+func TestGrepPipeZeroCount_Shapes(t *testing.T) {
+	tests := []struct {
+		name string
+		row  string
+		want []string
+	}{
+		{"grep into wc, bare 0", "| 1 | `grep -rn 'x' d/ \\| wc -l` | `0` |", []string{"grep-pipe-zero-count row 1"}},
+		{"prints 0", "| 1 | `grep -rn 'x' d/ \\| wc -l` | prints `0` |", []string{"grep-pipe-zero-count row 1"}},
+		{"output is 0", "| 1 | `grep -rn 'x' d/ \\| wc -l` | output is `0` |", []string{"grep-pipe-zero-count row 1"}},
+		{"egrep into tr into wc, after &&", "| 1 | `test -d d && egrep -rn 'x' d/ \\| tr -d ' ' \\| wc -l` | 0 |", []string{"grep-pipe-zero-count row 1"}},
+		{"grep -v as a middle stage", "| 1 | `cat f \\| grep -v k \\| sort \\| wc -l` | output is `0` |", []string{"grep-pipe-zero-count row 1"}},
+		{"git grep", "| 1 | `git grep -n x -- d/ \\| wc -l` | 0 |", []string{"grep-pipe-zero-count row 1"}},
+		{"git -C dir grep", "| 1 | `git -C d grep -n x \\| wc -l` | 0 |", []string{"grep-pipe-zero-count row 1"}},
+		{"guard leaves a second unguarded grep stage", "| 1 | `{ grep -rn x d/ \\|\\| [ $? -eq 1 ]; } \\| grep -v y \\| wc -l` | output is `0` |", []string{"grep-pipe-zero-count row 1"}},
+
+		{"leading ! owns the pipeline status", "| 1 | `! grep -rn x d/ \\| grep -v y` | 0 |", nil},
+		{"guarded brace form", "| 1 | `{ grep -rn x d/ \\|\\| [ $? -eq 1 ]; } \\| wc -l` | output is `0` |", nil},
+		{"guarded git grep", "| 1 | `{ git grep -n x -- d/ \\|\\| [ $? -eq 1 ]; } \\| wc -l` | output is `0` |", nil},
+		{">= 1 Expect", "| 1 | `grep -rn x d/ \\| wc -l` | ≥ 1 |", nil},
+		{"exit-led Expect", "| 1 | `grep -rn x d/ \\| wc -l` | exit 1 with `0` printed |", nil},
+		{"0 then a non-zero exit", "| 1 | `grep -rn x d/ \\| wc -l` | output is `0`, exit 1 |", nil},
+		{"bare 0, exit 1 in prose", "| 1 | `grep -rn x d/ \\| wc -l` | `0` (exit 1 under pipefail) |", nil},
+		{"0 then exit 0 still fires", "| 1 | `grep -rn x d/ \\| wc -l` | output is `0`, exit 0 |", []string{"grep-pipe-zero-count row 1"}},
+		{"no later stage", "| 1 | `grep -q x f` | 0 |", nil},
+		{"no grep ahead of the counter", "| 1 | `ls d/ \\| wc -l` | 0 |", nil},
+		{"grep only as the last stage", "| 1 | `ls d/ \\| grep -q x` | 0 |", nil},
+		{"|| true makes the final pipeline `true`", "| 1 | `grep -rn x d/ \\| wc -l \\|\\| true` | 0 |", nil},
+		{"git subcommand other than grep", "| 1 | `git log --oneline \\| wc -l` | 0 |", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := collect(t, verifySection(tc.row))
+			var filtered []string
+			for _, g := range got {
+				if strings.HasPrefix(g, ruleGrepPipeZeroCount+" ") {
+					filtered = append(filtered, g)
+				}
+			}
+			if strings.Join(filtered, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("row %q\n  got  %v (grep-pipe-zero-count only)\n  want %v", tc.row, filtered, tc.want)
+			}
+		})
 	}
 }

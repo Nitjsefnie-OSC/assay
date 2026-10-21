@@ -13,8 +13,12 @@ import (
 // pattern filters. There is NO override flag anywhere.
 
 var (
-	reGitHubToken = regexp.MustCompile(`(ghp_|github_pat_|ghs_|gho_)[A-Za-z0-9_]+`)
+	reGitHubToken = regexp.MustCompile(`(ghp_|github_pat_|ghs_|gho_|ghu_|ghr_)[A-Za-z0-9_]+`)
 	reAWSKeyID    = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+	// reGitLabToken is a GitLab personal/project/group access token: the `glpat-` prefix
+	// and a 20+ char body (#1642). The body is under runThreshold, so the entropy loop
+	// never saw one; this arm is a TIGHTENING, not part of #1642's loosening.
+	reGitLabToken = regexp.MustCompile(`glpat-[0-9A-Za-z_-]{20,}`)
 	reJWT         = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
 	reBase64ish   = regexp.MustCompile(`[A-Za-z0-9+/=]{32,}`)
 	reLowerHex    = regexp.MustCompile(`^[0-9a-f]+$`)
@@ -206,7 +210,35 @@ const (
 	// lucky caps runs to decompose at all, so the budget is where most of the relaxation's
 	// cost on token material is bought back — see TestShortAcronymCostsAlmostNothing.
 	maxAcronymUnits = 1
+	// maxVersionDigits bounds the digit group behind the `V` that versionUnit admits as one
+	// word unit (`V1`, `V10`). Version tags in identifiers are one or two digits; a longer
+	// group behind a capital is token material.
+	maxVersionDigits = 2
 )
+
+// numeronyms are the closed list of letter-digit-letter abbreviations an identifier may
+// carry as ONE CamelCase word unit (#1642): `…Under|K8s|Is…`. The lone capital and the
+// short lowercase tail would otherwise each sink the run. A closed list, like
+// twoLetterWords, rather than a shape rule: a general "capital, digits, letter" unit is
+// common in random base62, an exact four-entry list is not.
+var numeronyms = []string{"K8s", "I18n", "L10n", "A11y"}
+
+// digestKeys are the closed list of env-var name TAILS isDigestKeyAssign will strip in
+// front of a git-SHA-shaped value (#1642). A closed list, not an ALL-CAPS shape rule: a
+// shape rule admits `TOKEN=<64 hex>`, and a 64-hex value is exactly what `openssl rand -hex
+// 32` prints, so the key is the only thing telling a digest from a credential (#1643 review).
+// `HEX` is not on the list: it names an encoding, not a digest, so it is admitted only
+// directly behind one of these (`…_DIGEST_HEX`, `…_SHA256_HEX`).
+var digestKeys = []string{"SHA", "SHA1", "SHA256", "DIGEST", "CHECKSUM", "COMMIT"}
+
+// credentialStems refuse the digest-key strip when any of them appears ANYWHERE in the
+// full env-var name, so `SIGNING_SECRET_SHA=` or `ENCRYPTION_KEY_DIGEST_HEX=` never pass on
+// their digest-looking tail. This is a second fence behind digestKeys, not a substitute:
+// a stem nobody listed still has to get past the closed tail list and the SHA-only value.
+var credentialStems = []string{
+	"SECRET", "TOKEN", "PASS", "PWD", "KEY", "AUTH", "CRED", "PRIV", "SESSION",
+	"COOKIE", "SIGN", "HMAC", "SALT", "API", "CERT", "BEARER", "JWT", "SEED",
+}
 
 // twoLetterWords are the two-letter units that count as WORDS in a CamelCase
 // decomposition even though they carry only one lowercase letter after the capital
@@ -243,6 +275,16 @@ var twoLetterWords = map[string]bool{
 	"Or": true, "So": true, "To": true, "Up": true, "Us": true, "Vs": true,
 	"We": true, "Id": true, "Ok": true,
 }
+
+// sopsCiteRemedy is appended to every sops-block refusal, on every surface (#2060). It is
+// the one sanctioned way to refer to sops material in prose: cite where it is and say what
+// is wrong with it. It is deliberately surface-agnostic — the same arm refuses a review
+// body, a comment, a PR body and a branch diff, and the remedy reads correctly on each — so
+// no caller has to classify its surface to get it. TestBodyCheckSopsCiteRemedy pins it on
+// every surface and every outbound kind.
+const sopsCiteRemedy = " — cite sops material by path:line and describe it in words; never " +
+	"quote its sops: footer or an ENC[…] envelope (a quotation is refused inside a code fence " +
+	"too). Committed sops content must be a complete encrypted document."
 
 // SurfaceBody is the default surface name — the PR/issue/comment body most callers scan.
 const SurfaceBody = "body"
@@ -378,6 +420,7 @@ func ScanSurfaceRulingClaim(surface string, content []byte) error {
 // in the arm order — after the literal-marker arms, before the high-entropy loop — is
 // unchanged from when it was inlined, so refusal precedence on a surface tripping more
 // than one arm is exactly what it was.
+// semantic: S-publication-scan
 func scanSurface(surface string, content []byte, rulingClaim bool) error {
 	if surface == "" {
 		surface = SurfaceBody
@@ -410,8 +453,11 @@ func scanSurface(surface string, content []byte, rulingClaim bool) error {
 	s := markerSurface(raw)
 	switch {
 	case reGitHubToken.MatchString(s):
-		return RefusedFinding("refused: "+surface+" contains a GitHub token prefix (ghp_/github_pat_/ghs_/gho_)",
+		return RefusedFinding("refused: "+surface+" contains a GitHub token prefix (ghp_/github_pat_/gho_/ghu_/ghs_/ghr_)",
 			regexFinding("github-token", s, reGitHubToken))
+	case reGitLabToken.MatchString(s):
+		return RefusedFinding("refused: "+surface+" contains a GitLab access-token prefix (glpat-)",
+			regexFinding("gitlab-token", s, reGitLabToken))
 	case reAWSKeyID.MatchString(s):
 		return RefusedFinding("refused: "+surface+" contains an AWS access-key ID (AKIA…)",
 			regexFinding("aws-key-id", s, reAWSKeyID))
@@ -445,8 +491,16 @@ func scanSurface(surface string, content []byte, rulingClaim bool) error {
 	// (full envelope grammar plus the document signature plus encrypted content outside the
 	// metadata block). A genuine encrypted-at-rest manifest therefore never reaches this
 	// arm, and everything wearing the shape without earning it still does.
+	//
+	// The refusal NAMES ITS REMEDY (sopsCiteRemedy, #2060), and the remedy is a citation,
+	// not a narrower rule. A reviewer whose verdict quotes sops material from the diff it
+	// reviews trips this arm by design — a review body is prose, and a quotation is exactly
+	// the pasted-envelope / bare-footer shape this arm exists to refuse — so the sanctioned
+	// way through is to point at the material (`path:line`) and describe it, never to
+	// reproduce it. No marker-only exemption was added for review surfaces: a footer quoted
+	// without a payload is the pos-sops-imitation shape, which must keep refusing.
 	case reSopsEncVal.MatchString(s) || (reSopsKey.MatchString(s) && reSopsField.MatchString(s)):
-		return RefusedFinding("refused: "+surface+" contains a sops-encrypted secret block or ENC[ marker",
+		return RefusedFinding("refused: "+surface+" contains a sops-encrypted secret block or ENC[ marker"+sopsCiteRemedy,
 			&ScanFinding{Rule: "sops-block", Line: sopsLine(s), Shape: "sops-marker"})
 	}
 	// A sops-ENCRYPTED value (ENC[AES256_GCM,…]) is no longer refused on sight (#778):
@@ -516,6 +570,9 @@ func scanSurface(surface string, content []byte, rulingClaim bool) error {
 		if isGitSHA(run) || isPathLike(run) || isIdentifierLike(run) || isAssignmentLike(run) || isAllEquals(run) {
 			continue
 		}
+		if isDigestKeyAssign(raw, loc[0], run) {
+			continue
+		}
 		// Rule 1 (doc-extension arm) and Rule 2. Both are NARROWER than the
 		// class they clear and each is bounded by a paired positive fixture that stays
 		// refused: isDocPathHexSegment admits a 32-hex doc-path FILENAME stem
@@ -563,8 +620,12 @@ func scanSurface(surface string, content []byte, rulingClaim bool) error {
 			"refused: %s contains a %d-char high-entropy run (possible secret); "+
 				"only git SHAs (40/64 lowercase hex), slash-separated paths built from "+
 				"word-shaped segments (optionally behind one leading '+' quantifier or "+
-				"diff marker), bare word-shaped identifiers, key=<path> shell "+
-				"assignments, all-'=' banner separators, a PGP key fingerprint (40 "+
+				"diff marker), bare word-shaped CamelCase identifiers (a 2-4 letter "+
+				"acronym, optionally plural like PRs, a V plus 1-2 digits like V1, and the "+
+				"numeronyms K8s/I18n/L10n/A11y "+
+				"count as words), key=<sha|path|identifier> assignments whose key is short "+
+				"or word-shaped, a git SHA behind an ALL-CAPS digest key (…_SHA, …_DIGEST, "+
+				"…_DIGEST_HEX; never a credential-named variable), all-'=' banner separators, a PGP key fingerprint (40 "+
 				"uppercase hex after a pgp:/fp: field, or on a line that names it with "+
 				"fingerprint/fpr/pgp/gpg), a slash-list of short ALL-CAPS "+
 				"enum words, a 32-hex run behind a recognised Kubernetes object-kind "+
@@ -1032,12 +1093,19 @@ func k8sLine(s string) int {
 		return 0
 	}
 	lines := strings.Split(s, "\n")
+	var owners *k8sOwnerIndex // built on first use: most texts never reach a data mapping
 	for i, line := range lines {
 		m := reK8sSecretData.FindStringSubmatch(strings.TrimRight(line, " \t\r"))
 		if m == nil {
 			continue
 		}
 		mapIndent, sawEntry := len(m[1]), false
+		if owners == nil {
+			owners = newK8sOwnerIndex(lines)
+		}
+		if owners.ownedByOtherKind(i, m[2]) {
+			continue // a YAML parse proves this mapping's owning object is not a Secret
+		}
 		for j := i + 1; j < len(lines); j++ {
 			body := strings.TrimRight(lines[j], " \t\r")
 			if strings.TrimSpace(strings.TrimLeft(body, "+- ")) == "" {
@@ -1334,7 +1402,14 @@ func isShortDigitRun(seg string) bool {
 //     `XXXXXXXX…` tail opaque, so widening it is the one direction that would cost real
 //     detection;
 //   - a short acronym adjacent to DIGITS rather than to a word (`abcdEFGH1234…`) — the
-//     anchoring requirement, and the reason random material does not ride this exemption;
+//     anchoring requirement, and the reason random material does not ride this exemption.
+//     The one digit-adjacent unit admitted is a lone `V` plus 1-2 digits between words
+//     (`…Test|V1|Desks…`, see versionUnit); any other capital before digits (`S3`) still
+//     refuses;
+//   - a short acronym that OPENS the run (`PS|Native…`, `CI|Required…`) — the backward
+//     anchor and after-a-word bound, pinned by identLeadAcr and a committed mutation entry.
+//     Admitting it removes that bound, which is a control change for a recorded ruling, not
+//     a fix (#1642);
 //   - a capital followed by exactly one lowercase that is not an English word (`…NoOp…`,
 //     `…HumanStampRe…`) — twoLetterWords' closed-list rule, deliberately not widened to
 //     general abbreviations (see its comment for the measured cost of doing so).
@@ -1409,6 +1484,49 @@ func isAssignmentLike(run string) bool {
 	return isGitSHA(val) || isPathLike(val) || isIdentifierLike(val)
 }
 
+// isDigestKeyAssign reports whether run, starting at offset start in raw, is the tail of
+// an ALL-CAPS digest assignment — `ARG BASE_DIGEST_HEX=<sha256>` reaches the loop as
+// `HEX=<sha256>`, because `_` is outside the run class (#1642). It is narrower than
+// isAssignmentLike on every axis, and each condition is load-bearing (#1643 review):
+//
+//  1. The VALUE must be a git SHA (40/64 lowercase hex) — never a path or an identifier.
+//  2. The key tail is on the closed digestKeys list, or is `HEX` directly behind one.
+//  3. The FULL env-var name, read back from raw across `_`, contains no credentialStems
+//     entry, so a credential-named variable is refused whatever its tail.
+func isDigestKeyAssign(raw string, start int, run string) bool {
+	eq := strings.IndexByte(run, '=')
+	if eq <= 0 || !isGitSHA(run[eq+1:]) {
+		return false
+	}
+	i := start
+	for i > 0 && isEnvNameByte(raw[i-1]) {
+		i--
+	}
+	name := raw[i:start] + run[:eq]
+	up := strings.ToUpper(name)
+	for _, stem := range credentialStems {
+		if strings.Contains(up, stem) {
+			return false
+		}
+	}
+	segs := strings.Split(name, "_")
+	tail := segs[len(segs)-1]
+	if tail == "HEX" && len(segs) >= 2 {
+		tail = segs[len(segs)-2]
+	}
+	for _, k := range digestKeys {
+		if tail == k {
+			return true
+		}
+	}
+	return false
+}
+
+// isEnvNameByte reports whether c can appear in an environment-variable name.
+func isEnvNameByte(c byte) bool {
+	return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+}
+
 // looksLikeWords reports whether seg reads as human-written name material — what real
 // path, package and file-name segments are made of — rather than as opaque token
 // material. seg qualifies when it decomposes ENTIRELY into:
@@ -1474,7 +1592,7 @@ func looksLikeWords(seg string) bool {
 // it feeds is left exactly as it was. The relaxation is bounded to 2-4 letters with a word
 // on at least one side, so the run is still admitted on the strength of its word-shaped body.
 func wordDecomposition(seg string, allowShortAcronym bool) (ok bool, words int, camel bool) {
-	acronyms := 0
+	acronyms, versioned := 0, false
 	for i := 0; i < len(seg); {
 		c := seg[i]
 		switch {
@@ -1488,6 +1606,14 @@ func wordDecomposition(seg string, allowShortAcronym bool) (ok bool, words int, 
 			}
 			i, words = j, words+1
 		case c >= 'A' && c <= 'Z':
+			// A closed-list numeronym (`K8s`, `I18n`) is one CamelCase word — identifier
+			// callers only, so path-segment accounting is unchanged (#1642).
+			if allowShortAcronym {
+				if l := numeronymAt(seg, i); l > 0 {
+					i, words, camel = i+l, words+1, true
+					continue
+				}
+			}
 			j := i + 1
 			for j < len(seg) && seg[j] >= 'a' && seg[j] <= 'z' {
 				j++
@@ -1524,7 +1650,7 @@ func wordDecomposition(seg string, allowShortAcronym bool) (ok bool, words int, 
 			var acrEnd int
 			var acrOK bool
 			if n == 0 && allowShortAcronym {
-				acrEnd, acrOK = shortAcronymUnit(seg, i, words, acronyms)
+				acrEnd, acrOK = shortAcronymUnit(seg, i, words, acronyms, versioned)
 			}
 			switch {
 			case n >= 2:
@@ -1534,7 +1660,10 @@ func wordDecomposition(seg string, allowShortAcronym bool) (ok bool, words int, 
 			case n == 0 && (c == 'A' || c == 'I') && startsCapitalLedWord(seg, j):
 				i, words = j, words+1 // a one-letter word; camel comes from the follower
 			case acrOK:
-				// a short acronym is one word unit; acronyms is the per-run budget
+				// a short acronym is one word unit; acronyms is the per-run budget. A unit
+				// ending in a digit is a version unit (an acronym unit ends in a letter);
+				// versioned withdraws the closing-acronym exemption for the rest of the run.
+				versioned = versioned || (seg[acrEnd-1] >= '0' && seg[acrEnd-1] <= '9')
 				i, words, camel, acronyms = acrEnd, words+1, true, acronyms+1
 			default:
 				return false, 0, false
@@ -1603,7 +1732,8 @@ func startsCapitalLedWord(seg string, k int) bool {
 // each is load-bearing. The last three were added AFTER measuring: the rule without them
 // exempted 27 of 2,000,000 uniformly random 32-char base64 runs, which is the same order as
 // the blanket capital-plus-one-lowercase relaxation twoLetterWords was deliberately written
-// to stay an order of magnitude under. With all six the number is 7.
+// to stay an order of magnitude under. With all six the number is 7; #1642's plural `s`,
+// closing-unit budget and numeronym list move it to 8.
 //
 //   - SHORT: minAcronym to maxAcronym letters. A lone capital stays debris, and a 5+ letter
 //     ALL-CAPS stretch (a Slack webhook's `XXXX…`, an AWS key's 10-char `EXAMPLEKEY`, the
@@ -1622,9 +1752,11 @@ func startsCapitalLedWord(seg string, k int) bool {
 //   - AFTER A WORD: at least one word unit must already have been decomposed. Combined with
 //     the backward anchor this says the acronym is never the run's opening move, which is
 //     where random material's lucky caps runs most often fall.
-//   - BUDGETED: at most maxAcronymUnits per run. Random base64 needs several lucky caps runs
-//     to decompose at all; a real identifier needs one. This bound is where most of the
-//     measured cost above is bought back.
+//   - BUDGETED: at most maxAcronymUnits MID-RUN units per run, plus at most one unit that
+//     closes the run (#1642 — a run has one end, so that adds at most one; and the closing
+//     unit is budget-free only in a run with no version unit, see versionUnit). Random base64
+//     needs several lucky caps runs to decompose at all; a real identifier needs one or
+//     two. This bound is where most of the measured cost above is bought back.
 //
 // And, unchanged: everything outside the acronym must still decompose into word units under
 // the normal rules, and isIdentifierLike still requires words>=2 and a capital-led word — so
@@ -1633,10 +1765,10 @@ func startsCapitalLedWord(seg string, k int) bool {
 // The measured cost of the widening on random token material is pinned by
 // TestShortAcronymCostsAlmostNothing, which runs the same 2,000,000-trial fixed-seed
 // comparison TestTwoLetterWordsCostAlmostNothing uses for the two-letter-word list.
-func shortAcronymUnit(seg string, i, wordsSoFar, acronymsSoFar int) (int, bool) {
-	if acronymsSoFar >= maxAcronymUnits {
-		return 0, false
-	}
+//
+// versioned reports that a version unit (versionUnit) has already been decomposed in this
+// run; it withdraws the CLOSING exemption, so the closing unit is held to the budget.
+func shortAcronymUnit(seg string, i, wordsSoFar, acronymsSoFar int, versioned bool) (int, bool) {
 	if wordsSoFar < 1 || i < 1 || seg[i-1] < 'a' || seg[i-1] > 'z' {
 		return 0, false
 	}
@@ -1647,13 +1779,89 @@ func shortAcronymUnit(seg string, i, wordsSoFar, acronymsSoFar int) (int, bool) 
 	for k < len(seg) && seg[k] >= 'A' && seg[k] <= 'Z' && !startsCamelWord(seg, k) {
 		k++
 	}
+	if k-i == 1 {
+		return versionUnit(seg, k, acronymsSoFar)
+	}
 	if n := k - i; n < minAcronym || n > maxAcronym {
 		return 0, false
 	}
-	if k == len(seg) || startsCamelWord(seg, k) {
+	// PLURAL (#1642): one lowercase `s` directly behind the acronym (`PRs`, `IDs`) is part
+	// of the unit, held to the same forward anchor as the acronym itself.
+	if k < len(seg) && seg[k] == 's' && (k+1 == len(seg) || startsCamelWord(seg, k+1)) {
+		k++
+	}
+	if k == len(seg) && !versioned {
+		// CLOSING (#1642): an acronym that ends the run spends no budget (`…PRs|By…Every|PR`).
+		// Everything before it has already decomposed, and a run has exactly one end, so
+		// the per-run total is at most maxAcronymUnits mid-run units plus this one. NOT in a
+		// run that already carries a version unit (versioned): there the closing acronym
+		// falls through to the budget check below, which the version has spent, so a
+		// version and an acronym never share one run (`…Every|V2|…Handler|OK` refuses).
+		return k, true
+	}
+	if acronymsSoFar >= maxAcronymUnits {
+		return 0, false
+	}
+	if startsCamelWord(seg, k) {
 		return k, true
 	}
 	return 0, false
+}
+
+// versionUnit finishes shortAcronymUnit's scan for a LONE capital: the unit is admitted only
+// as a version segment, a `V` directly followed by 1 to maxVersionDigits digits
+// (`…Test|V1|Desks…`, `…The|V10|Schema…`). k is the index just past the capital. This is
+// the same acronym unit with a digit group in place of further capitals, not a new
+// exemption: shortAcronymUnit's backward anchor and after-a-word rule have already held
+// before this is reached, and every other bound is applied here (#1642).
+//
+//   - `V` ONLY: the letter is a closed list of one, for the reason numeronyms is a closed
+//     list. Measured on the 2,000,000-run fixed seed TestTwoLetterWordsCostAlmostNothing
+//     uses, ANY capital plus digits before a word admitted 2 more random 32-char base64
+//     runs (8 -> 10), enough to fail that test's order-of-magnitude bar; `V` alone adds 0.
+//     `S3`, `P2` and the like stay refused.
+//   - DIGITS: one or two. A longer group is not a version tag, and a lone capital with no
+//     digit behind it stays debris exactly as before.
+//   - ANCHORED FORWARD: the digits close the run or a CamelCase word follows them, so
+//     `…V2x…` and capital-digit-capital chains in random base62 stay refused.
+//   - BUDGETED: the unit always spends the per-run acronym budget, closing or not, and once
+//     it is decomposed the closing-acronym exemption is withdrawn for the rest of the run
+//     (wordDecomposition's versioned), so a version segment and an acronym never share one
+//     run — mid-run or closing, plain or plural (`…Every|V2|…Open|PRs` refuses). A
+//     numeronym is a word, not an acronym, and still rides beside a version.
+//
+// A 2-4 letter acronym followed by digits (`…HTTP2…`) is NOT admitted: that shape is pinned
+// refused by identAcrDigit and stays the documented residual it was.
+func versionUnit(seg string, k, acronymsSoFar int) (int, bool) {
+	if seg[k-1] != 'V' {
+		return 0, false
+	}
+	d := k
+	for d < len(seg) && seg[d] >= '0' && seg[d] <= '9' {
+		d++
+	}
+	if d == k || d-k > maxVersionDigits || acronymsSoFar >= maxAcronymUnits {
+		return 0, false
+	}
+	if d == len(seg) || startsCamelWord(seg, d) {
+		return d, true
+	}
+	return 0, false
+}
+
+// numeronymAt returns the length of the closed-list numeronym starting at i, or 0. The
+// numeronym must end the run or be followed by a capital, so `K8s` is a word while `K8sx`
+// and `K8s9` are not — the unit never ends mid-token.
+func numeronymAt(seg string, i int) int {
+	for _, w := range numeronyms {
+		if strings.HasPrefix(seg[i:], w) {
+			e := i + len(w)
+			if e == len(seg) || (seg[e] >= 'A' && seg[e] <= 'Z') {
+				return len(w)
+			}
+		}
+	}
+	return 0
 }
 
 // startsCamelWord reports whether a CamelCase WORD UNIT begins at k — either a capital-led

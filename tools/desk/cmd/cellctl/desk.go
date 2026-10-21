@@ -1,16 +1,36 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/cellcadence"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
+// deskInputs are the typed, already-resolved options of one `desk` launch: what the command
+// layer (cobra.go) hands the launch code, so the launch code never sees argv.
+type deskInputs struct {
+	Performance                perfrec.Context
+	CfgIn                      string
+	Model                      string // --model, else DESK_MODEL_OVERRIDE
+	Provider, Harness, Cockpit string // as given by flag; "" = not given
+	Cadence, TickBudget        string // --flag, else the cell's CELL_CADENCE / CELL_TICK_BUDGET
+	CadenceFlag, BudgetFlag    string // only what was given by flag
+	Persist                    bool
+	EndStaleLockHolder         bool // --end-stale-lock-holder: opt in to SIGTERM a proven-stale role-lease holder
+}
+
 const deskUsage = "cellctl desk <cell> <role> [--model <m>] [--set] [--provider <name>] [--harness <claude|codex>] [--kind <k>] [--cockpit <c>] [CLAUDE_CONFIG_DIR]"
+
+// roleLeaseWait bounds how long a launch waits for a sibling holding its role lease.
+const roleLeaseWait = 5 * time.Second
 
 // cmdDesk is the port of `cmd_desk`: one role window, in its own worktree, with the real HOME
 // and the cell's shims — or, on a scrubbed cell, in a fully COMPOSED environment.
@@ -19,57 +39,29 @@ const deskUsage = "cellctl desk <cell> <role> [--model <m>] [--set] [--provider 
 // contract: --kind is applied before the cell loads (its preconditions are asserted there), the
 // role is validated before the flags, the flags before the provider, the provider before the
 // model, and the Opus rule binds the RESOLVED model whether it came from a pin or an override.
-func cmdDesk(cell string, args []string) {
-	if len(args) == 0 || args[0] == "" {
-		fmt.Fprintln(os.Stderr, "cellctl: "+deskUsage)
-		exitWith(1)
-	}
-	role := args[0]
-	args = args[1:]
-
-	kindOverride := prescanKindOverride(args)
-	c := loadCellWithKind(cell, kindOverride)
+func cmdDesk(c *Cell, role string, o deskInputs) {
 	if !valueIn(role, knownRoles) {
 		die("unknown role '%s'", role)
 	}
 
 	// --model overrides the cell.env pin for THIS run only; DESK_MODEL_OVERRIDE is the
 	// equivalent env form for a wrapper that cannot pass a flag, and an explicit --model wins
-	// when both are given.
-	modelOverride := c.Env.Get("DESK_MODEL_OVERRIDE")
-	persist := false
-	cfgIn, provider := "", ""
+	// when both are given. The command layer already resolved that order (cobra.go).
+	modelOverride := o.Model
+	persist := o.Persist
+	cfgIn, provider := o.CfgIn, o.Provider
 	harness := c.Harness
-	harnessFlag, cockpitFlag, providerFlag := "", "", ""
-
-	for i := 0; i < len(args); i++ {
-		switch a := args[i]; a {
-		case "--model":
-			modelOverride = needFlagValue(args, &i, "--model needs a value")
-		case "--set":
-			persist = true
-		case "--provider":
-			provider = needFlagValue(args, &i, "--provider needs a value (kimi|glm, or a name with CELL_PROVIDER_<NAME>_BASE_URL/_TOKEN_ENV in cell.env)")
-			providerFlag = provider
-		case "--harness":
-			harness = needFlagValue(args, &i, "--harness needs a value (claude|codex)")
-			harnessFlag = harness
-		case "--kind":
-			// consumed by prescanKindOverride above; c.Kind already reflects it
-			i++
-		case "--cockpit":
-			cockpitFlag = needFlagValue(args, &i, "--cockpit needs a value ("+joinPipe(cockpitValues)+")")
-		default:
-			if strings.HasPrefix(a, "--") {
-				die("desk: unknown flag %s", a)
-			}
-			cfgIn = a
-		}
+	if o.Harness != "" {
+		harness = o.Harness
 	}
+	harnessFlag, cockpitFlag, providerFlag := o.Harness, o.Cockpit, o.Provider
+	cadence, budget := o.Cadence, o.TickBudget
+	cadenceFlag, budgetFlag := o.CadenceFlag, o.BudgetFlag
+
 	if cockpitFlag != "" && !valueIn(cockpitFlag, cockpitValues) {
 		die("desk: --cockpit must be one of %s, got '%s'", joinPipe(cockpitValues), cockpitFlag)
 	}
-	if persist && !anyGiven(modelOverride, harnessFlag, providerFlag, c.KindOverride, cockpitFlag) {
+	if persist && !anyGiven(modelOverride, harnessFlag, providerFlag, c.KindOverride, cockpitFlag, cadenceFlag, budgetFlag) {
 		die("desk: --set needs --model <m> (or DESK_MODEL_OVERRIDE in the environment), --harness, --provider, --kind or --cockpit — nothing to persist otherwise")
 	}
 	if !valueIn(harness, harnessValues) {
@@ -87,6 +79,9 @@ func cmdDesk(cell string, args []string) {
 		die("%s", err)
 	}
 	if policy != nil {
+		if harness == "cursor" {
+			die("model policy does not support cursor; configure Cursor model pins without a model policy")
+		}
 		if persist {
 			die("desk: --set with a model policy is ambiguous; edit the policy or provider defaults instead")
 		}
@@ -99,7 +94,15 @@ func cmdDesk(cell string, args []string) {
 		}
 		harness = policyRes.Harness
 	}
+	c.mustRoleContext(role, harness) // CELL_ROLE_CONTEXT (#2438): refuse a broken declaration before anything is created
 
+	if harness == "cursor" && c.Kind != "house" {
+		die("cursor currently requires a house cell")
+	}
+	c.Cadence = resolveDeskCadence(c.Kind, harness, cadence, budget)
+	if harness == "cursor" && cfgIn != "" {
+		die("cursor does not accept a Claude config directory")
+	}
 	cfg := ""
 	switch c.Kind {
 	case "container":
@@ -120,16 +123,20 @@ func cmdDesk(cell string, args []string) {
 			die("role '%s' is not enabled in this scrubbed cell", role)
 		}
 	default:
-		cfg = resolveCfg(c.Env, cfgIn)
+		if harness == "cursor" && cfgIn == "" {
+			cfg = ""
+		} else {
+			cfg = resolveCfg(c.Env, cfgIn)
+		}
 	}
 
-	// The minimum-Claude-Code-version half of the oracle's policy_claude_preflight (the
-	// local/managed settings.json availableModels/modelOverrides conflict scan that same
-	// function also runs is NOT ported — see policy.go's header comment and the PR body).
-	if policyRes != nil && harness == "claude" {
-		if err := checkClaudeMinVersion(); err != nil {
-			die("%s", err)
-		}
+	// The oracle's policy_claude_preflight against the cell's checkout, BEFORE any worktree is
+	// cut (dry run included): the Claude Code version floor, then the user/project/managed
+	// settings scan that refuses an availableModels widening the policy or a local
+	// modelOverrides. deskLaunch re-runs it against the role worktree once that exists.
+	if err := claudePolicyPreflight(policyRes, cfg, c.Repo); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		die("model policy settings preflight failed")
 	}
 
 	if policyRes != nil {
@@ -176,8 +183,16 @@ func cmdDesk(cell string, args []string) {
 	mvar := "DESK_MODEL_" + underscore(role)
 	if harness == "codex" {
 		mvar = "CODEX_MODEL_" + underscore(role)
+	} else if harness == "cursor" {
+		mvar = "CURSOR_MODEL_" + underscore(role)
 	}
 	var persistKVs []string
+	if cadenceFlag != "" {
+		persistKVs = append(persistKVs, "CELL_CADENCE="+cadenceFlag)
+	}
+	if budgetFlag != "" {
+		persistKVs = append(persistKVs, "CELL_TICK_BUDGET="+budgetFlag)
+	}
 	if modelOverride != "" {
 		persistKVs = append(persistKVs, mvar+"="+modelOverride)
 	}
@@ -197,9 +212,14 @@ func cmdDesk(cell string, args []string) {
 	// A provider is a claude-harness seam (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN); codex has
 	// no equivalent here, so the combination is refused rather than silently launching codex
 	// against Anthropic with a provider the operator asked for.
-	if harness == "codex" && provider != "" {
+	if (harness == "codex" || harness == "cursor") && provider != "" {
 		die("desk: --provider '%s' is a claude-harness switch and has no codex equivalent — drop the provider or use --harness claude", provider)
 	}
+
+	// Cheap-default reset: pull aged DEFAULT pins back to the cheap default BEFORE the pin is
+	// resolved, so this boot already runs on the repinned model. Explicit pins never move, and
+	// a provider window's claude pins are left alone (the provider is passed in).
+	c.bootModelReset(time.Now(), provider)
 
 	var model string
 	resolvedSrc := ""
@@ -236,6 +256,9 @@ func cmdDesk(cell string, args []string) {
 	}
 
 	dryRun := c.Env.Get("DRY_RUN") == "1"
+	if _, err := c.deskCommsEnv(role, nil); err != nil {
+		die("desk comms: %v", err)
+	}
 
 	if c.Kind == "container" {
 		if persist && !dryRun {
@@ -298,7 +321,18 @@ func cmdDesk(cell string, args []string) {
 		}
 	}
 
+	// The reconcile preflight (#2880): stale state a previous session of this role left behind is
+	// inventoried once, by pid and start time, and on a terminal cleared on one confirmation —
+	// before the lease below is taken, since recovery takes it itself.
+	if c.Kind == "house" {
+		c.reconcilePreflight("desk", []string{role}, nil, dryRun, "desk: unfinished cadence pass; inspect and reconcile before restarting")
+	}
+
 	if dryRun {
+		c.printCachePolicy()
+		if c.Cadence != nil {
+			fmt.Printf("[cadence] interval=%s budget=%s owner=cellctl (planned; not armed)\n", c.Cadence.Interval, c.Cadence.Budget)
+		}
 		kindShown := c.Kind
 		if c.KindOverride != "" {
 			kindShown += " (override)"
@@ -318,6 +352,7 @@ func cmdDesk(cell string, args []string) {
 		if harness == "claude" && c.Kind != "scrubbed" {
 			fmt.Println("[dry-run] env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false")
 		}
+		c.printRoleContextPlan(role, harness) // silent unless CELL_ROLE_CONTEXT is set
 		if persist {
 			for _, kv := range persistKVs {
 				fmt.Printf("[dry-run] --set: would persist %s into %s/cell.env (not written — dry run)\n", kv, c.Dir)
@@ -332,15 +367,47 @@ func cmdDesk(cell string, args []string) {
 		return
 	}
 
-	c.deskLaunch(role, harness, model, modelDisp, session, wt, cfg, provider, prov, deskRoots, persist, persistKVs, policyRes, cockpit)
-}
-
-func needFlagValue(args []string, i *int, msg string) string {
-	if *i+1 >= len(args) || args[*i+1] == "" {
-		die("%s", msg)
+	c.printCachePolicy()
+	if c.Kind == "house" {
+		// A sibling launch of this role may hold the lease for a moment; wait a little,
+		// then name the holder and say whether it is current. Only an explicit
+		// --end-stale-lock-holder lets a proven-stale own-cell holder be ended.
+		var lease *cellcadence.Lease
+		err := launchStep("launch-role-lease", func() (aerr error) {
+			lease, aerr = cellcadence.AcquireRole(c.cadenceDir(role), cellcadence.RoleLock{
+				Cell: c.Name, Role: role, Wait: roleLeaseWait, EndStale: o.EndStaleLockHolder,
+				OptIn: "--end-stale-lock-holder", Log: os.Stderr,
+			})
+			return aerr
+		})
+		if err != nil {
+			die("desk: role already owned or cannot lock: %v", err)
+		}
+		defer lease.Close()
+		c.cadenceLease = lease
+		// An unfinished prior child may survive its supervisor. Never start even an
+		// interactive replacement until the operator has reconciled that child.
+		state, err := cellcadence.Read(c.cadenceDir(role))
+		if err != nil && !errors.Is(err, cellcadence.ErrNoState) {
+			die("desk: cadence state unreadable: %v", err)
+		}
+		if err == nil && (state.Cell != c.Name || state.Role != role) {
+			die("desk: cadence checkpoint belongs to another cell or role")
+		}
+		if state.Running {
+			die("desk: unfinished cadence pass; inspect and reconcile before restarting")
+		}
 	}
-	*i++
-	return args[*i]
+	if c.Kind == "house" {
+		mode := "interactive"
+		if c.Cadence != nil {
+			mode = "cadence"
+		}
+		if err := writeRoleMode(c.cadenceDir(role), mode); err != nil {
+			die("desk: cannot record role ownership: %v", err)
+		}
+	}
+	c.deskLaunch(role, harness, model, modelDisp, session, wt, cfg, provider, prov, deskRoots, persist, persistKVs, policyRes, cockpit, o.Performance)
 }
 
 func orDefault(v, def string) string {
@@ -356,10 +423,7 @@ func utcStamp() string { return time.Now().UTC().Format("20060102T150405Z") }
 // else $CLAUDE_CONFIG_DIR, else $HOME/.claude. It must be a directory.
 func resolveCfg(e *Env, in string) string {
 	if in == "" {
-		in = e.Get("CLAUDE_CONFIG_DIR")
-	}
-	if in == "" {
-		in = filepath.Join(e.Get("HOME"), ".claude")
+		in = mustResolve(claudeConfigDirFor(runtime.GOOS, e))
 	}
 	st, err := os.Stat(in)
 	if err != nil || !st.IsDir() {

@@ -4,8 +4,8 @@
 
 Shell and transport mechanics every desk role re-derives from a refusal — how a session
 addresses a repo across tool calls, keeps its work isolated, stamps its commits, carries
-its loop and session markers, authenticates a fetch or push, and asks which repositories
-its role can reach. None of it is judgment; all of it is the same handful of mechanics,
+its loop and session markers, authenticates a fetch or push, asks which repositories
+its role can reach, and runs a forge CLI call as its role. None of it is judgment; all of it is the same handful of mechanics,
 so it lives here once instead of being rediscovered per session.
 
 This is the fourth file in this bundle's `references/` directory and the first that is not a
@@ -130,6 +130,33 @@ f, _ := os.CreateTemp("", "pr-body-*")                # Go
 A skill body names this mechanism as "a per-invocation scratch file (desk-shell.md §Scratch
 files)" rather than spelling `mktemp` as if every adopter's shell has it.
 
+## Managed task scratch
+
+House-cell interactive sessions and cadence passes receive a machine-owned scratch
+workspace through `TMPDIR`, `TMP`, and `TEMP`. Use it for unique body files and
+disposable output. Keep source changes in the assigned Git worktree. For standalone
+bounded commands, `cellctl scratch <cell> run --source <owned-worktree> --task <task>
+--session <session> -- <command>` supplies the same lifecycle. Its optional tracked
+snapshot and explicit extra inputs have a byte budget; never recursively copy a
+working directory with generated history or scratch output into another scratch tree.
+
+The top-level owner waits for every task sharing that scratch, persists required
+outcomes/evidence to the existing canonical destination, reads them back, then calls
+`cellctl scratch <ASSAY_SCRATCH_CELL> ack --id <ASSAY_SCRATCH_ID>
+--receipt <canonical-evidence-reference>` before the final completion message.
+A delegated agent never acknowledges its parent's scratch. Pending evidence and
+resumable work stay protected. No further required output may be created after ack.
+On failures, publish required diagnostics before acknowledgment too; the runtime
+retains only its bounded output tail, receipt and result after handoff.
+
+The runtime releases/reclaims scratch on ordinary completion or catchable termination;
+restart cleanup requires the execution lease and child-liveness proof. One owner,
+`cellctl scratch`, handles dry-run/apply, budgets and conservative recovery. Git
+worktrees remain `deskwt`'s responsibility. Unmarked legacy or harness owned
+directories are inventory-only; neither names nor age establish deletion authority.
+See `docs/cellctl-scratch.md` in the toolkit for flags, retention limits and supported
+host paths. Do not add shell deletion hooks to individual roles.
+
 ## Config home
 
 **Mechanism.** The desk tools' own config/roster/state directory is the literal path
@@ -158,37 +185,30 @@ Go path.
 
 ## Authenticated transport
 
-<!-- BEGIN authenticated transport
-     This block exists to be DELETED. When desk-tools/08 lands (`deskgit push` and
-     `deskgit fetch`, authenticated transport from the role's token file), this whole block
-     collapses to naming those two verbs. It is bracketed by the BEGIN/END markers so that
-     retirement is a single edit, not a hunt across the file. -->
+<!-- BEGIN authenticated transport -->
 
-**Mechanism.** The canonical fetch/push form reads the role's token from its **file** and
-presents it through a git credential helper as HTTP Basic auth — username `x-access-token`,
-the token as the password. A token embedded directly in the remote URL is refused. Use the
-explicit `:443` host form so a local URL rewrite (an `insteadOf` rule) does not silently
-re-point the remote. A `401` on push or fetch means one of two things: the token has a short
-TTL and has expired (re-mint it), or an OS keychain credential helper is shadowing the one you
-supplied (reset `credential.helper` to empty first, then supply yours).
+Fetch and push under a role's identity with `deskgit fetch` and `deskgit push`, each in its
+role-bound `--as <role>` form. Their flags, output, refusal texts and exit codes are
+documented in `tools/desk/README.md` §"Authenticated transport — `--as <role>` (fetch and
+push)", not in this file.
 
-**Signal.** `401 Unauthorized` / `Authentication failed`; or a remote-URL rewrite sending the
-push to an unexpected host; or a refusal to accept a token embedded in the URL.
+`deskgit` binds to the current working directory; it does not accept git's `-C`
+option or a repository operand. Select the already-resolved repository directory
+before invoking it, in the same shell call. For a worker's board-root refresh:
 
-**Correct form.**
-
-```
-TOK=$(cat "$ROLE_TOKEN_FILE")
-git -C /abs/worktree \
-  -c credential.helper='!f(){ echo username=x-access-token; echo "password=$TOK"; };f' \
-  push https://github.com:443/<owner>/<repo> HEAD:<branch>
-# On 401: either re-mint the short-TTL token, or clear a shadowing OS keychain helper first —
-#   git -C /abs/worktree -c credential.helper= -c credential.helper='!f(){ … };f' push …
+```bash
+(cd "$root" && deskgit fetch --as worker) && fanoutloop plan --root "$root"
 ```
 
-When desk-tools/08 lands, this reduces to `deskgit push` for the push side and `deskgit fetch`
-for the fetch side (the latter selects the acting role through a role selector); the flags,
-output and refusal texts of those verbs belong to that brief, not to this file.
+`root` is an absolute path from the configured board-root inventory. The subshell
+keeps the caller's worktree as its working directory after the read. The `&&`
+prevents a failed directory selection or fetch from producing a stale plan. Select
+the bound role for other desks; never infer supported flags from `git`'s interface.
+
+Never hand-roll the credential-helper recipe these verbs replace: they have no raw fallback,
+whatever they exit with. When one refuses or cannot verify a step, fix the cause it names if
+that cause is the session's own state (for example, check out a branch instead of working on a
+detached HEAD); otherwise stop and escalate.
 
 <!-- END authenticated transport -->
 
@@ -205,12 +225,106 @@ installed where you are aiming it.
 
 **Correct form.** `desktoken coverage <role>`.
 
+## Forge CLI as the role
+
+<!-- BEGIN forge cli as the role -->
+
+**Mechanism.** A desk's only forge credential is its role App's, minted by `desktoken <role>`.
+`desktoken` prints the PATH of an owner-only custody file on stdout, never the token itself,
+and exits 0 ok · 3 disabled · 5 refused · 6 unverifiable. The desk verbs resolve that same
+credential on their own from `$DESK_LOOP` and have no ambient fallback. A bare `gh` call has no
+such resolution. It runs as whatever login the local CLI holds, usually a trusted human's
+personal one, or fails when there is none. A trusted human on the roster is a person whose
+comments and rulings count. That login is not a role credential, and a desk never borrows it,
+whether through the CLI's stored login or by reading it with `gh auth token`.
+
+**Prefer a desk verb.** When a desk verb covers the call, use the verb and skip `gh`:
+`deskread` for issue, change and comment reads (`deskread --help` lists its kinds),
+`deskboard` for board views, and `deskfile`, `deskpr`, `deskreply` and `deskpost` for writes.
+Use `gh` only for a call that no verb covers, and then only through the recipe below.
+
+**Correct form.** Run the whole recipe in one shell call (§One call, one chain). It works in
+bash and zsh. The role comes from `$DESK_LOOP` and nowhere else: a role named by hand could
+differ from the loop's. The `case` arms mirror the compiled loop-to-role table (`loopTokenRoles`
+in `tools/desk/internal/deskkit/roletoken.go`, retired loop names included), and a test holds
+the two in step. The recipe stops before any `gh` call unless `desktoken` exits 0, prints a
+path, and that path names a file holding a token: something other than whitespace. A size
+check alone is not enough. A file holding only a newline has a non-zero size but yields an
+empty `GH_TOKEN`, and `gh` treats an empty `GH_TOKEN` as unset and runs as the host's stored
+login, which is a human's, and exits 0.
+
+```bash
+repo='<owner>/<repo>'
+case "${DESK_LOOP:-}" in
+  the-desk)                 role=desk ;;
+  worker-desk|batch-fanout) role=worker ;;
+  pr-review-desk)           role=reviewer ;;
+  verify-desk)              role=verifier ;;
+  intake-desk|issue-loop)   role=issue-loop ;;
+  *)                        role= ;;
+esac
+if [ -z "$role" ]; then
+  printf '%s\n' "desk-auth: refused: \$DESK_LOOP is unset or names no desk role; export this window's loop name in this shell" >&2
+  false
+elif ! tokfile="$(desktoken "$role" --repo "$repo")"; then
+  printf '%s\n' "desk-auth: unauthenticated: role App custody for '$role' is unavailable (desktoken failed; its stderr names the cause)" >&2
+  false
+elif [ -z "$tokfile" ] || [ ! -f "$tokfile" ] || ! grep -q '[^[:space:]]' "$tokfile"; then
+  printf '%s\n' "desk-auth: unauthenticated: role App custody for '$role' is unavailable (desktoken printed no path, or the file is missing, empty or whitespace only)" >&2
+  false
+else
+  GH_TOKEN="$(cat "$tokfile")" gh issue list -R "$repo" --limit 1 --json number
+fi
+```
+
+Prefix each further `gh` call in the same shell call the same way. Scope `GH_TOKEN` to one
+command. Never `export` it, and never leave it set in a long-lived or shared shell. Never print,
+echo, copy or log the token or the custody file's contents. Only the path may appear in output.
+Never run the recipe under shell tracing (`set -x`, `zsh -x`): a trace prints the expanded
+`GH_TOKEN=` assignment.
+In PowerShell, set the variable for the one call and remove it afterwards:
+
+```powershell
+$tok = (Get-Content -Raw -LiteralPath $tokfile)
+if ([string]::IsNullOrWhiteSpace($tok)) { throw "desk-auth: unauthenticated: role App custody for '$role' is unavailable (the file is empty or whitespace only)" }
+try { $env:GH_TOKEN = $tok.Trim(); gh issue list -R $repo --limit 1 --json number }
+finally { Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue; Remove-Variable tok -ErrorAction SilentlyContinue }
+```
+
+Before those lines, apply the same checks as the bash form: the `$env:DESK_LOOP` role mapping,
+a zero `$LASTEXITCODE` from `desktoken`, and a path that names an existing file. The
+`IsNullOrWhiteSpace` test is the value check: never set `GH_TOKEN` from a value that fails it.
+
+**Two failures, two diagnoses.** Keep them apart. A report that merges them sends the repair to
+the wrong identity.
+
+- **Desk unauthenticated.** `desktoken` exits non-zero, prints no path, or names a missing or
+  empty file, or one holding only whitespace. This is the ONLY desk-authentication failure.
+  Report it as `desk-auth: unauthenticated: role App custody for '<role>' is unavailable`,
+  with the refusal `desktoken` wrote to stderr, then stop and escalate the custody gap under
+  the desk's escalation rules. A token that mints but is refused on the target repository
+  is a coverage gap, not a custody one (§Which repositories a role can see).
+- **No human CLI login.** `gh auth status` reports no login, or `gh auth token` fails for a
+  roster human. That is a fact about the host, not about the desk. Report it, if at all, as
+  `no human gh login on this host: not a desk-authentication failure`, and carry on under the
+  role token. It matters only for a command the human driver runs as themselves, such as a
+  ruling posted from the driver's own account. That is the driver's own path, and the driver
+  repairs it.
+
+**Personal OAuth is never the default repair.** Never repair a desk failure by running `gh auth
+login` with a person's account, reading a roster human's token, or exporting a personal token.
+The repair is the role's custody: the cause `desktoken` names, provisioning the App, its
+installation coverage, or `desktoken <role> --fresh` after a permission change. When the session
+cannot make that repair, it escalates.
+
+<!-- END forge cli as the role -->
+
 ## Cross-desk transport — the comms lane
 
 **Mechanism.** A hand-off to another desk is addressed to that role's LANE at the cell gateway,
 through the client verbs `deskcomms send` (payload on stdin; `--to <role>`, `--verb <verb>`,
 `--ref <id>` repeatable, `--class routine|sensitive`, `--to-cell <cell>` for the coordinator's
-cross-cell sends only), `deskcomms poll` (this session's own per-role mailbox) and
+cross-cell sends only), `deskcomms poll --json` (this session's own per-role mailbox, including payloads) and
 `deskcomms ack <id>` (moves, never deletes). The sender's `{cell, role}` come from the session
 context the launcher exports — the cell marker and the role marker `deskcomms --help` names —
 never from an argument: a caller says who a message is FOR, never who it is FROM. The gateway's
@@ -220,7 +334,13 @@ committed). The client preflight (reserved-verb → identity → parse → lane 
 rate limit → mint → submit) calls the same functions the gateway re-runs authoritatively, so a
 refusal here is behaviour-identical to the gateway's — and an agent that never runs the client
 verb meets the whole stack at the gateway anyway. There is no local-spool fallback: an
-unreachable gateway is a refusal, not a queue. Which verb a hand-off uses, and the five hand-off
+unreachable gateway is a refusal, not a queue. New message IDs use hyphenated UUID v4
+format so a recipient can quote the ID in a reply without a bare secret-shaped hex run.
+Caller-generated correlation/run IDs should use the same UUID format, preserving the
+separators end to end. IDs identify messages; they grant no authority. Older opaque IDs
+remain valid for poll/ack. The payload scan still applies: a field named correlation ID
+is not a secret exemption, and a refused payload is never reformatted and retried to bypass
+its refusal. Which verb a hand-off uses, and the five hand-off
 kinds, are stated once in the "Cross-desk hand-offs — the lane verbs" section every desk-role
 skill carries; this file owns only the transport.
 
@@ -230,17 +350,47 @@ established` (the cell or role marker is missing from THIS shell); a gateway-unr
 (the plane is not enabled here, or the address is unset). Exit **3** disabled · **4**
 rate-limited · **5** refused · **6** unverifiable.
 
-**Correct form.** Export the markers in the SAME chain as the verb (§Loop and session markers),
+**Correct form (enabled lane only).** Export the markers in the SAME chain as the verb (§Loop and session markers),
 then ONE send with the kind on the payload's first line:
 
 ```
 printf '%s\n' 'request-act' '<the one action, plus its evidence pointers>' \
   | deskcomms send --to <role> --verb handoff --ref <issue-or-pr-id>
-deskcomms poll            # every sweep: read your own lane
+deskcomms poll --json     # every sweep after cutover: read your own lane and payloads
 deskcomms ack <id>        # once acted on
 ```
 
-Before the cell's comms plane is enabled (a human-gated cutover; config-off until then) every
-verb refuses, and the harness's same-box session channel is the pre-cutover fallback only: a
-hand-off it carried is recorded in the hand-off note, and the channel is retired the moment the
-cutover is recorded.
+`poll --json` needs a `deskcomms` from a desk-tools release that ships the flag; an older
+binary refuses it as an unknown flag. Install matching binaries rather than reading plain
+`poll` output, which omits payloads.
+
+Select the transport from the project's recorded cutover state before invoking a comms verb.
+The shared "Cross-desk hand-offs — the lane verbs" skill block owns the pre-cutover branch,
+including skipping `poll` while explicitly config-off and continuing the work-queue sweep.
+Absent identity or gateway configuration alone is not evidence that this branch applies;
+a failed enabled lane never permits fallback. Unknown or conflicting state stops comms only, not
+the work-queue sweep; the block names where the record is read and how an absent key reads.
+
+
+## Optional local performance context
+
+Operator-selected local collection uses the existing perfrec instrument.
+Launchers never create opt-in; explicit workflow consent permits bounded local
+work linkage. Keep immutable context per launch: new agents get new opaque
+session/agent identities, ordinary tool children get fresh invocation identities,
+and work is selected for each assignment. A typed child runner passes its own
+invocation only as the child's parent. Explicit resume uses the existing
+launcher's retained private native-ID mapping or reports a continuity gap.
+Do not place this data in a shared global shell or public workpad.
+
+The canonical flag/environment table is in the attribution specification.
+Use the shared parser bindings and public perfrec resolver, including empty
+clears and replacement work lists. Attribution never changes the operational
+DESK_LOOP. When a child needs a different operational loop, preserve originating
+desk attribution through --perf-loop-role on supported tool calls. Unsupported
+adapters remain explicit gaps; optional writer failure cannot block the operation.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

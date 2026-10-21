@@ -1,7 +1,7 @@
 # Verdict mechanics and the verdict-body schema
 
 The desk's verdict-posting interface. `pr-review-desk/SKILL.md` § The reviewer's bar points here;
-`deskdispatch --kit review` §9 carries the generic wording the dispatched agent receives. The tool
+`deskdispatch --kit review` §12 carries the generic wording the dispatched agent receives. The tool
 reference is `tools/desk/README.md` — the public home of the desk tools.
 
 ## Posting a verdict
@@ -47,9 +47,46 @@ deskpost body-checks the file independently and refuses (exit 5) unless the body
 
 **A refused body costs the desk, not just the post.** Five consecutive non-progress attempts
 (refused/noop) open deskpost's circuit breaker — 15 minutes, blocking every deskpost writer
-(reviews, comments, ready flips), not only yours. Never retry a refused body unchanged: fix it
-first; the refusal reason is in the audit `detail`. **Exit 5 is NEVER a fallback trigger** — fall
-back only on exit 3 (disabled) / 6 (unverifiable).
+(reviews, comments, ready flips), not only yours. Never retry a refused body unchanged: a
+SCHEMA refusal (rules 1–4 above) is fixed by the body's author first; the refusal reason is in the
+audit `detail`. A CONTENT-SCAN refusal (`refused: <rule id> at body:<line>`) is not a schema
+defect — it is a STOP (`SKILL.md` § "A scan refusal on a verdict body is a STOP — never reword
+it"). Any other exit-5 refusal that names no scan rule — a malformed typed finding block, for
+one — is the body author's to fix, like a schema refusal. **Exit 5 is NEVER a fallback trigger** —
+fall back only on exit 3 (disabled) / 6 (unverifiable).
+
+## Coverage — the correctness verdict's per-class accounting block
+
+A correctness verdict body ENDS with an `## Coverage` section: one line per class in the
+correctness class register. The register's home is the dispatched review kit's `review-prompt`
+reference, never this file; each line is exactly one of four shapes, one grammar — class
+first, state second, colon before the detail, except the finding shape:
+
+```
+<class> — finding <finding-id>
+<class> — checked-clean: <what was examined>
+<class> — n/a: <one-sentence reason>
+<class> — could-not-check: <what was missing>
+```
+
+A class that applied, was examined, and is sound is `checked-clean`; a class that genuinely
+does not apply to this diff is `n/a` with its one-sentence reason — the two must never share
+a state, and an examined-and-sound class written as `n/a` is precisely the leak this
+contract exists to close. A class that could not be honestly `n/a`'d and was not checked is
+`could-not-check`, never a silent pass; silence is not accounting, and a class with no line
+is a gap in the accounting, not an answer. A could-not-check line is disclosure: an APPROVE
+stands unless it rests on that class. The accounting covers the stated scope: a delta
+round accounts for the classes the delta range's paths can touch; a full pass accounts for
+every class in the register. A security verdict carries no Coverage block — the register is
+the correctness lane's, and the two verdicts stay separate artifacts.
+
+The block is small by construction: all 14 classes at one line each are a small fraction of
+the 16 KiB body cap — cut prose elsewhere, never accounting.
+
+`deskpost` neither requires nor refuses the block today. It rides the body as plain lines
+under the schema above, and a body without it passes that schema exactly as before; whether
+deskpost should refuse a correctness body carrying no Coverage block is a separate, later
+ruling — this contract is doctrine, not a gate.
 
 ## When your ONLY finding is a red required check
 
@@ -91,6 +128,36 @@ Clearing the block is not an approval, either: the gate still needs your APPROVE
 governing verdict at head, so if you post a further CHANGES_REQUESTED afterwards the PR blocks
 again.
 
+## When your ONLY finding is the PR body
+
+A `request-changes` whose sole blocker is the PR **body** (the description asserts something
+false or stale) is answered by a body edit, and a body edit never moves the head. The flip gate
+admits a same-head APPROVE over such a CR only in this documented, machine-checkable form:
+
+1. **On the CHANGES_REQUESTED**, declare the finding and the body you blocked on:
+
+   `Blocked-On-Body: f-body-1 <64-hex digest of the body as you read it>`
+
+   Only when the body is genuinely the whole of your finding. A typed finding block on the same
+   review that names any other blocking finding makes the CR mixed, and a CR also carrying
+   `Blocked-On-Check:` or `External-Prereq-Only:` qualifies for neither class.
+
+2. **On the APPROVE that answers it**, after re-reading the live body via the API:
+
+   `Resolved-Body-Finding: f-body-1`
+   `Body-Reread-Digest: <64-hex digest of the live body you re-read>`
+   `CI-Green-At: <full 40-hex head sha>`
+
+The digest is SHA-256 of the body with carriage returns removed and trailing newlines trimmed:
+`printf '%s' "$(gh api repos/<slug>/pulls/<N> --jq .body | tr -d '\r')" | shasum -a 256`.
+`deskflip` recomputes the live body's digest at flip time (and again just before the mutation)
+and refuses unless it equals your re-read digest **and** differs from the CR's. It also reads the
+forge's own record of the body's last edit and refuses unless that edit is later than your CR —
+your recorded digests alone never establish that the body was edited. So a re-approve over an
+unedited body, or over a body edited again after you read it, clears nothing. It still
+judges CI green itself; your `CI-Green-At:` line is the documentation, not the check. The same
+fence and ambiguity rules as the check-only lines apply.
+
 ## The secret scan
 
 The scan refuses any run of 32+ base64ish characters, plus token prefixes, `AKIA…`, PEM and JWT
@@ -101,6 +168,21 @@ template names) fire this, and backticks do NOT help, because a backtick is outs
 charset and the run inside stays contiguous. Break the identifier or shorten the reference. Quote
 the numeric review `id` from `gh api repos/<slug>/pulls/<N>/reviews`; never paste prefixed digests
 or base64 blobs.
+
+Cite sops material, never quote it. A finding about an encrypted file names it by `path:line`
+and describes it in words: the `sops` footer, its `mac` or `lastmodified` field, an `ENC[…]`
+envelope missing its `iv`. A quoted footer or envelope is refused on every surface, inside a
+code fence too. The audited `--force-scan-override` is a human act, and a reviewer never passes
+it to get a verdict through.
+
+That is authoring guidance for the FIRST post. Once the scan has refused a verdict body, the body
+is evidence: the desk never rewords, re-encodes, splits or trims it, the scan override is the
+maintainer's alone and exists only for the rules the tool lets it waive — no flag waives
+`voice.ruling-claim` or `withheld.identifier`, so there the filing asks the maintainer for a
+ruling, not an override — and the one re-issue is the reviewer's own, restating each refused span
+as a `path:line` citation. Whether the reviewer may restate its OWN prose on those two rules is
+still open, a maintainer decision (`SKILL.md` § "A scan refusal on a verdict body is a STOP —
+never reword it").
 
 ## If a raw `gh pr review` is ever unavoidable
 

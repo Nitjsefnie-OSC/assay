@@ -7,7 +7,8 @@ survive: the tile colour and one bold silhouette. A family of thin blue strokes
 inside the same blue octagon is six identical dots — the reader has to read the
 login to know who spoke. `deskavatar` hands the installer a set that is on brand,
 distinguishable in a comment thread, tuned to the org, and **byte-identical every
-time it is regenerated**.
+time it is regenerated** with the same Go toolchain (the PNG pixels are identical on
+any toolchain — see [Rasteriser](#rasteriser)).
 
 It is offline (no network — an org avatar, when used, is passed in as a file) and
 **deterministic**: no time, no randomness. `go test -count=2` produces identical
@@ -17,7 +18,10 @@ bytes.
 deskavatar --org <login> --tier team|family --out <dir> [--sizes 200,512,1000] [--avatar org.png]
 ```
 
-- `--tier team` — the two-App set installed first: `<org>-read` and `<org>-act`.
+- `--tier team` — the three-App set installed first: `<org>-read`, `<org>-act`
+  and `<org>-review`. Read and act are the adopter's hue inverted against each
+  other (two stars); review is the same hue on a muted body with the family
+  reviewer's glyph, a light solid disc. All three are proofed together.
 - `--tier family` — the full six-role suite: `reviewer`, `worker`, `verifier`,
   `desk`, `issue-loop`, `intake-loop`.
 - Output per App: `<app>.svg` (source of truth) and `<app>.png` at 512 px. With
@@ -44,7 +48,9 @@ px) so a size cannot drive an unbounded allocation.
 >   ticket, funnel) so the set survives monochrome viewing.
 > - **Read + Act: inversion, not hue.** The adopter's hue (hashed from the org
 >   login) colours both tiles; read is a dark tile with a light glyph, act a
->   filled tile with a dark glyph.
+>   filled tile with a dark glyph. The team tier's third App, `<prefix>-review`,
+>   takes the same hue on a muted body with the family reviewer's glyph — a
+>   light solid disc — so the team set is three tiles, proofed together.
 > - **Adopter identity sits behind the glyph** — initials or a quantized org
 >   avatar as a low-contrast field, visible at 64 px and above, invisible at 20 px
 >   where the role must win.
@@ -94,7 +100,7 @@ and only colour — tells them apart. That is the pair the collapse test targets
 
 Alongside the metric, a committed **20 px PNG strip per tier**
 (`internal/avatar/testdata/golden/{team,family}-20px.png`) is compared
-byte-for-byte by `TestGolden20px`. The metric is a floor; the golden is the
+pixel-for-pixel — decoded, exact, zero tolerance — by `TestGolden20px`. The metric is a floor; the golden is the
 backstop — a palette or geometry regression the metric happens to accept is still
 a visible diff a reviewer must approve. Verify row 6 breaks the proof (every role
 hue forced to one blue) and names the colliding pair; the golden catches
@@ -113,7 +119,16 @@ SVG is rendered to PNG with a pure-Go rasteriser
 (`github.com/srwiley/oksvg` + `github.com/srwiley/rasterx`) — **no cgo, no system
 library** — so the desk-tools release matrix is unchanged (Verify row 8). The
 identity monogram is drawn with the embedded Go font; both `image/png` encoding
-and font rasterisation are deterministic, so a regenerated PNG is byte-identical.
+and font rasterisation are deterministic, so a regenerated PNG is byte-identical
+under the same Go toolchain. The encoded bytes are NOT stable across Go releases:
+`compress/flate` output changed for identical scanlines between Go 1.26 and 1.27
+(observed: 1.25.0, 1.26.0 and 1.26.7 reproduce the committed goldens byte-for-byte,
+1.27.1 does not), so a PNG written by one release differs byte-wise from one written by
+another while every pixel is the same. That is why `TestGolden20px` compares
+decoded pixels rather than file bytes (a byte check failed on any machine whose Go
+differed from the one that wrote the goldens), and why
+`TestNoCompressedByteGolden` fails any test in the module that
+byte-compares a committed compressed file.
 
 ## Library
 

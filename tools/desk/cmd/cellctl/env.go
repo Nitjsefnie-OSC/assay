@@ -17,7 +17,7 @@ import (
 // only the ACTIVE harness's var is ever exported — and DESK_ROOTS/TERM/LANG are present only
 // when the source they come from (cell.env CELL_ROOTS; the launching shell) carries one.
 var scrubbedEnvKeys = []string{
-	"HOME", "ZDOTDIR", "SHELL", "PATH", "TMPDIR", "KUBECONFIG", "ASSAY_CONFIG_HOME",
+	"HOME", "ZDOTDIR", "SHELL", "PATH", "TMPDIR", "KUBECONFIG", "ASSAY_CONFIG_HOME", envAssayTelemetry,
 	"GH_CONFIG_DIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT",
 	"CODEX_HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION", "DESK_LOOP", "DESK_SESSION", "DESK_ROOTS", "TERM", "LANG",
 }
@@ -47,6 +47,11 @@ func scrubbedHarnessPath(harness string) string {
 // caught by the parity diff.
 func (c *Cell) scrubbedEnvValue(key, role, harness, session, composedPath string) string {
 	switch key {
+	case envAssayTelemetry:
+		if !c.Env.IsSet(envAssayTelemetry) {
+			return "" // env -i already makes an absent opt-in off
+		}
+		return c.telemetryValue()
 	case "HOME":
 		return c.Home
 	case "ZDOTDIR":
@@ -117,7 +122,7 @@ type ComposedEnv struct {
 // PATH — the shim prefix and the resolved harness dir are never overridden.
 func (c *Cell) scrubbedComposeEnv(role, harness, session string) ComposedEnv {
 	harnessDir := scrubbedHarnessPath(harness)
-	tail := "/usr/bin:/bin:/usr/sbin:/sbin"
+	tail := scrubbedPathTail
 	if v := c.Env.Get("CELL_PATH"); v != "" {
 		tail = v
 	}
@@ -132,6 +137,7 @@ func (c *Cell) scrubbedComposeEnv(role, harness, session string) ComposedEnv {
 		}
 		ce.Pairs = append(ce.Pairs, k+"="+v)
 	}
+	ce.Pairs = c.cacheEnv(ce.Pairs)
 	ce.Sorted = append([]string(nil), ce.Pairs...)
 	sort.Strings(ce.Sorted)
 	return ce

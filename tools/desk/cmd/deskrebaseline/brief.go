@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
 // brief.go — load a brief, read its OWN risk declaration, and parse its `## Verify` table
@@ -24,6 +25,9 @@ type verifyRow struct {
 	Class   string
 	Command string
 	Expect  string
+	// CommentLed is verifycmd.CommentLed of the raw cell: why the row's command is
+	// only a shell comment, or "". gatherRowFacts never probes such a row (#2684).
+	CommentLed string
 }
 
 // loadedBrief is a brief resolved to a file, with its risk declaration and Verify rows.
@@ -188,11 +192,16 @@ func parseVerifyRows(content string) []verifyRow {
 			if hasExpect {
 				expect = stripInlineCode(cell(expectCol))
 			}
+			// verifycmd.Lift honours the `cmd:` marker (spec §4.4, #1805) and
+			// otherwise unwraps a fully-backticked cell exactly as before.
+			// verifycmd.CommentLed judges the RAW cell, not the lift: a cell whose
+			// first span is a comment can lift (whole) as a runnable no-op (#2684 S1).
 			rows = append(rows, verifyRow{
-				Num:     num,
-				Class:   class,
-				Command: stripInlineCode(cell(cmdCol)),
-				Expect:  expect,
+				Num:        num,
+				Class:      class,
+				Command:    verifycmd.Lift(cell(cmdCol)),
+				Expect:     expect,
+				CommentLed: verifycmd.CommentLed(cell(cmdCol)),
 			})
 		}
 		return rows

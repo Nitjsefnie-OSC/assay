@@ -103,6 +103,12 @@ type goldenServer struct {
 	workflowRuns       map[string]any
 	pendingDeployments []map[string]any
 	run                map[string]any
+	// fileCommits is the path-filtered commits LIST (ListFileCommits) and commitPulls the
+	// commit's associated-PRs LIST (ListCommitChanges).
+	fileCommits []map[string]any
+	commitPulls []map[string]any
+	// pullCommits is a pull request's commits LIST (op 57, forge-neutral brief 33), served on page 1.
+	pullCommits []map[string]any
 }
 
 var (
@@ -115,6 +121,8 @@ var (
 	gIssueRoot = regexp.MustCompile(`^/repos/[^/]+/[^/]+/issues$`)
 	gStatus    = regexp.MustCompile(`/commits/[^/]+/status$`)
 	gChecks    = regexp.MustCompile(`/commits/[^/]+/check-runs$`)
+	gCommits   = regexp.MustCompile(`^/repos/[^/]+/[^/]+/commits$`)
+	gCommitPRs = regexp.MustCompile(`^/repos/[^/]+/[^/]+/commits/[^/]+/pulls$`)
 	gReqChecks = regexp.MustCompile(`/branches/[^/]+/protection/required_status_checks$`)
 	gRepo      = regexp.MustCompile(`^/repos/[^/]+/[^/]+$`)
 	gReactions = regexp.MustCompile(`/issues/[0-9]+/reactions$`)
@@ -140,6 +148,9 @@ var (
 	gWorkflowRuns     = regexp.MustCompile(`^/repos/[^/]+/[^/]+/actions/workflows/[^/]+/runs$`)
 	gRunPending       = regexp.MustCompile(`^/repos/[^/]+/[^/]+/actions/runs/[0-9]+/pending_deployments$`)
 	gRun1             = regexp.MustCompile(`^/repos/[^/]+/[^/]+/actions/runs/[0-9]+$`)
+
+	// forge-neutral brief 33's pull-commits route (op 57).
+	gPullCommits = regexp.MustCompile(`^/repos/[^/]+/[^/]+/pulls/[0-9]+/commits$`)
 )
 
 func (s *goldenServer) handler(w http.ResponseWriter, r *http.Request) {
@@ -240,6 +251,10 @@ func (s *goldenServer) handler(w http.ResponseWriter, r *http.Request) {
 		enc(s.status)
 	case r.Method == http.MethodGet && gChecks.MatchString(path):
 		enc(s.checks)
+	case r.Method == http.MethodGet && gCommits.MatchString(path):
+		enc(s.fileCommits)
+	case r.Method == http.MethodGet && gCommitPRs.MatchString(path):
+		enc(s.commitPulls)
 	case r.Method == http.MethodGet && gReqChecks.MatchString(path):
 		// A branch with no protection (or no required checks) answers 404 — the "nothing
 		// required" case, distinct from a served object. A case that wants the 404 sets it via
@@ -249,6 +264,12 @@ func (s *goldenServer) handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		enc(s.reqChecks)
+	case r.Method == http.MethodGet && gPullCommits.MatchString(path):
+		if page != "" && page != "1" {
+			enc([]map[string]any{})
+			return
+		}
+		enc(s.pullCommits)
 	case r.Method == http.MethodGet && gPull.MatchString(path):
 		enc(s.pull)
 	case r.Method == http.MethodPatch && gPull.MatchString(path):
@@ -562,6 +583,23 @@ func TestForgeGithubGolden(t *testing.T) {
 			run: func(f *GitHubForge) (any, error) { return f.ListLabelEvents(forgeTestRepo, 7) },
 		},
 		{
+			// Op 64: the issue's whole label history, every labeled/unlabeled event with the actor's
+			// login AND numeric id, an event whose label is unnamed kept (empty name), an actor-less
+			// event carried with id 0.
+			name: "issue_label_history",
+			setup: func(s *goldenServer) {
+				s.timeline = []map[string]any{
+					{"event": "labeled", "created_at": "2026-10-01T10:00:00Z", "label": map[string]any{"name": "needs-decision"},
+						"actor": map[string]any{"login": "desk[bot]", "id": 4242}},
+					{"event": "commented", "actor": map[string]any{"login": "someone", "id": 7}},
+					{"event": "unlabeled", "created_at": "2026-10-02T10:00:00Z", "label": map[string]any{"name": "needs-decision"},
+						"actor": map[string]any{"login": "desk[bot]", "id": 4242}},
+					{"event": "unlabeled", "created_at": "2026-10-03T10:00:00Z"},
+				}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.IssueLabelHistory(forgeTestRepo, 7) },
+		},
+		{
 			// The comment read is GraphQL because REST carries no `isMinimized`, and a
 			// minimised comment must never be picked up for an edit. The author nodes are
 			// shaped as GitHub's GraphQL API really renders them: a Bot actor's `login` is the
@@ -583,6 +621,52 @@ func TestForgeGithubGolden(t *testing.T) {
 				}}}
 			},
 			run: func(f *GitHubForge) (any, error) { return f.ListComments(forgeTestRepo, 7) },
+		},
+		{
+			// desktools-v2 brief 09 — the review-queue snapshot is ONE POST /graphql carrying
+			// every open change with its reviews. The golden pins the document sent (the request
+			// body), the REST rendering of each review (a Bot author re-suffixed to "<slug>[bot]",
+			// databaseId as ID / Author.ID, commit.oid as CommitID, a null commit as ""), and the
+			// fail-closed incompleteness: #8's reviews overflow the page (hasNextPage) and #9's
+			// response carries no reviews connection at all — both come back
+			// ReviewsComplete=false with NO reviews, never an empty-but-complete set.
+			name: "review_queue_snapshot",
+			setup: func(s *goldenServer) {
+				pr := func(n int, head string, reviews any) map[string]any {
+					m := map[string]any{
+						"number": n, "title": "change", "body": "", "state": "OPEN", "isDraft": true,
+						"createdAt": "2026-09-01T00:00:00Z", "lastEditedAt": nil,
+						"author":           map[string]any{"login": "worker", "__typename": "Bot"},
+						"mergeStateStatus": "CLEAN", "headRefOid": head, "headRefName": "feat/x", "baseRefName": "main",
+						"labels":  map[string]any{"nodes": []map[string]any{{"name": "example-label"}}},
+						"commits": map[string]any{"nodes": []map[string]any{}},
+					}
+					if reviews != nil {
+						m["reviews"] = reviews
+					}
+					return m
+				}
+				complete := map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []map[string]any{
+					{"databaseId": 501, "author": map[string]any{"login": "reviewer", "__typename": "Bot", "databaseId": 42},
+						"state": "CHANGES_REQUESTED", "commit": map[string]any{"oid": "old1"}, "body": "Verdict: request-changes",
+						"submittedAt": "2026-09-01T01:00:00Z"},
+					{"databaseId": 502, "author": map[string]any{"login": "example-human", "__typename": "User", "databaseId": 7},
+						"state": "COMMENTED", "commit": nil, "body": "note", "submittedAt": "2026-09-01T02:00:00Z"},
+					{"databaseId": 503, "author": map[string]any{"login": "reviewer", "__typename": "Bot", "databaseId": 42},
+						"state": "APPROVED", "commit": map[string]any{"oid": "head7"}, "body": "Verdict: approve",
+						"submittedAt": "2026-09-01T03:00:00Z"},
+				}}
+				overflow := map[string]any{"pageInfo": map[string]any{"hasNextPage": true}, "nodes": []map[string]any{
+					{"databaseId": 601, "author": map[string]any{"login": "reviewer", "__typename": "Bot", "databaseId": 42},
+						"state": "APPROVED", "commit": map[string]any{"oid": "head8"}, "body": "", "submittedAt": "2026-09-01T04:00:00Z"},
+				}}
+				s.graphql = map[string]any{"data": map[string]any{"repository": map[string]any{
+					"pullRequests": map[string]any{"nodes": []map[string]any{
+						pr(7, "head7", complete), pr(8, "head8", overflow), pr(9, "head9", nil),
+					}},
+				}}}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.ReviewQueueSnapshot(forgeTestRepo) },
 		},
 		{
 			name: "edit_comment",
@@ -792,6 +876,30 @@ func TestForgeGithubGolden(t *testing.T) {
 			run: func(f *GitHubForge) (any, error) { return f.ListLabels(forgeTestRepo) },
 		},
 		{
+			// The auto-approve lane's register history: ONE path-filtered page at the named ref.
+			name: "list_file_commits",
+			setup: func(s *goldenServer) {
+				s.fileCommits = []map[string]any{
+					{"sha": "ccc333", "commit": map[string]any{"committer": map[string]any{"date": "2026-09-02T10:00:00Z"}}},
+					{"sha": "bbb222", "commit": map[string]any{"committer": map[string]any{"date": "2026-09-01T10:00:00Z"}}},
+				}
+			},
+			run: func(f *GitHubForge) (any, error) {
+				return f.ListFileCommits(forgeTestRepo, "main", "docs/rulings.md", 50)
+			},
+		},
+		{
+			// The PRs behind one commit, as numbers; the caller reads each for its merge time.
+			name: "list_commit_changes",
+			setup: func(s *goldenServer) {
+				s.commitPulls = []map[string]any{
+					{"number": 21, "state": "closed", "merged_at": "2026-09-01T11:00:00Z"},
+					{"number": 34, "state": "open", "merged_at": nil},
+				}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.ListCommitChanges(forgeTestRepo, "bbb222") },
+		},
+		{
 			name: "read_file",
 			setup: func(s *goldenServer) {
 				s.contentsGet = map[string]any{"sha": "blob-1", "content": ghB64("row one\n")}
@@ -803,10 +911,13 @@ func TestForgeGithubGolden(t *testing.T) {
 		{
 			// Update path: the idempotency read finds a DIFFERENT content, so the PUT carries the
 			// prior blob sha. GitHub's default branch is directly writable by the App (carve-out),
-			// so no sentinel — the write lands on the branch directly.
+			// so no sentinel — the write lands on the branch directly. The read is served in the
+			// live shape (typed, base64, the blob's own id), since the write refuses a prior entry
+			// it cannot show to be a plain file (S-2266-8).
 			name: "write_file_updates_existing",
 			setup: func(s *goldenServer) {
-				s.contentsGet = map[string]any{"sha": "blob-1", "content": ghB64("row one\n")}
+				s.contentsGet = map[string]any{"type": "file", "path": "EVIDENCE.md", "encoding": "base64",
+					"sha": blobID("row one\n", false), "content": ghB64("row one\n")}
 				s.contentsPut = map[string]any{
 					"content": map[string]any{"sha": "blob-2"},
 					"commit": map[string]any{"sha": "c0ffee", "author": map[string]any{
@@ -1014,6 +1125,166 @@ func TestForgeGithubGolden(t *testing.T) {
 					"html_url": "https://example/actions/runs/501"}
 			},
 			run: func(f *GitHubForge) (any, error) { return f.RunStatus(forgeTestRepo, RunRef{ID: "501"}) },
+		},
+		// --- forge-neutral brief 33: ops 55-58 and the widened fields ---
+		{
+			// Op 55: the issues-only GraphQL connection (never REST /issues), state and label as
+			// typed variables, a Bot author re-suffixed with its kind and id, closedAt carried.
+			name: "list_issues",
+			setup: func(s *goldenServer) {
+				s.graphql = map[string]any{"data": map[string]any{"repository": map[string]any{
+					"issues": map[string]any{
+						"pageInfo": map[string]any{"hasNextPage": false, "endCursor": "c1"},
+						"nodes": []map[string]any{
+							{"number": 13, "title": "still open", "state": "OPEN",
+								"createdAt": "2026-09-02T09:00:00Z", "closedAt": nil,
+								"url":    "https://example/issues/13",
+								"labels": map[string]any{"nodes": []map[string]any{{"name": "gate: human"}}, "pageInfo": map[string]any{"hasNextPage": false}},
+								"author": map[string]any{"login": "worker", "__typename": "Bot", "databaseId": 99}},
+							{"number": 12, "title": "done", "state": "CLOSED",
+								"createdAt": "2026-09-01T09:00:00Z", "closedAt": "2026-09-03T09:00:00Z",
+								"url":    "https://example/issues/12",
+								"labels": map[string]any{"nodes": []map[string]any{}, "pageInfo": map[string]any{"hasNextPage": false}},
+								"author": map[string]any{"login": "someone", "__typename": "User", "databaseId": 5}},
+						},
+					}}}}
+			},
+			run: func(f *GitHubForge) (any, error) {
+				return f.ListIssues(forgeTestRepo, IssueListQuery{State: IssueStateAll, Label: "gate: human"})
+			},
+		},
+		{
+			// Op 56: the close/reopen timeline and the closing changes in ONE query.
+			name: "issue_state_events",
+			setup: func(s *goldenServer) {
+				s.graphql = map[string]any{"data": map[string]any{"repository": map[string]any{
+					"issue": map[string]any{
+						"timelineItems": map[string]any{
+							"pageInfo": map[string]any{"hasNextPage": false},
+							"nodes": []map[string]any{
+								{"__typename": "ClosedEvent", "createdAt": "2026-09-01T10:00:00Z",
+									"actor": map[string]any{"login": "worker", "__typename": "Bot", "databaseId": 99}},
+								{"__typename": "ReopenedEvent", "createdAt": "2026-09-02T10:00:00Z",
+									"actor": map[string]any{"login": "someone", "__typename": "User", "databaseId": 5}},
+							},
+						},
+						"closedByPullRequestsReferences": map[string]any{
+							"pageInfo": map[string]any{"hasNextPage": false},
+							"nodes": []map[string]any{
+								{"number": 7, "state": "MERGED", "merged": true,
+									"repository": map[string]any{"nameWithOwner": "medici-finance/assay"},
+									"author":     map[string]any{"login": "worker", "__typename": "Bot", "databaseId": 99}},
+							},
+						},
+					}}}}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.IssueStateEvents(forgeTestRepo, 12) },
+		},
+		{
+			// Op 57: the change's own commit count, then its commits list; the count reconciles.
+			name: "list_change_commits",
+			setup: func(s *goldenServer) {
+				s.pull = map[string]any{"number": 7, "commits": 2}
+				s.pullCommits = []map[string]any{{"sha": "aaa111"}, {"sha": "bbb222"}}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.ListChangeCommits(forgeTestRepo, 7) },
+		},
+		{
+			name:  "repo_default_branch",
+			setup: func(s *goldenServer) { s.repo = map[string]any{"default_branch": "trunk"} },
+			run:   func(f *GitHubForge) (any, error) { return f.RepoDefaultBranch(forgeTestRepo) },
+		},
+		{
+			// Op 58 with no default branch reported: could-not-check, never "main".
+			name:  "repo_default_branch_empty_refuses",
+			setup: func(s *goldenServer) { s.repo = map[string]any{"visibility": "public"} },
+			run:   func(f *GitHubForge) (any, error) { return f.RepoDefaultBranch(forgeTestRepo) },
+		},
+		{
+			// MergeCommitSHA is carried for a MERGED change.
+			name: "get_pull_request_merged_commit_sha",
+			setup: func(s *goldenServer) {
+				s.pull = map[string]any{
+					"number": 7, "state": "closed", "merged": true, "node_id": "PR_node",
+					"merged_at":        "2026-09-10T12:00:00Z",
+					"merge_commit_sha": "fff999",
+					"user":             map[string]any{"login": "worker[bot]", "id": 99},
+					"head":             map[string]any{"sha": "abc123", "ref": "feat/x"},
+					"base":             map[string]any{"ref": "main"},
+				}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.GetPullRequest(forgeTestRepo, 7) },
+		},
+		{
+			// An OPEN change's merge_commit_sha is GitHub's test-merge commit, never a landed
+			// one: MergeCommitSHA stays empty.
+			name: "get_pull_request_open_test_merge_sha_dropped",
+			setup: func(s *goldenServer) {
+				s.pull = map[string]any{
+					"number": 7, "state": "open", "merged": false, "node_id": "PR_node",
+					"merge_commit_sha": "eee888",
+					"user":             map[string]any{"login": "worker[bot]", "id": 99},
+					"head":             map[string]any{"sha": "abc123", "ref": "feat/x"},
+				}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.GetPullRequest(forgeTestRepo, 7) },
+		},
+		{
+			// A CLOSED issue carries its closer, with the account kind.
+			name: "get_issue_closed_by",
+			setup: func(s *goldenServer) {
+				s.issue = map[string]any{"number": 12, "state": "closed",
+					"user":      map[string]any{"login": "someone", "id": 5, "type": "User"},
+					"closed_by": map[string]any{"login": "worker[bot]", "id": 99, "type": "Bot"}}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.GetIssue(forgeTestRepo, 12) },
+		},
+		{
+			// ChangeRef's new fields: author, base ref and the cross-repository reading — the same
+			// repository, a live fork, and a deleted fork (headRepository null).
+			name: "list_changes_new_fields",
+			setup: func(s *goldenServer) {
+				author := map[string]any{"login": "worker", "__typename": "Bot", "databaseId": 99}
+				s.graphql = map[string]any{"data": map[string]any{"repository": map[string]any{
+					"pullRequests": map[string]any{
+						"pageInfo": map[string]any{"hasNextPage": false},
+						"nodes": []map[string]any{
+							{"number": 7, "state": "OPEN", "headRefOid": "aaa111", "headRefName": "feat/a",
+								"baseRefName": "main", "title": "same repo", "body": "",
+								"isCrossRepository": false,
+								"headRepository":    map[string]any{"nameWithOwner": "medici-finance/assay"},
+								"author":            author},
+							{"number": 8, "state": "OPEN", "headRefOid": "bbb222", "headRefName": "feat/b",
+								"baseRefName": "main", "title": "from a fork", "body": "",
+								"isCrossRepository": true,
+								"headRepository":    map[string]any{"nameWithOwner": "someone/assay"},
+								"author":            author},
+							{"number": 9, "state": "MERGED", "headRefOid": "ccc333", "headRefName": "feat/c",
+								"baseRefName": "main", "title": "deleted fork", "body": "",
+								"mergedAt":          "2026-09-10T12:00:00Z",
+								"isCrossRepository": true, "headRepository": nil,
+								"author": author},
+						},
+					}}}}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.ListChanges(forgeTestRepo, OpenAndMerged()) },
+		},
+		{
+			// The typed change-thread read carries databaseId, url, updatedAt and the author kind.
+			name: "list_comments_typed_change_fields",
+			setup: func(s *goldenServer) {
+				s.graphql = map[string]any{"data": map[string]any{"repository": map[string]any{
+					"pullRequest": map[string]any{"comments": map[string]any{
+						"pageInfo": map[string]any{"hasNextPage": false},
+						"nodes": []map[string]any{
+							{"id": "IC_a", "databaseId": 501, "body": "edited", "isMinimized": false,
+								"createdAt": "2026-09-01T10:00:00Z", "updatedAt": "2026-09-02T10:00:00Z",
+								"url":    "https://example/pull/7#issuecomment-501",
+								"author": map[string]any{"login": "worker", "__typename": "Bot", "databaseId": 99}},
+						},
+					}}}}}
+			},
+			run: func(f *GitHubForge) (any, error) { return f.ListCommentsTyped(forgeTestRepo, 7, TargetChange) },
 		},
 		{
 			name:  "error_not_found",

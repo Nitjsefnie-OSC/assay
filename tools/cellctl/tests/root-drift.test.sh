@@ -23,7 +23,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The binary under test. $CELLCTL lets the SAME suite run against either implementation
 # (the bash oracle, the default, or the Go port) — desk-containers/10.
-CELLCTL="${CELLCTL:-$HERE/../cellctl}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
+CELLCTL="${CELLCTL:-$HERE/../testdata/cellctl-shell-oracle.sh}"; [[ "$CELLCTL" == /* ]] || CELLCTL="$PWD/$CELLCTL"
 T="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/cellctl-rootdrift.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$T"' EXIT
 fails=0
@@ -74,8 +74,9 @@ for v in deskboot deskroster deskwt deskboard deskdispatch deskpr deskfile deskp
 done
 printf '#!/usr/bin/env bash\necho "claude-stub $*" > "%s/launched"\nexit 0\n' "$T" > "$T/bin/claude"
 chmod +x "$T/bin/claude"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/tmux"; chmod +x "$T/bin/tmux"
-export PATH="$T/bin:$PATH"
+# shellcheck source=SCRIPTDIR/private-path.sh
+source "$HERE/private-path.sh"
+private_path "$T/bin"
 export DESK_TOOLS_BIN="$T/bin"
 
 # Invoked directly, never `bash "$CELLCTL"`: the suite runs against either implementation

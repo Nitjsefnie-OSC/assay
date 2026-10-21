@@ -81,6 +81,15 @@ type stub struct {
 	// head2 is what the SECOND read of the change reports as its head; "" means unchanged.
 	head2   string
 	prReads int
+	// body2 is what the SECOND read of the change reports as its body; "" means unchanged. It
+	// models a PR body edited between the gate's first read and the pre-mutation re-read.
+	body2 string
+	// bodyEditedAt is the PR body's last-edited time the fake forge's trust-events GraphQL read
+	// serves (GitHub's lastEditedAt); "" serves null — never edited. trustErr makes that read
+	// answer 500 (could-not-check).
+	bodyEditedAt string
+	trustErr     bool
+	trustReads   int
 
 	failPR bool
 	// failPath makes every request whose method+path+query contains this fragment answer 500
@@ -93,6 +102,10 @@ type stub struct {
 	// pages) is the case the verb has to walk. nil means "the one-file diff greenPR
 	// describes"; an explicitly empty slice serves nothing.
 	files []string
+	// fileStatus overrides the forge-reported status of individual served files, keyed by
+	// path. A file with no entry is served as "modified". An authoring-only diff needs its
+	// brief file served as "added", so without this no deskflip test could show one.
+	fileStatus map[string]string
 	// filesPerPage is the fake forge's page size. Zero means the size the verb asks for, so a
 	// 163-entry list lands as 100 + 63 without any test having to say so.
 	filesPerPage int
@@ -121,7 +134,22 @@ type stub struct {
 	// rather than assume nothing is required.
 	requiredChecksErr bool
 	reqCheckReads     int
+
+	// headCommittedAt is the committer date GET /commits/{sha} serves for the head — the
+	// date an APPROVED's submitted_at must not predate (#3093: GitHub re-anchors an old
+	// review's commit_id to a later head). "" serves defaultHeadCommittedAt, which predates
+	// every fixture review, so a case that is not about re-anchoring is unaffected by it.
+	// commitErr makes that read answer 500 — the could-not-check case, which must fail
+	// closed (the approval is not at head).
+	headCommittedAt string
+	commitErr       bool
+	commitReads     int
 }
+
+// defaultHeadCommittedAt predates every SubmittedAt the fixtures carry (they start at
+// 2026-01-01), so the stale-approval filter never fires on a case that does not set
+// headCommittedAt itself.
+const defaultHeadCommittedAt = "2025-12-31T00:00:00Z"
 
 const stubToken = "stub-installation-token"
 
@@ -196,6 +224,20 @@ func (s *stub) handle(t *testing.T) http.HandlerFunc {
 		}
 
 		switch {
+		case r.Method == http.MethodPost && path == "/graphql" && isTrustRead(rec.Body):
+			s.trustReads++
+			if s.trustErr {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			var edited any // JSON null: the forge reports no edit
+			if s.bodyEditedAt != "" {
+				edited = s.bodyEditedAt
+			}
+			empty := map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{}}
+			enc(map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{
+				"lastEditedAt": edited, "comments": empty, "reviews": empty, "reviewThreads": empty}}}})
+
 		case r.Method == http.MethodPost && path == "/graphql":
 			enc(map[string]any{"data": map[string]any{
 				"markPullRequestReadyForReview": map[string]any{
@@ -242,6 +284,22 @@ func (s *stub) handle(t *testing.T) http.HandlerFunc {
 		case strings.HasSuffix(path, "/check-runs"):
 			enc(s.servedCheckRuns())
 
+		case r.Method == http.MethodGet && strings.Contains(path, "/commits/"):
+			// GET /commits/{sha} — the head commit's committer date (#3093). Ordered after
+			// the /status and /check-runs suffix cases, which also live under /commits/.
+			s.commitReads++
+			if s.commitErr {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			date := s.headCommittedAt
+			if date == "" {
+				date = defaultHeadCommittedAt
+			}
+			sha := path[strings.LastIndex(path, "/")+1:]
+			enc(map[string]any{"sha": sha, "commit": map[string]any{
+				"committer": map[string]any{"date": date}}})
+
 		case r.Method == http.MethodGet && strings.Contains(path, "/pulls/"):
 			if s.failPR {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -282,6 +340,10 @@ func (s *stub) servedPR() map[string]any {
 	if s.prReads > 1 && s.head2 != "" {
 		head = s.head2
 	}
+	body := s.pr.Body
+	if s.prReads > 1 && s.body2 != "" {
+		body = s.body2
+	}
 	present := s.presentLabels()
 	labels := make([]map[string]any, 0, len(present))
 	for _, l := range present {
@@ -289,7 +351,7 @@ func (s *stub) servedPR() map[string]any {
 	}
 	out := map[string]any{
 		"number": s.pr.Number, "state": strings.ToLower(s.pr.State), "draft": s.pr.IsDraft,
-		"node_id": s.pr.NodeID, "changed_files": s.pr.ChangedFiles, "body": s.pr.Body,
+		"node_id": s.pr.NodeID, "changed_files": s.pr.ChangedFiles, "body": body,
 		"user":   map[string]any{"login": "worker[bot]", "id": 99},
 		"head":   map[string]any{"sha": head, "ref": "feat/x"},
 		"base":   map[string]any{"ref": "main"},
@@ -341,7 +403,11 @@ func (s *stub) servedFilePage(pageStr string) []map[string]any {
 	}
 	out := make([]map[string]any, 0, end-start)
 	for _, f := range s.files[start:end] {
-		out = append(out, map[string]any{"filename": f, "status": "modified"})
+		status := "modified"
+		if st, ok := s.fileStatus[f]; ok {
+			status = st
+		}
+		out = append(out, map[string]any{"filename": f, "status": status})
 	}
 	return out
 }
@@ -562,6 +628,9 @@ func (s *stub) mutated() []string {
 		if r.Method == http.MethodGet {
 			continue
 		}
+		if r.Method == http.MethodPost && r.Path == "/graphql" && isTrustRead(r.Body) {
+			continue // a GraphQL READ (the PR body's edit time), not a mutation
+		}
 		out = append(out, r.String())
 	}
 	return out
@@ -668,3 +737,9 @@ const (
 // It is read through the shared classifier in the tests below rather than asserted as a
 // literal fact about the trigger list.
 const riskyPath = ".github/workflows/ci.yml"
+
+// isTrustRead reports whether a POST /graphql body is the trust-events READ (a query for the
+// PR's lastEditedAt) rather than a mutation. Anything carrying a mutation is never a read.
+func isTrustRead(body string) bool {
+	return strings.Contains(body, "lastEditedAt") && !strings.Contains(body, "mutation")
+}

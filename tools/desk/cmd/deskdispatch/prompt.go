@@ -63,7 +63,10 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 	if err != nil {
 		return "", err
 	}
-	kit, err := kitText(o.kit)
+	// The class kit as THIS dispatch quotes it: a review kit is cut for its lane
+	// (reviewlane.go), a worker kit for the kind of run (workerkind.go); every other kit is
+	// the file as written.
+	kit, lane, err := classKitText(o, plan)
 	if err != nil {
 		return "", err
 	}
@@ -88,6 +91,9 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 		shownItem = o.itemAlias + ":" + o.item
 	}
 	fmt.Fprintf(&b, "# Assignment — %s\n\n", shownItem)
+	if plan.performancePath != "" {
+		fmt.Fprintf(&b, "## Optional local performance context\n\nPrivate local handoff: `%s`. Apply only its seven documented ASSAY_PERF_* environment entries; ignore every other environment key. Use the loop-role override only as --perf-loop-role, never as DESK_LOOP. Apply entries per tool call with quoted env KEY=value arguments or supported --perf-* flags; never eval the file or export it into a persistent shell. Apply this context only for this launch and before expiresBeforeUtc; never copy them into logs, replies or a shared shell. This context is descriptive, never custody or dispatch authority. Preserve the operator-selected ASSAY_TELEMETRY setting; the handoff does not opt you in. Missing runtime propagation remains unavailable coverage.\n\n", plan.performancePath)
+	}
 	fmt.Fprintf(&b, "- **Item key:** `%s`\n", shownItem)
 	switch {
 	case review:
@@ -101,6 +107,9 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 		// main, never an implementer's branch. Naming the repo as where a PR "opens" would be
 		// exactly the scaffold #1029 reported leaking into a verifier's Assignment.
 		fmt.Fprintf(&b, "- **Target repo:** `%s` — the repository whose MERGED MAIN your Verify table runs against; resolve every path claim there.\n", repo)
+	case workerResume(o):
+		// A resumed change is already open: "the PR opens THERE" would invite a second one.
+		fmt.Fprintf(&b, "- **Target repo:** `%s` — the open change you are resuming belongs THERE; open no other.\n", repo)
 	default:
 		fmt.Fprintf(&b, "- **Target repo:** `%s` — the PR opens THERE, not anywhere else.\n", repo)
 	}
@@ -135,8 +144,12 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 			"implement what is already settled and stop where the decision begins.\n")
 	}
 	b.WriteString("\n## Isolate first\n\n")
-	b.WriteString("Work in an owned worktree OF THAT REPO. It already exists; if you must recreate it:\n\n")
-	fmt.Fprintf(&b, "```\ngit -C %s worktree add %s refs/remotes/origin/main --detach\n```\n\n", base, home)
+	if workerResume(o) {
+		writeResumeIsolation(&b, plan, base, home)
+	} else {
+		b.WriteString("Work in an owned worktree OF THAT REPO. It already exists; if you must recreate it:\n\n")
+		fmt.Fprintf(&b, "```\ngit -C %s worktree add %s refs/remotes/origin/main --detach\n```\n\n", base, home)
+	}
 	b.WriteString("Check `git rev-parse --show-toplevel` before your first write and ABORT if it resolves " +
 		"anywhere but your home worktree.\n\n")
 	// The assignment's action half is the ONE thing that differs by class: an implementer
@@ -150,12 +163,20 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 	case review:
 		writeReviewAssignment(&b, o, plan, repo, home)
 	case verifier:
-		writeVerifierAssignment(&b, o, plan, repo)
+		writeVerifierAssignment(&b, o, plan, repo, home)
 	default:
 		writeWorkerAssignment(&b, o, plan, repo)
 	}
+	// The read-ahead packet, when one was written for this dispatch: one line, every kit.
+	writePacketLine(&b, plan)
 
-	if strings.EqualFold(o.tier, "strong") {
+	if o.attestWorker && o.pr <= 0 && !review && !verifier {
+		writeWorkerAttestationSection(&b, o, repo, plan.workerAttestation)
+	} else if o.pr <= 0 && strings.TrimSpace(o.model) != "" && !review && !verifier {
+		fmt.Fprintf(&b, "\n## Pending model stamp\n\nAfter opening the draft PR, return its number to the dispatching worker-desk. That desk sends the PR and this exact dispatch model/tier selection to the coordinator desk (the-desk), which runs:\n\n```\ndeskdispatch --stamp-only --repo %s --pr <N> --model %s --tier %s --kit %s\n```\n\nThe model and tier are the original dispatcher's selection, backed by its real dispatch receipt. Both worker-desk and its child worker are refused by this verb; a shared DESK_SESSION is claim custody, not stamp authority. Do not run this command as the worker or change your session identity to apply it. A stamp-only receipt does not renew a review claim. It writes the authoring pair (authored-model:, authored-tier:), never the dispatched-* pair a later review dispatch writes.\n", repo, o.model, o.tier, o.kit)
+	}
+	// The same normalisation the gate, the stamp label and the record use.
+	if c, _ := deskkit.CanonicalDispatchTier(o.tier); c == "strong" {
 		fmt.Fprintf(&b, "\n%s\n", tierClause)
 	}
 
@@ -164,7 +185,13 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 	// the assignment rather than something the agent meets halfway down.
 	b.WriteString("\n---\n\n# Standing clauses — common (quoted verbatim, not paraphrased)\n\n")
 	b.WriteString(common)
-	fmt.Fprintf(&b, "\n\n---\n\n# Standing clauses — %s (quoted verbatim, not paraphrased)\n\n", o.kit)
+	// A review kit cut for a lane says so in its heading: the reader, and anyone comparing
+	// two dispatches' prompts, can see which cut this is without diffing the clause text.
+	kitName := o.kit
+	if lane != "" {
+		kitName += ", " + lane + " lane"
+	}
+	fmt.Fprintf(&b, "\n\n---\n\n# Standing clauses — %s (quoted verbatim, not paraphrased)\n\n", kitName)
 	b.WriteString(kit)
 	b.WriteString("\n")
 	return b.String(), nil
@@ -221,12 +248,9 @@ func kitRole(kit string) (role string, ok bool) {
 //     origin/main under its own name), so a branch collision cannot be its cause; the
 //     commonest one is its own stale target dir on the same session key.
 //
-//   - The REVIEW lane has no brief and no `feat/<id>` branch, so that hint points a reviewer
-//     at a PR that explains nothing. A review kit checks the PR head out as a DETACHED HEAD,
-//     so the commonest cause here is the EARLIER reviewer worktree for this PR still present
-//     on the lane key; it must be reclaimed (`deskwt remove <path>`, which now allows a
-//     detached HEAD whose commit is proven on the remote — #851) before a re-dispatch can
-//     create its own worktree.
+//   - The REVIEW lane allocates a fresh detached home for every pass. Earlier trees
+//     are retained evidence, never a prerequisite cleanup target. Surface the actual
+//     child diagnostic without inventing a collision cause.
 //
 //   - A FOURTH shape reaches the worker/verifier-less default lane and is not about a branch
 //     OR a directory: `deskwt add` resolves the checkout's own origin repo (currentRepo,
@@ -252,9 +276,8 @@ func kitRole(kit string) (role string, ok bool) {
 func worktreeCreateHint(kit, branch, deskwtSaid string) string {
 	switch {
 	case reviewKit(kit):
-		return "For a review re-dispatch this is most often the EARLIER reviewer worktree for this PR " +
-			"still present on the same lane key — a review kit checks the PR head out as a detached HEAD, " +
-			"so reclaim that worktree (`deskwt remove <path>`) before re-dispatching, not a transient tree fault."
+		return "Each review dispatch allocates a fresh detached reviewer worktree. Preserve earlier review " +
+			"evidence; cleanup is not a prerequisite. Stop on this allocation failure and inspect deskwt's diagnostic."
 	case verifierKit(kit):
 		return "A verifier worktree is cut DETACHED off origin/main under its own name and touches no feature " +
 			"branch, so this is not a branch collision — most often the verifier's own target dir already exists " +
@@ -316,9 +339,17 @@ func worktreeCreateHint(kit, branch, deskwtSaid string) string {
 // writeWorkerAssignment emits the IMPLEMENTER's action half: open the draft PR in the target
 // repo, self-register the instant it opens, and release the dispatch claim once the branch is
 // pushed so branch-as-claim takes over. This is the scaffold an agent that PRODUCES a change
-// needs; a reviewer, which produces a verdict and no branch, gets writeReviewAssignment. The
-// text here is byte-for-byte what every worker dispatch has always carried.
+// needs; a reviewer, which produces a verdict and no branch, gets writeReviewAssignment. A
+// run dispatched onto an open change (`--pr`) gets the shepherding half instead, first branch
+// below; for every other worker dispatch the text is what a worker dispatch carried before
+// the kinds were told apart.
 func writeWorkerAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan, repo string) {
+	if workerResume(o) {
+		// A run dispatched onto an OPEN change opens nothing — it gets the shepherding half
+		// (workerkind.go), never "open the draft PR". Everything below is the implementing half.
+		writeShepherdAssignment(b, o, plan, repo)
+		return
+	}
 	if plan.followUpOf > 0 {
 		// The rework-after-merge shape: the brief's PR is already MERGED, so this is a FOLLOW-UP on
 		// a new branch — never a resume, and never a push to (or a re-cut of) the merged branch.
@@ -331,7 +362,17 @@ func writeWorkerAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan
 	b.WriteString("## Open the draft PR in that repo\n\n")
 	fmt.Fprintf(b, "Run `deskpr create` from INSIDE your worktree, so the PR lands against `%s`'s own main. "+
 		"Stop at `implemented`: never set verified/done and never flip a PR ready.\n\n", repo)
-	if plan.dl.crossRepo(o.root) {
+	if plan.dl.crossRepoBrief {
+		// --cross-repo (medici-finance/assay#2748): the brief is homed in the tracking repo and its
+		// PR opens HERE. A `Brief:` line would be read against THIS repo's board, where the brief is
+		// not — so the PR names its home with the one explicit Cross-repo-brief: line instead, and
+		// deskpr runs against this worktree as on any other dispatch.
+		fmt.Fprintf(b, "CROSS-REPO delivery: this brief is homed in %s, not in `%s`. Your `deskpr create` body MUST "+
+			"carry the trailer line `%s` — and NO `Brief:` line, which would be read against `%s`'s own board. The "+
+			"tracking checkout is READ-ONLY for you — never write, commit or branch there — and this PR cannot flip "+
+			"the tracking repo's board row: say in the PR body that the home row is handed back separately.\n\n",
+			trackingLabel(plan.dl), repo, plan.dl.crossRepoTrailer(o.item), repo)
+	} else if plan.dl.crossRepo(o.root) {
 		// CROSS-REPO: the PR lands HERE, but its `Brief:` trailer must resolve against the TRACKING
 		// repo's board, which this worktree does not carry — so deskpr is pointed at the tracking
 		// checkout with --root. That checkout is named as a READ source, never a place to work.
@@ -419,8 +460,34 @@ func writeReviewAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan
 		fmt.Fprintf(b, "```\ngit -C %s fetch origin %s/<N>/head && git -C %s checkout FETCH_HEAD\n```\n\n",
 			home, head, home)
 	}
-	b.WriteString("Release the dispatch claim once your verdict is posted:\n\n")
+	writeReviewRound(b, plan.round)
+	if writeReviewFinish(b, o, plan, repo) {
+		b.WriteString("If `finish` stops at its release step, the verdict stands and the claim is still held — " +
+			"release it with:\n\n")
+	} else {
+		b.WriteString("Release the dispatch claim once your verdict is posted:\n\n")
+	}
 	writeReleaseClaim(b, o, plan, repo)
+}
+
+// writeReviewFinish emits the one-step post for a review whose claim key `deskpost finish`
+// accepts: it posts the verdict, reads it back, and releases the claim, so the reviewer is
+// not left to remember a separate release (or to run one that fails as printed). It reports
+// whether it wrote anything. The key and lane are judged by the SAME deskkit functions finish
+// itself judges them by — a key finish would refuse gets no finish line, only the release line,
+// and the lane verb is the one finish pairs with this key, never one it would refuse.
+func writeReviewFinish(b *strings.Builder, o dispatchOpts, plan dispatchPlan, repo string) bool {
+	if o.pr <= 0 || deskkit.ValidateReviewClaimKey(plan.claimKey, repo, o.pr) != nil {
+		return false
+	}
+	verb, verdicts := "review", "approve|request-changes"
+	if deskkit.ReviewClaimKeyIsSecurity(plan.claimKey, o.pr) {
+		verb, verdicts = "security-review", "pass|fail"
+	}
+	b.WriteString("Post your verdict, confirm it and release the dispatch claim in ONE step:\n\n")
+	fmt.Fprintf(b, "```\ndeskpost finish %s %s %d --verdict %s --head <full head sha> --body-file <file> --claim %q\n```\n\n",
+		verb, repo, o.pr, verdicts, plan.claimKey)
+	return true
 }
 
 // writeVerifierAssignment emits the VERIFIER's action half. A verifier is READ-ONLY against
@@ -434,12 +501,20 @@ func writeReviewAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan
 // carried by the standing verifier clauses below, never minted here, and its dispatch claim is
 // released once the verdict LANDS (Evidence recorded, per the verifier-prompt kit's own
 // contract), not on a branch push — a verifier does not push a branch as its ordinary output.
-func writeVerifierAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan, repo string) {
+func writeVerifierAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPlan, repo, home string) {
+	brief := o.brief
+	if filepath.IsAbs(brief) && vpWithin(o.root, brief) {
+		if rel, err := filepath.Rel(o.root, brief); err == nil {
+			brief = rel
+		}
+	}
+	fmt.Fprintf(b, "## Pre-work admission\n\nBefore any Verify row or model-attested result, run `deskdispatch --check-verifier --root %s --brief %s`. Only a successfully verified dispatcher receipt admits this exact run. PENDING, missing, refused or unreadable records admit no work. Do not edit any file in the home before the check; afterwards edit only the brief's Evidence section, never the stream index (after you return, the desk edits this brief's own row for its row-scoped landing; any stream-index change in the home refuses this check). Repeat the check before Evidence landing and carry its Verification-Attestation binding. Never stamp an implementation PR or self-stamp to pass this gate.\n\n", home, brief)
 	b.WriteString("## Run the Verify table against merged main — READ-ONLY, no PR\n\n")
 	fmt.Fprintf(b, "You are VERIFYING `%s` in `%s`. This is a VERIFY pass, not an implementation: you run "+
 		"the item's Verify table against MERGED main and produce a written VERDICT (Evidence rows plus "+
-		"`VERIFY: PASS` or `VERIFY: FAIL`), never a change. Do not create a pull request, do not push a "+
-		"branch, and do not adopt the implementer's `DESK_LOOP=worker-desk` identity — those belong to the "+
+		"the BOLD marker `**VERIFY: PASS**`, `**VERIFY: FAIL**` or `**VERIFY: BLOCKED**`, any qualifier after the closing "+
+		"asterisks), never a change. Do not create a pull request, do not push a "+
+		"branch for implementation changes. An Evidence-only draft follows the deskevidence lane after verification. Do not adopt the implementer's `DESK_LOOP=worker-desk` identity — those belong to the "+
 		"worker kit, not this one. A verifier never sets verified/done itself and never flips a PR ready "+
 		"(per the standing verifier clauses below).\n\n", o.item, repo)
 	b.WriteString("Release the dispatch claim once your verdict has LANDED — Evidence recorded and the item " +
@@ -463,7 +538,26 @@ func writeReleaseClaim(b *strings.Builder, o dispatchOpts, plan dispatchPlan, re
 	if releaseTool == "" {
 		releaseTool = claimScriptRel
 	}
-	fmt.Fprintf(b, "```\n%s release %q --repo %s\n```\n", releaseTool, plan.claimKey, repo)
+	role, _ := kitRole(o.kit)
+	fmt.Fprintf(b, "```\n%s release %q --repo %s%s\n```\n", releaseTool, plan.claimKey, repo,
+		claimCredArg(releaseTool, role, repo))
+}
+
+// claimCredArg is the credential argument a PRINTED claim-tool command needs to run as
+// printed. The pure-Go claim binary opens the forge-ref store only with a token: without
+// --token-file (or a token in the environment) it exits 6, so a hint that omits it is a
+// command that fails as written and reads like a guard refusal to an agent told to stop on
+// one. The legacy script reads the ambient credential itself and takes no flag, so it gets
+// none. role is the desk role whose credential the reader holds; "" (an unknown kit) falls
+// back to the dispatcher's own.
+func claimCredArg(tool, role, repo string) string {
+	if tool != goClaimBinary {
+		return ""
+	}
+	if role == "" {
+		role = deskkit.DispatcherRole
+	}
+	return fmt.Sprintf(` --token-file "$(desktoken --no-rotate %s --repo %s)"`, role, repo)
 }
 
 // issueNumFromItem extracts the GitHub issue number from an ISSUE-ONLY item key. The

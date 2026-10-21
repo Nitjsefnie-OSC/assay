@@ -1,0 +1,211 @@
+---
+brief: assay:assay:desk-supervision:31
+title: Persist CI check results the desk tools already read
+why: >-
+  The desk tools read every pull request's CI results many times a day to decide what to flip,
+  review or report, then throw them away. So no one can later ask "which checks flake, how often,
+  and how long do they take?" or "did a PR that went red twice also fail verify?". Keeping one
+  small local line per finished check run, taken from reads the tools already make, answers those
+  questions at no extra forge cost.
+wave: 0
+depends: []
+unblocks: ["desk-supervision/35"]
+effort: M
+gate: model
+risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
+issues: []
+schema: brief-v2
+version: 1
+authored: 2026-10-06 by an ad-hoc authoring session for the driver (pipeline analysis records)
+exec-tier: strong
+exec-tier-why: >-
+  (b) one decorator change reaches every desk tool that reads CI, and the attempt key must agree
+  between two different forge read shapes (REST check-runs and the GraphQL rollup); (c) the
+  recorder sits on the read path of flip and board decisions, so a recorder that blocks, panics or
+  alters the returned value would change a gate verdict while every happy-path test stays green.
+domain: complicated
+outcome: none
+sources:
+  - "docs/streams/desk-supervision/README.md — the records-for-later-analysis set (desk-supervision/28–35); this brief is the CI-check-history record"
+  - "research note (driver-held, 2026-10-06): an independent review of the pipeline's records found CI results are read but never kept, so per-check flake rate and duration cannot be computed, and CI history cannot be joined to review rounds or verify outcomes"
+  - "docs/streams/desk-supervision/brief-27-verify-outcome-join-keys.md — the join-key convention (repo + PR + head SHA) this record shares"
+  - "freshness-checked 2026-10-06 @ 1fbf1153f (origin/main): no CI-result persistence exists — every check read in tools/desk goes through deskkit Forge.ChecksAtHead (tools/desk/internal/deskkit/forge.go:1499) or the rollup carried on ListOpenChanges / ReviewQueueSnapshot (forge.go:724-760, forge_github.go:692, :719, :827-858), and the results are only reduced to in-memory verdicts"
+consumers:
+  - "tools/desk/internal/deskkit/cicheckhistory.go (record type, writer, reader): fixed-here (added, with cicheckhistory_test.go and cicheckhistory-mutations.json)"
+  - "tools/desk/internal/deskkit/outboundforge.go (the single Forge decorator gains three recording read overrides; header classification comment): fixed-here"
+  - "tools/desk/internal/deskkit/forge.go (RollupNode gains ID): fixed-here"
+  - "tools/desk/internal/deskkit/forge_github.go (both rollup queries select databaseId; ghOpenChange maps it): fixed-here (the review-queue golden fixture re-pins the query string)"
+  - "tools/desk/internal/deskkit/outbound_test.go (obClass table, if it must name the overridden reads): out-of-scope (obClass already classifies ChecksAtHead, ListOpenChanges and ReviewQueueSnapshot as reads, and no write method is added, so the table needs no edit)"
+  - "tools/desk/internal/deskkit/ci-check-v1.md (canonical record schema; homed beside the code, not in this stream, because the shipped tools/desk tree may name no withheld stream path and the row-7 test reads the doc): fixed-here (added)"
+  - "tools/desk/README.md (a short 'CI check history' paragraph linking the schema): fixed-here (a Runtime state bullet)"
+  - "docs/records-and-retention.md (lists the new record): follow-up desk-supervision/35"
+  - "tools/desk/cmd/deskflip, deskboard, deskpost, deskautolane, deskmonitor, deskroster, deskdisposition (the CI readers): out-of-scope (they read through the Forge that ResolveForge returns, so they gain recording without a code change; their returned values are unchanged — Verify row 5 proves it)"
+  - "tools/desk/internal/deskkit/forge_gitlab.go: out-of-scope (its ChecksAtHead and rollup already populate the fields the record needs; a GitLab CheckRun with no ID falls back to the timestamp attempt key defined in Task 2; its head-pipeline status keeps the pipeline's creation stamp across a retry, which the conclusion in the dedupe key covers — see ci-check-v1.md, Attempt key)"
+  - "statusgen/autonomy.go (shells out to `gh pr view --json statusCheckRollup` over merged PRs): out-of-scope (a separate binary outside the desk Forge seam, reading a retrospective window; adding a second writer there would split the record — deferred to an unauthored follow-up if its window proves useful)"
+---
+
+# Brief 31 — Persist CI check results the desk tools already read
+
+## Context
+files:
+- **add** `tools/desk/internal/deskkit/cicheckhistory.go` (planned) + `cicheckhistory_test.go` (planned) — the `CICheckRecord` type, the writer `recordCIChecks`, the reader `LoadCIChecks`.
+- **edit** `tools/desk/internal/deskkit/outboundforge.go` — `*outboundForge` overrides `ChecksAtHead`, `ListOpenChanges`, `ReviewQueueSnapshot`: delegate, then record on success. Update the header's classification comment.
+- **edit** `tools/desk/internal/deskkit/forge.go` — `RollupNode` gains `ID string` (same meaning and rendering as `CheckRun.ID`, via `checkRunID`).
+- **edit** `tools/desk/internal/deskkit/forge_github.go` — add `databaseId` to the `...on CheckRun{…}` selection of `ghOpenChangesQuery` and `ghReviewQueueQuery`; decode and map it in `ghOpenChange`.
+- **edit** `tools/desk/internal/deskkit/outbound_test.go` — only if `obClass` must name an overridden read.
+- **add** `tools/desk/internal/deskkit/ci-check-v1.md` (planned) — the canonical record schema. Homed beside the code rather than in this stream: the shipped tools/desk tree may not name a withheld stream path (the corpus guard), and the row-7 test and the README both reference the doc.
+- **edit** `tools/desk/README.md` — one paragraph: what is recorded, where, and the schema link.
+- **add** `changelog/desk-supervision-31.md` (planned).
+
+facts:
+- One construction site: `deskkit.ResolveForge` (`tools/desk/internal/deskkit/forgeresolve.go:743-775`) returns every backend wrapped by `OutboundChecked` (`outboundforge.go:39`); `TestForgeSingleConstructionSite` (`forgeresolve_test.go:285`) pins it and the forgeban rule stops cmd packages from building a backend. The decorator is therefore the ONE choke point every desk reader passes through.
+- CI reads in the desk tools, all through that Forge (checked 2026-10-06 @ 1fbf1153f):
+  `ChecksAtHead` — deskflip `checksAtHeadOnce` (`tools/desk/cmd/deskflip/flip.go:1761`), deskpost `combinedStatusAt`/`checkRunsAt` (`tools/desk/cmd/deskpost/forgeclient.go:257-288`), deskautolane (`tools/desk/cmd/deskautolane/lane.go:373`, `:885`), deskboard health and zero-CI (`tools/desk/cmd/deskboard/health.go:171`, `zeroci.go:239`);
+  rollup on `ListOpenChanges` / `ReviewQueueSnapshot` — deskboard (`board.go:207`, `:282`), deskmonitor (`pr.go:100`), deskroster (`roster.go:304`), deskdisposition (`verbs.go:257`).
+- Shapes: `ChecksAtHead` (`forge.go:388`) carries `Statuses []StatusContext` (`forge.go:343`: State, Context, CreatedAt) AND `CheckRuns []CheckRun` (`forge.go:355`: ID, Name, Status, Conclusion, StartedAt, CompletedAt). `RollupNode` (`forge.go:724`) unions both (Typename `CheckRun` | `StatusContext`) and today has NO ID; `OpenChange` (`forge.go:744`) carries Number and HeadSHA for the rollup.
+- A commit-status gate (any CI that posts a commit status rather than a check run — e.g. a required external scanner) arrives ONLY as a `StatusContext`; a record that keeps check runs alone misses it.
+- `CheckRun.ID` is per EXECUTION: a re-run of the same named check is a new ID (`forge.go:356-364`). GitHub's combined-status endpoint returns the latest status per context, so for a status the only handle is `CreatedAt` — and it identifies the status OBJECT, not one execution: GitLab's head-pipeline status keeps the pipeline's stamp when a job inside it is retried, so the dedupe key also carries the conclusion (review finding B1).
+- Local state dir: `deskDir()` (`tools/desk/internal/deskkit/killswitch.go:65`) = `~/.config/assay/` (or the test override); the audit log is `audit.jsonl` there with daily rotation `rotateIfNeeded` (`audit.go:172`) and `segmentPattern` (`audit.go:101`) matching only `audit.jsonl.<date>` — a new `ci-checks.jsonl` cannot be swept into audit segments.
+- `dispatch_ref` as defined by desk-supervision/28 is NOT known at a CI read; this record joins by `repo` + `head_sha` (+ `pr` when the read carried one).
+- single-point-of-failure: the decorator override — if a future change returns a Forge that bypasses `OutboundChecked`, recording silently stops. Backed by `TestForgeSingleConstructionSite` (an independent static test of the construction site) and by Verify row 6 (a real tool run must leave records).
+
+## Ground rules
+- NEVER git push / trigger workflows / run mutating infra commands. Commit only per the task instructions.
+- Stop at `implemented` — you do not set verified/done (a different, non-implementing identity does).
+- If anything is unclear or contradicts repo state: report NEEDS_CONTEXT, don't guess.
+
+## Task
+1. **Schema doc** `ci-check-v1.md`: one JSON object per line, fields exactly —
+   `schema` (`"ci-check-v1"`), `observed_at` (RFC3339 UTC, when the tool read it), `tool`
+   (`CanonicalToolKeyOr` of the running binary), `repo` (`owner/name`), `head_sha`, `pr` (int,
+   omitted when the read carried no PR), `kind` (`check-run` | `status`), `name` (check name or
+   status context), `attempt`, `conclusion` (lowercased forge value), `started_at`,
+   `completed_at` (RFC3339 or omitted), `duration_s` (int, check-run only, omitted when either
+   stamp is missing). State the dedupe key `(repo, head_sha, kind, name, attempt, conclusion)`, the
+   never-collected list (step 6), retention (step 5) and that it is local operational state, never
+   committed.
+2. **Attempt key.** check-run: `CheckRun.ID` / `RollupNode.ID` when non-empty, else
+   `t:<started_at>`; status: `t:<created_at>`. An entry with no usable key is not recorded. Add
+   `databaseId` to the CheckRun fragment of both GraphQL rollup queries and map it through
+   `checkRunID` into `RollupNode.ID`, so the REST and GraphQL reads of one run produce the SAME key.
+   This adds a field to an existing request, never a request.
+3. **Only terminal results.** Record a check-run only when `status == completed`; a status only
+   when `state` is `success`, `failure` or `error`. Pending/queued/expected entries and the GitLab
+   `GitLabRollupUnmapped` sentinel are skipped (they would later conflict with the same key).
+4. **Recorder in the decorator.** `*outboundForge` overrides `ChecksAtHead(repo, sha)`,
+   `ListOpenChanges(repo)` and `ReviewQueueSnapshot(repo)`: call the inner method, and ONLY when
+   it returns no error, hand the entries to `recordCIChecks` (head SHA = `sha` for ChecksAtHead,
+   `OpenChange.HeadSHA` + `Number` for rollups). The overrides return the inner result and error
+   UNCHANGED — the same pointer, never a copy — and recording is best-effort: a write failure,
+   lock timeout or panic inside the recorder (recovered) never changes the return value or adds
+   latency beyond a bounded lock wait (≤ 2 s, then the batch is dropped with one stderr line per
+   process). The recorder makes NO forge call.
+5. **Writer + dedupe (two layers).** `recordCIChecks` appends to `<deskDir>/ci-checks.jsonl`
+   (dir 0700, file 0600) under its own lock file `ci-checks.lock`; it skips keys already written by
+   this process (in-memory set) or present in the live file (read under the lock), and rotates the
+   live file daily to `ci-checks.jsonl.<YYYY-MM-DD>` by the same rule as `rotateIfNeeded`. The tools
+   never delete segments (retention = the adopter's; say so in the schema doc). `LoadCIChecks`
+   reads all segments and dedupes again on the key, so a cross-day or cross-process duplicate on
+   disk never reaches an analysis.
+6. **Never collected** (enforced by the record type having no such field): check output, title,
+   summary, annotations, log text, details/target URLs, the actor or app that posted it, any
+   session transcript; no per-person field at all. Names and conclusions only.
+7. **Docs + changelog.** `tools/desk/README.md` paragraph; changelog fragment (bullets: the record,
+   its location, that it costs no extra forge reads).
+
+## Verify (executable — no prose-only DoD items)
+| # | Command | Expect | Class |
+|---|---------|--------|-------|
+| 1 | `cd tools/desk && go test ./internal/deskkit/... ./cmd/...` | exit 0 | check:ci |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_RecordsBothKinds$' -v > "${TMPDIR:-/tmp}/b31-kinds.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_RecordsBothKinds' "${TMPDIR:-/tmp}/b31-kinds.out"` | exit 0; a fake inner Forge serves one completed check run, one queued check run, one `success` status context and one `pending` status at one head; exactly two records land, one `kind:"check-run"` with `duration_s` and one `kind:"status"` | check:ci |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_Dedupe$' -v > "${TMPDIR:-/tmp}/b31-dedupe.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_Dedupe' "${TMPDIR:-/tmp}/b31-dedupe.out"` | exit 0; subtests: the same run read twice by ChecksAtHead → one line; read once by ChecksAtHead and once via the ListOpenChanges rollup → one line (same attempt key); a re-run (new ID, same name) → two lines; a duplicate written across a day rotation → `LoadCIChecks` returns one | check:ci +mutation |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_NoExtraForgeReads$' -v > "${TMPDIR:-/tmp}/b31-reads.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_NoExtraForgeReads' "${TMPDIR:-/tmp}/b31-reads.out"` | exit 0; a `GitHubForge` against an `httptest` server is called through `OutboundChecked` for ChecksAtHead, ListOpenChanges and ReviewQueueSnapshot; the server's request count is identical with the recorder enabled and with the state dir unwritable, and records land in the enabled case | check:ci +mutation |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_ReadUnchangedOnRecorderFailure$' -v > "${TMPDIR:-/tmp}/b31-fail.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_ReadUnchangedOnRecorderFailure' "${TMPDIR:-/tmp}/b31-fail.out"` | exit 0; subtests: unwritable state dir, held lock, recorder panic → each override returns the inner result pointer and error unchanged; an inner read error → no record and the same error returned | check:ci +mutation |
+| 6 | `cd tools/desk && go test ./cmd/deskflip/ -run '^TestFlip_LeavesCICheckRecords$' -v > "${TMPDIR:-/tmp}/b31-flow.out" 2>&1 && grep -F -e '--- PASS: TestFlip_LeavesCICheckRecords' "${TMPDIR:-/tmp}/b31-flow.out"` | exit 0; a deskflip run whose Forge comes from the production construction path (`OutboundChecked` over a fake inner backend, state dir overridden) leaves records for the head it evaluated, and its verdict equals the verdict with recording disabled | check:ci +flow |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckRecord_NoFreeTextFields$' -v > "${TMPDIR:-/tmp}/b31-fields.out" 2>&1 && grep -F -e '--- PASS: TestCICheckRecord_NoFreeTextFields' "${TMPDIR:-/tmp}/b31-fields.out"` | exit 0; reflection over `CICheckRecord`'s JSON tags equals exactly the field list in `ci-check-v1.md` (the test reads the doc's field table), so adding an output/URL/actor field fails | check:ci +mutation |
+| 8 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestForgeSingleConstructionSite$' -v > "${TMPDIR:-/tmp}/b31-site.out" 2>&1 && grep -F -e '--- PASS: TestForgeSingleConstructionSite' "${TMPDIR:-/tmp}/b31-site.out"` | exit 0 (the choke point the recorder relies on is still the only construction site) | check:ci +neighbour |
+| 9 | `statusgen --consumers --root .` | exit 0 (every `consumers:` routing above is corroborated by the implementation diff) | check:ci |
+| 10 | `jq -r 'select(.kind=="check-run" and (.attempt\|test("^[0-9]+$"))) \| "\(.repo) \(.attempt) \(.conclusion)"' ~/.config/assay/ci-checks.jsonl` (on a desk machine after one `deskboard` run on the built binary) | at least one line; for one printed `<repo> <attempt> <conclusion>` triple, `gh api repos/<repo>/check-runs/<attempt> --jq .conclusion` prints that same conclusion and `--jq .head_sha` equals the record's `head_sha` | gate:model +dereference |
+
+Pre-mortem → detection map:
+
+| Failure mode | Caught by |
+|---|---|
+| Commit-status gates are silently dropped (only check runs recorded) | row 2 |
+| REST and GraphQL reads of one run produce different keys, doubling every record | row 3 (cross-shape subtest) |
+| A pending run is recorded, then its completed result is deduped away | row 2 (pending skipped) + row 3 |
+| Recording adds a forge call (e.g. fetching run details to fill duration) | row 4 |
+| A full disk or held lock makes a flip/board verdict fail or change | row 5 + row 6 |
+| A reader path bypasses the decorator, so nothing is ever recorded | row 6 (real flip path) + row 8 |
+| Someone later adds a URL, output or actor field | row 7 |
+| Records claim a conclusion the forge never reported | row 10 |
+| A recorded check name itself carries sensitive text | review-only — names are repo CI configuration, already visible to anyone who can read the PR; the file is local 0600 |
+
+## Evidence
+<!-- appended at implementation time by a NON-implementer: one row per Verify item
+     (command, exit code, output line(s) or hash, date, runner). -->
+### Non-implementer verification — 2026-10-11
+
+**VERIFY: BLOCKED** — no complete Verify row satisfied. Rows 1–9 are explicitly unrun because the required Linux network-off sandbox is unavailable on Darwin. Row 10's local command exited 0, but its prescribed deskboard prerequisite and forge conclusion/head-SHA dereference were not executed under the offline envelope; its Expect is therefore could-not-check. Status remains implemented. Environment action: [assay#2665](https://github.com/medici-finance/assay/issues/2665).
+
+The execution witness below is preserved verbatim. Its row-10 `pass exit=0` reports only the local command's exit status, not satisfaction of the prose Expect. This verifier does not promote that partial witness to a row PASS.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go test ./internal/deskkit/... ./cmd/...` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_RecordsBothKinds$' -v > "${TMPDIR:-/tmp}/b31-kinds.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_RecordsBothKinds' "${TMPDIR:-/tmp}/b31-kinds.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_Dedupe$' -v > "${TMPDIR:-/tmp}/b31-dedupe.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_Dedupe' "${TMPDIR:-/tmp}/b31-dedupe.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_NoExtraForgeReads$' -v > "${TMPDIR:-/tmp}/b31-reads.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_NoExtraForgeReads' "${TMPDIR:-/tmp}/b31-reads.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_ReadUnchangedOnRecorderFailure$' -v > "${TMPDIR:-/tmp}/b31-fail.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_ReadUnchangedOnRecorderFailure' "${TMPDIR:-/tmp}/b31-fail.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./cmd/deskflip/ -run '^TestFlip_LeavesCICheckRecords$' -v > "${TMPDIR:-/tmp}/b31-flow.out" 2>&1 && grep -F -e '--- PASS: TestFlip_LeavesCICheckRecords' "${TMPDIR:-/tmp}/b31-flow.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckRecord_NoFreeTextFields$' -v > "${TMPDIR:-/tmp}/b31-fields.out" 2>&1 && grep -F -e '--- PASS: TestCICheckRecord_NoFreeTextFields' "${TMPDIR:-/tmp}/b31-fields.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 8 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestForgeSingleConstructionSite$' -v > "${TMPDIR:-/tmp}/b31-site.out" 2>&1 && grep -F -e '--- PASS: TestForgeSingleConstructionSite' "${TMPDIR:-/tmp}/b31-site.out"` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --consumers --root .` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+| 10 | `jq -r 'select(.kind=="check-run" and (.attempt\|test("^[0-9]+$"))) \| "\(.repo) \(.attempt) \(.conclusion)"' ~/.config/assay/ci-checks.jsonl` | pass exit=0 | sha256:7b738072b6d5 | 2026-10-11 | assay-verifier-app[bot] @ 18d752a4c931 (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#2661 run=73fde6bd3efe63e15f88ac990329822b65f6c21bfa5bf85a52700f2dda451a35 source=18d752a4c9318e27bcfd49fa44f9cfb62923b691 brief=docs/streams/desk-supervision/brief-31-ci-check-history.md model=gpt-6.1-sol tier=any
+
+Grounded expectations from the brief and pre-implementation base: preserve 13 fields only; terminal run/status records; shared REST/GraphQL attempts; unchanged decorator results/errors; no extra forge reads; best-effort bounded recording; private modes; two-layer write dedupe and all-segment read dedupe; daily UTC rotation without deletion. The merged specification adds conclusion to the base dedupe key to retain a GitLab status object's changed terminal result.
+
+Rows 2–3, 4–5 and 6–8 received independent sub-verifications grounded only in their assigned brief/rows. Their tests and mutations remain explicitly unrun on this host. Static coverage is supporting review, not execution evidence.
+
+Static check-definition finding for row 3: its rerun fixture changes both ID and conclusion; because the key includes conclusion, the selected case cannot isolate distinct-ID dedupe. Filed [assay#2667](https://github.com/medici-finance/assay/issues/2667). No mutation result or implementation failure is inferred. Row 5's held-lock test overrides the wait to 100 ms; after the first override times out, the other two exercise the recorder's disabled latch. Those limitations do not establish production timing from this unrun pass.
+
+Risk enumeration covered every changed Go literal occurrence in delivering commit ccc4318c397d7f7ca1a07f1bab445285a04a5a97, including test fixtures, plus the Task's schema/kind/attempt/terminal-state/file/mode/time literals. Runtime values include CICheckSchema="ci-check-v1" (line 47), kinds="check-run"/"status" (52–53), files="ci-checks.jsonl"/"ci-checks.lock" (55–56), ciMaxWriteLine=64<<10 (61), ciMaxReadLine=1<<20 (64), key separator="\x1f" (97), ciLockWait=2*time.Second (104), ciRecorderEnabled=true (106), terminal status="completed" (202), attempt prefix="t:" (210,231), terminal states="success"/"failure"/"error" (228), absent PR=0 (252), rollup tags="StatusContext"/"CheckRun" (281,283), modes=0o700/0o600 (375,426,470), permission mask=0o077 (449), lock polling=10*time.Millisecond (488), exact segment regex (494), date format="2006-01-02" (505), suffix start=1 (507), reader buffer=64*1024 (528), 13 JSON field tags (71–86), and the GraphQL databaseId selection/mapping. Locations without a path refer to tools/desk/internal/deskkit/cicheckhistory.go.
+
+Ranking: privacy modes and removal of other-user permission bits rank first because disclosure cannot be undone. Schema, kind, attempt and delimiter values rank next as analysis-integrity identifiers; the Task defines their vocabulary and shared attempt meaning. Size bounds, 2-second lock wait and 10-ms polling are reversible operational knobs and rank last; their exact tuning needs no irreversible-value derivation. Test vectors and formatting literals do not authorize an external act.
+
+RISK-VALUE: DERIVED — state-directory mode = 0o700 @ tools/desk/internal/deskkit/cicheckhistory.go:375 — Task 5 requires 0700; owner alone can list/write/traverse the operational record directory.
+RISK-VALUE: DERIVED — record-file mode = 0o600 @ tools/desk/internal/deskkit/cicheckhistory.go:426 — Task 5 requires 0600; owner alone can read/write records, with the same 0o600 creation mode on the lock at line 470.
+RISK-VALUE: DERIVED — other-user permission mask = 0o077 @ tools/desk/internal/deskkit/cicheckhistory.go:449 — octal 077 selects all group/other permission bits; clearing it at line 450 removes those readers without granting new owner permissions.
+
+### Non-implementer verification — 2026-10-15
+
+Dispatched non-implementer verifier, detached at merged main source 8efe5579d9253813835db650d45180eea76cf33e; execution window 2026-10-15 03:55Z to 04:46Z UTC; darwin/arm64, go 1.27.2, offline (KUBECONFIG=/dev/null, GOPROXY=off, GOFLAGS=-mod=readonly); HOME, GOCACHE and TMPDIR pointed at scratch directories outside the verified tree. Delivering change: medici-finance/assay#2423, squash-merged as ccc4318c397d7f7ca1a07f1bab445285a04a5a97 (parent 69ca08c699a1). Expectations were written from the brief text before any diff or test was read; rows 2–8 each ran as an isolated single-row invocation.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `cd tools/desk && go test ./internal/deskkit/... ./cmd/...` | exit 0 | exit 1 on all three runs. Final uncontended run (04:30Z–04:41Z): 68 packages ok, 3 without tests, one failure — internal/deskkit TestGuardStopFlags, subtest "HEARTBEAT exactly at boundary → not stale" (1.10s): "HEARTBEAT stale (age 24h0m0s > 24h0m0s), want nil". That test was last changed 2026-09-24 and its files are outside the delivering diff; it leaves 1s of wall-clock headroom, Guard() takes about 0.3s alone and over 1s under full-suite parallel load; the same test passed 5 of 5 with -count=5 alone. Earlier runs also failed on Unix-socket bind (scratch TMPDIR path beyond the darwin socket-path limit; all pass with a short TMPDIR) and once on cmd/deskwt hitting the default 10m package timeout under load (it passes alone in 489s and in the final run in 498s). cmd/deskflip ok. | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_RecordsBothKinds$' -v > "${TMPDIR:-/tmp}/b31-kinds.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_RecordsBothKinds' "${TMPDIR:-/tmp}/b31-kinds.out"` | exit 0; 2 records from 4 entries (completed run with duration_s, success status) | exit 0; "--- PASS: TestCICheckHistory_RecordsBothKinds (0.00s)"; the fixture serves a completed run, a queued run, a success status and a pending status, and asserts exactly 2 records, run duration_s = 90 (10:00:00 to 10:01:30) and no duration_s on the status | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_Dedupe$' -v > "${TMPDIR:-/tmp}/b31-dedupe.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_Dedupe' "${TMPDIR:-/tmp}/b31-dedupe.out"` | exit 0; four dedupe subtests | exit 0; "--- PASS: TestCICheckHistory_Dedupe (0.01s)" with subtests same run read twice is one line, REST and GraphQL reads of one run share a key, a re-run is a new attempt, a duplicate across a day rotation loads once — all PASS | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_NoExtraForgeReads$' -v > "${TMPDIR:-/tmp}/b31-reads.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_NoExtraForgeReads' "${TMPDIR:-/tmp}/b31-reads.out"` | exit 0; equal request counts for the three reads | exit 0; "--- PASS: TestCICheckHistory_NoExtraForgeReads (0.01s)" with subtests ChecksAtHead, ListOpenChanges, ReviewQueueSnapshot all PASS | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckHistory_ReadUnchangedOnRecorderFailure$' -v > "${TMPDIR:-/tmp}/b31-fail.out" 2>&1 && grep -F -e '--- PASS: TestCICheckHistory_ReadUnchangedOnRecorderFailure' "${TMPDIR:-/tmp}/b31-fail.out"` | exit 0; four failure subtests | exit 0; "--- PASS: TestCICheckHistory_ReadUnchangedOnRecorderFailure (0.11s)" with subtests unwritable state dir, held lock (0.11s), recorder panic, inner read error all PASS | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 6 | `cd tools/desk && go test ./cmd/deskflip/ -run '^TestFlip_LeavesCICheckRecords$' -v > "${TMPDIR:-/tmp}/b31-flow.out" 2>&1 && grep -F -e '--- PASS: TestFlip_LeavesCICheckRecords' "${TMPDIR:-/tmp}/b31-flow.out"` | exit 0; records left, verdict equal with recording off | exit 0; "--- PASS: TestFlip_LeavesCICheckRecords (3.18s)" with green head flips and red head is refused, each in recording and not recording variants, all PASS | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCICheckRecord_NoFreeTextFields$' -v > "${TMPDIR:-/tmp}/b31-fields.out" 2>&1 && grep -F -e '--- PASS: TestCICheckRecord_NoFreeTextFields' "${TMPDIR:-/tmp}/b31-fields.out"` | exit 0; JSON tags equal the schema doc field table | exit 0; "--- PASS: TestCICheckRecord_NoFreeTextFields (0.00s)"; the record type carries exactly the 13 Task-1 tags (schema, observed_at, tool, repo, head_sha, pr, kind, name, attempt, conclusion, started_at, completed_at, duration_s) | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 8 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestForgeSingleConstructionSite$' -v > "${TMPDIR:-/tmp}/b31-site.out" 2>&1 && grep -F -e '--- PASS: TestForgeSingleConstructionSite' "${TMPDIR:-/tmp}/b31-site.out"` | exit 0 | exit 0; "--- PASS: TestForgeSingleConstructionSite (0.45s)" | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 9 | `statusgen --consumers --root .` | exit 0; consumers routings corroborated | exit 0 (statusgen v1.0.42); "consumers: no brief files in the diff against 8efe5579d925 — nothing to corroborate", so on merged main the row is vacuous. Supporting run with --base set to the delivering commit's parent and --brief desk-supervision/31: 6 CORROBORATED (every fixed-here entry), 4 UNCHECKED (out-of-scope and follow-up judgements), 1 DISPROVED (forge_gitlab.go out-of-scope), exit 1. The DISPROVED entry comes from three later commits in that range; the delivering commit's own 13 paths do not include forge_gitlab.go, so its out-of-scope claim holds for the delivering change. | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+| 10 | `jq -r 'select(.kind=="check-run" and (.attempt\|test("^[0-9]+$"))) \| "\(.repo) \(.attempt) \(.conclusion)"' ~/.config/assay/ci-checks.jsonl` (on a desk machine after one `deskboard` run on the built binary) | at least one line; forge dereference matches conclusion and head_sha | could-not-check: unrun. The prerequisite deskboard run and the check-runs dereference both read the live forge, which the offline verifier envelope forbids, and a read-only probe of the local record file was refused by this session's permission layer. Re-run on a desk machine with forge read access: run deskboard once on the built binary, run the row's jq command, then for one printed triple run gh api repos/REPO/check-runs/ATTEMPT --jq .conclusion and --jq .head_sha and compare. | 2026-10-15 | assay-verifier-app[bot] (claude-opus-5-5 verifier, on behalf of verify-desk) (on-behalf-of human:ian) |
+
+Supporting mutation check (rows 2–7, class +mutation): the shipped manifest's test command was run against an archived copy of the verified source outside the verified tree. Baseline exit 0; the CONTROL mutation (recorder never runs) was killed; 31 of 31 mutations were killed, 0 survived, and every one applied exactly once.
+
+Risk enumeration covered the literals in the record writer at the verified source; that file is unchanged since the delivering commit. Values: CICheckSchema = "ci-check-v1" (line 47); kinds "check-run" / "status" (52–53); files "ci-checks.jsonl" / "ci-checks.lock" (55–56); ciMaxWriteLine = 64 << 10 (61); ciMaxReadLine = 1 << 20 (64); dedupe key (repo, head_sha, kind, name, attempt, conclusion) joined by "\x1f" (97); ciLockWait = 2 * time.Second (104); ciRecorderEnabled = true (106); terminal run status "completed" (202); attempt prefix "t:" (210, 231); terminal states "success" / "failure" / "error" (228); modes 0o700 (375), 0o600 (426, 470), mask 0o077 (449–450); lock poll 10 * time.Millisecond (488); segment regex (494); date layout "2006-01-02" (505); reader buffer 64 * 1024 (528). The GraphQL CheckRun selection adds databaseId to both rollup queries in forge_github.go (lines 738 and 768) and maps it through checkRunID at line 902. Locations without a file name are in tools/desk/internal/deskkit/cicheckhistory.go. Ranking: the file and directory modes rank first, because a record disclosed to other local users cannot be recalled. Schema, kind, attempt and key values rank next: they protect analysis integrity and are reversible by a schema bump. The size caps, the 2s lock wait (within the brief's 2s ceiling) and the poll interval are reversible operational knobs and rank last.
+
+**VERIFY: BLOCKED** — 8 of 10 rows satisfied (2–9). Row 1 checked-failed on a timing-sensitive killswitch test outside the delivering diff, which fails under full-suite load on this host (check-definition / environment, not a brief-31 defect). Row 10 is could-not-check under the offline envelope and needs a forge-connected desk run (human-action). Status remains implemented.
+
+RISK-VALUE: DERIVED — state-directory mode = 0o700 @ tools/desk/internal/deskkit/cicheckhistory.go:375 — Task 5 fixes the directory at 0700, so only the owning account can list, create or traverse record files.
+RISK-VALUE: DERIVED — record-file mode = 0o600 @ tools/desk/internal/deskkit/cicheckhistory.go:426 — Task 5 fixes the file at 0600, so only the owner can read or append records; the lock file is created with the same 0o600 at line 470.
+RISK-VALUE: DERIVED — group/other permission mask = 0o077 @ tools/desk/internal/deskkit/cicheckhistory.go:449 — octal 077 is exactly the group and other rwx bits; clearing them at line 450 narrows a pre-existing wider file back to owner-only without adding owner bits.
+
+Verification-Attestation: medici-finance/assay#3006 run=a912ced47edc5f53bb73ea9c7c8698ee3562cec2997aafe32c0fd1ed9562bb36 source=8efe5579d9253813835db650d45180eea76cf33e brief=docs/streams/desk-supervision/brief-31-ci-check-history.md model=claude-opus-5-5 tier=any
+
+## Review
+Gate: model (from frontmatter — all four risk answers no). Reviewer records verdict + date in the stream README table.

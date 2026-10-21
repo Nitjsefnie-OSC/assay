@@ -16,10 +16,12 @@ unblocks: []
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
+design: DR-outbound-callout
 issues: []
 schema: brief-v2
 authored: 2026-09-17 by desktools-v2 authoring session
 sources:
+  - "#2111 — Cobra/Viper adoption; CLI compatibility amendment 2026-10-03 (spec §9)"
   - "docs/streams/desktools-v2/spec.md §8.3 — deployment-specific vocabulary is never compiled in; the callout contract; what the forge never sees"
   - "docs/streams/desktools-v2/brief-10-one-outbound-write-check.md (desktools-v2/10, brief id assay:assay:desktools-v2:10, whose consumers list routes the house callout here) — OutboundCheck and OutboundWrite, which this brief extends at its END"
   - "tools/desk/internal/deskkit/callout.go — the shared plumbing: :46 DefaultCalloutTimeout = 5s, :51 calloutWaitDelay, :56 maxCalloutOutput = 64 KiB, Callout.Run (absolute path, regular file, executable, not group/world-writable, no shell, error on every unanswered case). Run sets no cmd.Env, so a callout inherits the caller's whole environment"
@@ -47,7 +49,7 @@ consumers:
   - "tools/desk/internal/deskkit/callout.go: follow-up desktools-v2/11 (this brief; an explicit-environment option on Callout — the three existing callers keep today's behaviour)"
   - "tools/desk/README.md and the adopter-facing callout documentation: follow-up desktools-v2/11 (this brief; the stdin contract and an example executable using invented values)"
   - "every deployment's own callout executable and token map: out-of-scope (supplied by the deployment; nothing of the kind is added to this repository)"
-version: 1
+version: 2
 id: be893ed6-782f-4000-9675-c03ddff205b2
 ---
 
@@ -57,12 +59,12 @@ id: be893ed6-782f-4000-9675-c03ddff205b2
 
 files:
 - `tools/desk/internal/deskkit/outbound.go` (planned) — created by `desktools-v2/10`; this brief adds the consult step.
-- NEW `tools/desk/internal/deskkit/outboundcallout.go` (planned) + `_test.go`.
+- `tools/desk/internal/deskkit/outboundcallout.go` (planned) (new) + `tools/desk/internal/deskkit/outboundcallout_test.go` (planned) (new).
 - `tools/desk/internal/deskkit/callout.go` — an explicit-environment option.
 - `tools/desk/internal/deskkit/rosterconfig.go` — the new keys in the known set and the P3 echo.
 - `tools/desk/internal/deskkit/testdata/outbound-callout/` (planned) — stub executables.
 - `tools/desk/README.md` — the contract.
-- `changelog/<branch>.md` — the per-PR fragment this repository requires.
+- `changelog/feat-desktools-v2-11.md` — the per-PR fragment this repository requires (the name the delivering change used).
 
 single-point-of-failure: for a deployment's own vocabulary the ONE control is this callout — by
 design nothing compiled knows those words. Two layers stand behind it. The compiled layer of
@@ -104,8 +106,8 @@ facts:
 - **Timeout: 5 s default, up to 60 s by configuration.** Measured, not assumed: a compiled
   token-map sweep over a 16 KiB body took 0.01 s, so the shared 5 s default has three orders of
   magnitude of headroom for body-sized text and stays the default. The `file` kind on the push
-  path can carry a multi-megabyte diff (the same sweeper over a whole repository of about 2,800
-  files took 11.8 s), and an interpreter-based or multi-engine sweeper was
+  path can carry a multi-megabyte diff (the same sweeper over a whole repository of about 2,800 files
+  took 11.8 s), and an interpreter-based or multi-engine sweeper was
   could-not-check, so the bound is configurable up to 60 s (the inbound scan's own ceiling, well
   under an agent watchdog) rather than raised for everyone. A timeout is a refusal.
 - **The callout receives text and nothing else.** It runs with an explicit environment —
@@ -187,6 +189,10 @@ Default if no answer: none — blocks until answered.
 | H6 | callout dumps its environment; caller holds a token variable | any | the dump carries no token variable |
 | H7 | callout answers `block` | a commit message, on the push path | refused before any push |
 
+## Cobra/Viper integration — callout settings retain restricted sources
+
+The new callout keys remain validated by the existing roster parser and fail-closed callout boundary. The bounded CLI owners authored by desktools-v2/15 bind only admissible sources through Viper; no blanket environment binding, config search or CLI flag may silently override these protected settings. Help/version must neither invoke the callout nor read its secret-bearing input. Record all consuming commands in cli-migration.json when /15 lands; this brief retains ownership of callout policy and does not fork the parser migration.
+
 ## Verify (executable — no prose-only DoD items)
 | # | Command | Expect |
 |---|---------|--------|
@@ -204,6 +210,78 @@ Default if no answer: none — blocks until answered.
 
 ## Evidence
 <!-- appended at implementation time by a NON-implementer: one row per Verify item. -->
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./internal/deskkit/` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test -timeout 10m ./internal/deskkit/ -run TestOutboundCalloutConformance -v` | pass exit=0 | sha256:6cd399f72855 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run TestCalloutAllowCannotClearCompiledBlock -v` | pass exit=0 | sha256:99995354145c | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run TestBrokenCalloutBlocks -v` | pass exit=0 | sha256:3c5e8e5a8f80 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run TestRequiredCalloutAbsentRefusesPublicOnly -v` | pass exit=0 | sha256:a495ea9bfb45 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run TestOutboundCalloutEnvironmentCarriesNoToken -v` | pass exit=0 | sha256:88fcba86e612 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run TestCalloutReasonNeverReachesForgeOrAudit -v` | pass exit=0 | sha256:216437636925 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 8 | `cd tools/desk && go test ./cmd/deskfile/ ./cmd/deskpr/ -run 'TestHouseCallout' -v` | pass exit=0 | sha256:7177da306ca6 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 9 | `cd tools/desk && go test ./internal/deskkit/ -run TestRosterRecognisesOutboundCalloutKeys -v` | pass exit=0 | sha256:6ab5ba102c36 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 10 | `grep -c 'ASSAY_OUTBOUND_CALLOUT' tools/desk/README.md` | pass exit=0 | sha256:06e9d52c1720 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+| 11 | `statusgen --consumers --root .` | pass exit=0 | sha256:d77e78fa27a9 | 2026-10-11 | assay-verifier-app[bot] @ a4bc0c0cfe06 (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#2529 run=833edec95be1d57610ce8fd0a5718b119bfd27a8f40ce399f13731094de7a7f1 source=a4bc0c0cfe0634bef4a4c52c1b7078f1b3f7fd3c brief=docs/streams/desktools-v2/brief-11-outbound-house-callout.md model=claude-opus-5-5 tier=any
+
+### Verify pass — 2026-10-11, dispatched non-implementer verifier (verify-desk, assay-verifier-app[bot])
+
+Ran against merged main at a4bc0c0cfe0634bef4a4c52c1b7078f1b3f7fd3c (the delivering change is #2383, merge commit 8284cf0296c8; the human ruling is option 1 of #2375, recorded in DR-outbound-callout). Runner: darwin/arm64, go1.27.1, git 2.56.0, statusgen v1.0.37. Admission: `deskdispatch --check-verifier` exit 0 before any row and again after this edit. The Verify table carries no check:ci rows, so the Linux-only network-off sandbox did not apply; every row ran on the host. No storage-deferred Go cache lock flakes were seen in any run. Every row was run by hand first; the witness table above is the second, tool-driven run of the same eleven commands.
+
+| # | Command | Expected | Observed (exit + key output) | Date / runner |
+|---|---------|----------|------------------------------|---------------|
+| 1 | `cd tools/desk && go build ./... && go vet ./internal/deskkit/` | exit 0 | exit 0, no output | 2026-10-11 assay-verifier-app[bot] |
+| 2 | `cd tools/desk && go test -timeout 10m ./internal/deskkit/ -run TestOutboundCalloutConformance -v` | literal `--- PASS: TestOutboundCalloutConformance` | exit 0; `--- PASS: TestOutboundCalloutConformance (3.35s)` with sub-tests H1, H2, H3, H4 (7 sub-cases), H5 (roster / environment / environment survives a collapsed roster), H6, H7 (ref / commit / file) all PASS | 2026-10-11 assay-verifier-app[bot] |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run TestCalloutAllowCannotClearCompiledBlock -v` | PASS line; stub records zero executions; RED with consult moved ahead | exit 0; `--- PASS: TestCalloutAllowCannotClearCompiledBlock (0.00s)`. The test asserts the stub's run counter is 0 and the compiled withheld.identifier refusal; the counter is proven live by other tests that require it to rise. Fail-first, in a scratch copy outside the home: house step moved ahead of the compiled layer gave `--- FAIL` with "the callout was executed 1 times for a write the compiled layer had already refused" | 2026-10-11 assay-verifier-app[bot] |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run TestBrokenCalloutBlocks -v` | PASS line, one sub-test per H4 failure; RED with error branch returning nil | exit 0; `--- PASS: TestBrokenCalloutBlocks (2.85s)` with sub-tests missing_file, mode_0775, exit_3, sleeps_past_the_deadline, prints_nothing, prints_100_KiB, prints_maybe all PASS. Fail-first, scratch copy: the Run-error branch returning nil gave `--- FAIL` on missing_file, mode_0775, exit_3 and sleeps_past_the_deadline (the other three fail through their own branches, as designed) | 2026-10-11 assay-verifier-app[bot] |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run TestRequiredCalloutAbsentRefusesPublicOnly -v` | PASS line | exit 0; `--- PASS: TestRequiredCalloutAbsentRefusesPublicOnly (0.07s)` (from_the_roster, from_the_environment, environment_survives_a_collapsed_roster). Extra mutation, scratch copy: dropping the private-target exemption gave `--- FAIL` on from_the_roster and from_the_environment | 2026-10-11 assay-verifier-app[bot] |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run TestOutboundCalloutEnvironmentCarriesNoToken -v` | PASS line | exit 0; `--- PASS: TestOutboundCalloutEnvironmentCarriesNoToken (0.06s)`. Extra mutation, scratch copy: passing a nil environment (inherit the caller's) gave `--- FAIL`, the dump showing the three invented token variables the test plants | 2026-10-11 assay-verifier-app[bot] |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run TestCalloutReasonNeverReachesForgeOrAudit -v` | PASS line; fake forge and audit log searched for the reason | exit 0; `--- PASS: TestCalloutReasonNeverReachesForgeOrAudit (0.68s)` with 10 sub-cases (well-formed block, colon, BLOCKED, upper-case ALLOW, deny, second-line words, terminal escape, non-zero exit, empty, oversized) all PASS | 2026-10-11 assay-verifier-app[bot] |
+| 8 | `cd tools/desk && go test ./cmd/deskfile/ ./cmd/deskpr/ -run 'TestHouseCallout' -v` | `--- PASS: TestHouseCalloutBlocksIssueFiling` and `--- PASS: TestHouseCalloutBlocksPushOnCommitMessage` | exit 0; `--- PASS: TestHouseCalloutBlocksIssueFiling (0.80s)` (deskfile) and `--- PASS: TestHouseCalloutBlocksPushOnCommitMessage (1.55s)` (deskpr; commit and file sub-tests); also `--- PASS: TestHouseCalloutOffVocabularyNeverLogged` | 2026-10-11 assay-verifier-app[bot] |
+| 9 | `cd tools/desk && go test ./internal/deskkit/ -run TestRosterRecognisesOutboundCalloutKeys -v` | PASS line | exit 0; `--- PASS: TestRosterRecognisesOutboundCalloutKeys (0.00s)`. Independently, the live roster echo printed all three keys (path unset, REQUIRED unset, timeout unset with 5s default) during admission | 2026-10-11 assay-verifier-app[bot] |
+| 10 | `grep -c 'ASSAY_OUTBOUND_CALLOUT' tools/desk/README.md` | exit 0; count >= 3 | exit 0; `6` (the three keys in the key table plus the install recipe) | 2026-10-11 assay-verifier-app[bot] |
+| 11 | `statusgen --consumers --root .` | exit 0; no routing claim disproved | exit 0; "no brief files in the diff against a4bc0c0cfe06 — nothing to corroborate". On a clean detached tree at merged main this row is vacuous. Supplemental run with the base set to the parent of the decision-record commit (so the brief file is in the diff): exit 0, 0 corroborated and 0 disproved; that diff left all five consumers entries untouched, so it carries no evidence either way. Checked by hand instead: outbound.go's OutboundCheck ends with the house step after the compiled verdict; rosterconfig.go adds the three keys to the known set and the startup echo; callout.go adds an Env field that only the new caller sets (the write-guard and untrusted-scan callers construct Callout without it); the README documents the stdin contract and an example using invented values; no deployment executable or token map was added (fixtures and README scanned, invented values only) | 2026-10-11 assay-verifier-app[bot] |
+
+**Risk-bearing value enumeration** (trigger: risk sensitive-data: yes). Literals introduced or named by the diff, ranked by what breaks if wrong; all are reversible by an edit and a release (irreversible: no), but a wrong value here leaks a deployment's withheld text or a credential before anyone can undo it, so the top three are derived.
+
+- RISK-VALUE: DERIVED — outboundCalloutEnv allow-list = {"PATH", "HOME", "TMPDIR", "LANG"} @ tools/desk/internal/deskkit/outboundcallout.go:205 — the brief's facts name exactly these four and nothing else; none is a credential variable; the slice is never nil, so Callout.Env replaces rather than extends the caller's environment (callout.go:131-132); the nil-env mutation reddened row 6, so the bound is load-bearing.
+- RISK-VALUE: DERIVED — REQUIRED scope `RepoVisibility(w.Repo) != VisibilityPrivate` @ tools/desk/internal/deskkit/outboundcallout.go:271, with environment tightening `s.Required = true` @ outboundcallout.go:146 — the ruling (option 1 of #2375) requires public-target writes to refuse with no executable; the brief extends that to unknown visibility, and "not private" is the only expression that covers both while leaving private targets alone; the environment can only add the requirement, matching the brief's collapsed-roster rationale. Mutation dropping the private exemption reddened row 5.
+- RISK-VALUE: DERIVED — MaxOutboundCalloutTimeout = 60 * time.Second @ tools/desk/internal/deskkit/outboundcallout.go:61 (with DefaultCalloutTimeout = 5 * time.Second @ callout.go:46 and MinOutboundCalloutTimeout = 1 * time.Second @ outboundcallout.go:60) — the ruling fixes "5 second default timeout, configurable to 60"; 60s equals the tree's existing inbound-scan ceiling semgrepTimeout = 60 * time.Second @ untrustscan.go:290; the brief's measurement (0.01 s for a 16 KiB body) gives the 5s default three orders of headroom; a timeout is a refusal, so a short bound fails closed, not open.
+- RISK-VALUE: NAMED, NOT DERIVED — maxCalloutOutput = 64 << 10 @ tools/desk/internal/deskkit/callout.go:56 — shared and unchanged by this diff; the brief cites it but gives no derivation of why 64 KiB rather than another bound; oversize output refuses, so any value fails closed.
+- RISK-VALUE: NAMED, NOT DERIVED — maxCalloutReasonRunes = 300 @ tools/desk/internal/deskkit/outboundcallout.go:71 — a terminal-only display cap; the brief states no bound; reversible operational knob, ranked last.
+- Also enumerated, ranked last (identifiers and protocol constants, no derivation needed): RuleHouseCallout = "house.callout" @ outboundcallout.go:55; outboundCalloutRequestVersion = 1 @ outboundcallout.go:65; outboundCalloutRequiredPublic = "public" @ outboundcallout.go:68; separator set ",;\t\n\r" @ outboundcallout.go:97; calloutWaitDelay = 250 * time.Millisecond @ callout.go:51; the three key names @ rosterconfig.go:210, 215, 218.
+
+Gate: this item is gate: human with risk sensitive-data: yes. This Evidence is for the human sign-off. It is not a model sign-off, and the item's status is left where it is.
+
+Verification-Attestation: medici-finance/assay#2529 run=833edec95be1d57610ce8fd0a5718b119bfd27a8f40ce399f13731094de7a7f1 source=a4bc0c0cfe0634bef4a4c52c1b7078f1b3f7fd3c brief=docs/streams/desktools-v2/brief-11-outbound-house-callout.md model=claude-opus-5-5 tier=any
+
+**VERIFY: PASS** — 11/11 rows observed passing at a4bc0c0cfe06; fail-first checks for rows 3 and 4 reddened as the brief states; row 11 is vacuous on a clean tree and its consumers claims were checked by hand. Routed to the human gate (sensitive-data), not flip-eligible.
+
+### Container execution witness — 2026-10-20, dispatched non-implementer verifier (verify-desk, assay-verifier-app[bot])
+
+Mechanical re-run of all eleven Verify rows at merged main 4fa40dd33e06c69298b4c437d71e13acb3f90e9c, under the driver's 2026-10-19 interim-runner and substance-over-environment rulings (recorded on the private house tracker). Runner: local docker container, image assay-verify:go1.27 (id sha256:955fd6c46c93, built from golang:1.27.2-trixie, git 2.47), started with `--network none`; `statusgen verifyrun --sandbox container-netns` with the engine's default seccomp profile; statusgen and the desk tools built from this tree inside the container. Admission: `deskdispatch --check-verifier` exit 0 before the run and again after this edit. This pass does NOT supersede the standing 2026-10-13 fail verdict for this brief, recorded in the unmerged medici-finance/assay#2824. That run's fail-first witness, with Base cells taken at the delivery parent b7217d55004a, found rows 1-9 and 11 green at base (non-discriminating) and only row 10 red. It recorded risk-row fail-first acceptance as 1/11, on the check-definition blocker medici-finance/assay#2802, which is still open. This witness re-runs the head commands only and carries no Base cells, so it does not answer that blocker. Once medici-finance/assay#2824 lands, both blocks stand in date order. verifyrun exit 0: 11 pass, 0 fail, 0 could-not-run. For rows 2 to 9 the witness asserts exit status and records an output hash; the literal `--- PASS:` lines those rows name are carried by the by-hand substance below.
+
+The substance is the existing by-hand Evidence block above (Verify pass of 2026-10-11 at source a4bc0c0cfe0634bef4a4c52c1b7078f1b3f7fd3c), which observed every row passing with 0 fail, including the literal PASS lines and the fail-first mutations for rows 3 and 4. Its risk-value enumeration still holds at this source: outboundcallout.go is byte-identical between the two sources, and callout.go changed only its process-run call (RunProcess), leaving DefaultCalloutTimeout = 5s at callout.go:46 and maxCalloutOutput = 64 << 10 at callout.go:56 unchanged.
+
+Verification-Attestation: medici-finance/assay#3591 run=1c0ad25372163af3638976e01111aed6849778155760dab98af3ce57b50f0f07 source=4fa40dd33e06c69298b4c437d71e13acb3f90e9c brief=docs/streams/desktools-v2/brief-11-outbound-house-callout.md model=claude-opus-5-5 tier=strong
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./internal/deskkit/` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd tools/desk && go test -timeout 10m ./internal/deskkit/ -run TestOutboundCalloutConformance -v` | pass exit=0 sandbox=container-netns | sha256:3e0deb5ec255 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run TestCalloutAllowCannotClearCompiledBlock -v` | pass exit=0 sandbox=container-netns | sha256:6c91f2e11980 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run TestBrokenCalloutBlocks -v` | pass exit=0 sandbox=container-netns | sha256:15b578fa6d00 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run TestRequiredCalloutAbsentRefusesPublicOnly -v` | pass exit=0 sandbox=container-netns | sha256:58b1b1b3ad70 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run TestOutboundCalloutEnvironmentCarriesNoToken -v` | pass exit=0 sandbox=container-netns | sha256:0df4082c5433 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run TestCalloutReasonNeverReachesForgeOrAudit -v` | pass exit=0 sandbox=container-netns | sha256:a7a1c75d2afe | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 8 | `cd tools/desk && go test ./cmd/deskfile/ ./cmd/deskpr/ -run 'TestHouseCallout' -v` | pass exit=0 sandbox=container-netns | sha256:7cf578fbc91a | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 9 | `cd tools/desk && go test ./internal/deskkit/ -run TestRosterRecognisesOutboundCalloutKeys -v` | pass exit=0 sandbox=container-netns | sha256:8290621b6b60 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 10 | `grep -c 'ASSAY_OUTBOUND_CALLOUT' tools/desk/README.md` | pass exit=0 sandbox=container-netns | sha256:06e9d52c1720 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+| 11 | `statusgen --consumers --root .` | pass exit=0 sandbox=container-netns | sha256:05ccf73ce950 | 2026-10-20 | assay-verifier-app[bot] @ 4fa40dd33e06 (on-behalf-of human:ian) (forge-identity) |
+
+**VERIFY: BLOCKED** — check-definition (medici-finance/assay#2802). Head commands are 11/11 exit 0 in the container witness at 4fa40dd33e06, on top of the 2026-10-11 by-hand substance, but risk-row fail-first acceptance is still open. The 2026-10-13 FAIL in medici-finance/assay#2824 found rows 1-9 and 11 non-discriminating at base, and this witness has no Base cells, so a simulated verified flip at this source reds `statusgen --lint` (LINT: FAIL, a no-Base-cell PROBLEM on each of rows 1-11). This item is also gate: human with sensitive-data: yes, so it stays routed to the maintainer sign-off on medici-finance/assay#2775 and is not flip-eligible.
 
 ## Review
 Gate: human (sensitive-data: yes — a deployment-supplied executable receives the text of every

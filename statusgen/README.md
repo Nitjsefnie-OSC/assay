@@ -23,10 +23,19 @@ fresh regen — the drift gate). The model is **single-writer**: only one CI
 job (typically triggered on push to the default branch) ever commits
 `STATUS.md`; every other context (PRs, local runs) only reads or lints.
 
-Both gate modes always end stdout with exactly one machine-parseable verdict
-line — `LINT: PASS` / `LINT: FAIL <n> problem(s)` for `--lint`, `CHECK: PASS`
-/ `CHECK: DRIFT <n>` for `--check` — so a caller reads the outcome from the
-output itself instead of interrogating the exit code in a separate shell.
+After evaluating sources, both gate modes end stdout with exactly one
+machine-parseable verdict line: `LINT: PASS` / `LINT: FAIL <n> problem(s)` for
+`--lint`, and `CHECK: PASS` / `CHECK: DRIFT <n>` for `--check`.
+
+A configuration refusal stops `--lint` **before evaluation**, with exit **5**
+and exactly `LINT: REFUSED configuration; trust-dependent checks could-not-check`
+on stdout. The existing `assay-config: REFUSED` diagnostics and a summary on
+stderr explain the unavailable trust axis. This also applies to repeated
+`--root` and `--diff-base`; a refusal is never a demotable source problem.
+Ordinary lint success remains exit **0**, source problems exit **1**, and
+argument/usage errors exit **2**. Check the exit status from the same invocation;
+`go run` wraps a binary's nonzero status, so use the built binary when the exact
+code matters. See [the caller inventory](../docs/statusgen-lint-refusal.md).
 
 ## Layout
 
@@ -79,8 +88,56 @@ statusgen verifyrun --brief docs/streams/<stream>/brief-NN-<slug>.md --dry-run
 statusgen verifyrun --check docs/streams/<stream>/brief-NN-<slug>.md
 ```
 
-Each row runs in a fresh subshell at the repo root, and the witness records the
-command, the exit code, a sha256 fingerprint of the combined output, the date, the
+Each row runs in a fresh subshell at the repo root. The command is the Command
+cell's first code span, or — in a cell that mixes prose and spans — the first span
+marked `cmd:` (`` `cmd: go test ./pkg/ -count=1` ``), which always wins over the first
+span (issue #1805; `--lint` NOTICEs a prose cell whose first span is not a command as
+`prose-led-command`, and `verifyrun` records such a row could-not-run without
+executing it — the mention is not the check, and a word like `gh` exits 0; the per-row
+NOTICE covers open briefs, and a closed brief's rows collapse into one summary line;
+the check:ci verdict re-execution lane refuses such a row unrun, and `--check` does not
+audit an old pass witness on it as pass).
+A Command cell whose lifted command is only a shell comment is the same case (issue
+#2684): a row that asks a reviewer to inspect `## Coverage` requires the review
+evidence, but lifted as a command the heading is a comment — it exits 0 with no output
+and used to witness a pass for a check that never looked. A lifted command whose first
+non-blank character is `#` is now flagged `prose-led-command` ("a shell comment")
+whatever surrounds it — even as the cell's only span, and even as the command a `cmd:`
+marker names (a marker names the command to run, and a comment runs nothing) — so
+`verifyrun` records the row could-not-run without executing it, `--check` does not audit
+an old pass witness on it as pass, and the check:ci re-execution lane refuses it. The
+tools/desk executors agree cell for cell: `verifyloop` records such a row as a non-zero
+(127) could-not-run without executing it, and `deskrebaseline` does not probe it. They
+judge the raw cell on statusgen's lift (the marked command, else the first code span)
+as well as on their own legacy lift (the whole unwrapped cell, which is what they run),
+so a cell like `` `## Coverage`: confirm it `` — which `sh` would run as the `:` no-op
+once the comment-only substitution expands to nothing — is refused there too, and a
+cell whose own text opens with `#` before a real span is refused by them though
+statusgen runs its span (they are never the looser executor). The rule (`#` first) and
+the whole-cell verdicts are held to `testdata/shell-comment-vectors.json` (`vectors` and
+`cells`) in both modules. Commands that merely contain `#` — a trailing ` # comment`, a
+quoted `'#'`, `a#b` — and every `cmd:`-marked real command are unchanged. Mark an actual
+executable check with `cmd:` where one exists; otherwise retain the manual procedure
+and its evidence obligation, and do not replace a procedure with a command that merely
+exits zero; a marked comment is fixed by replacing it with the command that performs the
+check. Sibling shapes left as they were, deliberately: a multi-word prose first span
+that is not a comment (`resolved: no→yes`) is not flagged and lands could-not-run as exit
+127 when executed, never a pass, so it needs no new arm. `--dry-run` runs rows, so
+investigate a suspect procedure in an isolated fixture, never by running the real brief.
+
+A marked command that cannot fail (`true`, `:`, `exit 0`, a lone `echo`) is NOTICEd as
+`cmd-marker-vacuous`. A marker counts only where the rendered table shows it as code:
+spans are found as CommonMark renders them (escaped backticks are literal), and a cell
+whose prose carries an unescaped `<` or `[`, a dollar in any spelling (`$`, `\$`, `&#36;`:
+math) or any character reference, or a span whose opening backticks are fused to the text
+before them (an autolink, `~~`), honours no marker; the marker span itself must be set apart
+by whitespace or the cell edge (plain punctuation may follow it) (`--lint` NOTICEs it as
+`cmd-marker-not-honoured`; a marker that replaces a command-shaped first span is
+`cmd-marker-overrides-command`). The tools/desk executors (`verifyloop`,
+`deskrebaseline`) apply the same rule, held to the shared vectors in
+`testdata/cmd-marker-vectors.json`. The witness records the
+command (fenced with a longer backtick run when it contains backticks, so `--check`
+reads back the whole command), the exit code, a sha256 fingerprint of the combined output, the date, the
 executing identity, and the tree it ran against. The format and its rules live in
 [`../docs/brief-rules.md`](../docs/brief-rules.md) (rules 25–26).
 
@@ -147,6 +204,31 @@ a merged PR carrying the trailer makes the brief `implemented` at the merge SHA,
 open PR makes it `in-progress`, and a search that ran and found nothing makes it
 `todo` — always with the witness it read, so a negative is never a bare default.
 
+Not every merged trailer PR is the implementation. A PR that only authored the
+brief (it adds the brief's file and touches only board READMEs, brief files and
+changelog fragments) is dropped from the fold (`briefauthoring.go`). A merge the
+brief's own `delivery:` list declares partial —
+`{in: "<alias>#<N>", covers: partial, note: ...}` with the alias resolving
+through `graph-repos.yaml` to the reconciled `--repo`, and no `covers: full`
+entry for the same PR — is work in progress: it derives `in-progress`, never
+`implemented`, in the trailer fold, in the `--backfill` match and in `regen`'s
+drift comparator alike (`briefdelivery.go`). Use it for a skeleton or one slice
+of a multi-PR delivery. A claim naming another repo is the sibling-merge
+detector's, not this one's. A partial claim whose alias cannot be resolved here
+(unknown, withheld, or no registry) makes the brief `unknown` and refuses
+`--apply`.
+
+Evidence-only and status-only PRs are excluded by the same diff classifier the
+approval/provenance resolver uses (`evidenceshape.go`): Evidence sections,
+verify-outcome records and status cells are bookkeeping, not implementation.
+A potentially Evidence-shaped change whose patch or head could not be read makes
+the brief `unknown` and refuses `--apply`. Every requested derived row passes
+admission, including completed rows in full audits and the drift comparator.
+Trailer-only apply explicitly scopes its observations to movable rows (below).
+File lists and additional shape reads are cached per
+PR for the run and shared with backfill. Ordinary code PRs and declared partials
+need no additional shape read. A VERIFY FAIL alone never removes a delivery.
+
 ```bash
 # Online: read the repo's PRs over the REST API and derive.
 statusgen reconcile --root . --repo medici-finance/assay --json
@@ -155,15 +237,116 @@ statusgen reconcile --root . --repo medici-finance/assay --json
 statusgen reconcile --root . --offline --json
 ```
 
-It is the **only verb that reads the network**, and only read-only REST endpoints
-(`GET /pulls`, `GET /pulls/{n}/reviews`) — never GraphQL. The token comes from
-`--token-file` or `GITHUB_TOKEN`. Every fetch is three-state: a failure is
+It is the **only verb that reads the network**, and its own network layer uses only
+read-only REST endpoints (`GET /pulls`, `GET /issues`) — never GraphQL. The token
+comes from `--token-file` or `GITHUB_TOKEN`. Every fetch is three-state: a failure is
 `lookedAt: false` with the HTTP status as the reason, never an empty board that
-reads like "nothing found". The verify-witness / approval-at-head fold that lifts a
-cell to `verified`/`done` is the pure engine in `lifecycle.go`; the demotions
+reads like "nothing found". The verify-witness / approval fold that lifts a cell to
+`verified`/`done` is the pure engine in `lifecycle.go`; online runs wire its inputs
+from real reads (`reconcilefold.go`, shared with `regen`'s drift comparator so the
+two derive identically), each by the rule the state's own writer already obeys —
+the fold owns no rule of its own:
+
+- **`verified`** — the brief's latest strict `**VERIFY: PASS**` run (the reader
+  `statusgen verifyflip` uses), refused by an unrouted HELD row or a FAIL as `closeVerify`
+  refuses it, audited by the `verifyrun --check` closure path, with the PASS lines
+  committed by the roster's verifier (not the implementer), the brief version read
+  from the brief as it stood at the run's sha, and the evidence-coverage verdict.
+  A `**VERIFY: BLOCKED**` run is not a PASS.
+- **`done`, gate:model** — the auto-flip decision (`decideModelFlip`): the PR that
+  delivered the brief, the roster-bound reviewer App, its approval at that PR's
+  merged head. Its PR reads go through the `gh` CLI under the caller's own `gh`
+  credential, as `--auto-flip-model` does (including that owner's one GraphQL read
+  of a PR body's last edit); with no `gh` access the decision is could-not-check.
+- **`done`, gate:human** — the README Reviewed cell's `human:<name>` stamp, read by
+  the anchored stamp reader the human-stamp guard uses; on-behalf-of relays, a bare
+  `human:`, and a substring such as `superhuman:` never count.
+- **`blocked`** — one paged open-issues read (PR entries dropped) mapped onto each
+  brief's `issues:` list.
+
+A read that could not be made never renders as a state: a failed or capped
+open-issues read makes each brief with linked issues `unknown`, and a verified/done
+decision that could not be made is `unknown` with the reason, whatever the PR
+base (a `todo` or `in-progress` base included). The table prints that reason per
+cell. Every such read is disclosed on stderr and in the JSON's `unread` list, and
+`--apply` refuses (exit 3, nothing written) while any is present — one undecidable
+brief holds the write for the whole board, by design: a scheduled writer then
+writes nothing rather than a partial board. A passing witness with no merged PR on
+record is `unknown` too — the fold cannot settle that contradiction; under
+`--backfill` a branch/body-matched merged PR is that merge, and the cell is
+re-derived over it by the same overlay a trailer merge gets. The demotions
 (a reverted merge, a red witness, a dismissed approval, a stale-version witness)
 fall back to the highest state still witnessed. `--root` may point anywhere inside
 the repo — reconcile walks up to the board root (the nearest `docs/streams`).
+
+`--backfill --apply` writes a witnessed `todo`/`in-progress` → `implemented`
+Status cell (a trailer or branch/body-matched merged PR on record, with or without
+a verify witness over it) back into the stream README and lists the rows it wrote under
+`applied`. `--backfill` WITHOUT `--apply` is the read-only form: it writes no stream
+README — and nothing else either, unless `--report` is also given, which writes
+`docs/streams/board-drift-<date>.md` in that run too (its table output then says so
+instead of calling the run read-only). It lists, under `wouldApply`, the rows
+`--apply` would write on the same tree — computed by the same function that
+writes, so the two cannot disagree (per README path string: two stream names
+differing only in letter case reach one file on a case-insensitive filesystem).
+Each row carries `id`, `readme`, `from`, `to`, `witness`, and the whole table line before and
+after the edit (`rowBefore`, `rowAfter`).
+Both forms take one whole-run admission decision: when `--apply` on the same run
+would refuse and write nothing (exit 3 — the raw pull list, the PR read, or any
+fold read in `unread` could not be made), the read-only form lists no row,
+reports the reason as `wouldRefuse`, and says could-not-check on stderr — it
+never lists a row the writer would refuse. `wouldApply` is present only when the
+run looked — no such refusal, and a `docs/streams` board was found — so `[]`
+means "looked and found nothing". It is absent when the run could not look
+(`--offline`, no `--repo`, an HTTP error or refused connection, a failed fold
+read, a `--root` with no board), when `--backfill` was not given, and when
+`--apply` was. Read it together with `lookedAt` and `wouldRefuse`, never alone:
+an absent `wouldApply` is not zero rows.
+
+`--apply` WITHOUT `--backfill` is trailer-only: it writes only rows witnessed by a
+merged PR's trailer, never a branch or body match — the mode the scheduled
+reconcile job runs. This mode requests PR admission and approval reads only for
+the `todo`/`in-progress` rows it can move. All other rows remain in the output as
+`unknown`, with an explicit "outside trailer-writer scope" reason and no witness
+or merged-PR provenance. This deliberate scope exclusion is not a failed read
+in `unread`; an actual failed requested read still holds the whole write. The
+run's `reason` and text output disclose the scope. Read-only reconcile, every
+`--backfill` run (including `--apply` and `--report`), and online regen drift
+continue to classify every derived row. Use those modes for a full audit.
+No persistent verdict cache or token-tier assumption is made: the writer's read
+set grows with eligible rows, not the history of completed rows. The synthetic
+687-candidate regression models 209 upstream requests for the writer and 1,589
+for the full audit, including their shared pull/issue pages; it is a fixture
+bound, not a universal API-budget guarantee or a live corpus measurement.
+
+Either way, a row whose move would add a lint PROBLEM (a
+risk-gated brief with no design record, say) is held: listed under `held` with the
+PROBLEM it would cause, never written. The read-only form reports the same `held`
+rows, decided the same way with nothing written. When the pulls cannot be read,
+`--apply` exits 3 and writes nothing.
+
+A move on a driven stream changes generated output too: the drive-snapshot
+region of each `docs/roadmap/drives/<slug>.md` page whose drive names it. By
+default such a move is held on its `drive-region-drift`, and `--apply` writes
+stream READMEs only — what the scheduled reconcile job and `deskreconcile`
+commit; each refuses a run that changed any other path. With the `--regenerate`
+opt-in (alongside `--apply` or `--backfill`), the
+hold judges the complete proposed output — the README edit plus each such region
+re-rendered (`statusgen --drive-snapshot <slug>`) against the moved board — with
+every lint rule, the drive-region drift check included. A clean move lists the
+regions it re-renders under the row's `generated` (`path`, `drive`,
+`regionBefore`, `regionAfter`, the text between the fences); `--apply` writes
+them beside the README, keeping the begin marker's `@<sha> <date>` stamp as it
+was, and the read-only form writes neither. A region that was already drifting
+(a hand edit inside the fences) is never re-rendered by the writer. A caller
+that passes `--regenerate` with `--apply` must be ready to commit the plan page
+beside the README; neither in-repo landing caller passes it.
+
+```bash
+# Read-only: which board rows would --apply promote? No stream README is written
+# (add --report and the drift report file is written too).
+statusgen reconcile --backfill --root . --repo medici-finance/assay --token-file "$TOKEN_FILE" --json
+```
 
 ### `brief` — resolve an item key to its file, frontmatter and board row
 
@@ -185,7 +368,7 @@ statusgen brief desk-tools/12 --root . --text
 ```
 
 It is **read-only**: it never writes STATUS.md or any generated file, touches no
-network, and shells out to nothing. Resolution is exact — exactly one brief file
+network; optional closure checks may read local Git history. Resolution is exact — exactly one brief file
 must match the key: zero files, or more than one (the numeric-prefix collision a
 hand-rolled glob cannot detect), is an error naming what it found, exit 2, and no
 JSON body — so a consumer never reads a partial or wrong answer as success. A legacy
@@ -196,10 +379,112 @@ RELATIVE to `--root`, so the output carries no machine path.
 
 `statusgen brief --root . --check-verified <stream>/<NN>` additionally requires
 `verified` or `done`, a dated Verified stamp, and a passing execution witness for
-every Verify row. It returns exit 1 with no JSON when that closure check fails;
+every applicable original Verify row. Protected-table supplemental rows use the
+immutable snapshot marker and receive no acceptance credit; see
+[recording closure after re-derivation](../docs/protected-paths.md#recording-closure-after-re-derivation).
+It returns exit 1 with no JSON when that closure check fails;
 resolution/usage failures remain exit 2. This check does not grandfather missing
-witnesses and does not replace `statusgen --lint`. `deskevidence` uses both before
-appending a new verified outcome receipt.
+witnesses and does not replace `statusgen --lint`.
+
+Adding `--check-attribution` (requires `--check-verified`) also requires an accepted
+Evidence author under the same roster policy and Git blame judge as lint, without
+lint's historical severity classification. A known rejected identity returns 1;
+unavailable policy/history or a graft-hidden attribution returns 2. Both suppress
+JSON. Default resolution and `--check-verified` alone retain their behavior.
+`deskevidence` requests both flags and full lint before a new verified outcome.
+Its release must be paired with a statusgen release supporting this flag; an older
+statusgen returns an unknown-flag error and publication fails closed.
+
+### `phantoms` — the sibling-merge-unreconciled dedicated exit code
+
+A brief tracked on one repo's board can be delivered by a PR merged in a
+**sibling** repo (the convention where code briefs land via sibling PRs): the
+worker can write only there, so the home row never moves and Next-up keeps
+offering work that has already landed. `--lint`'s board-honesty detector
+(`boardhonesty.go`) surfaces this as its seventh phantom class,
+`sibling-merge-unreconciled` — but `--lint` never changes exit code for ANY
+board-honesty class (severity is NOTICE, deliberately, to avoid redding every
+unrelated PR against an already-drifted backlog). `statusgen phantoms` is the
+dedicated, narrow door for a CI row or a desk sweep that wants to go red on
+this one class without arming that against the whole board:
+
+```bash
+statusgen phantoms --root . --class sibling-merge-unreconciled
+```
+
+Exit `0` clean, `1` at least one checked-failed row (a change naming a `todo`
+or `in-progress` brief already merged in a sibling and nobody has recorded
+what it covered), `2` any could-not-check and no checked-failed (a registered
+sibling the operator's sibling-root map does not name, an absent, shallow, or
+unreadable sibling checkout, or an unresolvable `deliverable_repo:` alias). A finding is a **prompt to read the merged change Task by Task, never
+proof of delivery** — it never claims "implemented" or "delivered" and it
+never writes a lifecycle cell itself; two of the six real-world merges this
+class was built from turned out to be partial deliveries.
+
+A brief names its sibling via `homed-in: <owner>/<repo>`, `deliverable_repo:
+<alias>` (both resolved through `docs/streams/graph-repos.yaml`), or a
+`../<basename>/` path prefix matching a registered sibling's checkout
+basename — a brief declaring none of the three is simply out of scope for this
+class, not a could-not-check. The board's own repo is never one of its
+siblings: the registry's `self:` key names it, else the streams' `repo:`
+frontmatter does, and any entry matching that name is dropped. As a backstop,
+a sibling whose mapped path resolves to `--root` itself is skipped.
+
+**The sibling read is opt-in on the default paths.** `--lint`, the STATUS.md
+regen, `--next-up` and `--roadmap` read no other checkout unless the operator
+passes `--sibling-merge` or sets `ASSAY_SIBLING_MERGE=1` (compared exactly to
+`1`; `true` or `yes` leave it off). Without the opt-in, `--lint` prints at
+most one `not-checked:` NOTICE when a `todo`/`in-progress` row names a
+sibling, so a skipped read is never mistaken for a clean one, and no row is
+held out of Next-up. `statusgen phantoms --class sibling-merge-unreconciled`
+needs no opt-in: running that verb is the opt-in.
+
+Do not pass `--sibling-merge`, set `ASSAY_SIBLING_MERGE=1`, or run `phantoms`
+with a sibling map over a tree you do not trust: the tree chooses which
+commits of the mapped repos are printed.
+
+**Only siblings in the operator's map are ever read.** The map is
+`--sibling-root <owner>/<repo>=<path>` (repeatable) plus the same
+comma-separated `<owner>/<repo>=<path>` list in the `DESK_ROOTS` environment
+variable the desk tools already use; the flag wins on a collision. The
+tree's `graph-repos.yaml` can only narrow that set: a registered sibling the
+operator's map does not name is a could-not-check, never read, and there is
+no fallback path derived from the registry. A registry `repo:` value must be
+a strict `<owner>/<name>` (ASCII letters, digits, `-`, `_`, `.`; no `.` or
+`..` segment; no control characters) before it is used at all; an entry that
+fails is skipped with a NOTICE naming its index, never its value. Every
+NOTICE this class prints has control characters and line separators escaped,
+so it stays on one line. A structured
+`delivery:` claim in the brief's own frontmatter (`{in: "<alias>#<N>",
+covers: full|partial}`) acknowledges a specific merged PR: `covers: partial`
+releases the hold (the rest is real work), `covers: full` with the cell still
+`todo`/`in-progress` keeps the hold with a quieter "claimed delivered, cell
+not landed" NOTICE instead. A checked-failed `todo` row is additionally held
+out of Next-up (`MergedElsewhere`, the same shape `homed-in`'s
+`HomedElsewhere` already uses) and listed in STATUS.md's "Merged in a sibling
+repo — check before dispatch" section; an `in-progress` row is surfaced but
+never excluded — hiding what someone already holds is not the same as not
+handing it out.
+
+The sibling is read at its checked-out HEAD. A checkout parked on an
+unmerged feature branch reports that branch's commits as matches too, so a
+finding means "named in the history this checkout has", not "merged"; keep
+mapped siblings on their default branch.
+
+Matching walks the sibling's first-parent history (both the commit subject
+and its full body, so an id named only in a trailer is still caught) for
+either of two keys. The first is the brief id itself — `<stream>/<NN>` or
+`<stream>-<NN>`, word-bounded — appearing anywhere in the commit message.
+The second, `tracked-in: <alias>#<N>` frontmatter, exists for a PUBLIC
+sibling PR that deliberately withholds the brief id from its own history (a
+self-containment rule working as intended, not a bug to route around): such
+a PR instead carries an `Issue: #<N>` trailer or a GitHub closing keyword
+(`closes #<N>`, `fixes #<N>`, and their variants) naming the tracked issue.
+**Without a `tracked-in:` entry naming that sibling, a PR shaped this way is
+a checked-clean miss** — the detector reads the sibling's history, finds no
+matching key, and reports nothing dispatchable-wise, even though the work
+already landed. Declaring `tracked-in:` for the sibling alias is what turns
+that miss into a checked-failed finding instead.
 
 ## Multi-root (a board that spans repos)
 
@@ -379,6 +664,42 @@ One pre-existing exclusion predates the marker and is kept: the tutorial-skeleto
 prefix in `corroborate.go`, which teaches the `human:<name>` notation itself with
 fictional personas. It is a named constant, reviewed on its own terms, and it
 needs no marker.
+
+### Quoted notation is not a claim (`--corroborate`)
+
+`--corroborate` reads the pull request's added lines as claims that a human
+acted. Some added lines only quote the notation, and it does not read them as
+claims (`corroboratescope.go`):
+
+- **The removed side of an embedded patch.** In a committed `.patch` or `.diff`
+  file, a line the patch deletes arrives as `+-…`. Neither the stamp scan nor
+  the citation scan reads a `-` line inside one of the patch's hunks. The
+  patch's added side, its context lines, and any text outside a hunk (such as a
+  `git format-patch` commit-message preamble) are still read.
+- **Stamp-shaped text on a surface no stamp reader parses.** This applies to the
+  stamp scan only. It skips **test** source files: a file whose extension is on
+  a closed list (`.go .sh .bash .zsh .ps1 .py .js .mjs .cjs .ts .rb .rs`) and
+  whose name follows a test-file convention (`x_test.go`, `x.test.sh`,
+  `x_test.py`, ...). It also skips YAML lines whose first non-blank character is
+  `#`: outside a block scalar that is a YAML comment, and inside one it is value
+  text, but statusgen never parses YAML for stamps. statusgen reads stamps only
+  from record files: Markdown boards, briefs, decision records and registers,
+  and JSONL ledgers. So a `human:<name>` in a test's fixture data is never a
+  sign-off. A non-test program or script is scanned as before, because it may be
+  the thing that writes a stamp into a record. The citation scan still reads all
+  of these files, because a ruling claim in a code comment is prose that a
+  reader may trust.
+
+Every rule is decided by the file's own name and format, never by a directory
+name, and each one fails closed. Any other extension, every non-test program or
+script, every YAML value line, and every Markdown line, bullets starting with
+`-` included, are scanned as before. Each
+skip is **visible**: the run ends with a
+`# quoted notation — NOT read as a claim` section that lists every stamp or
+citation a skipped line would have produced (`human:<name> in <file>
+NOT-A-CLAIM — <reason>`). All three `--corroborate` lanes read the diff through
+one walker (`walkAddedDiffLines`). `TestCorroborateDiffWalkersShareOneWalker`
+fails if another function in the package walks the diff with its own loop.
 
 ## Standalone layout
 

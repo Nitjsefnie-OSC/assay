@@ -175,27 +175,62 @@ func TestCrossModuleTestsAreTriggeredByWhatTheyRead(t *testing.T) {
 
 				// HALF (2) — coverage. Every read must be matched by a glob.
 				globs := workflowEventPaths(t, content, e.workflow, event)
-				for _, read := range e.reads {
-					if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(read))); err != nil {
-						t.Errorf("registry is stale: %s reads %s, which does not exist (%v)", e.test, read, err)
-						continue
-					}
-					if !anyGlobMatches(t, globs, read) {
-						t.Errorf("%s (%s) reads %s, but %s's on.%s.paths does not cover it (globs: %v).\n"+
-							"A cross-module guard whose trigger excludes what it reads is ADVISORY, not enforced — %s.\n"+
-							"Fix the FILTER (add a glob covering %s); do NOT weaken or delete the test (#199).",
-							e.test, job.check, read, e.workflow, event, globs, e.why, read)
-					}
+				for _, fault := range ciReadCoverage(t, repoRoot, globs, e.reads) {
+					t.Errorf("%s (%s), %s on.%s.paths: %s; fix the filter, never weaken the guard (#199)", e.test, job.check, e.workflow, event, fault)
 				}
 			}
 		})
 	}
 }
 
+// TestPerfRunnerCI keeps the newly admitted local recorder edge's qualification
+// active in the public source layout, where the historical house registry sweep
+// above deliberately skips its unavailable tools.yml fixture. Reuse its event,
+// job and read-coverage parser rather than adding a second workflow checker.
+// regression: desktools-v2/64
+func TestPerfRunnerCI(t *testing.T) {
+	const root = "../../../.."
+	for _, e := range ciCrossModuleRegistry() {
+		if e.test != "loopadmin/runner/request_test.go" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(root, e.workflow))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range []string{"pull_request", "push"} {
+			job := e.prJob
+			if event == "push" {
+				job = e.pushJob
+			}
+			ciAssertEventReachesJob(t, string(raw), e.workflow, e.module, event, job, e.runInvokes, e.test, e.why)
+			content := string(raw)
+			// The source workflow deliberately has unfiltered event headers.
+			// The legacy path helper refuses that shape; recognize it explicitly
+			// without relaxing its fail-closed behavior for other registry rows.
+			if !regexp.MustCompile(`(?m)^  ` + event + `:[ \t]*$`).MatchString(content) {
+				t.Fatal("runner workflow event is absent or has an unqualified shape")
+			}
+			if _, filtered := ciOnEventKey(t, content, e.workflow, event, "paths"); filtered {
+				for _, fault := range ciReadCoverage(t, root, workflowEventPaths(t, content, e.workflow, event), e.reads) {
+					t.Error(fault)
+				}
+			}
+			if _, ignored := ciOnEventKey(t, content, e.workflow, event, "paths-ignore"); ignored {
+				t.Fatal("runner dependency reads must not be hidden by an unqualified paths-ignore filter")
+			}
+		}
+		return
+	}
+	t.Fatal("runner dependency guard is absent from the cross-module registry")
+}
+
 // ciCrossModuleRegistry is the hand-maintained roster of tests that deliberately
 // read outside their own Go module. Both tests in this file consume it: the
 // trigger/reachability guard above, and the staleness scanner below.
 func ciCrossModuleRegistry() []ciEntry {
+	floorJob := ciJobRef{id: "build-test", check: "build-test"}
+
 	toolsDeskJob := ciJobRef{
 		id:          "test",
 		matrixValue: "tools/desk",
@@ -227,6 +262,172 @@ func ciCrossModuleRegistry() []ciEntry {
 	}
 
 	registry := []ciEntry{
+		{
+			test: "statusgen/boardcohort_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"docs/streams", "statusgen/testdata/witness-admission"},
+			runInvokes: []string{"cd statusgen && go test ./... && go vet ./..."},
+			why:        "the source-bound board cohort reads current delivery declarations and alias registry; unfiltered push and pull_request run the statusgen suite even on metadata-only changes",
+		},
+
+		{test: "tools/desk/cmd/writeguard/policy_consumers_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"deskcore/", "docs/write-policy-consumers.md", "docs/contracts.md", "tools/desk/internal/arch/markers.txt", "Dockerfile", "images/assay-harness/Dockerfile", "**/*.go"},
+			runInvokes: []string{`*/tools/desk|tools/desk) extra="go test ./..."`, `eval "$extra"`},
+			why:        "the write-policy census scans production Go declarations across the source tree and packages deskcore for an offline external consumer; the source workflow is unfiltered"},
+		{test: "tools/desk/cmd/writeguard/policy_parity_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"deskcore/"},
+			runInvokes: []string{`*/tools/desk|tools/desk) extra="go test ./..."`, `eval "$extra"`},
+			why:        "the actual built writeguard hook is compared with the core, then uses disposable mutated copies of that producer; deskcore-only edits must rerun parity"},
+
+		{test: "tools/desk/internal/reviewtest/observation_boundary_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"schemas/review-observation-v1.json"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the review observation wire schema must qualify against its actual internal Go decoder and planner; the unconditional desk module test job runs on schema-only changes"},
+		{
+			test: "loopadmin/runner/request_test.go", module: "loopadmin",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"perfrec/"},
+			runInvokes: []string{`*/loopadmin|loopadmin) extra="GOWORK=off go test ./..." ;;`},
+			why:        "Runner dependency isolation observes the exact local perfrec module closure through go list; the unfiltered source workflow executes its suite after any producer or dependency edit.",
+		},
+		{
+			test: "tools/desk/cmd/deskboard/flow_45_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"statusgen/testdata/flowqueue/gate-scores.golden.json"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "deskboard reads the verification-queue rows statusgen printed for the shared fixture, so a statusgen-only change to the queue classification is checked against its consumer on every PR",
+		},
+		{
+			test: "tools/desk/cmd/verifyloop/flow_45_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads: []string{
+				"statusgen/testdata/flowqueue/gate-scores.golden.json",
+				"statusgen/testdata/flowqueue/docs/streams",
+			},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "verifyloop plans the shared fixture tree under the canonical queue rows statusgen printed for it, so a statusgen-only change to the classification or the fixture is checked against its consumer on every PR",
+		},
+		{
+			test: "statusgen/acceptanceci_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads: []string{
+				".github/workflows/assay-statusgen.yml", ".github/workflows/verify-gate-close.yml",
+				"ci/staged-workflows/assay-statusgen.yml", "ci/staged-workflows/verify-gate-close.yml",
+				"tools/ci-load/activation/assay-statusgen.yml",
+			},
+			runInvokes: []string{"cd statusgen && go test ./..."},
+			why:        "the unconditional statusgen suite checks acceptance flags, mapped humans and read credentials across every authoritative workflow source and retry",
+		},
+		{
+			test: "statusgen/verifykitblocked_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/desk/cmd/deskdispatch/references/verifier-prompt.md"},
+			runInvokes: []string{"cd statusgen && go test ./..."},
+			why:        "the unconditional statusgen suite feeds the actual verifier kit marker into the flip reader to prove blocked runs supersede and bound passing runs",
+		},
+		{
+			test: "statusgen/claimbridge_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"statusgen", "tools/desk", "forgeread", "perfrec"},
+			runInvokes: []string{"bash statusgen/test-role-claims.sh"},
+			why:        "the statusgen consumer builds the desk heads child and exercises its custody and shared envelope through the same offline invocation used by PR CI",
+		},
+		{
+			test: "tools/desk/cmd/deskpushguard/hookentrypoints_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"Makefile", "scripts/build-windows.ps1", "tools/desk/hooks/pre-push"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the unconditional build-test floor checks both hook installer entrypoints (the Makefile recipe under /bin/sh, as the runner has no make) and the published anchored hook",
+		},
+		{
+			test: "tools/desk/internal/regression/mirrorimports_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads: []string{
+				"tools/forge-import-check/check_env_imports.go",
+				"tools/forge-import-check/check_env_imports_test.go",
+				"docs/streams",
+			},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the unconditional build-test floor executes both authored import-check commands against compiler-valid syntax fixtures",
+		},
+		{
+			test: "tools/desk/internal/regression/releasecache_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/release", ".github/workflows/release.yml", "ci/staged-workflows/release.yml"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the unconditional build-test floor executes release cache provenance, image artifact contracts, archive, and workflow fixtures",
+		},
+		{
+			test: "tools/desk/cmd/deskinstall/cursor_sync_test.go", module: "tools/desk",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"plugins/assay", ".cursor", "AGENTS.md"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the committed Cursor placement is checked against canonical source on every PR and push",
+		},
+		{
+			test:   "tools/desk/internal/regression/changelog_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/changelog"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the unconditional build-test floor executes the real-Git changelog and board classification suites",
+		},
+		{
+			test:   "tools/desk/internal/regression/evidenceautomerge_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/evidence-automerge", "ci/staged-workflows", "ci/board-writer-migration", "tools/ci-load/activation", ".github/workflows"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the live build-test floor executes all three offline Evidence suites, including every board-writer Environment fence",
+		},
+		{test: "tools/desk/cmd/deskdispatch/verifierattestation_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/verifyrun.go", "statusgen/verifieradmission.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the verifier dispatch fixture builds the actual statusgen executor and proves that two Verify rows require the shared pre-work admission"},
+		{test: "tools/desk/cmd/deskdispatch/verifiercrossrepo_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/verifyrun.go", "statusgen/verifieradmission.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the cross-repository dispatch fixture builds the actual statusgen executor and checks isolated tracking Evidence and deliverable row execution"},
+		{test: "tools/desk/cmd/deskevidence/landed_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/briefinfo.go", "statusgen/evidenceactor.go", "statusgen/attribution.go", "statusgen/verifyclosure.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the landed outcome regression builds actual statusgen and checks attribution and closure against genuine committed verifier history"},
+		{test: "tools/desk/cmd/deskevidence/outcome_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob, reads: []string{"statusgen/briefinfo.go", "statusgen/evidenceactor.go", "statusgen/attribution.go", "statusgen/verifyclosure.go"}, runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""}, why: "the outcome command regression builds actual statusgen and checks attribution and closure against genuine committed verifier history"},
+		{
+			test:   "tools/desk/internal/deskkit/release_authorizer_api_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"ci/staged-workflows/release.yml", ".github/workflows/release.yml"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the offline API fixture executes both release resolve shells and must run when either workflow changes",
+		},
+		{
+			test:   "tools/desk/internal/deskkit/stageddrift_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"ci/staged-workflows", ".github/workflows"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "every staged workflow and live base must trigger the undeclared drift guard",
+		},
+		{
+			test:   "tools/desk/internal/regression/manifest_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/desk", "statusgen"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the manifest dereferences test declarations in both modules; edits in either must run the desk manifest guard",
+		},
+		{
+			test:   "tools/desk/internal/regression/shell_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"tools/create-fleet-gitlab.sh", "tools/create-fleet-gitlab_test.sh", "tools/cellctl"},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the floor runs offline shell fixtures outside the desk module; script changes must run the entry points",
+		},
+		{
+			test:   "tools/desk/internal/clicontract/inventory_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: floorJob, pushJob: floorJob,
+			reads: []string{
+				"docs/streams/desktools-v2/cli-migration.json", "docs/streams", "docs/research",
+				".github/workflows/release.yml", "Makefile", "plugins", "tools", "statusgen",
+			},
+			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},
+			why:        "the CLI routing inventory discovers every entrypoint in the tree and checks owner briefs; a new command or brief edit anywhere must run it (desktools-v2/15)",
+		},
+
 		{
 			// Registered with the guard it enforces (#392 review
 			// B3): closecheck's entire advisory guarantee — that it cannot
@@ -333,7 +534,7 @@ func ciCrossModuleRegistry() []ciEntry {
 				"topology.yaml",
 				"topology.example.yaml",
 			},
-			why: "the 2026-08-13 publication ruling withholds topology.yaml permanently and ships " +
+			why: "the publication ruling withholds topology.yaml permanently and ships " +
 				"topology.example.yaml in its place, relocated to topology.yaml at staging. A withheld " +
 				"real file plus a hand-written public twin is the second-copy defect this test " +
 				"exists to kill, and this shape diff is the ONLY thing closing it — a schema change to " +
@@ -413,6 +614,27 @@ func ciCrossModuleRegistry() []ciEntry {
 				"copies are bound only by this shared vector, so a statusgen-only diff that drifts the " +
 				"base list, the glob rule or the per-repo topology reading must run this job or the " +
 				"gate a PR is classed by and the gate a brief is checked against silently disagree",
+		},
+		{
+			// The briefs-authoring exemption coupling (#1502).
+			// briefauthoring_coupling_test.go reads the shared vector out of statusgen's
+			// tree and runs it through THIS module's BriefAuthoringOnly; statusgen's twin
+			// runs the same file through its duplicate (briefauthoring.go). A
+			// statusgen-only diff to the vector or the duplicate must run this job.
+			test:     "tools/desk/internal/deskkit/briefauthoring_coupling_test.go",
+			module:   "tools/desk",
+			workflow: ".github/workflows/tools.yml",
+			prJob:    toolsDeskJob,
+			pushJob:  toolsDeskJob,
+			reads: []string{
+				// The SHARED cross-tree authoring-vs-delivery vectors; statusgen reads
+				// them in-module, this module's read is the cross-module one.
+				"statusgen/testdata/brief_authoring_vectors.json",
+			},
+			why: "the rule that a docs-only briefs-authoring PR is not a delivery is DUPLICATED " +
+				"into statusgen's reconcile reader; the two copies are bound only by this shared " +
+				"vector, so a statusgen-only diff that drifts the rule must run this job or " +
+				"deskdispatch and reconcile silently disagree on what counts as delivered",
 		},
 		{
 			test:     "tools/desk/internal/deskkit/citrigger_test.go",
@@ -546,6 +768,24 @@ func ciCrossModuleRegistry() []ciEntry {
 				"re-fetches what is already pinned. The diffs that break it are exactly the ones " +
 				"that touch plugins/**: add a skill, delete one, or edit SOURCES.yaml. Triggered " +
 				"on tools/** alone it would never run on any of them",
+		},
+		{
+			test:     "tools/harnessgen/redaction_test.go",
+			module:   "tools/harnessgen",
+			workflow: ".github/workflows/ci.yml",
+			prJob:    ciJobRef{id: "build-test", check: "build-test"},
+			pushJob:  ciJobRef{id: "build-test", check: "build-test"},
+			reads: []string{
+				"plugins/assay/resident-rules.md",
+				"plugins/assay/skills/the-desk/SKILL.md",
+				"plugins/assay/references/desk-shell.md",
+				"tools/desk/cmd/deskdispatch/references/worker-prompt.md",
+				".claude/guardrails/GUARDRAILS.md",
+			},
+			runInvokes: []string{`*/tools/harnessgen|tools/harnessgen) extra="go test ./..."`},
+			why: "the redaction instruction guard reads R7 and walks the skill, reference, " +
+				"dispatch-kit and shared-guardrail corpora; ci.yml runs the harnessgen suite " +
+				"on unfiltered pull_request and push events, covering every scanned path",
 		},
 		{
 			// The resident-rules single-source guard. harnessgen single-sources the resident
@@ -1006,6 +1246,18 @@ func ciCrossModuleRegistry() []ciEntry {
 				"is exactly how it stayed invisible the first time",
 		},
 		{
+			test:     "tools/desk/cmd/deskdispatch/triagecontract_test.go",
+			module:   "tools/desk",
+			workflow: ".github/workflows/ci.yml",
+			prJob:    ciJobRef{id: "build-test", check: "build-test"},
+			pushJob:  ciJobRef{id: "build-test", check: "build-test"},
+			reads: []string{
+				"plugins/assay/skills/worker-desk/SKILL.md",
+				"plugins/assay/skills/worker-desk/references/dispatch-runbook.md",
+			},
+			why: "resume triage contracts read the worker method and its references; unconditional ci.yml runs the desk suite on prose-only changes too",
+		},
+		{
 			// Registered when the desk skills moved into
 			// THIS repo's .claude/skills/ and added the skillslint check that closes
 			// #452's `.claude/**` gap. The `skills` job in statusgen.yml runs
@@ -1085,6 +1337,43 @@ func ciCrossModuleRegistry() []ciEntry {
 				"tools/desk lets that recur silently",
 		},
 		{
+			// The verifier kit asked for an unbolded VERIFY verdict while the statusgen
+			// gate reads only the bold marker. verdictbold_test.go reads that gate's
+			// regex out of statusgen (walking up by filepath.Dir, so the stale-registry
+			// scanner below cannot see it — registered here so the read stays visible)
+			// and requires every verdict the dispatch kits ask for to match it.
+			test:     "tools/desk/cmd/deskdispatch/verdictbold_test.go",
+			module:   "tools/desk",
+			workflow: ".github/workflows/tools.yml",
+			prJob:    toolsDeskJob,
+			pushJob:  toolsDeskJob,
+			reads: []string{
+				"statusgen/verifyissues.go",
+			},
+			why: "the dispatch kits tell a verifier how to write its verdict and statusgen's gate " +
+				"decides whether that verdict advances the item; they disagreed once (plain vs bold) " +
+				"and a real PASS was invisible to the gate. A statusgen-only change to the marker " +
+				"must run the test that holds the kits to it",
+		},
+		{
+			// #2061: the scan-refusal scenario test reads the pr-review-desk
+			// skill's STOP section (outside this module) and binds its
+			// transcript judge to that text.
+			test:     "tools/desk/cmd/deskdispatch/scanrefusal_test.go",
+			module:   "tools/desk",
+			workflow: ".github/workflows/tools.yml",
+			prJob:    toolsDeskJob,
+			pushJob:  toolsDeskJob,
+			reads: []string{
+				"plugins/assay/skills/pr-review-desk/SKILL.md",
+				"plugins/assay/skills/pr-review-desk/references/verdict-format.md",
+			},
+			why: "scanrefusal_test.go judges desk transcripts after a verdict-body scan refusal " +
+				"against the pr-review-desk skill's STOP section; a skill edit that drops or softens " +
+				"that section without running tools/desk would leave the reword-after-refusal " +
+				"scenario pinning a rule the skill no longer states",
+		},
+		{
 			// #20 (F-34/F-35): writeguard was built and unit-tested in this
 			// module but was never actually wired into a live PreToolUse hook
 			// for sessions working in THIS repo's own shared checkout — only
@@ -1139,25 +1428,27 @@ func ciCrossModuleRegistry() []ciEntry {
 		},
 		{
 			// Registered by the release-stamp guard. version_test.go's
-			// TestVersionStampedFromReleaseWorkflow reads release-desk.yml and
-			// fails if the `-X …deskkit.ReleaseTag=$RELEASE_TAG` stamp is
-			// removed — the stamp that maps a running desk-tools binary back to
-			// its desk-tools/vX.Y.Z. A release-desk.yml-only edit dropping the
+			// TestVersionStampedFromReleaseWorkflow reads release.yml (the umbrella
+			// release that builds desk-tools; it once read a release-desk.yml this
+			// repository never carried, and skipped) and fails if the
+			// `-X …deskkit.ReleaseTag=$RELEASE_TAG` stamp is removed from the
+			// desk-tools build step — the stamp that maps a running desk-tools
+			// binary back to its release. A release.yml-only edit dropping the
 			// stamp is exactly the diff this guard catches, so scoped to tools/**
 			// alone it would be the one diff that does not run it (mirrors
-			// statusgen/version_test.go for release-statusgen.yml).
+			// statusgen/version_test.go).
 			test:     "tools/desk/internal/deskkit/version_test.go",
 			module:   "tools/desk",
 			workflow: ".github/workflows/tools.yml",
 			prJob:    toolsDeskJob,
 			pushJob:  toolsDeskJob,
 			reads: []string{
-				".github/workflows/release-desk.yml",
+				".github/workflows/release.yml",
 			},
 			why: "TestVersionStampedFromReleaseWorkflow proves the release build still stamps " +
 				"-X …deskkit.ReleaseTag=$RELEASE_TAG; an unstamped release ships desk-tools binaries " +
 				"that answer \"dev\" and cannot be mapped back to their desk-tools/vX.Y.Z, silently " +
-				"defeating pin checks. A release-desk.yml-only edit that drops the stamp must run this test",
+				"defeating pin checks. A release.yml-only edit that drops the stamp must run this test",
 		},
 		{
 			// Registered by the raised-by label guard. raisedbyskills_test.go is the DIFF
@@ -1973,6 +2264,11 @@ func globToRegexp(g string) (*regexp.Regexp, error) {
 // gone, or that the scanner no longer flags, is a hard failure — so the list
 // cannot rot into a blanket suppression.
 var ciRegistryOptOut = map[string]string{
+	"tools/desk/internal/reviewtest/perf_test.go":                 `moduleRoot is tools/desk; command probe binaries, own-module legacy perf fixtures, and disposable homes only. No source from another module is read; CI runs the desk module on every PR`,
+	"tools/desk/internal/reviewtest/observation_contract_test.go": `Own-module production source overlays, fixtures and command probes only; all other reads are disposable fixtures. No sibling-module source is read.`,
+	"tools/desk/internal/reviewtest/qualification_test.go":        `filepath.Join("..", "..") from internal/reviewtest resolves to tools/desk, its own module. The test compiles command test binaries and reads its own testdata; all other files are disposable fixtures. It reads Git revision/status metadata but no sibling-module source. ci.yml runs go test ./... for tools/desk on every PR`,
+	"tools/desk/internal/deskkit/appisolation_test.go":            `WalkDir("../..") from internal/deskkit reads only tools/desk test sources, within its own module; tools/** already covers every observed edit`,
+	"tools/desk/internal/gitcore/ackguard_test.go":                `filepath.Join("..", "..") from internal/gitcore resolves to tools/desk. The receive-pack reference inventory reads only non-test Go files in this same module; tools/** already triggers its CI job`,
 	"tools/harnesslint/lint_test.go": `filepath.Join(refs, "..", "skills") joins ".." onto a t.TempDir() ` +
 		`returned by copyRefs, deliberately pointing at a NONEXISTENT sibling of the temp dir to exercise the ` +
 		`absent-roster could-not-check path (TestCheckBindings_ClosureFailsWithoutRoster / ` +
@@ -2332,4 +2628,125 @@ runs:
 			}
 		}
 	})
+}
+
+// TestRegressionCIEntrypoints checks the published workflow directly. The
+// legacy house registry test intentionally skips without tools.yml; these
+// public entries must not inherit that skip.
+// regression: #2686
+func TestRegressionCIEntrypoints(t *testing.T) {
+	count := 0
+	for _, e := range ciCrossModuleRegistry() {
+		if !strings.HasPrefix(e.test, "tools/desk/internal/regression/") {
+			continue
+		}
+		count++
+		raw, err := os.ReadFile(filepath.Join("../../../..", e.workflow))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range []string{"pull_request", "push"} {
+			job := e.prJob
+			if event == "push" {
+				job = e.pushJob
+			}
+			ciAssertEventReachesJob(t, string(raw), e.workflow, e.module, event, job, e.runInvokes, e.test, e.why)
+			globs, filtered := ciOnEventKey(t, string(raw), e.workflow, event, "paths")
+			if !filtered {
+				if _, ignored := ciOnEventKey(t, string(raw), e.workflow, event, "paths-ignore"); ignored {
+					t.Fatalf("floor workflow %s has paths-ignore; enumerate its coverage before trusting it", e.workflow)
+				}
+				globs = []string{"**"}
+			} // ci.yml deliberately runs on every change; reachability above still checks the event and job
+			for _, fault := range ciReadCoverage(t, "../../../..", globs, e.reads) {
+				t.Errorf("%s %s: %s", e.workflow, event, fault)
+			}
+		}
+	}
+	if count != 6 {
+		t.Fatalf("floor has %d CI registry entries, want 6 (manifest, shell, Evidence, changelog, mirror import and release cache suites)", count)
+	}
+}
+
+// ciReadCoverage expands directory readers to actual files. GitHub paths
+// filters see changed files, never the directory names in this registry.
+func ciReadCoverage(t *testing.T, root string, globs, reads []string) []string {
+	t.Helper()
+	var faults []string
+	for _, read := range reads {
+		count := 0
+		err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(read)), func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			count++
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			if !anyGlobMatches(t, globs, rel) {
+				faults = append(faults, "uncovered read: "+rel)
+			}
+			return nil
+		})
+		if err != nil {
+			faults = append(faults, fmt.Sprintf("cannot enumerate %s: %v", read, err))
+		} else if count == 0 {
+			faults = append(faults, "read has no files: "+read)
+		}
+	}
+	return faults
+}
+
+func TestCIReadTreeCoverage(t *testing.T) {
+	root := t.TempDir()
+	entries := []string{"tools/desk", "statusgen", "tools/cellctl"}
+	for _, dir := range entries {
+		path := filepath.Join(root, dir, "nested", "read.go")
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, event := range []string{"pull_request", "push"} {
+		for _, dir := range entries {
+			t.Run(event+"/"+dir, func(t *testing.T) {
+				raw := "on:\n  " + event + ":\n    paths:\n      - '" + dir + "'\n"
+				globs, found := ciOnEventKey(t, raw, "fixture.yml", event, "paths")
+				if !found {
+					t.Fatal("fixture paths not parsed")
+				}
+				faults := ciReadCoverage(t, root, globs, []string{dir})
+				if len(faults) == 0 {
+					t.Fatal("directory-only filter admitted descendant read")
+				}
+				if !strings.Contains(strings.Join(faults, "\n"), dir+"/nested/read.go") {
+					t.Fatalf("descendant not named: %v", faults)
+				}
+				if faults := ciReadCoverage(t, root, []string{dir + "/**"}, []string{dir}); len(faults) > 0 {
+					t.Fatalf("healthy broad filter: %v", faults)
+				}
+			})
+		}
+	}
+	// A distinct planted reader is neither module nor shell subtree from the finding.
+	dir := "new-reader"
+	if err := os.MkdirAll(filepath.Join(root, dir, "deep"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, dir, "deep", "second.txt"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if faults := ciReadCoverage(t, root, []string{dir}, []string{dir}); len(faults) == 0 {
+		t.Fatal("second directory-only plant was missed")
+	}
+	if faults := ciReadCoverage(t, root, []string{dir + "/**"}, []string{dir}); len(faults) > 0 {
+		t.Fatal(faults)
+	}
 }

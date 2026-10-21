@@ -86,6 +86,14 @@ type fakeGH struct {
 	// forces the commit read to fail (could-not-check → fall back to the PR author).
 	headAuthorLogin string
 	headAuthorErr   bool
+	// headCommittedAt is the committer date GET /commits/{sha} serves — the date an
+	// APPROVED's submitted_at must not predate (#3093: GitHub re-anchors an old review's
+	// commit_id to a later head). "" serves fakeHeadCommittedAt, which predates every
+	// fixture review, so a case not about re-anchoring is unaffected. headCommitDateErr
+	// fails ONLY that read's date (the body omits it) — could-not-check, which must fail
+	// closed.
+	headCommittedAt   string
+	headCommitDateErr bool
 
 	// Issue fixtures (#296). GitHub numbers issues and PRs from ONE
 	// sequence, so the fake models that: a number in issueNums is an ISSUE — GET
@@ -120,6 +128,18 @@ type fakeGH struct {
 	issueTrustJSON string
 
 	reviews []reviewInfo
+	// reviewsAfterFirstRead, when non-nil, is what GET /pulls/{n}/reviews serves on every
+	// read AFTER the first — the knob that lets a test post a review at the SAME head between
+	// the precondition checks and the pre-mutation re-read (#1694, the deskflip F2 race).
+	reviewsAfterFirstRead []reviewInfo
+	reviewCalls           int
+	// prBody is the PR description GET /pulls/{n} serves (the desk-decided block's surface).
+	// The PR's labels in that payload are prLabels, the same set the label routes mutate.
+	prBody string
+	// onSecondPullRead, when set, runs (under the fake's lock) just before the SECOND
+	// GET /pulls/{n} is served — ready's pre-mutation re-read — so a test can edit the PR's
+	// labels or body between the precondition checks and the mutation without moving the head.
+	onSecondPullRead func()
 	// issueComments is what GET /issues/{n}/comments serves — the shape the
 	// pr-review-desk skill used to prescribe for a clean security pass. The ready gate
 	// must never read it (#513).
@@ -141,9 +161,6 @@ type fakeGH struct {
 	// repoVisibility is the .visibility returned for GET /repos/{owner}/{repo}.
 	// Defaults to "private" so the public-repo gate does not block existing tests.
 	repoVisibility string
-
-	// repoReactions is the reaction list returned for GET .../reactions.
-	repoReactions []deskkit.Reaction
 
 	// labelEvents is the PR's label timeline — the dispatcher-attestation the model-
 	// capability floor reads on a verdict write. nil serves an empty timeline, which the
@@ -199,7 +216,6 @@ var (
 	reChecks       = regexp.MustCompile(`/commits/[^/]+/check-runs$`)
 	reCommit       = regexp.MustCompile(`/commits/[^/]+$`)
 	reRepo         = regexp.MustCompile(`^/repos/[^/]+/[^/]+$`)
-	reReactions    = regexp.MustCompile(`/issues/[0-9]+/reactions$`)
 	reTimeline     = regexp.MustCompile(`/issues/[0-9]+/timeline$`)
 	reRepoLabels   = regexp.MustCompile(`^/repos/[^/]+/[^/]+/labels$`)
 	reIssueLabels  = regexp.MustCompile(`/issues/[0-9]+/labels$`)
@@ -322,6 +338,9 @@ func (f *fakeGH) handler(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		call := f.pullCalls
 		f.pullCalls++
+		if call == 1 && f.onSecondPullRead != nil {
+			f.onSecondPullRead()
+		}
 		f.mu.Unlock()
 		p := prInfo{
 			Number: 1, State: f.prState, Draft: f.prDraft, NodeID: f.prNodeID,
@@ -329,7 +348,13 @@ func (f *fakeGH) handler(w http.ResponseWriter, r *http.Request) {
 			Head: struct {
 				SHA string `json:"sha"`
 			}{SHA: f.headFor(call)},
+			Body: f.prBody,
 		}
+		f.mu.Lock()
+		for _, l := range f.prLabels {
+			p.Labels = append(p.Labels, prLabel{Name: l})
+		}
+		f.mu.Unlock()
 		p.User.Login = f.prAuthor
 		p.User.ID = f.prAuthorID
 		if p.User.Login == "" {
@@ -366,7 +391,8 @@ func (f *fakeGH) handler(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.postedReview++
 		// Assign a review id as GitHub does; the dedup guard's messages name it (#518).
-		submitted := reviewInfo{ID: int64(1000 + f.postedReview), State: state, CommitID: in.CommitID, Body: in.Body}
+		submitted := reviewInfo{ID: int64(1000 + f.postedReview), State: state, CommitID: in.CommitID, Body: in.Body,
+			SubmittedAt: fakeReviewSubmittedAt}
 		submitted.User.Login = reviewerBotDisplay()
 		f.reviews = append(f.reviews, submitted)
 		id := submitted.ID
@@ -379,7 +405,15 @@ func (f *fakeGH) handler(w http.ResponseWriter, r *http.Request) {
 			writeJSON([]reviewInfo{})
 			return
 		}
-		writeJSON(f.reviews)
+		f.mu.Lock()
+		call := f.reviewCalls
+		f.reviewCalls++
+		served := f.reviews
+		if call > 0 && f.reviewsAfterFirstRead != nil {
+			served = f.reviewsAfterFirstRead
+		}
+		f.mu.Unlock()
+		writeJSON(served)
 
 	case r.Method == http.MethodGet && reFiles.MatchString(path):
 		if page != "" && page != "1" {
@@ -403,7 +437,15 @@ func (f *fakeGH) handler(w http.ResponseWriter, r *http.Request) {
 				login = "shared-agent"
 			}
 		}
-		writeJSON(map[string]any{"author": map[string]any{"login": login}})
+		date := f.headCommittedAt
+		if date == "" {
+			date = fakeHeadCommittedAt
+		}
+		commit := map[string]any{"committer": map[string]any{"date": date}}
+		if f.headCommitDateErr {
+			commit = map[string]any{}
+		}
+		writeJSON(map[string]any{"author": map[string]any{"login": login}, "commit": commit})
 
 	case r.Method == http.MethodGet && reStatus.MatchString(path):
 		per, pg := ghPaging(r.URL.Query())
@@ -515,13 +557,6 @@ func (f *fakeGH) handler(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		writeJSON(out)
-
-	case r.Method == http.MethodGet && reReactions.MatchString(path):
-		if f.repoReactions != nil {
-			writeJSON(f.repoReactions)
-		} else {
-			writeJSON([]deskkit.Reaction{})
-		}
 
 	case r.Method == http.MethodPost && reRepoLabels.MatchString(path):
 		// Ensure-label. Record the create; return 201. (A real repo 422s on an existing
@@ -703,6 +738,8 @@ func setupFake(t *testing.T) (*fakeGH, *bytes.Buffer) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv(deskkit.EnvConfigHome, "")
 	plantFixtureRoster(t, home)
 	t.Setenv("DESK_TOOLS_DISABLED", "")
 	t.Setenv("CLAUDE_SESSION_ID", "deskpost-test")

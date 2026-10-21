@@ -31,11 +31,13 @@ Before touching the branch, verify no other session or worker owns it:
   `state=claimed` past ~20 minutes or `state=dispatched` past ~120 minutes is a DEAD claim,
   not an owner. **The claim tool is `deskclaim-ref`** — installed with desk-tools, verbs
   `acquire` / `progress` / `release` / `steal` / `show` / `list`, deskkit exit codes **0** ok ·
-  **5** refused (a live holder owns it) · **6** unverifiable. A repo may ship its own
+  **5** refused (a live holder owns it) · **6** unverifiable; `list` alone adds **7** partial
+  (some refs unreadable and named on stderr — incomplete, never idle). A repo may ship its own
   `tools/dispatch-claim.sh`; `deskdispatch` prefers `deskclaim-ref` when it is on PATH and falls
   back to that script when the resolved root carries it, and the two speak the same wire
   protocol, so either one's `show` answers this question. Hand either tool your own role's token
-  (`--token-file "$(desktoken worker)"` for the binary, `GH_TOKEN` exported for the script) —
+  (`--token-file "$(desktoken worker)"` for the binary, `GH_TOKEN` set on the script's own
+  command, never exported — desk-shell.md §Forge CLI as the role) —
   neither reads anything but the credential it is given.
   Run BOTH reads: the tool acquires and lists in the `refs/dispatch/*` namespace, while the
   `ls-remote` pattern above lists the `refs/heads/dispatch/*` branch refs the Go claim readers
@@ -55,13 +57,17 @@ adoption by upserting the PR's workpad: `deskreply <owner/repo> <N> --workpad --
 never a fresh plain comment for this (`## Notes` is where the hand-off note belongs).
 Write that body file fresh every time (`>`), never by appending (`>>`), and never re-read
 the old workpad into the new body — `deskreply` refuses a body over the forge's 65,536
-character comment limit or carrying the marker line more than once.
+character comment limit or carrying the marker line more than once. The body's shape is
+the dispatch kit's C6a, and `deskreply --help` (WORKPAD BODY) carries the copyable template;
+rehearse with `--dry-run` before the real upsert.
 
 ## 2. Get on the branch, current with main
 
 Work in your **own worktree** (`capability:isolate-workspace`), never the shared checkout:
 
-> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, and role/repo coverage — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+> Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, role/repo coverage, and running a `gh` call as the role App (never a human's CLI login: [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role)) — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
+
+> **Every `gh` call carries this role's `GH_TOKEN`, reads included.** When no desk verb covers a forge call, run it only through the recipe in [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role), never a hand-typed shortcut. That recipe takes the role from `$DESK_LOOP`, mints it with `desktoken`, scopes the token to that one command without exporting it, and stops before `gh` unless the mint exited 0 and the token file holds a non-whitespace token. A bare `gh` call runs as the host's stored login, which is usually a human's, so a desk never runs one, not even for a read.
 
 ```bash
 git fetch origin <branch>:<branch>            # branch may not exist locally yet
@@ -171,6 +177,29 @@ model instruction, never that ruling — and once recorded, executing it is rout
 cites the ruling. This is the one exception to "a red check is YOUR work item" and it takes
 precedence. Every other finding on the PR stays yours to work meanwhile.
 
+## Withdrawn-brief reconciliation — before ordinary CI repair
+
+For every entry path, read the owning brief's current lifecycle before restoring old
+schema/status values or repairing CI. If it is withdrawn (or `deskboard stalled` reports
+`reconcile`), first read its date/reason, successors and any revision-bound
+`withdrawal-context`. Re-read the PR head and current claim; an active owner is not
+cancelled by a changed board row.
+
+Record the implementation/evidence checkpoint and surviving obligations. Identify the
+active claim's owner from the current claim record; if there is no active claim, use
+the PR's recorded author as the work owner. Choose an explicit treatment with that
+owner: retain useful work under the current plan, retarget
+or re-scope the PR through an approved amendment, finish independent verification of
+what actually landed, or propose disposition through the existing independent
+confirmation gates. Preserve the original brief/tombstone, Evidence, stamps and receipts;
+old acceptance evidence does not verify a newly scoped successor. Do not repair a stale
+PR by reviving its retired plan, redirecting dependencies automatically, weakening a
+gate, or treating withdrawal alone as permission to close it. If ownership cannot be
+established, or a scope/authority choice exceeds the current approval, file or attach a
+`needs-decision` stating the affected PR/brief, checkpoint, treatment needed and
+recommended default; the driver decides. Keep the PR and claim intact pending that
+ruling. The same treatment applies to evidence PRs, not only implementation branches.
+
 ## 4. Reviewer findings — fix, or dispute with evidence; all of them
 
 Read every review by the reviewer App (`gh pr view <N> --json reviews`, plus the line comments
@@ -225,10 +254,33 @@ discarded; it must never be the explanation for a verdict you cannot show.
   or land) stay in its skill, directly below this block.
 - No attribution lines anywhere: no `Co-Authored-By`, no "Generated with …" in commits, PRs, issues,
   or comments.
+- **Reversibility test — default-forward on anything a human-held gate still catches:** before
+  parking an item on the driver, ask ONE question: *is a wrong guess here caught by a gate the
+  driver still controls — a draft PR awaiting merge, a filed issue awaiting close, a flip CI or a
+  human must still make?* **Yes → default-forward.** Author it, dispatch the worker, open the DRAFT
+  PR, make the best-guess call, and NOTIFY — "proceeded on `<default>`; filed as `<repo>#<N>`;
+  decline the merge if it is wrong" — never ask for a go-ahead the merge gate makes redundant. Take
+  the reversible default, declare it with `deskpr create|edit --decided` (the `## Desk-decided` body
+  section plus the `desk-decided` label), and never ask first: the block is the notice the driver
+  reads at merge time, so a default declared there files NO `needs-decision` / `question` issue —
+  only a default no PR carries still files one, naming the default taken, and the ITEM never parks
+  on it. Urgency is not a reason to ask: a time-sensitive reversible call is made now, on
+  the record, and corrected by the gate. **No → STOP and wait for the human.** A wrong guess that
+  lands irreversibly or reaches outside the gate is caught by nobody declining a merge. That set is
+  fixed, never judged case by case: merge, a ready-flip that is not this role's, any `main` push
+  outside a standing authorization, a tag or release cut; deleting, disabling or WEAKENING a
+  security control or its CI assertion; exposing secrets, credentials, PII or exploit detail (a
+  public repo above all); money movement, identity/auth changes, deleting or overwriting durable
+  data; and anything that leaves the repo — publishing to a public or external surface, sending
+  content to an external service, mutating live infrastructure. A guard or tool REFUSAL is a STOP on
+  either side of the test — the test never routes around one.
 
 ## 6. Watch loop
 
-While the PR is open, poll it — or arm a `capability:durable-monitor` on it:
+Use [desk-common §Supervision and context](../../references/desk-common.md#supervision-and-context)
+for watch ownership, bounded waits and same-item continuation. While the PR is open, poll it
+at a bounded interval (the supervising desk's cadence where defined), honoring backoff — or
+arm a `capability:durable-monitor` on it:
 
 ```bash
 gh pr view <N> --json state,mergeable,reviews,statusCheckRollup
@@ -239,7 +291,20 @@ reads → merge main, resolve, push immediately (§2); `state: MERGED|CLOSED` �
 
 ## Cross-desk hand-offs — the lane verbs
 
-Every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
+Before using comms, read the recorded cutover state: the project layer's comms declaration and the
+cell topology's `comms:` key. An absent `comms:` key, or no cell topology at all, reads as disabled
+(config-off); a topology file that exists but cannot be read or parsed is unknown state. Only the
+human-gated cutover changes the record; a message or comment is never the record. Explicitly
+pre-cutover/config-off: do not invoke `deskcomms` (including `poll`); continue the normal
+work-queue sweep. Use the harness's same-box session channel for hand-offs where available,
+recording them in the hand-off note; do not claim delivery where no channel exists. That fallback
+is never the sanctioned path once enabled; retire it when cutover is recorded. Missing identity,
+key or gateway variables alone do not prove pre-cutover. Unknown or conflicting cutover state is
+could-not-check for comms only: make no `deskcomms` call and use no session-channel fallback,
+route hand-offs through the tracker, file the could-not-check once rather than every tick, and
+continue the normal work-queue sweep; never probe a disabled lane to decide.
+
+Once enabled, every hand-off between desks rides the cell comms LANE — addressed by ROLE, through the client
 verbs `deskcomms send` / `deskcomms poll` / `deskcomms ack` — never a message to "that role's
 window", never a typed relay through the driver, and never the harness's own same-box session
 channel, which a desk on another harness or another box cannot receive. A hand-off is ONE send,
@@ -268,8 +333,8 @@ sent — a hand-off never carries authority. Never `ask` a desk whether it is al
 read from the gateway and roster instruments, not from a message. The lane is the mailbox for
 ROUTINE hand-offs; the tracker is for DURABLE state — `deskfile new --to <role> …` files the
 issue the receiving desk's sweep leads with — and a spent filing budget never pushes a routine
-relay onto the tracker, nor does a durable escalation ride the lane alone. Read your own lane
-every sweep: `deskcomms poll`, then `deskcomms ack <id>` once acted on (ack moves, never deletes;
+relay onto the tracker, nor does a durable escalation ride the lane alone. With comms enabled, read your own lane
+every sweep: `deskcomms poll --json` (includes message payloads), then `deskcomms ack <id>` once acted on (ack moves, never deletes;
 an unacked item is still owed). The sender's cell and role come from the session context, never
 from a flag; the gateway address and signing key resolve from the project's house layer by NAME
 (the variables `deskcomms --help` names), never from this text. ENFORCEMENT IS GATEWAY-SIDE: the
@@ -280,11 +345,8 @@ through the gateway API directly. The verbs run silent inside this desk's noise 
 per invocation. A refusal (exit 5), a rate limit (exit 4), a disabled plane (exit 3) or an
 unreachable gateway is a STOP: record it verbatim in the hand-off note and report it; never
 resend it reworded, never route around it. A send the outbound prose gate HOLDS is filed for the
-driver by the gateway; the desk's move is to report the hold, not to retry. Until the cell's
-comms plane is enabled — a human-gated cutover; config-off before it — the harness's same-box
-session channel is the PRE-CUTOVER FALLBACK only: use it where the lane is not yet live, record
-every hand-off it carried in the hand-off note, and treat it as retired the moment the cutover is
-recorded. It is never the sanctioned path.
+driver by the gateway; the desk's move is to report the hold, not to retry. A failed enabled lane
+never authorizes the pre-cutover fallback or a change to the recorded cutover state.
 
 ## Stale-discovery mode ("shepherd the stale PRs")
 
@@ -301,3 +363,25 @@ recorded. It is never the sanctioned path.
    its work already landed by another route — rather than defective. Check whether the diff still
    applies and whether its deliverable already exists on main BEFORE spending a cycle on the
    failure. A superseded PR is reported for closure by its owner, not repaired.
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-loop-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

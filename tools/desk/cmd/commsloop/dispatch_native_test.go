@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,9 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/acp"
 	"github.com/medici-finance/assay/tools/desk/internal/comms"
 	"github.com/medici-finance/assay/tools/desk/internal/commsqueue"
+	"github.com/medici-finance/assay/tools/desk/internal/deskfilestub"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/gitquiet"
 	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
 )
 
@@ -21,12 +24,36 @@ import (
 // os/exec trick internal/acp and verifyloop's own dispatch_native_test.go use: the
 // native dispatch spawns os.Args[0] as its runner, distinguished by an env var, so the
 // whole native path is exercised with no real agent and no network.
+//
+// Around m.Run it also enforces the source-tree guard (srctree_test.go): a run that
+// leaves a new path in the package directory fails, naming the path.
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("COMMSLOOP_FAKE_ACP"); mode != "" {
 		runFakeExecutorAgent(mode)
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	// The sweep CLI and the quarantine filer run deskfile from PATH: no test
+	// here may reach the real one.
+	restore, err := deskfilestub.Install()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "deskfilestub: cannot install the deskfile stub: %v\n", err)
+		os.Exit(1)
+	}
+	before, berr := sourceTreeFiles(".")
+	code := gitquiet.Run(m)
+	restore()
+	after, aerr := sourceTreeFiles(".")
+	switch {
+	case berr != nil || aerr != nil:
+		fmt.Fprintf(os.Stderr, "source-tree guard: could-not-check (before: %v, after: %v)\n", berr, aerr)
+		code = 1
+	default:
+		if stray := strayPaths(before, after); len(stray) > 0 {
+			fmt.Fprintf(os.Stderr, "source-tree guard: the test run wrote into the package source directory instead of t.TempDir(): %s\n", strings.Join(stray, ", "))
+			code = 1
+		}
+	}
+	os.Exit(code)
 }
 
 // runFakeExecutorAgent implements just enough of the ACP agent side to drive
@@ -189,14 +216,18 @@ func runFakeExecutorAgent(mode string) {
 				// The bypass battery's containment drill: a contained READER
 				// (the prose router's decider) tries to escape — an fs read and
 				// a tool permission — then answers with COMMSLOOP_FAKE_REPLY.
-				// Its own view of each escape's outcome is echoed first so the
-				// test can assert the client refused both.
+				// Its own view of each escape's outcome is echoed on the
+				// answer's own line (the advisor journals the line naming its
+				// answer as the justification) so the test can assert the
+				// client refused both — behind a runner-CLI warning line, as
+				// a real runner can print.
 				fsOut, permOut := "not-attempted", "not-attempted"
 				if modeDefault {
 					fsOut = requestFSRead("/etc/hostname")
 					permOut = requestPermission("execute", "run shell")
 				}
-				report = "fs-outcome=" + fsOut + " perm-outcome=" + permOut + "\n" + os.Getenv("COMMSLOOP_FAKE_REPLY") + "\n"
+				report = "Warning: Code Mode is unavailable; tool calls will fail closed.\n" +
+					"fs-outcome=" + fsOut + " perm-outcome=" + permOut + " " + os.Getenv("COMMSLOOP_FAKE_REPLY") + "\n"
 			default:
 				report = "VERDICT: BLOCKED\n"
 			}
@@ -303,7 +334,10 @@ func TestNativeDispatchRoundTrip(t *testing.T) {
 
 func TestNativeDispatchRefusesWithoutRunner(t *testing.T) {
 	executorTestHome(t)
-	l := &Loop{Native: true}
+	// Root is load-bearing even for a refusal: Dispatch delivers to the addressee's
+	// mailbox BEFORE the native gate, so an empty Root wrote mailbox/ into the
+	// package source directory (#1947).
+	l := &Loop{Root: t.TempDir(), Native: true}
 	_, err := l.Dispatch(executorItem("x", "worker-desk"), loopengine.TierSession)
 	if err == nil || !strings.Contains(err.Error(), "no runner configured") {
 		t.Fatalf("native dispatch with no runner must refuse, got: %v", err)

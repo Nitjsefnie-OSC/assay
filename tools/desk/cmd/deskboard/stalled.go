@@ -74,7 +74,7 @@ type stalledRow struct {
 	// applied to a count, not just a boolean).
 	OpenFindings *int   `json:"openFindings,omitempty"`
 	BehindMain   int    `json:"behindMain"`  // -1 = not assessed (advisory hint only)
-	Disposition  string `json:"disposition"` // shepherd | close-candidate
+	Disposition  string `json:"disposition"` // shepherd | close-candidate | reconcile
 	Note         string `json:"note,omitempty"`
 }
 
@@ -154,7 +154,7 @@ func cmdStalled(hdr Header, minAgeHours int) (*Report, error) {
 		briefStatus: briefStatus, knownBriefs: knownBriefs,
 	}
 	repos := deskkit.AllowedRepos()
-	partials, serr := sweepRepos(repos, sweepConcurrency, func(repo string) (stalledPartial, error) {
+	partials, serr := sweepRepos(repos, boardSweepLimit, func(repo string) (stalledPartial, error) {
 		return sweepStalledRepo(repo, sctx)
 	})
 	if serr != nil {
@@ -231,6 +231,11 @@ func cmdStalled(hdr Header, minAgeHours int) (*Report, error) {
 // owning brief done). A signal that could not be assessed never produces close-candidate
 // — fabrication risk runs one way here.
 func stallDisposition(repo string, p prBase, behindMain int, briefStatus map[string]string, knownBriefs []string) (string, string) {
+	// Retirement is not proof the draft is disposable. Reconcile its work,
+	// claims and verification debt before applying ordinary stall heuristics.
+	if brief := mapBranchToBrief(p.HeadRefName, knownBriefs); brief != "" && lookupBriefStatus(briefStatus, repo, brief) == "withdrawn" {
+		return "reconcile", fmt.Sprintf("owning brief %s is withdrawn — inspect surviving work and claims before disposition", brief)
+	}
 	if behindMain > behindMainCloseThreshold {
 		return "close-candidate", fmt.Sprintf("behind main by %d commits (>%d) — branch likely diverged past recovery",
 			behindMain, behindMainCloseThreshold)
@@ -559,7 +564,7 @@ func sweepStalledRepo(repo string, c stalledCtx) (stalledPartial, error) {
 	// work returns no error — a per-PR read failure is a labelled row, not a dead board —
 	// so the pool's fail-closed path is unreachable from here and the discarded error
 	// cannot hide one.
-	outcomes, _ := sweepConcurrent(prs, sweepConcurrency, func(p prBase) (stalledOutcome, error) {
+	outcomes, _ := sweepConcurrent(prs, boardSweepLimit, func(p prBase) (stalledOutcome, error) {
 		return sweepStalledPR(repo, p, c), nil
 	})
 	part.outcomes = outcomes

@@ -64,7 +64,10 @@ VERDICTS (closed vocabulary):
   SUPERSEDED          the work landed through a different branch/PR — evidence REQUIRED
   RESOLVED-ELSEWHERE  the outcome was reached another way (issue already closed, row
                       already advanced on main) — evidence REQUIRED
-  NEEDS-REBASE        still live work, mechanically blocked — stays dispatch-eligible
+  NEEDS-REBASE        established stale-base/conflict defect — stays dispatch-eligible
+
+Advisory comments and unfinished work alone require no disposition write.
+Waiting-on-input is represented by its hold label, not a terminal verdict.
 
 set    — writes the label AND the marker comment, in that order. Idempotent: an identical
          record already present is a no-op (exit 0), so re-running on every pass is free.
@@ -85,18 +88,20 @@ sweep  — the CHEAP read the orphan sweep runs before dispatch: one bounded for
 Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
 
 func main() {
-	// The roster class is an EXPLICIT declaration, never the zero value by accident.
-	// This tool ACTS on the roster (it gates the repo it writes to), so it is
-	// ciEligible=false: it reads the config-home file and never the environment, in
-	// CI as well as locally — matching deskfile/deskpr.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	// Echo the effective roster once per run: a control surface that lives in
-	// settings rather than in a diff is visible only at RUN time.
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("deskdisposition", nil, os.Args[1:], func([]string) int {
+		// The roster class is an EXPLICIT declaration, never the zero value by accident.
+		// This tool ACTS on the roster (it gates the repo it writes to), so it is
+		// ciEligible=false: it reads the config-home file and never the environment, in
+		// CI as well as locally — matching deskfile/deskpr.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		// Echo the effective roster once per run: a control surface that lives in
+		// settings rather than in a diff is visible only at RUN time.
+		deskkit.EchoEffectiveConfig(os.Stderr)
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:])
+	}))
 }
 
 func run(args []string) int {

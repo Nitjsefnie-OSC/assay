@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -13,60 +14,51 @@ import (
 
 const (
 	toolName = "deskevidence"
-	maxBytes = 256 * 1024 // generous but bounded; brief files are ~a few KB
-
-	// verifyOutcomesMaxBytes is the override cap for the verify-outcomes.jsonl append-only
-	// AGGREGATE sidecar and its future date-sharded rotation files (see
-	// verifyOutcomesGlobPattern below) — kept as its own named constant, sitting next to its
-	// own justification, the same pattern deskevidenceUnnumberedCap already uses
-	// (internal/deskkit/ratelimit.go) for a per-tool override that must not read as an
-	// unexplained magic number beside the general cap it overrides.
-	//
-	// #1338: maxBytes was sized for a BRIEF file — one file per stream item, a few KB — and
-	// was never meant to bound this file's shape. verify-outcomes.jsonl is a single
-	// fleet-wide log that every verify-desk flip, across every stream in every consuming
-	// repo, appends exactly one row to; it grows monotonically with no natural per-write
-	// ceiling. At 291722 bytes the general cap already refused every further append,
-	// fleet-wide, with no route through except raising THIS file's own ceiling.
-	//
-	// 4 MiB is a throughput-derived CEILING, not a measurement of the file's eventual
-	// steady-state size (same honesty as the ratelimit.go constants this mirrors): at
-	// roughly 100-200 bytes/row it holds on the order of 20,000-40,000 verify-outcome rows —
-	// comfortably past the 291722-byte trigger that filed #1338 — while still refusing an
-	// unbounded write (a corrupted or hostile evidence file cannot grow this one sidecar past
-	// 4 MiB in a single commit). It is NOT a substitute for rotation: see
-	// verifyOutcomesGlobPattern and statusgen/verifyoutcomes_union_test.go for the read-side
-	// support a future rotation needs BEFORE the forge's write-path shrink-refusal
-	// (write_file_shrink_refused) is ever exercised against this file. Lowering this
-	// constant is the safe direction to be wrong in; raising it further needs the kind of
-	// argument this comment gives, not a bare bump.
-	verifyOutcomesMaxBytes = 4 * 1024 * 1024
+	maxBytes = 256 * 1024 // generous but bounded; brief files (and a single outcome record) are ~a few KB
 )
 
-// verifyOutcomesGlobPattern is the ONE glob shape that names the aggregate verify-outcomes
-// sidecar AND every future rotation shard of it. It deliberately matches both the canonical
-// unsharded file (docs/streams/verify-outcomes.jsonl) and any dated shard a future rotation
-// creates (docs/streams/verify-outcomes-2026-10.jsonl, …) with a single pattern, so the write
-// side (the raised cap below) and the read side (statusgen's shard-glob union, which must use
-// this identical literal — the two live in separate Go modules and cannot share the constant
-// directly) never drift onto two different naming rules. #1338 part 2: the reader must exist
-// BEFORE any rotation is attempted, because the forge write path refuses shrinking a file at
-// all (the write_file_shrink_refused golden) — a rotation that shrinks the unsharded file with
-// no shard-aware reader in place would make an already-written row invisible to every reader
-// at the moment it lands.
-const verifyOutcomesGlobPattern = "verify-outcomes*.jsonl"
+// legacySidecarGlob names the RETIRED shared verify-outcomes log and any rotation shard of it,
+// directly under docs/streams/ (#882). #1338's raised write-size override for this log, and its
+// naming constant, are RETIRED with it: the class guard below now refuses writing this shape at
+// all, so no write ever reaches a size check against it, and a single per-file outcome record is
+// nowhere near the general maxBytes cap that now applies uniformly. The glob is kept, under this
+// fresh name, ONLY so isVerifyOutcomesSidecar below still recognises the shape for the
+// verified-outcome closure gates (guardVerifiedOutcomes, gateVerifiedSidecarLanding) if it is
+// ever addressed directly.
+const legacySidecarGlob = "verify-outcomes*.jsonl"
 
-// isVerifyOutcomesSidecar reports whether repoPath (already known to be underDocsStreams)
-// names the aggregate verify-outcomes sidecar or one of its rotation shards, directly under
-// docs/streams/ — not a same-named file nested in a stream subdirectory, which would be a
-// different, unrelated artifact this override must not reach.
+// isVerifyOutcomesSidecar reports whether repoPath names a verify-outcome record: the
+// #882 per-file layout (docs/streams/verify-outcomes/<stream>/<file>.json) or the
+// retired shared log/rotation shard directly under docs/streams/. The verified-outcome closure
+// gates (guardVerifiedOutcomes, gateVerifiedSidecarLanding) key on this to decide whether a
+// landing carries a verify-outcome row to check — not a same-named file nested one level deeper
+// in a stream subdirectory, which is a different, unrelated artifact.
 func isVerifyOutcomesSidecar(repoPath string) bool {
 	cleaned := path.Clean(repoPath)
-	if path.Dir(cleaned) != "docs/streams" {
-		return false
+	dir := path.Dir(cleaned)
+	if dir == "docs/streams" {
+		matched, err := path.Match(legacySidecarGlob, path.Base(cleaned))
+		return err == nil && matched
 	}
-	matched, err := path.Match(verifyOutcomesGlobPattern, path.Base(cleaned))
-	return err == nil && matched
+	return path.Dir(dir) == deskkit.OutcomeRecordsDir && strings.HasSuffix(cleaned, ".json")
+}
+
+// refuseAppendedOutcomesLog is the #882 class guard: deskevidence never writes to
+// a shared appended docs/streams/*.jsonl log again — not verify-outcomes.jsonl (retired to the
+// per-file layout below), and not any sibling log a future sink might try to append to (the
+// repair-obligation projection included). A record that concurrent PRs each add, stored as lines
+// appended to ONE shared file, is exactly the shape whose server-side merge (the forge applies no
+// merge driver) conflicts every sibling PR that touches it concurrently; this refuses the class
+// at its one write chokepoint rather than one log at a time.
+func refuseAppendedOutcomesLog(targetRepoPath string) error {
+	cleaned := path.Clean(targetRepoPath)
+	if path.Dir(cleaned) == "docs/streams" && strings.HasSuffix(cleaned, ".jsonl") {
+		return deskkit.Refused("refused: " + targetRepoPath +
+			" is a shared appended docs/streams/*.jsonl log — #882 retired that class " +
+			"(concurrent writers must not reopen it); verify outcomes now land one file per record under " +
+			deskkit.OutcomeRecordsDir + "/, via --outcome-record")
+	}
+	return nil
 }
 
 // cmdEvidence implements the evidence-commit logic. Flow:
@@ -77,12 +69,104 @@ func isVerifyOutcomesSidecar(repoPath string) bool {
 //  5. Fetch remote file to get current SHA + content for idempotency
 //  6. Idempotency check: same content digest at same head → noop
 //  7. AllowWrite rate limit
-//  8. Commit via GitHub Contents API as verifier App
+//  8. Commit conditionally through the forge as verifier App
 //  9. Verify the landed commit's author is the verifier App bot
 //
 // It is called ONLY from runOutward, which owns the audit lock and the single
 // deferred audit line (`ac`). Adding a second entry point without the lock would
 // re-open #227.
+
+// verifierEvidenceAdmissionFn is pre-work admission, read through the forge the
+// CALLER hands it. Admission reads the dispatcher's attestation record from the
+// forge, so it needs a credential; the landing supplies the forge it has already
+// resolved under its minted verifier token (admitLanding), and admission never
+// resolves one of its own.
+var verifierEvidenceAdmissionFn = deskkit.CheckVerifierEvidenceWithForge
+
+// A package seam keeps offline landing fixtures out of the operator's ledger.
+// Production always uses the shared budget check, under runOutward's audit lock.
+var evidenceWriteBudget = deskkit.AllowWrite
+
+// admitVerifierEvidence runs pre-work admission for the exact path this landing
+// writes, so the attested brief is part of what admits the landing, never only
+// of what is recorded about it. fg is the landing's own resolved forge. A nil fg
+// refuses here: handed on, it would make the shared reader resolve a forge by
+// itself — a second resolution outside the landing's mint, which is the ordering
+// fault that refused every landing with "no minted verifier token".
+func admitVerifierEvidence(root, repo, target string, fg deskkit.Forge, ac *auditCtx) (deskkit.VerifierReceipt, error) {
+	if fg == nil {
+		return deskkit.VerifierReceipt{}, deskkit.Refused("refused: pre-work admission was reached with no resolved forge — " +
+			"the landing mints the verifier token and resolves its forge before admission, and admission never resolves its own")
+	}
+	receipt, err := verifierEvidenceAdmissionFn(root, repo, target, fg)
+	if err != nil {
+		return receipt, err
+	}
+	ac.attestation = receipt.EvidenceBinding()
+	return receipt, nil
+}
+
+// admitLanding is the one place a landing obtains its credential, its forge and its
+// admission, in the only order that works:
+//
+//  1. mint the verifier App installation token (mintTokenFn → `desktoken verifier`). The
+//     JWT→installation-token exchange lives in the identity layer, not in this package;
+//  2. resolve the forge that serves the repo under that token. The custody step refuses when
+//     no token has been minted and never falls back to an ambient identity;
+//  3. scope a publication snapshot and run pre-work admission THROUGH that forge,
+//     bound to the exact target this landing writes. GitHub reads branch content
+//     with admission, but no destination bytes are consumed before admission passes.
+//
+// Admission reads the forge, so it cannot precede the mint: run first, its read meets the
+// custody step's empty-token refusal and every landing refuses. Both landing shapes call
+// this, and every later read and the write use the forge it returns — one forge, one minted
+// token, for admission and the landing alike.
+//
+// The caller places it after the refusals that need only the command line (and, for an
+// outcome record, the record's own bytes), so those still never mint, and BEFORE any read
+// the landing takes as input to its write: the local evidence file, the branch content, the
+// merge and the gates over them all follow admission.
+func admitLanding(root, repoSlug, owner, name, target, branch string, ac *auditCtx) (deskkit.Forge, deskkit.ForgeRepo, deskkit.VerifierReceipt, error) {
+	if merr := mintTokenFn(repoSlug); merr != nil {
+		return nil, deskkit.ForgeRepo{}, deskkit.VerifierReceipt{}, merr
+	}
+	fg, fr, ferr := forgeForFn(owner, name)
+	if ferr != nil {
+		return nil, fr, deskkit.VerifierReceipt{}, ferr
+	}
+	fg = deskkit.EvidenceLandingForge(fg, fr, target, branch)
+	receipt, aerr := admitVerifierEvidence(root, repoSlug, target, fg, ac)
+	if aerr != nil {
+		return nil, fr, receipt, aerr
+	}
+	return fg, fr, receipt, nil
+}
+
+// pathWithin reports whether p lies inside dir, after resolving symlinks where
+// the path exists, so an alias of the root cannot place a fragment inside it.
+func pathWithin(dir, p string) bool {
+	resolve := func(x string) string {
+		x, _ = filepath.Abs(x)
+		if r, err := filepath.EvalSymlinks(x); err == nil {
+			return r
+		}
+		if r, err := filepath.EvalSymlinks(filepath.Dir(x)); err == nil {
+			return filepath.Join(r, filepath.Base(x))
+		}
+		return x
+	}
+	rel, err := filepath.Rel(resolve(dir), resolve(p))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// attestationTrailer carries the admitting run's binding into the landed commit.
+func (a *auditCtx) attestationTrailer() string {
+	if a.attestation == "" {
+		return ""
+	}
+	return "\n\n" + a.attestation
+}
+
 func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// Skip the tool name prefix that run() already removed.
 	rest := args
@@ -126,15 +210,20 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	if bare := strings.TrimPrefix(branch, "refs/heads/"); bare == "main" || bare == "master" {
 		if os.Getenv("VERIFIER_MAIN_OK") != "1" {
 			return deskkit.Refused("refused: branch " + branch +
-				" is human-gated — a Contents-API commit lands on the remote branch immediately; " +
+				" is human-gated — a forge commit lands on the remote branch immediately; " +
 				"set VERIFIER_MAIN_OK=1 to sanction a main-branch Evidence commit")
 		}
 	}
 
 	fs := flag.NewFlagSet("deskevidence", flag.ContinueOnError)
 	fs.SetOutput(new(strings.Builder))
-	evidenceFile := fs.String("evidence-file", "", "repo-relative path to the evidence/brief file (required)")
+	evidenceFile := fs.String("evidence-file", "", "repo-relative path to the evidence/brief file, or with --brief-path an absolute fragment path outside --root (required, unless --outcome-record is given)")
 	briefPath := fs.String("brief-path", "", "if set, merge evidence into this brief file instead of committing evidence-file directly")
+	// --outcome-record (#882) commits ONE new verify-outcome record at the
+	// path RecordName derives from its bytes, retiring the shared appended
+	// docs/streams/verify-outcomes.jsonl log this flag replaces. Mutually exclusive with
+	// --evidence-file/--brief-path.
+	outcomeRecord := fs.String("outcome-record", "", "local JSON file holding ONE new verify-outcome record to commit at the path RecordName derives (mutually exclusive with --evidence-file/--brief-path)")
 	// --root binds the LOCAL read of a repo-relative --evidence-file to an explicit
 	// checkout, instead of the current working directory. #1709: a writeguard can reset a
 	// session's cwd to a SHARED checkout between shell calls, so a deskevidence run that did
@@ -143,7 +232,9 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// --root <worktree> makes a repo-relative --evidence-file resolve against that worktree
 	// wherever the process happens to be. It rebases only the LOCAL read; the path committed
 	// to the remote branch stays the repo-relative one.
-	root := fs.String("root", "", "resolve a repo-relative --evidence-file against this directory (e.g. the verifier worktree) instead of the current working directory")
+	// Verifier admission reads the same --root: a landing names the dispatched verifier
+	// home, never the desk's own checkout.
+	root := fs.String("root", "", "the dispatched verifier home: admission is checked here and a repo-relative --evidence-file resolves against it instead of the current working directory (a --brief-path fragment may be an absolute path outside it)")
 	// --append-only guards a line-oriented sidecar against a net row DELETION. #1709: the
 	// whole-file Contents-API commit model has no protection against an append-only file
 	// shrinking, so a stale-base/wrong-file mistake reverted a sidecar (25→17 rows) as a
@@ -152,17 +243,41 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	appendOnlyFlag := fs.Bool("append-only", false, "refuse the commit if it would reduce the target's row count below the current remote (auto-enabled for .jsonl sidecars)")
 	allowShrink := fs.Bool("allow-shrink", false, "override the append-only shrink guard when a row reduction is genuinely intended")
 	// --dry-run (verify-integrity/04 item 1): print the commits-API landing plan and stop
-	// before the write. It still mints the verifier App token, resolves the forge, fetches
-	// the remote content, merges/scans it and runs the statusgen PROBLEM-diff guard — every
-	// gate that can fail BEFORE a write is exercised for real, so a clean dry-run is real
-	// evidence the landing would succeed. It stops short of AllowWrite (never spends the
-	// write-rate-limit budget) and fg.WriteFile (never writes). There is no local-git branch
-	// anywhere in this tool to fall back to: an unmintable token refuses at the mint step
-	// above, dry-run or not.
+	// before the write. It still mints the verifier App token, resolves the forge, runs
+	// pre-work admission, fetches the remote content, merges/scans it and runs the statusgen
+	// PROBLEM-diff guard — every gate that can fail BEFORE a write is exercised for real, so a
+	// clean dry-run is real evidence the landing would succeed. It stops short of AllowWrite
+	// (never spends the write-rate-limit budget) and fg.WriteFile (never writes). There is no
+	// local-git branch anywhere in this tool to fall back to: an unmintable token refuses at
+	// the mint step (admitLanding), dry-run or not.
 	dryRun := fs.Bool("dry-run", false, "print the commits-API landing plan without committing")
+	// --row (repeatable) names the brief-table row(s) a landing to a
+	// generated-table target may touch. Required whenever the target's REMOTE content
+	// carries the marker-wrapped Briefs table (rowscope.go); ignored (a no-op) for any other
+	// target, so this flag never changes behaviour for a target that carries no such table.
+	var rowFlags stringSliceFlag
+	fs.Var(&rowFlags, "row", "brief-table row number this landing may touch (repeatable); "+
+		"required when the target's remote content carries the generated-table markers")
+	applyOverride, _ := deskkit.RegisterOutboundOverride(fs, "deskevidence", "land")
 	if perr := fs.Parse(flagArgs); perr != nil {
 		return deskkit.Refused("bad flags: " + perr.Error())
 	}
+	if oerr := applyOverride(); oerr != nil {
+		return oerr
+	}
+
+	// --outcome-record is a SEPARATE landing shape from --evidence-file/--brief-path: it
+	// commits a brand-new per-file verify-outcome record at the path RecordName derives,
+	// rather than merging into or replacing an existing whole file. Checked (and mutual
+	// exclusivity enforced) BEFORE --evidence-file is required below, so this branch never
+	// needs one.
+	if *outcomeRecord != "" {
+		if *evidenceFile != "" || *briefPath != "" {
+			return deskkit.Refused("refused: --outcome-record is mutually exclusive with --evidence-file/--brief-path")
+		}
+		return cmdOutcomeRecordWrite(*outcomeRecord, repoSlug, owner, name, branch, *root, ac)
+	}
+
 	if *evidenceFile == "" {
 		return deskkit.Refused("--evidence-file is required")
 	}
@@ -179,16 +294,21 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 			return deskkit.Refused("refused: " + p +
 				" is generated — main's CI is its single writer; regenerate locally, never commit it")
 		}
+		// Class guard (#882, Task step 5): refuse ANY write to a shared
+		// appended docs/streams/*.jsonl log, before any network call.
+		if p != "" {
+			if cerr := refuseAppendedOutcomesLog(p); cerr != nil {
+				return cerr
+			}
+		}
 	}
 
 	evidenceRepoPath := *evidenceFile
 	ac.file = evidenceRepoPath
 
 	// Determine the target repo path this commit will land at. Computed here, ahead of the
-	// local-read resolution right below, because the docs/streams scoping guard a few lines
-	// down needs it and depends on nothing else (not --root, not the file's own content) —
-	// so it stays a cheap, pre-network check regardless of where exactly it runs relative to
-	// the root-contradiction/oversize checks that follow.
+	// local-read resolution below, because admission and the docs/streams scoping guard both
+	// need it and it depends on nothing else (not --root, not the file's own content).
 	var targetRepoPath string
 	if *briefPath != "" {
 		targetRepoPath = *briefPath
@@ -197,20 +317,38 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	}
 	ac.file = targetRepoPath
 
+	// Mint, resolve the forge, then pre-work admission through that forge — bound to the
+	// exact target this landing writes (admitLanding). Everything above is a refusal that
+	// needs only the command line, so a call those refuse never mints. Everything below — the
+	// local evidence read, the branch read, the merge and every gate over them — is input to
+	// the write, and runs only for an admitted landing.
+	fg, fr, receipt, aerr := admitLanding(*root, repoSlug, owner, name, targetRepoPath, branch, ac)
+	if aerr != nil {
+		return aerr
+	}
+
+	evidenceRoot := receipt.EvidenceRoot(*root)
+
 	// Resolve the LOCAL read path. With --root set, a repo-relative --evidence-file is read
 	// from that checkout (#1709) rather than the process cwd; the target repo path committed
-	// to the branch stays evidenceRepoPath either way. An absolute --evidence-file with
-	// --root is contradictory (the join would be meaningless), so it is refused rather than
-	// silently ignoring one of them.
+	// to the branch stays evidenceRepoPath either way. An absolute --evidence-file names no
+	// repo path, so with --root it is admitted only as a --brief-path fragment that lies
+	// OUTSIDE --root: the fragment is verifier output, which never sits in the attested
+	// home (admission refuses any untracked file there), while the committed path is still
+	// the repo-relative --brief-path. Every other absolute form stays refused.
 	localReadPath := evidenceRepoPath
 	if *root != "" {
-		if filepath.IsAbs(evidenceRepoPath) {
-			return deskkit.Refused("refused: --evidence-file must be a repo-relative path when --root is set, got absolute " + evidenceRepoPath)
-		}
 		if info, serr := os.Stat(*root); serr != nil || !info.IsDir() {
 			return deskkit.Unverifiable("--root "+*root+" is not a readable directory", serr)
 		}
-		localReadPath = filepath.Join(*root, evidenceRepoPath)
+		if filepath.IsAbs(evidenceRepoPath) {
+			if *briefPath == "" || pathWithin(*root, evidenceRepoPath) {
+				return deskkit.Refused("refused: --evidence-file must be a repo-relative path when --root is set, " +
+					"or a --brief-path fragment outside --root; got absolute " + evidenceRepoPath)
+			}
+		} else {
+			localReadPath = filepath.Join(evidenceRoot, evidenceRepoPath)
+		}
 	}
 
 	// Read the local evidence file.
@@ -218,26 +356,20 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	if rerr != nil {
 		return deskkit.Unverifiable("cannot read --evidence-file "+localReadPath, rerr)
 	}
-	// The general per-file cap is sized for a brief file, not the verify-outcomes aggregate
-	// sidecar (or a future rotation shard of it) — see verifyOutcomesMaxBytes's comment for
-	// why that file needs its own, larger ceiling (#1338). Keyed on evidenceRepoPath (the
-	// path localContent was actually read from) rather than targetRepoPath: with --brief-path
-	// set, evidenceRepoPath names the small evidence snippet being merged in, not the brief
-	// it lands in, and this override must never widen the cap for an unrelated snippet just
-	// because it happens to land inside a big brief.
-	effectiveMaxBytes := maxBytes
-	if isVerifyOutcomesSidecar(evidenceRepoPath) {
-		effectiveMaxBytes = verifyOutcomesMaxBytes
-	}
-	if len(localContent) > effectiveMaxBytes {
-		return deskkit.Refused(fmt.Sprintf("refused: evidence file exceeds %d bytes (%d)", effectiveMaxBytes, len(localContent)))
+	// The general per-file cap is sized for a brief file — a few KB. #1338's raised override
+	// for the verify-outcomes aggregate sidecar is RETIRED (#882): that file's
+	// unbounded fleet-wide growth was the reason it needed one, and the class guard above now
+	// refuses writing that shape at all, so no evidence-file/brief-path write ever reaches
+	// this check for it. The general cap applies uniformly.
+	if len(localContent) > maxBytes {
+		return deskkit.Refused(fmt.Sprintf("refused: evidence file exceeds %d bytes (%d)", maxBytes, len(localContent)))
 	}
 
 	// docs/streams/ scoping guard (deskevidence: refuse a landing that adds a statusgen
 	// PROBLEM or lands outside docs/streams/). deskevidence exists to commit Evidence rows
 	// and the brief-status flips that accompany them under that tree; a target path
 	// resolving anywhere else — a stray root file, a directory-traversal escape, an
-	// absolute path — is refused here, before any network call. This is exactly the
+	// absolute path — is refused here, before the landing reads the branch. This is exactly the
 	// "landed outside docs/streams/" main-red shape: a stray root file landed by a
 	// deskevidence commit, outside the tree the tool is meant to write to.
 	//
@@ -254,31 +386,15 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 			" resolves outside docs/streams/ — deskevidence only writes under that tree")
 	}
 
-	// PUBLISH-identity gate (#1490 lane B). deskevidence commits AS the verifier App via the
-	// Contents API, so the Evidence commit itself is correctly attributed — but the witness
-	// Runner attribution is derived from the verifier WORKTREE's identity, which is exactly
-	// the value #1490 saw come out wrong when a dispatch provisioned the worktree with a stale
-	// role. This refuses, before any network call, if the worktree the landing is authored
-	// from carries commits ahead of the target branch that are not the verifier's — a signal
-	// the worktree's identity cannot be trusted to derive attribution from. Local (git +
-	// roster); in the sanctioned post-merge verify flow the worktree sits at the target
-	// branch, so the range is empty and this is a clean no-op.
-	if ierr := publishIdentityGate(*root, branch); ierr != nil {
+	// The source was admitted independently of the conditional-write destination.
+	// Judge its immutable identity boundary against fetched main, never an older
+	// Evidence branch. The actual new write remains under verifier App custody.
+	if ierr := publishEvidenceIdentityGate(*root, receipt); ierr != nil {
 		return ierr
 	}
 
-	// Mint the verifier App installation token and resolve the forge that serves this repo,
-	// under the verifier App's custody. The JWT→installation-token exchange moved OUT of this
-	// package to the identity layer (mintTokenFn → `desktoken verifier`); ForgeFor hands the
-	// minted token to the backend it constructs and never falls back to an ambient identity.
-	// Placed after the cheap/stateless refusals so a doomed call never mints.
-	if merr := mintTokenFn(repoSlug); merr != nil {
-		return merr
-	}
-	fg, fr, ferr := forgeForFn(owner, name)
-	if ferr != nil {
-		return ferr
-	}
+	// fg / fr below are the forge admitLanding resolved under the minted verifier token — the
+	// same forge admission read through. Nothing here mints or resolves again.
 
 	// Read the current remote content of the target ONCE, up front. It is the base every
 	// scoping decision below is judged against: the brief merge (a genuine read → transform →
@@ -289,6 +405,12 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// branch is a create (empty remote), not an error, EXCEPT with --brief-path: a brief must
 	// already exist to be merged into, so a not-found is propagated exactly as it was when this
 	// same ReadFile lived inside mergeEvidence.
+	//
+	// The target is read as a record only from a plain file the forge shows to be the entry's
+	// own bytes (S-2266-8): a file the Contents API serves with its content left out (over its
+	// size limit) arrives as an empty body, and taking that as the branch's copy would make an
+	// empty base for the merge, the decision-gate judge and the shrink guards, so a write that
+	// drops a gate: human brief's frontmatter or board row would be judged as adding it.
 	var remoteContent []byte
 	remoteExists := false
 	remoteSHA := ""
@@ -298,6 +420,9 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 			return rerr
 		}
 	} else {
+		if kerr := plainFileRead(cur, fr, targetRepoPath, branch, "the landing's target", false); kerr != nil {
+			return kerr
+		}
 		remoteContent, remoteExists = cur.Content, cur.Exists
 		remoteSHA = cur.SHA
 	}
@@ -307,12 +432,71 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// file IS the target's whole content (the caller merged it locally before calling this tool).
 	var commitContent []byte
 	blockAlready := false
+	// The on-behalf-of principal is stamped into every App-run Evidence row this landing ADDS
+	// that carries none (principalstamp.go), from the roster — never from argv or the content —
+	// or the landing refuses here, before any write. On --brief-path the stamp is decided on the
+	// merged brief (so a headerless fragment reads under the brief's own table header, as the
+	// lint will read it) and then applied to the fragment, which is what is merged: the block-
+	// level idempotency check then compares the stamped block with what a stamped earlier
+	// landing left standing.
+	resolveSubject := func() (string, error) { return principalSubjectFn(repoSlug) }
 	if *briefPath != "" {
 		merged, present := mergeEvidenceContent(remoteContent, localContent)
+		stampedMerged, stamped, serr := stampEvidencePrincipal(merged, remoteContent, resolveSubject)
+		if serr != nil {
+			return serr
+		}
+		if len(stamped) > 0 {
+			merged, present = mergeEvidenceContent(remoteContent, stampFragment(localContent, stamped))
+			if !bytes.Equal(merged, stampedMerged) {
+				return deskkit.Unverifiable("on-behalf-of stamp: the stamped fragment did not merge to the stamped brief "+
+					"— refusing rather than land a row whose Runner cell this tool cannot account for", nil)
+			}
+		}
 		commitContent = merged
 		blockAlready = present
 	} else {
-		commitContent = localContent
+		stampedContent, _, serr := stampEvidencePrincipal(localContent, remoteContent, resolveSubject)
+		if serr != nil {
+			return serr
+		}
+		commitContent = stampedContent
+	}
+
+	// Row-scoped README landings. A direct-write target (never
+	// --brief-path — a brief file never carries the generated table) whose REMOTE content
+	// carries the marker-wrapped Briefs table may only have its NAMED rows' lifecycle cells
+	// changed by this landing: --row is required, and the committed content is rebased onto
+	// the remote so every other byte — every other row, the named rows' authoring cells, and
+	// everything outside the markers — comes from the remote unchanged, however stale the
+	// local copy is. Detected on the REMOTE fetch, never the local file, so a target with no
+	// such table today behaves exactly as before. A stream README that carries a marker
+	// literal but no region statusgen and this tool agree on is refused rather than treated
+	// as table-less (fail closed: a drifted or mangled marker must not disarm the guard).
+	var rowScopeRows []string
+	if *briefPath == "" && remoteExists && rowScopeMalformed(targetRepoPath, remoteContent) {
+		return deskkit.Refused("refused: " + targetRepoPath +
+			" carries a statusgen briefs-table marker but no complete, line-anchored " +
+			tableMarkerBegin + " / " + tableMarkerEnd +
+			" region — refusing a whole-file write that would bypass the row-scope guard; repair the markers first")
+	}
+	if *briefPath == "" && remoteExists && hasTableMarkers(remoteContent) {
+		if len(rowFlags) == 0 {
+			return deskkit.Refused("refused: " + targetRepoPath +
+				" carries the generated-table markers — --row <NN> is required (repeatable) naming which row(s) this landing may touch")
+		}
+		rebased, staleForeign, staleAuthoring, rerr := rebaseNamedRows(remoteContent, commitContent, rowFlags)
+		if rerr != nil {
+			return rerr
+		}
+		for _, key := range staleForeign {
+			fmt.Fprintln(stderr, "stale-local: row "+key+" differed and was NOT written")
+		}
+		for _, key := range staleAuthoring {
+			fmt.Fprintln(stderr, "stale-local: row "+key+" authoring cell(s) differed and were NOT written (only its lifecycle cells land)")
+		}
+		commitContent = rebased
+		rowScopeRows = append([]string(nil), rowFlags...)
 	}
 
 	// Block-level idempotency: a fresh Evidence block byte-equivalent (after normalising line
@@ -364,7 +548,14 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// the line of the file the caller wrote — and the branch copy's own secret-shaped runs,
 	// which this landing does not own and never refuses on, are NAMED on stderr as
 	// `pre-existing in <target>:<line>` (#1161). Neither message carries the span.
-	if berr := deskkit.BodyCheck(scanTarget); berr != nil {
+	//
+	// The scan is the ONE outbound-write check (desktools-v2/10), run here as a pre-flight on
+	// the bytes this landing adds; the checking Forge re-runs it on the same added lines at
+	// the write itself.
+	if err := receipt.CheckEvidenceContent(targetRepoPath, commitContent, rowScopeRows); err != nil {
+		return err
+	}
+	if berr := evidenceOutboundCheck(repoSlug, targetRepoPath, scanTarget, commitContent); berr != nil {
 		return withAddedOrigin(berr, scanTarget, localContent)
 	}
 	if remoteExists {
@@ -423,14 +614,26 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// fallback the local-read resolution above already uses, so "the tree this check lints"
 	// and "the tree a bare --evidence-file would have been read from" are always the same
 	// tree.
-	lintRoot := *root
+	lintRoot := evidenceRoot
 	if lintRoot == "" {
 		lintRoot = "."
 	}
-	if err := outcomeGuardFn(lintRoot, targetRepoPath, remoteContent, commitContent, fg, fr, branch); err != nil {
+	// A verified outcome certifies already committed Evidence. Its attribution and
+	// closure checks must read that exact landed history, never the admitted home's
+	// intentionally older HEAD. Admission above remains against the original home.
+	landedRoot, landedHead, cleanup, err := landedClosureFn(lintRoot, targetRepoPath, remoteContent, commitContent, remoteExists, fg, fr, branch)
+	if err != nil {
 		return err
 	}
-	introduced, lerr := lintDiffFn(lintRoot, targetRepoPath, commitContent)
+	defer cleanup()
+	closureRef := branch
+	if landedHead != "" {
+		closureRef = landedHead
+	}
+	if err := outcomeGuardFn(lintRoot, landedRoot, targetRepoPath, remoteContent, commitContent, fg, fr, closureRef); err != nil {
+		return err
+	}
+	introduced, lerr := lintDiffFn(landedRoot, targetRepoPath, commitContent)
 	if lerr != nil {
 		return lerr
 	}
@@ -438,6 +641,26 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		return deskkit.Refused(fmt.Sprintf(
 			"refused: landing %s would introduce %d new statusgen PROBLEM(s) not present in %s before this change:\n%s",
 			targetRepoPath, len(introduced), lintRoot, strings.Join(introduced, "\n")))
+	}
+	// Decision-gate hold, network layer (lifecycle-v1 §4.5). The lint above carries the
+	// hold's offline layer (a well-formed ruling: link); this landing rides the Contents
+	// API with no pull request, so the check that reads WHO wrote the linked comment runs
+	// here, on the same staged write (decisiongate.go). The landing home is bound to the
+	// commit fixed at dispatch, behind the target branch, so the board files the branch
+	// changed since are read at its tip and judged in place of the home's (S-2266-6);
+	// when that cannot be done the landing is could-not-check.
+	boardEdits, herr := decisionGateBranchBoardFn(fg, fr, landedRoot, closureRef, targetRepoPath)
+	if herr != nil {
+		return herr
+	}
+	gateRefused, gerr := decisionGateDiffFn(landedRoot, targetRepoPath, remoteContent, remoteExists, commitContent, boardEdits)
+	if gerr != nil {
+		return gerr
+	}
+	if len(gateRefused) > 0 {
+		return deskkit.Refused(fmt.Sprintf(
+			"refused: landing %s would move, relabel or drop a gate: human brief with no human ruling on its decision issue (decision-gate hold, lifecycle-v1 §4.5):\n%s",
+			targetRepoPath, strings.Join(gateRefused, "\n")))
 	}
 
 	// verified-sidecar acceptance gate (#1309 stuck-flip). When THIS landing appends one or
@@ -448,12 +671,12 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// verified outcome the tree does not back; review then refuses that mismatch, so this refuses
 	// it at the source instead. Runs on the SAME lintRoot the PROBLEM-diff guard just used, and
 	// like it before the dry-run stop and the write budget. `verify-fail` rows are never gated.
-	if verr := gateVerifiedSidecarLanding(targetRepoPath, lintRoot, remoteContent, commitContent, remoteExists); verr != nil {
+	if verr := gateVerifiedSidecarLanding(targetRepoPath, landedRoot, remoteContent, commitContent, remoteExists); verr != nil {
 		return verr
 	}
 
 	// --dry-run stops HERE — after every gate that can refuse a landing has already run
-	// (mint, forge resolution, remote read, merge, secret scan, public-repo gate, noop/shrink
+	// (mint, forge resolution, admission, remote read, merge, secret scan, public-repo gate, noop/shrink
 	// checks, statusgen PROBLEM-diff), before the write-rate-limit spend and the write itself.
 	// The plan below names the commits-API call this run WOULD make; it never mentions a
 	// local `git commit` because there is no such path in this tool to fall back to.
@@ -464,9 +687,9 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		}
 		added, removed := rowDelta(remoteContent, commitContent)
 		ac.successResult = deskkit.ResultNoop
-		ac.detail = fmt.Sprintf("dry-run: would %s %s on %s via contents API for %s (sha256 %s, +%d/-%d rows)",
+		ac.detail = fmt.Sprintf("dry-run: would %s %s on %s via conditional forge write for %s (sha256 %s, +%d/-%d rows)",
 			verb, targetRepoPath, branch, repoSlug, bodyDig, added, removed)
-		fmt.Fprintf(stdout, "dry-run plan: commits-API PUT to %s (contents endpoint) — %s %s on branch %s, "+
+		fmt.Fprintf(stdout, "dry-run plan: conditional forge write to %s — %s %s on branch %s, "+
 			"authenticated as the verifier App (%s); sha256 %s; no local `git commit` in this plan\n",
 			repoSlug, verb, targetRepoPath, branch, deskkit.RoleAppLoginOrEmpty("verifier"), bodyDig)
 		return nil
@@ -474,7 +697,7 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 
 	// Outward-write rate limit. pr=0 is the repo's unnumbered bucket; deskevidence carries a
 	// per-tool override on it (see unnumberedBucketCap in ratelimit.go).
-	if werr := deskkit.AllowWrite(toolName, repoSlug, 0); werr != nil {
+	if werr := evidenceWriteBudget(toolName, repoSlug, 0); werr != nil {
 		return werr
 	}
 
@@ -487,15 +710,32 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		return oerr
 	}
 
+	// Independently recheck that only the named lifecycle cells differ from
+	// the destination. The scoped forge shares the validated file snapshot;
+	// GitHub's blob-SHA precondition and GitLab's last_commit_id check at
+	// the server reject concurrent changes, instead of paying for another
+	// non-atomic freshness read here. Non-snapshot forges retain their reads.
+	rowScopeSHA := ""
+	if len(rowScopeRows) > 0 {
+		sha, rserr := rowScopeWriteTimeCheck(fg, fr, targetRepoPath, branch, rowScopeRows, commitContent)
+		if rserr != nil {
+			return rserr
+		}
+		rowScopeSHA = sha
+	}
+
 	// Write the Evidence row through the resolved forge, as the verifier App.
-	res, cerr := fg.WriteFile(fr, deskkit.WriteFileInput{
+	writeInput := deskkit.WriteFileInput{
 		File:        targetRepoPath,
 		Branch:      branch,
 		Content:     commitContent,
-		Message:     "Evidence: verification row for " + targetRepoPath + commitSuffix,
+		Message:     "Evidence: verification row for " + targetRepoPath + ac.attestationTrailer() + commitSuffix,
 		AppendOnly:  appendOnly,
 		AllowShrink: *allowShrink,
-	})
+		ExpectedSHA: rowScopeSHA,
+	}
+	writeInput.ExpectedHead = landedHead
+	res, cerr := fg.WriteFile(fr, writeInput)
 	if cerr != nil {
 		return cerr
 	}
@@ -505,26 +745,29 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// change instead, and say so on stdout. It never attempts the direct write and reports
 	// success, and it never skips the row.
 	if res.DefaultBranchNotWritable {
-		return landEvidenceAsChange(fg, fr, repoSlug, branch, targetRepoPath, commitContent, appendOnly, *allowShrink, remoteContent, ac)
+		if landedHead != "" {
+			return deskkit.Unverifiable("pinned verified outcome cannot fall back to a different branch", nil)
+		}
+		return landEvidenceAsChange(fg, fr, repoSlug, branch, targetRepoPath, commitContent, appendOnly, *allowShrink, remoteContent, rowScopeSHA, ac)
 	}
 
-	// Post-condition: the write that landed must carry the verifier App's identity. Checked
-	// against what the forge reported the write recorded, not the token we sent (#228). On a
-	// forge that reports no author (GitLab), checkAttribution resolves the landed commit's
-	// account online via the typed forge (res.SHA); on GitHub the author is populated and no
-	// online read happens.
-	attr, aerr := checkAttribution(fg, fr, res.SHA, res.Author)
+	if reportWriteNoop(res, targetRepoPath, ac) {
+		return nil
+	}
+
+	// Verify the exact write receipt resolves as a commit before accepting its author.
+	attr, aerr := checkWriteAttribution(fg, fr, res)
 	// Name the net row delta so a success line can no longer hide a replace or a deletion
 	// behind a "committed … success" (#1709).
 	added, removed := rowDelta(remoteContent, commitContent)
 	delta := fmt.Sprintf("+%d/-%d rows", added, removed)
-	base := fmt.Sprintf("committed %s to %s on %s (sha %s, %s)", targetRepoPath, repoSlug, branch, shortSHA(res.SHA), delta)
+	base := fmt.Sprintf("committed %s to %s on %s (sha %s, %s)", targetRepoPath, repoSlug, branch, string(res.CommitSHA), delta)
 	ac.detail = base + " — " + attr
 	if aerr != nil {
 		return aerr
 	}
 	fmt.Fprintf(stdout, "committed %s to %s on %s (sha %s, %s) — %s\n",
-		targetRepoPath, repoSlug, branch, shortSHA(res.SHA), delta, attr)
+		targetRepoPath, repoSlug, branch, string(res.CommitSHA), delta, attr)
 	return nil
 }
 
@@ -533,7 +776,20 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 // StartBranch cutting it from the closed default), opens a DRAFT change from that branch, and
 // names the change on stdout — so a verified brief's Evidence still lands, as a reviewable
 // change rather than a direct commit, and NO direct write to the default branch is attempted.
-func landEvidenceAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug, base, target string, content []byte, appendOnly, allowShrink bool, remoteContent []byte, ac *auditCtx) error {
+//
+// rowScopeSHA, when non-empty, is the content id rowScopeWriteTimeCheck's independent re-fetch
+// (of base, the same ref StartBranch cuts the side branch from) already validated the pending
+// content against, in cmdEvidence just before this lane was chosen. It rides into this write as
+// ExpectedSHA so the backend's OWN write-time probe of StartBranch — which it always performs to
+// fill in the forge's native conditional-write field, whether or not a caller asked for one — is
+// checked against that same id, not merely echoed back into the write unchecked. Without it, the
+// backend's probe only ever compares the write to itself (it always matches), so a table change
+// in the window between the caller's re-check and the backend's own probe lands unrefused: the
+// side branch is cut from whatever the table has become by then, and the pending content (built
+// against the earlier, now-stale read) silently reverts the row(s) that moved in that window, in
+// a diff no merge can surface because the side branch's parent already carries the reversion.
+// Empty (no row-scope rows named) means no such precondition applies, exactly as before.
+func landEvidenceAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug, base, target string, content []byte, appendOnly, allowShrink bool, remoteContent []byte, rowScopeSHA string, ac *auditCtx) error {
 	dig := deskkit.Sha256Hex(content)
 	side := "evidence/" + sanitizeBranchComponent(path.Base(target)) + "-" + dig[:8]
 
@@ -547,10 +803,11 @@ func landEvidenceAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug, base
 		File:        target,
 		Branch:      side,
 		Content:     content,
-		Message:     "Evidence: verification row for " + target + commitSuffix,
+		Message:     "Evidence: verification row for " + target + ac.attestationTrailer() + commitSuffix,
 		StartBranch: base,
 		AppendOnly:  appendOnly,
 		AllowShrink: allowShrink,
+		ExpectedSHA: rowScopeSHA,
 	})
 	if werr != nil {
 		return werr
@@ -563,43 +820,44 @@ func landEvidenceAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug, base
 				"row was NOT landed", side), nil)
 	}
 
-	pr, perr := fg.CreateDraftChange(fr, deskkit.DraftChangeInput{
+	if reportWriteNoop(res, target, ac) {
+		return nil
+	}
+
+	// CreateHeldDraftChange, never the raw CreateDraftChange: the draft must carry the desk's
+	// merge-hold marker thread, or deskflip's reviewer-approved condition has nothing to release
+	// and refuses the Evidence change however it was reviewed (#2254).
+	pr, perr := deskkit.CreateHeldDraftChange(fg, fr, deskkit.DraftChangeInput{
 		Title: "Evidence: " + target,
 		Body: "Verification Evidence row for `" + target + "`, landed on branch `" + side + "` and opened " +
 			"as a draft change because the default branch `" + base + "` takes no direct write on this forge. " +
-			"A reviewer verdict lands the row.",
+			"A reviewer verdict lands the row.\n\n" + ac.attestation,
 		Head: side,
 		Base: base,
 	})
 	if perr != nil {
+		if pr != nil {
+			ac.detail = fmt.Sprintf("landed %s on %s in %s via %s, but its merge-hold was NOT opened",
+				target, repoSlug, side, draftChangeLabel(pr))
+		}
 		return perr
 	}
 
-	// On a forge that reports no author for the side-branch write (GitLab), resolve the landed
-	// commit's account ONLINE (#1477): fetch the side branch's head sha from the draft change
-	// just opened and hand it to checkAttribution, which maps it to the committing account's
-	// username via the typed forge. Only reached when the write carried no author — a populated
-	// author (GitHub) takes the ordinary path and issues no extra read.
-	headSHA := ""
-	if res.Author == "" && pr != nil {
-		if got, gerr := fg.GetPullRequest(fr, pr.Number); gerr == nil && got != nil {
-			headSHA = got.HeadSHA
-		}
-	}
-	attr, aerr := checkAttribution(fg, fr, headSHA, res.Author)
+	// Attribute the exact write receipt, never the draft change's mutable head.
+	attr, aerr := checkWriteAttribution(fg, fr, res)
 	added, removed := rowDelta(remoteContent, content)
 	delta := fmt.Sprintf("+%d/-%d rows", added, removed)
 	loc := fmt.Sprintf("change #%d", pr.Number)
 	if pr.URL != "" {
 		loc = pr.URL
 	}
-	ac.detail = fmt.Sprintf("landed %s on %s in %s via draft %s (%s) — default branch not directly writable — %s",
-		target, repoSlug, side, loc, delta, attr)
+	ac.detail = fmt.Sprintf("landed %s on %s in %s via draft %s (commit %s, %s) — default branch not directly writable — %s",
+		target, repoSlug, side, loc, res.CommitSHA, delta, attr)
 	if aerr != nil {
 		return aerr
 	}
-	fmt.Fprintf(stdout, "landed %s on %s: %s takes no direct write, so wrote branch %s and opened draft %s (%s) — %s\n",
-		target, repoSlug, base, side, loc, delta, attr)
+	fmt.Fprintf(stdout, "landed %s on %s: %s takes no direct write, so wrote branch %s and opened draft %s (commit %s, %s) — %s\n",
+		target, repoSlug, base, side, loc, res.CommitSHA, delta, attr)
 	return nil
 }
 
@@ -684,30 +942,30 @@ func rowDelta(older, newer []byte) (added, removed int) {
 // already say, whichever line of the file it lands on (#1161). Order follows newer's own
 // line order, which keeps the result readable; reBase64ish (the scanner's high-entropy run
 // detector) never matches across a newline, so nothing a line-oriented diff could split a
-// run across is lost by joining the added lines back with "\n".
+// run across is lost by blanking unchanged lines in place. Keeping those blanks is what makes
+// the scanner's line number the destination file's line number (#3283).
 //
-// Unlike rowDelta this does NOT trim or drop blank lines: a blank line carries no secret, so
-// including it costs the scanner nothing, and dropping it would risk gluing two unrelated lines'
-// characters together across what was a line boundary in the original file.
+// Unlike rowDelta this does NOT trim or drop lines: unchanged lines become blank placeholders
+// rather than disappearing, and a blank line carries no secret. Keeping every destination
+// line also avoids gluing unrelated characters together across an original line boundary.
 func addedLines(older, newer []byte) []byte {
 	present := map[string]bool{}
 	for _, ln := range strings.Split(string(older), "\n") {
 		present[ln] = true
 	}
-	var out strings.Builder
-	for _, ln := range strings.Split(string(newer), "\n") {
+	lines := strings.Split(string(newer), "\n")
+	for i, ln := range lines {
 		if present[ln] {
-			continue
+			lines[i] = ""
 		}
-		out.WriteString(ln)
-		out.WriteByte('\n')
 	}
-	return []byte(out.String())
+	return []byte(strings.Join(lines, "\n"))
 }
 
 // auditCtx accumulates fields for the ONE audit line per invocation.
 // finalize is deferred so exactly one line is written.
 type auditCtx struct {
+	attestation   string
 	verb          string
 	repo          string
 	file          string
@@ -717,6 +975,9 @@ type auditCtx struct {
 }
 
 func (a *auditCtx) log(result, detail string) {
+	if a.attestation != "" {
+		detail += " " + a.attestation
+	}
 	_ = deskkit.Log(deskkit.Entry{
 		Tool:       toolName,
 		Verb:       a.verb,

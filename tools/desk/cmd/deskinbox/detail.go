@@ -3,17 +3,11 @@ package main
 // detail.go — the "detail fetch" build_item() makes for walk/html (assay-inbox.sh:543-567):
 // one issue's body plus its comments, the input format.go's buildRendered() consumes.
 //
-// Body reads through the resolved Forge's GetIssue (a frozen, forge-neutral op — GitHub
-// AND GitLab). Comments do not: no typed Forge op returns comment BODIES (ContentEvent, the
-// trust-gate read, carries only author+time — deliberately, per its own doc comment), and
-// growing the frozen interface for one consumer here would mean implementing and
-// golden-pinning a GitLab discussion-notes mapping this brief does not need. Instead this
-// keeps its own small, package-local, GitHub-only REST reader — the same shape
-// cmd/deskpost's ghClient already uses for reads the interface does not cover (contents,
-// commit-author, the trust GraphQL query). The oracle itself only ever worked against
-// GitHub (`gh issue view`), so this is not a narrowing: a non-GitHub repo gets the
-// detail-unavailable path (Unread — could-not-check, never empty), the SAME state the
-// oracle renders when its own detail fetch fails.
+// Body reads through the resolved Forge's GetIssue. Comments retain the legacy
+// GitHub-only REST reader: its exhaustion loop has no page cap, whereas the typed
+// comments operation has a cap. Retiring this reader would change its refusal
+// semantics. Native body reads are observed; these raw comments remain an explicit
+// performance coverage gap. Detail failures still discard body AND comments.
 //
 // testdata/spec.md records this as the scope this brief's port covers; a GitLab
 // discussion-notes comments reader is a natural, separately-sized follow-up.
@@ -23,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
@@ -30,8 +25,8 @@ import (
 // fetchDetail is the package-var seam build_item's callers (walk.go) use — swapped in
 // tests for a canned detail, so format.go's parity tests never need a network or a minted
 // credential.
-var fetchDetail = func(repo deskkit.ForgeRepo, number int) issueDetail {
-	f, fr, ferr := forgeFor(repo.Slug())
+var fetchDetail = func(repo deskkit.ForgeRepo, number int, observers ...deskkit.RequestObserver) issueDetail {
+	f, fr, ferr := forgeFor(repo.Slug(), observers...)
 	if ferr != nil {
 		return issueDetail{Unavailable: true}
 	}
@@ -101,11 +96,30 @@ func listIssueComments(token string, repo deskkit.ForgeRepo, number int) ([]comm
 			return nil, deskkit.Unverifiable("cannot parse issues/comments response", err)
 		}
 		for _, c := range chunk {
-			out = append(out, comment{Author: c.User.Login, Body: c.Body})
+			out = append(out, comment{Author: ghLogin(c.User.Login), Body: c.Body})
 		}
 		if len(chunk) < 100 {
 			break
 		}
 	}
 	return out, nil
+}
+
+// ghLogin maps a REST `user.login` onto the login shape the oracle reads — the ONE boundary
+// every comment author crosses on its way into format.go (#1797).
+//
+// The two wires spell a GitHub App's account differently: REST (this reader) reports
+// `<slug>[bot]`, while `gh issue view --json comments` — the oracle's reader — reports the
+// bare `<slug>`. format.go's desk-note selector is the oracle's literal regex
+// (`desknoteAuthorRe`, `\[bot\]$|desk`) and its label prints the login verbatim, so feeding
+// it the REST spelling made every App a "desk note" (the `\[bot\]$` arm, which never fires
+// on gh's input) and rendered `<slug>[bot]` where the oracle renders `<slug>`. Normalising
+// here, at the read, keeps both the selection and the label on the oracle's input shape
+// without touching the oracle or the shared literal. A user account's login cannot contain
+// `[`, so only an App's suffix is ever removed.
+//
+// tools/desk/cmd/deskinbox/loginshape_guard_test.go holds every `comment` construction in
+// this package to this one function.
+func ghLogin(restLogin string) string {
+	return strings.TrimSuffix(restLogin, "[bot]")
 }

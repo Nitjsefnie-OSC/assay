@@ -35,12 +35,15 @@ harness-portability/14 Verify table.
 adopt
 ask-decision
 author-brief
+author-spec
+cut-release
 human-runsheet
 install
 intake-desk
 pdfingest
 pr-review-desk
 pr-shepherd
+session-coach
 system-demo
 the-desk
 upgrade-assay

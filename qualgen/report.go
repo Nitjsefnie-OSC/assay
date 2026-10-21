@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -39,42 +38,41 @@ const (
 	ciWriterToken = "ci"
 )
 
-// ciWriterAuthorized reports whether the current process is the authorized CI
-// writer. It reads a single explicit environment variable through the injected
-// getenv (tests pass a stub; production passes os.Getenv), so the guard is
-// exercised without mutating the real environment.
-func ciWriterAuthorized(getenv func(string) string) bool {
-	return getenv(ciWriterEnv) == ciWriterToken
+// ciWriterAuthorized reports whether writer — the value of ciWriterEnv, which
+// cli.go declares as report's one environment-only setting and resolves per
+// invocation — authorizes the committed-view write.
+func ciWriterAuthorized(writer string) bool {
+	return writer == ciWriterToken
 }
 
-func runReport(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("report", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	out := fs.String("out", "", "tracking root to read artifacts from (required)")
-	baselinesPath := fs.String("baselines", "", "optional JSON file of industry baselines overriding the built-in set")
-	write := fs.Bool("write", false, "write the committed QUALITY.md (CI-writer only; a local run is refused and renders to stdout)")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if *out == "" {
+// reportOptions are the `report` verb's parsed settings (cli.go declares them).
+// Writer is the resolved value of ciWriterEnv: "" whether unset or set empty.
+type reportOptions struct {
+	Out, Baselines string
+	Write          bool
+	Writer         string
+}
+
+func reportMain(o reportOptions, stdout, stderr io.Writer) int {
+	if o.Out == "" {
 		fmt.Fprintln(stderr, "qualgen report: --out <dir> is required (the tracking root to read artifacts from)")
 		return 2
 	}
 
-	baselines, err := LoadBaselines(*baselinesPath)
+	baselines, err := LoadBaselines(o.Baselines)
 	if err != nil {
 		fmt.Fprintln(stderr, "qualgen report:", err)
 		return 1
 	}
 
-	store := NewStore(*out)
+	store := NewStore(o.Out)
 	view, err := renderReport(store, baselines)
 	if err != nil {
 		fmt.Fprintln(stderr, "qualgen report:", err)
 		return 1
 	}
 
-	if !*write {
+	if !o.Write {
 		// Local read-and-discard: render to stdout, never touch the committed view.
 		fmt.Fprint(stdout, view)
 		return 0
@@ -83,7 +81,7 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	// --write is the committed-view path — guarded to CI. A local run is REFUSED
 	// (the block is a stop, not a fallback to a different write): the committed
 	// QUALITY.md is left byte-for-byte untouched.
-	if !ciWriterAuthorized(os.Getenv) {
+	if !ciWriterAuthorized(o.Writer) {
 		fmt.Fprintf(stderr, "qualgen report: REFUSED — --write is the single-writer committed-view path, reachable only by CI (%s=%s). A local run renders to stdout and discards; the committed QUALITY.md is unchanged.\n", ciWriterEnv, ciWriterToken)
 		return 2
 	}
@@ -117,7 +115,7 @@ func latestOf[T any](recs []T, key func(T) string, when func(T) time.Time) map[s
 }
 
 // renderReport builds the QUALITY.md view string from the artifacts under store.
-// It is separated from runReport so tests render without touching stdout or the
+// It is separated from reportMain so tests render without touching stdout or the
 // filesystem write path.
 func renderReport(store *Store, baselines BaselineSet) (string, error) {
 	metrics, err := store.ReadMetrics()
@@ -137,6 +135,10 @@ func renderReport(store *Store, baselines BaselineSet) (string, error) {
 		return "", err
 	}
 	staleness, err := store.ReadDocCodeStaleness()
+	if err != nil {
+		return "", err
+	}
+	refixes, err := store.ReadRefix()
 	if err != nil {
 		return "", err
 	}
@@ -194,8 +196,10 @@ func renderReport(store *Store, baselines BaselineSet) (string, error) {
 	writeBusFactorAlarms(&b, ownership)
 
 	// --- Sections populated by later waves — could-not-measure until then. ---
-	b.WriteString("## Defect-inducing rate (M2)\n\n")
-	b.WriteString("not measured — populated by quality/06–07 (defect-fix identification + SZZ trace). Never rendered as 0.\n\n")
+	if err := writeM2Section(&b, store); err != nil {
+		return "", err
+	}
+	writeRefixSection(&b, refixes)
 	b.WriteString("## Per-stage ledger (M3)\n\n")
 	b.WriteString("not measured — populated by quality/10 (stage attribution). Never rendered as 0.\n\n")
 	b.WriteString("## Instruction reference-validity trend\n\n")
@@ -293,6 +297,68 @@ func writeDocCodeStalenessAlarms(b *strings.Builder, recs []DocCodeStalenessReco
 	b.WriteString("\n")
 }
 
+// writeRefixSection renders the re-fix trend (brief quality/19): whether the
+// regression suite is holding — how often a fix repairs something an earlier
+// fix had already repaired. REPORT-ONLY (no threshold/budget/alarm rendered
+// here); one row per measured window, oldest first, and the specific counted
+// re-fixes named beneath so a reader can dereference the rate back to a real
+// record, not only the heading. An empty artifact set renders could-not-measure
+// (this repo's own defects table is not populated: M2 is library-only, not yet
+// wired into `mine` — a correct three-state result, not a failure).
+func writeRefixSection(b *strings.Builder, recs []RefixRecord) {
+	b.WriteString("## Re-fix rate (regression-suite effectiveness)\n\n")
+	b.WriteString("Report-only: no threshold, budget or alarm — thresholds follow after ≥ 2 measured windows (spec §9.6, §13).\n\n")
+	if len(recs) == 0 {
+		b.WriteString("not measured — populated once the defects table is traced (quality/06–07) and a RegressionLinkage adapter is configured. Never rendered as 0.\n\n")
+		return
+	}
+	// A re-mined window appends a fresh RefixRecord rather than overwriting the
+	// prior one (RefixRecord's own doc comment: "append-only, latest-per-window
+	// selected by the report"). Reduce to the newest record per window before
+	// rendering, the same latestOf pattern the hotspot/ownership sections use,
+	// so a re-mined window's re-fixes are never counted or listed twice.
+	latest := latestOf(recs,
+		func(r RefixRecord) string { return r.Window },
+		func(r RefixRecord) time.Time { return r.MinedAt })
+	rows := make([]RefixRecord, 0, len(latest))
+	for _, r := range latest {
+		rows = append(rows, r)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Window < rows[j].Window })
+
+	b.WriteString("| Window | Traced fixes | Re-fix count | Re-fix rate | Linkage coverage | Tier 1 | Tier 2 | Tier 3 |\n")
+	b.WriteString("|--------|---------------|--------------|-------------|-------------------|--------|--------|--------|\n")
+	for _, r := range rows {
+		fmt.Fprintf(b, "| %s | %d | %s | %s | %s | %d | %d | %d |\n",
+			mdCell(r.Window), r.TracedFixCount,
+			renderMeasureFloat(r.RefixCount), renderMeasureFloat(r.RefixRate), renderMeasureFloat(r.LinkageCoverage),
+			r.TierComposition.Tier1Count, r.TierComposition.Tier2Count, r.TierComposition.Tier3Count)
+	}
+	b.WriteString("\n")
+
+	var named []string
+	for _, r := range rows {
+		for _, e := range r.Refixes {
+			id := "commit " + shortSHA(e.FixCommitSHA)
+			if e.FixPRNumber != 0 {
+				id = fmt.Sprintf("PR #%d", e.FixPRNumber)
+			}
+			earlier := "commit " + shortSHA(e.EarlierFixCommitSHA)
+			if e.EarlierFixPRNumber != 0 {
+				earlier = fmt.Sprintf("PR #%d", e.EarlierFixPRNumber)
+			}
+			named = append(named, fmt.Sprintf("%s (window %s) — regression of %s via `%s`", id, mdCell(r.Window), earlier, e.LinkKind))
+		}
+	}
+	if len(named) > 0 {
+		b.WriteString("Counted re-fixes:\n\n")
+		for _, n := range named {
+			fmt.Fprintf(b, "- %s\n", n)
+		}
+		b.WriteString("\n")
+	}
+}
+
 // writeHotspots renders the top-10 hotspots of the latest snapshot by hotspot
 // score. A file whose hotspot is could-not-measure is shown as unmeasured, never
 // ranked as a zero.
@@ -386,7 +452,7 @@ func renderMeasureFloat(m Measure[float64]) string {
 	case StateMeasuredZero:
 		return "0"
 	case StateCouldNotMeasure:
-		return "not measured (" + m.Reason + ")"
+		return "not measured (" + renderReason(m.Reason) + ")"
 	default:
 		return "not measured (no state)"
 	}
@@ -400,10 +466,19 @@ func renderMeasureInt(m Measure[int]) string {
 	case StateMeasuredZero:
 		return "0"
 	case StateCouldNotMeasure:
-		return "not measured (" + m.Reason + ")"
+		return "not measured (" + renderReason(m.Reason) + ")"
 	default:
 		return "not measured (no state)"
 	}
+}
+
+// renderReason makes a could-not-measure Reason safe inside a markdown table
+// cell. The reason is repo-controlled but not markdown-safe (frontmatter
+// values, adapter error text): a raw `|` breaks the row and a raw newline
+// breaks the table outright, so pipes are escaped (via mdCell) and newlines
+// flatten to spaces.
+func renderReason(s string) string {
+	return mdCell(strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s))
 }
 
 // sortScore maps a hotspot Measure to a sort key: could-not-measure sorts last

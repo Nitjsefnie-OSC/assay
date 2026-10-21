@@ -105,7 +105,9 @@ cannot retire live work. The confirm keeps it. The proposal does **not** require
 claim ("PR B carries this") is usually made while B is open — so a proposed PR sits open, labelled
 `superseded?` and `disposition:superseded`, excluded from orphan dispatch by the record, until B
 merges and the reviewer confirms. If B dies unmerged instead, the proposal is stale: the reviewer
-disputes it (or the worker re-records `NEEDS-REBASE`) and the work resumes. The alternative — let
+disputes it, retaining the `needs-decision` hold until authoritative correction. A worker
+may record `NEEDS-REBASE` only for an established base/conflict defect, never just to
+clear a stale proposal and resume unrelated live work. The alternative — let
 the reviewer confirm against an *open* target, certifying scope containment and accepting that B
 may never land — is a legitimate design; it trades the parked-PR window for a close that can be
 wrong for a reason nobody can see at confirm time. This cut takes the conservative side and names
@@ -177,7 +179,17 @@ verdict block naming the target, the proposer and the confirmer.
   `superseded?` label is the queue-legibility index for the *review* desk; the sweep never needs
   it.
 
-## 5. The brief level — the open question, three options, one recommendation
+## 5. The brief level — three options and the earlier recommendation
+
+**Subsequent proposal:** [PR #3407](https://github.com/medici-finance/assay/pull/3407)
+implements option (ii) as versioned `withdrawn`, while retaining option (iii) for work
+whose identity and purpose survive a scope adjustment. The distinction is whether the
+remaining plan is still wanted under this identity. Re-baselining a retired brief into
+unrelated successor scope hides that distinction; deleting it loses history. Withdrawal
+therefore preserves the tombstone and successor links, never redirects dependencies,
+and does not cancel active work or discharge verification debt. This is a proposed
+contract change behind the PR's review/merge gate, not a new human ratification claimed
+by this document. The original recommendation below remains the earlier design record.
 
 The question: a PR can be superseded. Can a **brief**?
 

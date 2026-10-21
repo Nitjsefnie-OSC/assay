@@ -6,9 +6,9 @@ set is **Codex CLI only for v1**; the hosted Codex App is a later, separately-ru
 surface. Both rulings are recorded in the harness-target ruling (Decision A1 + C,
 human:<name> 2026-08-16).
 
-Every mechanism and degradation cell below cites the measured Codex capability
-matrix (HP/01, documentary + prior-art, 2026-08-08 — **no live Codex environment**;
-the live-harness rows stay BLOCKED until human:<name> provides one). Harness tool names
+The baseline is the Codex capability matrix (HP/01, documentary + prior-art,
+2026-08-08). Later measurements are dated separately below; the native Goal
+qualification does not re-measure unrelated capabilities. Harness tool names
 are legal here — that is this file's purpose — and illegal in a skill body.
 
 Source of the capability set: the closed vocabulary block in
@@ -35,6 +35,81 @@ reliable background notification) may degrade — explicitly, and in-session.
 | `capability:durable-monitor` | **No reliable durable cross-turn wake signal (§3.6/§3.7 `absent`).** V2 child agents are process-local — resume is broken across process restarts (Issues #19140, #33002) — and an in-subagent `run_in_background: true` task is silently killed when its turn ends (§3.7), so there is no re-arming poll that survives a session restart. A durable wake-signal is a **convenience**, not one of the three never-degrade guarantees (isolation / evidence / gates) → the convenience floor applies: the capability **degrades**. The skill falls back to the **event-driven + fixed-cadence board sweep** (the same backstop Claude Code pairs with its monitor — it is the real liveness safeguard, the durable monitor was only best-effort on either harness) and **states the gap in-session**. The durable liveness home is the always-on observability service, not the harness. |
 | `capability:cadence-tick` | **No in-session recurring prompt (§3.6/§3.7): the tick comes from OUTSIDE the session.** The Codex CLI has no mechanism that re-prompts a standing session on a clock, so a standing window cannot arm this capability itself. The binding is the **cell launcher's interval / an outer scheduler** — a cron or container job that invokes the role in tick mode every cadence interval (`codex exec … --tick`, or `ASSAY_TICK=1` in the job's environment; the trigger, bounded pass and summary line are [`tick-contract.md`](./tick-contract.md)), where each fire IS one "fresh sweep → drain → one quiet line" pass. The cadence and the prompt are the role body's, unchanged. A standing window with no such outer schedule reports `cadence-tick: could-not-check — no in-session scheduler` at boot and FILES it, exactly as the role's boot step says — it never runs keystroke-driven in silence. This is the fixed-cadence sweep the `durable-monitor` row already falls back to; it is a **convenience** (never one of the three never-degrade guarantees), so the capability **degrades** to the outer schedule, stated in-session. |
 
+## Interactive standing Goals
+
+On **codex-cli 0.162.1**, native Goals can continue an active objective after an
+ordinary final response. An isolated native app-server qualification on 2026-10-12
+observed Goal creation/readback, an automatic next turn, and human steering that
+paused the Goal. This is engine evidence, not qualification of a deployed cockpit.
+The [retained primary transcripts](../../../docs/qualification/codex-goals/2026-10-12/README.md)
+include the generated bootstrap, native tool arguments/readbacks, continuation,
+steering, admission controls, cleanup and explicit logging limits.
+
+`cellctl` requests the standing objective before invoking a Codex desk: `get_goal`,
+`create_goal` only if absent with no token budget, then `get_goal` readback. A
+matching active Goal is required; any existing differing or inactive Goal remains
+unchanged and awaits user direction. Missing tools or failed readback report
+could-not-check. A completed batch or empty queue does not finish a standing Goal.
+The user retains `/goal`, `/goal pause`, `/goal resume` and `/goal clear` controls.
+
+An inactive Goal stops standing continuation; it does not withdraw permission for
+a separately requested correction. On "correct and resume", do the authorized
+correction within the existing safeguards, then read the Goal again. A conversational
+resume request does not prove the native status changed. If it remains inactive
+and the exposed tools cannot resume it, give the user the exact `/goal resume`
+control. Preserve the objective, budget and usage; require matching active readback
+before restarting the standing desk. Do not ask again for correction permission or
+try an unsupported `update_goal` status. This is launcher guidance, not evidence
+that a native runtime transition was performed or that a model will follow it.
+
+Goals do not supply the fixed-time `cadence-tick` capability or a process-restart
+monitor. Those rows' scheduler and durability limits remain in force. Explicit
+cellctl cadence uses bounded exec passes with Goals disabled. Native continuation
+can stop for blocking conditions, interruption or continuation limits; it is not a
+promise of permanent unattended service. See the official [Goals guide](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex)
+and [native Goal RPC](https://learn.chatgpt.com/docs/app-server).
+
+## Supervision and context
+
+Apply [desk-common](./desk-common.md#supervision-and-context) with the tools actually
+exposed by this session; these are usage instructions, not a new capability qualification.
+
+- For V2 children, use one `wait_agent` mailbox wait for the live pool. It wakes on
+  child messages/completions; its timeout is a maximum, not a delay before handling
+  results. Set it to the remaining time before the next required sweep/stop check,
+  capped by the exposed tool limit and higher-priority harness instructions. There is
+  no desk-imposed 60-second cap. Do not surround waits with `list_agents`; inventory
+  only to recover missing handles or reconcile a real lifecycle change. On timeout
+  before a required deadline, re-arm the wait without another status inspection.
+- For a yielded `exec`, use `wait` on that cell; for an ongoing command use
+  `write_stdin` on its existing session. Choose the longest permitted wait before the
+  next required check and bound returned output. Reserve immediate/one-second polls
+  for a specific interactive need. Do not relaunch an unchanged command or add a
+  second CI watcher. A quiet watcher is not a reason to ask its owner for progress.
+- Keep the turn open while waiting for in-flight work. A final response followed by
+  automatic Goal continuation is not an event subscription. With only a future
+  cadence due, use the available interruptible wait. Higher-priority harness wait
+  limits still apply: if they force frequent wakeups, report the limitation rather
+  than claiming Claude-like idle efficiency. Goals provide neither a durable timer
+  nor an external-event monitor.
+- For an operator-selected outer scheduler, use the existing
+  [cellctl cadence](https://github.com/medici-finance/assay/blob/121a255f535634e473012a40d7378bef420d68e5/docs/cellctl-cadence.md#switching-an-existing-interactive-house)
+  path. It runs bounded ticks with Goals disabled and waits outside the model between
+  passes. Preserve the clean handoff and ownership checks; never start a second owner,
+  silently switch an interactive desk, pause/complete its Goal, or drop in-flight work.
+  This fallback is fixed-cadence, not event-driven wakeup. Updated plugin/launcher
+  instructions affect new launches; existing sessions need an explicitly authorized
+  instruction update. Neither installation nor compliance is established by this text.
+- When `spawn_agent` exposes `fork_turns`, use `fork_turns="none"` for a new item. Supply
+  the dispatch assignment/packet paths, lane, required instructions and shell constraints
+  explicitly rather than copying the supervisor's history. Readback and admission still
+  bind to the actual selected model; preserve the role's tier and independent-review rules.
+  If isolated child context is unavailable, state the limitation and use the supported
+  dispatch mechanism without dropping required instructions or review coverage.
+- Keep same-item follow-ups brief: changed head, remaining findings, next action and
+  artifact paths. Read a compact checkpoint after compaction, then restore any missing
+  binding instructions and revalidate mutable facts at their existing boundaries.
+
 ## Degradation — per skill (Codex CLI, v1 target)
 
 Reproduced from the ruled matrix (ruling C, Codex CLI column) — the serial-fanout
@@ -46,6 +121,8 @@ session states the ruled posture rather than improvising it.
 | `adopt` | **runs** — needs only `resident-rules-channel` §3.1, `skills-discovery` §3.2, `install-mechanism` §3.10, all `supported`; no dispatch/isolation/gate surface. |
 | `ask-decision` | **runs** — interactive decision text; its one write (filing or commenting the decision issue) is a `gh` write → `danger-full-access` precondition (§3.8, blocked under `workspace-write`), else it composes the decision text and states the write is blocked. No dispatch/isolation/gate surface. |
 | `author-brief` | **runs** — pure authoring/planning text; touches no dispatch, no isolation, no gate. |
+| `author-spec` | **runs** — specification authoring and review; uses available source-reading and editing tools. |
+| `cut-release` | **runs** — preconditions, dry-run reading, checksum harvest and re-pin authoring are reads plus local edits; its one write (re-pin draft PRs) is a `gh` write → `danger-full-access` precondition (§3.8, blocked under `workspace-write`), stated in-session rather than half-run. Neither release-workflow run is the session's act, the dry run included: both wait at the release environment's human approval and record their dispatcher as the authorizer, so both dispatches and both approvals are handed to the driver via `human-runsheet` on every harness. The session itself touches no dispatch/isolation/gate surface. |
 | `dailies` | **runs** — report generation is sequential CLI work; any report fan-out **degrades: runs serially with an explicit in-session statement** (dispatch is a convenience here, not a safety guarantee). |
 | `human-runsheet` | **runs** — writes one file (`RUNSHEET.md`) to the session's own scratch home; a local text write needs no `gh`, no dispatch, no isolation and no gate authority. No dispatch/isolation/gate surface. |
 | `install` | **runs** — the turnkey install verb; needs `resident-rules-channel` §3.1, `skills-discovery` §3.2 and `install-mechanism` §3.10, all `supported`. Its scaffold write (`statusgen init`, CI + main-guard wiring, re-pin) needs a write-capable sandbox and its pinned-binary acquisition needs network → both are sandbox preconditions (§3.8, blocked under `workspace-write`), stated in-session rather than half-run. It opens draft PRs only and escalates every human-gated step; no dispatch/isolation/gate surface. |
@@ -54,6 +131,7 @@ session states the ruled posture rather than improvising it.
 | `pdfingest` | **runs** — local PDF ingestion, no dispatch/isolation/gate surface; `workspace-write` allows the local reads. Any outbound fetch or external-binary call is a sandbox precondition (§3.8) → the skill states the blocked fetch in-session rather than silently skipping it. |
 | `pr-review-desk` | **runs** — the review **verdict** is text and is never degraded; posting the review and the draft→ready flip need `gh` writes → `danger-full-access` precondition (§3.8). The review gate is upheld or the skill refuses; it never silently degrades. |
 | `pr-shepherd` | **refuses under `workspace-write`, runs under `danger-full-access`** — the same isolation floor as `worker-desk`: the skill mandates its own worktree for the adopted PR and must create it itself — the CLI's managed-worktree mechanism (`codex exec --worktree`, §3.9, confirmed present on codex-cli 0.154.0) still needs a `.git/refs/heads/` write, which the `workspace-write` sandbox blocks (§3.8). Its watch loop needs no durable poll — the body already states the periodic `gh pr view` read as the primary form and `capability:durable-monitor` only as an alternative, so the §3.6/§3.7 gap **degrades to the stated poll**, not to blindness. Discovery-mode fan-out (one shepherd per PR) **degrades: serial, one PR at a time, stated in-session** where parallel dispatch is unavailable (§3.5). Gates are unchanged: it never flips, merges or closes, and the security-gate carve-out is a refusal, never a degradation. *(Derived from this file's own capability rows plus the skill's declared needs — not a separate live measurement.)* |
+| `session-coach` | **runs** — reads the session's own record (transcript, tool calls, subagent transcripts) and writes one coaching note outside any repository; no `gh`, no dispatch, no isolation and no gate authority. Where the note's location is one the sandbox does not let it write (§3.8), that is a sandbox precondition stated in-session — the note is never written into the repository instead. A piece of the record the session cannot read is marked as such in the note, per the body. No dispatch/isolation/gate surface.  *(Derived from the skill body and this harness's capability rows; not a live measurement.)* |
 | `system-demo` | **runs** — authoring a storyboard and, when requested, a local static player is text/local-file work; it writes only within the session's own workspace, needs no `gh`, no dispatch, no isolation and no gate authority. No dispatch/isolation/gate surface. |
 | `the-desk` | **runs** — coordination; its worker fan-out **degrades: serial with an in-session statement** where parallel dispatch is unavailable (§3.5); the review/merge gate is unchanged (the human merges). Isolation of dispatched implementers is delegated to `worker-desk` (below). |
 | `upgrade-assay` | **runs** — the dry-run-first order is the skill's own invariant and is never degraded; the apply step writes the tree and version pins → needs a write-capable sandbox, and under `workspace-write` it states BLOCKED rather than half-applying (§3.8). No dispatch/isolation/gate surface beyond that. |
@@ -62,7 +140,7 @@ session states the ruled posture rather than improvising it.
 
 ## Freshness
 
-This binding is behavioural fact about a live harness, measured documentarily on
-2026-08-08 with no live environment. It is registered in `freshness.yaml`
-(harness-portability/07) so it expires on a clock, and the live-harness rows are
-re-measured once a Codex environment exists (the stream's true head).
+The baseline was measured documentarily on 2026-08-08. The explicitly dated
+0.154.0 rows and the 0.162.1 native Goal qualification above are later measurements.
+The binding is registered in `freshness.yaml` (harness-portability/07); an isolated
+Goal probe does not refresh the other capabilities.

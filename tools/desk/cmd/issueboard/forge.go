@@ -21,7 +21,7 @@ import (
 var (
 	// mintTokenFn is the per-repo token-lookup seam, swapped in tests for a stub returning a
 	// fake token. Production binds it to the shared resolver.
-	mintTokenFn = deskkit.RoleTokenForRepo
+	mintTokenFn = deskkit.GitHubRoleToken
 	// forgeAPIBase redirects the resolved GitHub backend's API host at an httptest server in
 	// tests; empty in production means the real host. Read at call time via the custody minter.
 	forgeAPIBase string
@@ -47,7 +47,7 @@ func init() {
 // an ambient identity — a session with no resolvable role gets a refusal the caller surfaces
 // as could-not-check, never a silent ambient read. It is a package var so a test can inject a
 // recorded backend without a network or a minted credential.
-var forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
+var forgeFor = func(repo string, observers ...deskkit.RequestObserver) (deskkit.Forge, deskkit.ForgeRepo, error) {
 	owner, name, ok := strings.Cut(repo, "/")
 	if !ok {
 		return nil, deskkit.ForgeRepo{}, deskkit.Unverifiable("bad repo "+repo, nil)
@@ -58,7 +58,7 @@ var forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
 		return nil, fr, deskkit.Unverifiable("cannot resolve the issueboard App role to read "+repo+
 			" — the read path authenticates as a minted App token, never an ambient gh identity", err)
 	}
-	f, ferr := deskkit.ForgeFor(fr, role)
+	f, ferr := deskkit.ForgeFor(fr, role, observers...)
 	if ferr != nil {
 		return nil, fr, ferr
 	}

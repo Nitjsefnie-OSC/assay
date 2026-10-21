@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/reviewflow"
 )
 
 // cmdPlan is the reactor's whole shipped surface: read the sweep(s), classify every row,
@@ -74,9 +75,10 @@ func cmdPlan(args []string, stdout io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "\nROWS (every row, including the waiting states — a row is never dropped for having no verb):\n")
-	board.RenderRows(stdout)
+	renderRows(board, stdout)
 
-	counts := board.CountByDisposition()
+	planned := reviewflow.PlanBoard(board, now)
+	counts := planned.Depths
 	fmt.Fprintf(stdout, "\ndispositions: %d DISPATCH · %d FLIP-VERB · %d SURFACE · %d WAIT · %d NO-OP\n",
 		counts[DispositionDispatch], counts[DispositionFlip], counts[DispositionSurface],
 		counts[DispositionWait], counts[DispositionNoOp])
@@ -87,7 +89,7 @@ func cmdPlan(args []string, stdout io.Writer) error {
 			len(u), strings.Join(u, ", "))
 	}
 
-	verbs := Coalesce([]*Board{board}, deskkit.AlreadyDone)
+	verbs := planned.Verbs
 	fmt.Fprintf(stdout, "\nOUTWARD VERBS, coalesced on (repo, pr, head, verb):\n")
 	if len(verbs) == 0 {
 		fmt.Fprintf(stdout, "  (none — no row on this board carries an outward verb)\n")
@@ -121,7 +123,7 @@ func cmdPlan(args []string, stdout io.Writer) error {
 		RenderFindings(stdout, rep, ledger)
 	}
 
-	verdict := Idle(board, now)
+	verdict := planned.Idle
 	fmt.Fprintf(stdout, "\nIDLE GATE (#79, in code — a model cannot declare all-clear): %s\n", verdict)
 	for _, r := range verdict.BlindReasons {
 		fmt.Fprintf(stdout, "  blind: %s\n", r)

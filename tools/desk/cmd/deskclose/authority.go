@@ -109,13 +109,16 @@ func readRulingSignOff(path string) (string, error) {
 // Forge.ListComments (which carries the author's login AND — since the write-verbs-C extension —
 // numeric id, the pair the blessing-authority pin requires).
 type ghComment struct {
-	ID      int64  // the comment's numeric (database) id
+	ID      int64 // the comment's numeric (database) id
 	HTMLURL string
 	Body    string
 	User    struct {
 		Login string
 		ID    int64
 	}
+	// CreatedAt is the comment's creation time (RFC3339) as the forge reports it — the
+	// human-decided lane's decision record reads it as the ruling time.
+	CreatedAt string
 }
 
 // fetchCommentTyped fetches the comment a permalink names, on the STATED kind's thread — the
@@ -192,7 +195,7 @@ func fetchCommentKinded(url string, kind deskkit.TargetKind) (ghComment, error) 
 	}
 	for _, c := range comments {
 		if c.DatabaseID == cid {
-			out := ghComment{ID: c.DatabaseID, HTMLURL: c.URL, Body: c.Body}
+			out := ghComment{ID: c.DatabaseID, HTMLURL: c.URL, Body: c.Body, CreatedAt: c.CreatedAt}
 			out.User.Login = c.Author.Login
 			out.User.ID = c.Author.ID
 			if out.HTMLURL == "" {

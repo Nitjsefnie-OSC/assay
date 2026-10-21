@@ -115,11 +115,17 @@ func (f *rlForge) client(t *testing.T) *ghClient {
 // the given PR data. It returns the single result for the record's stamp.
 func rlRun(t *testing.T, c *ghClient, rec decisionRecordStamp, data *ghPRData, citing []string) corroborateResult {
 	t.Helper()
+	return rlRunAliased(t, c, rec, data, citing, nil)
+}
+
+// rlRunAliased is rlRun with the repository's registry aliases chosen by the test.
+func rlRunAliased(t *testing.T, c *ghClient, rec decisionRecordStamp, data *ghPRData, citing, aliases []string) corroborateResult {
+	t.Helper()
 	stamps := addDecisionRecordStamps(nil, []decisionRecordStamp{rec})
 	if len(stamps) != 1 {
 		t.Fatalf("addDecisionRecordStamps produced %d stamps, want 1 — the record's decided-by must be visible to the stamp lane", len(stamps))
 	}
-	outcomes := rulingOutcomes{rec.File: resolveRuling(c, rlRepo, rec, rlLogins, citing)}
+	outcomes := rulingOutcomes{rec.File: resolveRuling(c, rlRepo, rec, rlLogins, citing, aliases)}
 	res := corroborateStampsRuled(stamps, data, rlRepo, 7, nil, outcomes)
 	if len(res) != 1 {
 		t.Fatalf("got %d results, want 1", len(res))
@@ -218,7 +224,7 @@ func TestRuling_BotAuthor(t *testing.T) {
 	f.commentBody = rlCommentJSON("example-bot[bot]", "Bot", rlRepo, rlIssue)
 	logins := map[string]string{"example_human": "example-bot[bot]"}
 	stamps := addDecisionRecordStamps(nil, []decisionRecordStamp{rlPlaceholder(rlURL(rlRepo, rlIssue, rlComment))})
-	o := resolveRuling(f.client(t), rlRepo, rlPlaceholder(rlURL(rlRepo, rlIssue, rlComment)), logins, nil)
+	o := resolveRuling(f.client(t), rlRepo, rlPlaceholder(rlURL(rlRepo, rlIssue, rlComment)), logins, nil, nil)
 	res := corroborateStampsRuled(stamps, &ghPRData{}, rlRepo, 7, nil, rulingOutcomes{rlFile: o})
 	rlWantMissing(t, res[0], rulingBotAuthor)
 }
@@ -239,7 +245,7 @@ func TestRuling_WrongAuthorOtherHuman(t *testing.T) {
 	// Pin the resolver's own refusal too: the stamp verdict alone is backed by a
 	// second layer (rulingOutcome.rulesFor), so it would stay MISSING even if the
 	// resolver passed a comment by the wrong human.
-	if o := resolveRuling(f.client(t), rlRepo, rec, rlLogins, nil); o.Reason != rulingWrongAuthor {
+	if o := resolveRuling(f.client(t), rlRepo, rec, rlLogins, nil, nil); o.Reason != rulingWrongAuthor {
 		t.Fatalf("resolveRuling reason = %q, want %q — detail: %s", o.Reason, rulingWrongAuthor, o.Detail)
 	}
 }
@@ -273,6 +279,186 @@ func TestRuling_BriefMarkerOtherRepo(t *testing.T) {
 	rlWantMissing(t, rlRun(t, f.client(t), rlPlaceholder(rlURL(rlRepo, rlIssue, rlComment)), &ghPRData{}, []string{"example-stream/07"}), rulingUnrelatedIssue)
 }
 
+// rlRegistry is a graph-repos registry for the alias tests: "ex" is a published
+// alias for the record's repository, "elsewhere" names a different one, and "hidden"
+// is an unpublished alias (repo withheld).
+const rlRegistry = `schema: graph-repos-v1
+cell: example
+repos:
+  ex:        {cell: example, repo: example-org/example-repo}
+  elsewhere: {cell: example, repo: example-org/other-repo}
+  hidden:    {cell: example, repo: null, unpublished: true}
+`
+
+func rlWriteRegistry(t *testing.T, body string) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "streams")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "graph-repos.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// regression: #2735 — the colon-form marker's repository segment is matched by the
+// repository's name OR a registry alias; a foreign repository (by name or by its own
+// alias) is still skipped. One case each: full name, alias, foreign.
+func TestRuling_MarkerRepoSegmentAliasAware(t *testing.T) {
+	root := rlWriteRegistry(t, rlRegistry)
+	reg, ok, err := loadGraphRepos(root)
+	if err != nil || !ok {
+		t.Fatalf("loadGraphRepos: ok=%v err=%v", ok, err)
+	}
+	aliases := repoAliasesFor(reg, rlRepo)
+	if len(aliases) != 1 || aliases[0] != "ex" {
+		t.Fatalf("repoAliasesFor = %v, want [ex]", aliases)
+	}
+	cases := []struct {
+		name   string
+		marker string
+		want   bool
+	}{
+		{"full repository name", "example-org:example-repo:example-stream:7", true},
+		{"registry alias", "ex:example-stream:7", true},
+		{"alias with owner-form prefix", "example-org:ex:example-stream:7", true},
+		{"foreign repository name", "example-org:elsewhere-repo:example-stream:7", false},
+		{"foreign repository's own alias", "elsewhere:example-stream:7", false},
+		{"unpublished alias of another repo", "hidden:example-stream:7", false},
+	}
+	for _, tc := range cases {
+		body := "<!-- decision-gate: " + tc.marker + " -->"
+		if got := issueRulesOnRecord(body, rlRecordID, rlRepo, aliases, []string{"example-stream/07"}); got != tc.want {
+			t.Errorf("%s (%s): issueRulesOnRecord = %v, want %v", tc.name, tc.marker, got, tc.want)
+		}
+	}
+	// With no alias knowledge the alias form stays skipped (the pre-fix behaviour,
+	// and the fail-closed fallback when the registry is unreadable).
+	if issueRulesOnRecord("<!-- decision-gate: ex:example-stream:7 -->", rlRecordID, rlRepo, nil, []string{"example-stream/07"}) {
+		t.Error("alias marker accepted with no registry aliases")
+	}
+}
+
+// The registry's self: alias names the tree's own repository even when its entry is
+// unpublished; a nil registry yields no aliases.
+func TestRuling_RepoAliasesForSelfAndNil(t *testing.T) {
+	if got := repoAliasesFor(nil, rlRepo); got != nil {
+		t.Fatalf("nil registry: %v, want none", got)
+	}
+	root := rlWriteRegistry(t, strings.Replace(rlRegistry, "cell: example\nrepos:", "cell: example\nself: hidden\nrepos:", 1))
+	reg, _, err := loadGraphRepos(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := repoAliasesFor(reg, rlRepo)
+	if len(got) != 2 || got[0] != "ex" || got[1] != "hidden" {
+		t.Fatalf("repoAliasesFor = %v, want [ex hidden]", got)
+	}
+}
+
+// regression: #2735 — a self entry PUBLISHED under another repository is a
+// contradictory registry and adds no alias; published under the record's own
+// repository it still does.
+func TestRuling_SelfAliasGuarded(t *testing.T) {
+	for _, tc := range []struct {
+		name, self string
+		want       []string
+	}{
+		{"self published elsewhere", "elsewhere", []string{"ex"}},
+		{"self published here", "ex", []string{"ex"}},
+	} {
+		root := rlWriteRegistry(t, strings.Replace(rlRegistry, "cell: example\nrepos:", "cell: example\nself: "+tc.self+"\nrepos:", 1))
+		reg, _, err := loadGraphRepos(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := repoAliasesFor(reg, rlRepo); strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%s: repoAliasesFor = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// regression: #2735 — a non-self UNPUBLISHED entry adds no alias even when its repo
+// is the record's own repository.
+func TestRuling_UnpubAliasExcluded(t *testing.T) {
+	root := rlWriteRegistry(t, rlRegistry+"  quiet:     {cell: example, repo: "+rlRepo+", unpublished: true}\n")
+	reg, _, err := loadGraphRepos(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := reg.Aliases["quiet"]; !ok || !e.Unpublished || e.Repo != rlRepo {
+		t.Fatalf("fixture shape changed: quiet = %+v (present %v)", e, ok)
+	}
+	if got := repoAliasesFor(reg, rlRepo); len(got) != 1 || got[0] != "ex" {
+		t.Fatalf("repoAliasesFor = %v, want [ex]", got)
+	}
+}
+
+// rlWriteCitingBrief writes brief example-stream/07 under root, its design: citing
+// the record, so decisionCitingBriefs(root, rlRecordID) is non-empty. It is the
+// design-gate fixture's dg/01 (a complete brief-v1) with its id and design: swapped.
+func rlWriteCitingBrief(t *testing.T, root string) {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("testdata", "designgate", "docs", "streams", "dg", "brief-01-record-present.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := strings.Replace(string(src), "brief: dg/01\n", "brief: example-stream/07\n", 1)
+	b = strings.Replace(b, "design: DR-fixture-approved\n", "design: "+rlRecordID+"\n", 1)
+	if !strings.Contains(b, "brief: example-stream/07\n") || !strings.Contains(b, "design: "+rlRecordID+"\n") {
+		t.Fatal("fixture shape changed: could not re-point dg/01 at example-stream/07")
+	}
+	dir := filepath.Join(root, "docs", "streams", "example-stream")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "brief-07-example.md"), []byte(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// regression: #2735 — end to end through the runner glue (resolveDecisionRulings,
+// the production entry point): with a registry declaring "ex" for the record's
+// repository and a brief whose design: cites the record, a genuine ruling on a
+// decision issue whose marker uses the alias form passes. The same tree with no
+// registry, or an unreadable one, refuses it unrelated-issue (fail closed), and a
+// full-name marker passes with no registry — so the refusals are the alias lookup's,
+// not an empty citing set's.
+func TestRuling_AliasMarkerEndToEnd(t *testing.T) {
+	rec := rlNamed("example_human", rlURL(rlRepo, rlIssue, rlComment))
+	run := func(registry, marker string) rulingOutcome {
+		t.Helper()
+		var root string
+		if registry != "" {
+			root = rlWriteRegistry(t, registry)
+		} else {
+			root = t.TempDir()
+		}
+		rlWriteCitingBrief(t, root)
+		if got := decisionCitingBriefs(root, rlRecordID); len(got) != 1 || got[0] != "example-stream/07" {
+			t.Fatalf("control: decisionCitingBriefs = %v, want [example-stream/07]", got)
+		}
+		f := defaultRLForge()
+		f.issueBody = rlIssueJSON("<!-- decision-gate: " + marker + " -->\n")
+		return resolveDecisionRulings(f.client(t), root, rlRepo, []decisionRecordStamp{rec}, rlLogins)[rec.File]
+	}
+	const alias, full = "ex:example-stream:7", "example-org:example-repo:example-stream:7"
+	if o := run(rlRegistry, alias); o.Reason != rulingOK {
+		t.Fatalf("alias marker with registry: reason = %q (%s), want pass", o.Reason, o.Detail)
+	}
+	if o := run("", full); o.Reason != rulingOK {
+		t.Fatalf("control: full-name marker, no registry: reason = %q (%s), want pass", o.Reason, o.Detail)
+	}
+	if o := run("", alias); o.Reason != rulingUnrelatedIssue {
+		t.Fatalf("alias marker, no registry: reason = %q, want %q", o.Reason, rulingUnrelatedIssue)
+	}
+	if o := run("schema: nope\n", alias); o.Reason != rulingUnrelatedIssue {
+		t.Fatalf("alias marker, unreadable registry: reason = %q, want fail-closed %q", o.Reason, rulingUnrelatedIssue)
+	}
+}
+
 func TestRuling_PullRequestNotIssue(t *testing.T) {
 	f := defaultRLForge()
 	f.issueBody = fmt.Sprintf(`{"number":%d,"body":%q,"pull_request":{"url":"x"}}`, rlIssue, rlMarker)
@@ -296,7 +482,7 @@ func TestRuling_CosignerNotCorroboratedByAnothersRuling(t *testing.T) {
 			}
 			// The second name even approved the PR: a present link still decides it.
 			data := &ghPRData{Reviews: []ghReview{{Author: ghAuthor{Login: rlOther}, State: "APPROVED"}}}
-			out := rulingOutcomes{rec.File: resolveRuling(defaultRLForge().client(t), rlRepo, rec, rlLogins, nil)}
+			out := rulingOutcomes{rec.File: resolveRuling(defaultRLForge().client(t), rlRepo, rec, rlLogins, nil, nil)}
 			got := map[string]corroborateResult{}
 			for _, r := range corroborateStampsRuled(stamps, data, rlRepo, 7, nil, out) {
 				got[r.Stamp.Name] = r
@@ -391,7 +577,7 @@ func TestRuling_FailingLinkBeatsPRApproval(t *testing.T) {
 	// approval — so the refusal below is the ruling lane's, not a roster gap.
 	noLink := rlNamed("example_human", "")
 	ctl := corroborateStampsRuled(addDecisionRecordStamps(nil, []decisionRecordStamp{noLink}), data, rlRepo, 7, nil,
-		rulingOutcomes{rlFile: resolveRuling(nil, rlRepo, noLink, rlLogins, nil)})
+		rulingOutcomes{rlFile: resolveRuling(nil, rlRepo, noLink, rlLogins, nil, nil)})
 	if ctl[0].Verdict != verdictCorroborated {
 		t.Fatalf("control: a named stamp with no ruling link and an APPROVED review must corroborate via the PR anchor, got %v: %s", ctl[0].Verdict, ctl[0].Evidence)
 	}
@@ -400,7 +586,7 @@ func TestRuling_FailingLinkBeatsPRApproval(t *testing.T) {
 	f.commentStatus = http.StatusNotFound
 	rec := rlNamed("example_human", rlURL(rlRepo, rlIssue, rlComment))
 	res := corroborateStampsRuled(addDecisionRecordStamps(nil, []decisionRecordStamp{rec}), data, rlRepo, 7, nil,
-		rulingOutcomes{rlFile: resolveRuling(f.client(t), rlRepo, rec, rlLogins, nil)})
+		rulingOutcomes{rlFile: resolveRuling(f.client(t), rlRepo, rec, rlLogins, nil, nil)})
 	rlWantMissing(t, res[0], rulingDeleted)
 }
 
@@ -442,8 +628,11 @@ func TestRuling_NamedWithoutLinkFallsThrough(t *testing.T) {
 	}
 }
 
-// Only DR records in the register directory, with an ADDED line, are gated.
+// Only records in the register directory, with an ADDED line, are gated. The set is
+// the one the register lint reads (parseDecisionsDir): every .md there except the
+// README, whether or not its basename is DR-shaped.
 func TestRuling_RecordsInDiffScope(t *testing.T) {
+	const otherName = "docs/streams/decisions/not-dr-shaped.md"
 	diff := strings.Join([]string{
 		"+++ b/docs/streams/decisions/DR-example-ruling-rec.md",
 		"+decided-by: \"human:<name>\"",
@@ -453,11 +642,15 @@ func TestRuling_RecordsInDiffScope(t *testing.T) {
 		"+decided-by: \"human:<name>\"",
 		"+++ b/docs/streams/decisions/DR-example-untouched.md",
 		"-decided-by: \"human:<name>\"",
+		"+++ b/" + otherName,
+		"+decided-by: \"human:<name>\"",
+		"+++ b/docs/streams/decisions/sub/DR-example-nested.md",
+		"+decided-by: \"human:<name>\"",
 		"",
 	}, "\n")
 	got := decisionRecordsInDiff("", diff)
-	if len(got) != 1 || got[0] != rlFile {
-		t.Fatalf("decisionRecordsInDiff = %v, want exactly [%s]", got, rlFile)
+	if len(got) != 2 || got[0] != rlFile || got[1] != otherName {
+		t.Fatalf("decisionRecordsInDiff = %v, want exactly [%s %s]", got, rlFile, otherName)
 	}
 }
 
@@ -476,6 +669,106 @@ func TestRuling_LoadRecord(t *testing.T) {
 	rec := loadDecisionRecordStamp(root, rlFile)
 	if rec.LoadErr != "" || rec.ID != rlRecordID || rec.Ruling != link || len(rec.Names) != 0 {
 		t.Fatalf("loaded %+v", rec)
+	}
+}
+
+// rlWriteRecord writes one decision record under root at the repo-relative path
+// file, with frontmatter id (omitted when empty), a placeholder decided-by and a
+// ruling link to the faked forge's comment. The record is otherwise lint-clean.
+func rlWriteRecord(t *testing.T, root, file, id string) {
+	t.Helper()
+	p := filepath.Join(root, filepath.FromSlash(file))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fm := "---\n"
+	if id != "" {
+		fm += "id: " + id + "\n"
+	}
+	fm += "date: \"2026-09-24\"\ntitle: \"t\"\nconsequence: minor\ndecided-by: \"human:<name>\"\n" +
+		"ruling: \"" + rlURL(rlRepo, rlIssue, rlComment) + "\"\n" +
+		"alternatives:\n  - \"a — b\"\naccepted:\n  - \"c\"\n---\nbody\n"
+	if err := os.WriteFile(p, []byte(fm), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The ruling lane binds a record by its frontmatter id — the id the design gate
+// resolves a brief's design: by and the register lint validates — not by its file
+// name. registers-v1 §7.2 sets no file-name rule for a record, so a record whose
+// basename is not DR-shaped, or is a DIFFERENT DR id, is ruled on under its own id.
+// Keying on the basename refused such a record with a false record-not-named reason
+// that named an empty (or the wrong) id, while --lint accepted it.
+func TestRuling_RecordBoundByFrontmatterID(t *testing.T) {
+	for name, file := range map[string]string{
+		"non-dr-basename":       "docs/streams/decisions/example-ruling-rec.md",
+		"other-dr-basename":     "docs/streams/decisions/DR-example-other-rec.md",
+		"canonical-dr-basename": rlFile, // control: basename and id agree
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			rlWriteRecord(t, root, file, rlRecordID)
+			if probs := decisionRegisterProblems(root); len(probs) != 0 {
+				t.Fatalf("fixture must be lint-clean, got %v", probs)
+			}
+			rec := loadDecisionRecordStamp(root, file)
+			if rec.ID != rlRecordID {
+				t.Fatalf("loadDecisionRecordStamp(%s).ID = %q, want the frontmatter id %q", file, rec.ID, rlRecordID)
+			}
+			r := rlRun(t, defaultRLForge().client(t), rec, &ghPRData{}, nil)
+			if r.Verdict != verdictCorroborated {
+				t.Fatalf("verdict = %v, want CORROBORATED — evidence: %s", r.Verdict, r.Evidence)
+			}
+		})
+	}
+}
+
+// A record with no valid DR-<slug> frontmatter id cannot be bound to a ruling: no
+// comment can name it (condition 5). The lane still refuses (fail closed), under
+// condition 5's reason, with a detail that says the id is what is missing rather than
+// blaming the comment; and the offline --lint reports the same record, so it never
+// passes --lint only to dead-end in --corroborate. The DR-shaped basename cases are
+// the ones keying on the file name got wrong the other way: they corroborated a record
+// whose id the design gate rejects.
+func TestRuling_RecordWithoutValidIDRefusedTruthfully(t *testing.T) {
+	for name, tc := range map[string]struct{ file, id string }{
+		"no-id-non-dr-basename":  {"docs/streams/decisions/example-ruling-rec.md", ""},
+		"no-id-dr-basename":      {rlFile, ""},
+		"invalid-id-dr-basename": {rlFile, "DR-short"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			rlWriteRecord(t, root, tc.file, tc.id)
+			lintHit := false
+			for _, p := range decisionRegisterProblems(root) {
+				lintHit = lintHit || strings.Contains(p, " id ")
+			}
+			if !lintHit {
+				t.Fatalf("the register lint must report a record with id %q offline", tc.id)
+			}
+			r := rlRun(t, defaultRLForge().client(t), loadDecisionRecordStamp(root, tc.file), &ghPRData{}, nil)
+			rlWantMissing(t, r, rulingRecordNotNamed)
+			if !strings.Contains(r.Evidence, "carries no valid DR-<slug> frontmatter id") {
+				t.Fatalf("refusal must say the record has no valid id, not blame the comment: %s", r.Evidence)
+			}
+		})
+	}
+}
+
+// An empty record id cites nothing: decisionCitingBriefs must not match every brief
+// whose design: is empty.
+func TestRuling_CitingBriefsEmptyIDMatchesNothing(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS("testdata/designgate")); err != nil {
+		t.Fatal(err)
+	}
+	// Control: the fixture's dg/01 cites DR-fixture-approved, and the other dg
+	// briefs carry no design: at all.
+	if got := decisionCitingBriefs(root, "DR-fixture-approved"); len(got) != 1 || got[0] != "dg/01" {
+		t.Fatalf("control: decisionCitingBriefs(DR-fixture-approved) = %v, want [dg/01]", got)
+	}
+	if got := decisionCitingBriefs(root, ""); len(got) != 0 {
+		t.Fatalf("decisionCitingBriefs(\"\") = %v, want none — an empty id cites nothing", got)
 	}
 }
 

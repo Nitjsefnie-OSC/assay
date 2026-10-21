@@ -15,6 +15,19 @@ import (
 // returned as a bogus owner.
 var slugSegmentRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// ValidRepoSlug reports whether s is exactly one owner segment, one slash and one repo segment,
+// each non-empty, each drawn from slugSegmentRe's charset, and neither a dot-segment ("." or
+// ".."). It is the one shape check for an owner/name a caller hands in as a string, so a verb's
+// argument check and a constructor's own re-check cannot drift apart.
+func ValidRepoSlug(s string) bool {
+	owner, name, ok := strings.Cut(s, "/")
+	return ok && validSlugSegment(owner) && validSlugSegment(name)
+}
+
+func validSlugSegment(seg string) bool {
+	return seg != "." && seg != ".." && slugSegmentRe.MatchString(seg)
+}
+
 // ParseRemoteRepo extracts the trailing owner/repo pair from a git remote URL in every
 // shape git itself accepts, and from the rewritten/hybrid forms an `insteadOf` config or a
 // bad URL-composition can bake into `remote.origin.url`:
@@ -89,11 +102,9 @@ func RemoteRepoSlug(raw string) (string, error) {
 	return owner + "/" + repo, nil
 }
 
-// OriginRepoSlug reads dir's `origin` remote URL as the RAW configured value and parses it to
-// "owner/repo". It reads through gitcore.RemoteURL, which returns the value `git config --get
-// remote.origin.url` returns — the RAW config, with NO `insteadOf` expansion — deliberately
-// NOT `git ls-remote --get-url`, which expands `url.<base>.insteadOf` locally and would hand
-// this parser a rewritten string. err is non-nil when dir is not a git worktree, has no
+// OriginRepoSlug reads dir's repository-local `origin` URL through gitcore.RemoteURL
+// and parses it to "owner/repo". Repository-local fetch insteadOf rules apply; push-only
+// rewrites and global/worktree config do not. err is non-nil when dir is not a git worktree, has no
 // origin, or the URL does not parse; callers that must fail closed surface it, and callers
 // that tolerate a miss (deriveRepoSlug) map it to "".
 func OriginRepoSlug(dir string) (string, error) {

@@ -1,11 +1,19 @@
-// Command skillslint runs four offline checks over the plugin tree:
+// Command skillslint runs five offline checks over the plugin tree:
 //
-//	structural       every plugins/assay/skills/*/SKILL.md (lint.go)
+//	structural       every plugins/assay/skills/*/SKILL.md (lint.go), including
+//	                 the per-skill frontmatter conformance limits — description
+//	                 length, name length/pattern — plus their advisory body/
+//	                 bundle budget NOTICEs (conformance.go)
 //	hidden chars     byte-level invisible-character / Trojan-Source lint over the
 //	                 instruction surfaces, plus an advisory context-budget NOTICE
 //	                 (hidden.go)
 //	house values     EVERY *.md under plugins/, at any depth (housevalue.go)
 //	guardrails       derive-or-diff of every shared-guardrail copy (guardrail.go)
+//	act blocks       every example Act block under plugins/ opens with the zsh
+//	                 comment guard and keeps plain-text comments in its header
+//	                 only (actblock.go)
+//	ambient auth     no skill or reference tells a desk to read a human's
+//	                 `gh auth token` (ambientauth.go)
 //
 // The house-value half is deliberately wider than the other two: the references
 // and READMEs under plugins/ are as adopter-facing as a skill body, and a
@@ -15,6 +23,13 @@
 //	go run ./tools/skillslint                 # lint the plugin tree under the cwd
 //	go run ./tools/skillslint --root ..       # lint a sibling checkout
 //	go run ./tools/skillslint --sync          # REGENERATE every guardrail copy
+//	go run ./tools/skillslint --sync --allow-ambiguous-extent  # also take an
+//	                                               # ambiguous removal extent's
+//	                                               # longest match instead of
+//	                                               # refusing it (see guardrail.go)
+//	go run ./tools/skillslint --skills-dir <dir>  # adopter reach: structural +
+//	                                               # conformance ONLY, over
+//	                                               # <dir>/*/SKILL.md (repeatable)
 //	make skillslint                           # the check form
 //	make guardrail-sync                       # the --sync form
 //
@@ -28,15 +43,38 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
+
+// stringList is a repeatable flag.Value: each --skills-dir on the command line
+// appends rather than overwrites, so `--skills-dir a --skills-dir b` checks
+// both directories in one run.
+type stringList []string
+
+func (s *stringList) String() string { return strings.Join(*s, ",") }
+func (s *stringList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
 
 func main() {
 	root := flag.String("root", ".", "path to the repo root holding plugins/assay/skills/")
 	sync := flag.Bool("sync", false, "regenerate every guardrail copy from "+guardrailSourcePath+" instead of checking")
+	allowAmbiguous := flag.Bool("allow-ambiguous-extent", false, "with --sync: when a copy's removal extent is ambiguous (an older known text and a more recent one that is a strict prefix of it both match at the anchor, so the longest match is not the newest), take the longest match anyway instead of refusing — the default is to refuse, naming the file and span, since this case cannot be told apart by content alone from swallowing a local, site-specific rule (#1692); applies to every ambiguous block in the run, so verify each by hand before passing this")
+	var skillsDirs stringList
+	flag.Var(&skillsDirs, "skills-dir", "path to a directory of <dir>/*/SKILL.md to run ONLY the structural + conformance checks over (repeatable); when given, --root's other checks (house values, hidden chars, guardrails, enforcement block, posix-token) do not run")
 	flag.Parse()
 
+	if *allowAmbiguous && !*sync {
+		fmt.Fprintln(os.Stderr, "skillslint: --allow-ambiguous-extent requires --sync (it changes only how --sync rewrites guardrail copies)")
+		os.Exit(2)
+	}
 	if *sync {
-		os.Exit(runSync(*root))
+		os.Exit(runSync(*root, *allowAmbiguous))
+	}
+
+	if len(skillsDirs) > 0 {
+		os.Exit(runSkillsDirs([]string(skillsDirs)))
 	}
 
 	exit := 0
@@ -54,6 +92,25 @@ func main() {
 		exit = 1
 	} else {
 		fmt.Printf("SKILLSLINT: PASS — %d skill file(s) under %s, all frontmatter loads as a YAML mapping (name==dir, description a non-empty string) and no bare unforgeable/tamper-evident claims\n", checked, *root)
+	}
+
+	// Conformance soft budgets (advisory, never exit-affecting): per-skill body
+	// bytes/lines/approx-tokens and the one bundle-wide summed-description-chars
+	// line (conformance.go). The hard per-skill limits (description length,
+	// name length/pattern) are exit-code-bearing and already folded into the
+	// Issues LintSkills returned above — this half is the soft budgets only.
+	cfChecked, cfNotices, cfErr := ConformanceNotices(*root)
+	switch {
+	case cfErr != nil:
+		fmt.Fprintf(os.Stderr, "skillslint: %v\n", cfErr)
+		fmt.Fprintf(os.Stderr, "CONFORMANCE-BUDGET: COULD-NOT-CHECK — the skill tree could not be read; a check that read nothing proved nothing (advisory: does not affect exit)\n")
+	case len(cfNotices) > 0:
+		for _, n := range cfNotices {
+			fmt.Fprintln(os.Stderr, n)
+		}
+		fmt.Fprintf(os.Stderr, "CONFORMANCE-BUDGET: NOTICE — %d soft-budget notice(s) across %d skill file(s) (advisory: does not affect exit)\n", len(cfNotices), cfChecked)
+	default:
+		fmt.Printf("CONFORMANCE-BUDGET: PASS — %d skill file(s), no soft body/bundle budget crossed\n", cfChecked)
 	}
 
 	// Invisible-character / Trojan-Source lint + context-budget NOTICE over the
@@ -168,6 +225,56 @@ func main() {
 		fmt.Printf("ENFORCEMENT-BLOCK: PASS — the generated block in %s byte-matches `statusgen enforcement-status`\n", enforcementSitePath)
 	}
 
+	// act-block: HARD. Every example Act block under plugins/ keeps its comments
+	// plain text on their own lines and in its header only (the rule that makes
+	// a first paste into an interactive zsh safe), opens with the zsh comment
+	// guard (later pastes),
+	// names its act function per act, and reads secrets in the clear-first,
+	// stop-on-failure shape, a syntactic best-effort check with named
+	// unmodelled forms (actblock.go, actread.go). No act block at all is
+	// could-not-check, never a quiet pass.
+	abBlocks, abIssues, abErr := ActBlockIssues(*root)
+	switch {
+	case abErr != nil:
+		fmt.Fprintf(os.Stderr, "skillslint: %v\n", abErr)
+		fmt.Fprintf(os.Stderr, "ACT-BLOCK: COULD-NOT-CHECK — no act block was read; a check that read nothing proved nothing\n")
+		if exit < 2 {
+			exit = 2
+		}
+	case len(abIssues) > 0:
+		for _, is := range abIssues {
+			fmt.Fprintf(os.Stderr, "skillslint: %s: %s\n", is.Path, is.Msg)
+		}
+		fmt.Fprintf(os.Stderr, "ACT-BLOCK: FAIL — %d violation(s) across %d act block(s) under plugins/\n", len(abIssues), abBlocks)
+		if exit < 1 {
+			exit = 1
+		}
+	default:
+		fmt.Printf("ACT-BLOCK: PASS — %d act block(s) under plugins/ keep plain-text comments in the header only, the zsh guard, a per-act name, the one-line secret-read shape (cleared, -rs, exit 1-255; a syntactic check, not in a subshell, pipe or background it models) and the fail-closed driver-token pin ahead of every gh step; README §5 lists the forms it does not model\n", abBlocks)
+	}
+
+	// ambient-auth: HARD. No skill or reference may tell a desk to read a human's
+	// forge-CLI login with `gh auth token` (#3055; see ambientauth.go).
+	aaChecked, aaIssues, aaErr := AmbientAuthIssues(*root)
+	switch {
+	case aaErr != nil:
+		fmt.Fprintf(os.Stderr, "skillslint: %v\n", aaErr)
+		fmt.Fprintf(os.Stderr, "AMBIENT-AUTH: COULD-NOT-CHECK — the skill/reference tree could not be read; a check that read nothing proved nothing\n")
+		if exit < 2 {
+			exit = 2
+		}
+	case len(aaIssues) > 0:
+		for _, is := range aaIssues {
+			fmt.Fprintf(os.Stderr, "skillslint: %s: %s\n", is.Path, is.Msg)
+		}
+		fmt.Fprintf(os.Stderr, "AMBIENT-AUTH: FAIL — %d `gh auth token` instruction(s) across %d markdown file(s)\n", len(aaIssues), aaChecked)
+		if exit < 1 {
+			exit = 1
+		}
+	default:
+		fmt.Printf("AMBIENT-AUTH: PASS — %d markdown file(s) under plugins/assay/skills and plugins/assay/references, no desk told to read a human's `gh auth token`\n", aaChecked)
+	}
+
 	// posix-token: advisory (never exit-affecting, per the lint-debt cadence a hard
 	// row would need first — windows-port/12) NOTICE for a skill body that spells a
 	// POSIX-only mktemp/tmp/config-home literal instead of naming the mechanism
@@ -189,11 +296,22 @@ func main() {
 	os.Exit(exit)
 }
 
-func runSync(root string) int {
-	changed, rep, err := SyncGuardrails(root)
+func runSync(root string, allowAmbiguous bool) int {
+	// priorGuardrailSources gives SyncGuardrails every earlier text of each
+	// block, so a copy is rewritten only when the lines at its anchor match a
+	// known text exactly (medici-finance/assay#1690). Without history, only
+	// already-synced copies can be proven; every other is could-not-check.
+	prior, notes := priorGuardrailSources(root)
+	for _, n := range notes {
+		fmt.Fprintf(os.Stderr, "skillslint --sync: note: %s\n", n)
+	}
+	changed, rep, err := SyncGuardrails(root, prior, allowAmbiguous)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "skillslint --sync: %v\n", err)
 		return 2
+	}
+	for _, n := range rep.Notes {
+		fmt.Fprintf(os.Stderr, "skillslint --sync: note: %s\n", n)
 	}
 	for _, is := range rep.Unchecked {
 		fmt.Fprintf(os.Stderr, "skillslint --sync: %s: %s\n", is.Path, is.Msg)
@@ -220,4 +338,80 @@ func runSync(root string) int {
 		fmt.Printf("regenerated: %s (enforcement-status block)\n", enforcementSitePath)
 	}
 	return 0
+}
+
+// runSkillsDirs is the --skills-dir adopter-reach entry point: it runs ONLY
+// the structural + conformance checks (LintSkillsDir, conformance.go) over
+// every given directory's <dir>/*/SKILL.md, plus the same checks' advisory
+// soft-budget NOTICEs (ConformanceNoticesDir) — never the house-value,
+// hidden-character, guardrail or enforcement-block halves, which check THIS
+// repo's own fixed layout and do not apply to an adopter's directory.
+//
+// Every given directory is checked independently, and EVERY directory that
+// matches zero files is reported by name and forces exit 2 — regardless of
+// what any other directory in the same invocation found. A typo'd or moved
+// path in a multi-directory run must never be silently dropped from the
+// gate: README §1a promises "zero matched files is exit 2, never a quiet
+// pass", and that promise binds per directory, not just to the union of all
+// of them (#1663 SEC-1663-1 / F1).
+func runSkillsDirs(dirs []string) int {
+	var allIssues []Issue
+	totalChecked := 0
+	matchedAny := false
+	anyUnmatched := false
+
+	for _, d := range dirs {
+		checked, issues, err := LintSkillsDir(d)
+		if err != nil {
+			anyUnmatched = true
+			fmt.Fprintf(os.Stderr, "skillslint: %s: %v\n", d, err)
+			continue
+		}
+		matchedAny = true
+		totalChecked += checked
+		allIssues = append(allIssues, issues...)
+	}
+	for _, is := range allIssues {
+		fmt.Fprintf(os.Stderr, "skillslint: %s: %s\n", is.Path, is.Msg)
+	}
+	if anyUnmatched {
+		fmt.Fprintf(os.Stderr, "SKILLSLINT: COULD-NOT-CHECK — at least one --skills-dir matched zero skill files; a check that read nothing proved nothing for that directory, whatever the others found\n")
+		return 2
+	}
+	if !matchedAny {
+		// Unreachable given the loop above (anyUnmatched would be true, so
+		// !matchedAny already returned above), but kept as an explicit
+		// belt-and-braces fail-closed default rather than falling through to
+		// a PASS over zero directories.
+		fmt.Fprintf(os.Stderr, "SKILLSLINT: COULD-NOT-CHECK — 0 skill file(s) matched under --skills-dir; a check that read nothing proved nothing\n")
+		return 2
+	}
+	exit := 0
+	if len(allIssues) > 0 {
+		fmt.Fprintf(os.Stderr, "SKILLSLINT: FAIL — %d issue(s) across %d skill file(s)\n", len(allIssues), totalChecked)
+		exit = 1
+	} else {
+		fmt.Printf("SKILLSLINT: PASS — %d skill file(s) under --skills-dir, structural + conformance checks clean\n", totalChecked)
+	}
+
+	for _, d := range dirs {
+		cfChecked, cfNotices, cfErr := ConformanceNoticesDir(d)
+		if cfErr != nil {
+			// Already surfaced above via LintSkillsDir for this same directory
+			// when it matched nothing — and an unmatched directory anywhere in
+			// dirs already returned exit 2 above, so this branch only runs
+			// when every directory matched. Kept for defensive symmetry with
+			// LintSkillsDir's own error shape.
+			continue
+		}
+		for _, n := range cfNotices {
+			fmt.Fprintln(os.Stderr, n)
+		}
+		if len(cfNotices) > 0 {
+			fmt.Fprintf(os.Stderr, "CONFORMANCE-BUDGET: NOTICE — %d soft-budget notice(s) across %d skill file(s) under %s (advisory: does not affect exit)\n", len(cfNotices), cfChecked, d)
+		} else {
+			fmt.Printf("CONFORMANCE-BUDGET: PASS — %d skill file(s) under %s, no soft body/bundle budget crossed\n", cfChecked, d)
+		}
+	}
+	return exit
 }

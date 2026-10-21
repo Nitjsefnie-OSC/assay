@@ -29,6 +29,20 @@ import (
 	"time"
 )
 
+// errForgeTokenMissing identifies local credential absence without changing the
+// existing Unverifiable contract or enabling an ambient identity fallback.
+var errForgeTokenMissing = errors.New("explicitly minted forge token missing")
+
+// Keep the existing error text and DeskError code intact; the typed marker is
+// available through errors.Is without appending another user-visible cause.
+type forgeTokenMissingError struct{ *DeskError }
+
+func (e *forgeTokenMissingError) Is(target error) bool { return target == errForgeTokenMissing }
+func (e *forgeTokenMissingError) Unwrap() error        { return e.DeskError }
+func missingForgeToken(msg string) error {
+	return &forgeTokenMissingError{Unverifiable(msg, nil)}
+}
+
 // GitHubAPIBase is the single home of the GitHub REST/GraphQL host literal. Desk commands
 // that keep a package-level test hook (`var apiBaseURL = GitHubAPIBase`) source their
 // default from here so the literal is constructed in exactly one place — the forge module —
@@ -65,6 +79,18 @@ func (r ForgeRepo) Slug() string { return r.Owner + "/" + r.Name }
 type Account struct {
 	Login string
 	ID    int64
+	// Type is the forge's own actor kind where the read reports one ("User", "Bot",
+	// "Organization", "Mannequin" on GitHub's GraphQL comment read), and EMPTY where it does
+	// not. Empty is could-not-check, never "User". Consumer: cmd/deskautolane's enactment
+	// gate, which refuses a sign-off artifact whose author is not a User (freeze rule: fields,
+	// not methods — this lands with its call site).
+	Type string `json:",omitempty"`
+	// State is the forge's own account-status word where the read reports one — GitLab's
+	// users API reports "active", "blocked" or "deactivated" — and EMPTY where it does not
+	// (GitHub's account read exposes no such field, so this stays "" on every GitHub-sourced
+	// Account; it is never defaulted to "active"). Consumer: trustliveness.go's
+	// classifyLiveness, which refuses to classify a non-active GitLab account Alive.
+	State string `json:",omitempty"`
 }
 
 // PullRequest is the subset of a change (GitHub pull request ↔ GitLab merge request) the
@@ -105,8 +131,11 @@ type PullRequest struct {
 	// the reply's location and records it in the audit detail.
 	URL string
 	// HeadRef is the SOURCE branch name (GitHub head.ref ↔ GitLab source_branch), as
-	// distinct from HeadSHA. Consumer: cmd/deskreply's preflight, which refuses when the
-	// worktree's checked-out branch is not the branch the change is built from.
+	// distinct from HeadSHA. Consumers: the own-PR guard deskkit.CheckOwnPR (cmd/deskreply,
+	// and `deskpr edit --pr`'s first admission rule), which refuses when the worktree's
+	// checked-out branch is not the branch the change is built from AND its HEAD is not the
+	// change's head commit (#1901); and `deskpr update --pr/--branch`, which pushes HEAD to
+	// this branch once CrossRepo says it is in the base repository (#2085).
 	HeadRef string
 	// BaseRef is the TARGET branch name (GitHub base.ref ↔ GitLab target_branch) — the branch
 	// whose protection rules gate the merge. Consumer: cmd/deskflip's checks-green condition,
@@ -157,7 +186,31 @@ type PullRequest struct {
 	// `mergeable` condition (the forge-gitlab merge-hold brief; freeze rule binds METHODS, not fields, so this
 	// addition changes no method count).
 	GitLabMergeStatus string `json:",omitempty"`
+	// CrossRepo is the forge's own answer to "does the head branch live in a DIFFERENT
+	// repository from the base?" — CrossRepoSame, CrossRepoFork, or EMPTY where the read did
+	// not establish it (GitHub reports head.repo as null once a fork is deleted; GitLab reports
+	// a zero project id). Empty is could-not-check, never "same". Consumer: cmd/deskmerge's
+	// eligibility gate, which pushes only to a branch in the base repository and refuses a fork
+	// head (desktools-v2/03 moved that read off `gh pr view --json isCrossRepository`).
+	// omitempty keeps every change read that predates this field byte-identical in the forge
+	// golden corpus.
+	CrossRepo string `json:",omitempty"`
+	// MergeCommitSHA is the commit the merge produced, set ONLY for a merged change and EMPTY
+	// otherwise. GitHub reports a test-merge `merge_commit_sha` on an OPEN change too; that SHA
+	// names a commit no merge produced, so the GitHub mapping fills this field only when the
+	// change is merged. GitLab fills it only for `state == merged`, from `merge_commit_sha`,
+	// else `squash_commit_sha`; a fast-forward merge reports neither and stays EMPTY. Empty is
+	// could-not-check, never "no merge commit". Consumer: cmd/deskread's `change` kind
+	// (forge-neutral brief 33), for statusgen's auto-flip owner check (forge-neutral brief 18). omitempty
+	// keeps every change read that predates this field byte-identical in the golden corpus.
+	MergeCommitSHA string `json:",omitempty"`
 }
+
+// The two values PullRequest.CrossRepo takes when the forge answered.
+const (
+	CrossRepoSame = "same"
+	CrossRepoFork = "fork"
+)
 
 // The three values PullRequest.Mergeable takes. They are constants rather than free strings
 // because a caller SWITCHES on them, and a switch over free strings falls through to its
@@ -281,6 +334,21 @@ type Issue struct {
 	// extracts the single PR reference from a review-request issue's body. omitempty keeps a
 	// bodyless issue byte-identical in the forge golden corpus.
 	Body string `json:",omitempty"`
+	// ClosedBy is the account that closed the issue, set ONLY while the issue's state is
+	// closed. A forge keeps reporting the last closer on an issue that was closed and then
+	// reopened; that closer no longer stands, so both backends drop it unless the state is
+	// closed. A closed issue whose closer is unreadable or null leaves ClosedBy zero-valued,
+	// which is could-not-check — never the issue's author. Type follows Account.Type (empty
+	// where unresolved). Consumer: cmd/deskread's `issue` kind (forge-neutral brief 33), for
+	// statusgen's decision-gate anchor (forge-neutral brief 18). omitzero keeps every issue read that
+	// predates this field byte-identical in the golden corpus.
+	ClosedBy Account `json:",omitzero"`
+	// CreatedAt is the issue's creation time (RFC3339) as the forge reports it, EMPTY where the
+	// read did not report one — could-not-check, never a guess. Consumer: cmd/deskclose's
+	// human-decided lane, whose human-decision-v1 record measures how long a decision waited
+	// from the issue's opening. omitempty keeps every issue read that
+	// predates this field byte-identical in the golden corpus.
+	CreatedAt string `json:",omitempty"`
 }
 
 // Review is one review/approval on a change (GitHub review ↔ GitLab MR approval). CommitID
@@ -301,6 +369,16 @@ type ChangedFile struct {
 	Filename         string
 	PreviousFilename string
 	Status           string // added | modified | removed | renamed | ...
+	// Patch is the file's unified-diff hunk text as the forge serves it in the file list.
+	// PatchAbsent is true when the forge served NO patch for the entry (GitHub omits the
+	// `patch` key for a binary or oversized file; GitLab marks the diff `too_large` or
+	// `collapsed`). An absent patch is stated by PatchAbsent, never rendered as an empty change:
+	// a consumer reads Patch == "" with PatchAbsent == false as a file whose patch is empty, and
+	// PatchAbsent == true as could-not-check. Consumer: cmd/deskread's `change-files` kind
+	// (forge-neutral brief 33), for statusgen's corroboration (forge-neutral brief 18). omitempty keeps
+	// every file list that predates these fields byte-identical in the golden corpus.
+	Patch       string `json:",omitempty"`
+	PatchAbsent bool   `json:",omitempty"`
 }
 
 // StatusContext is one entry of the legacy combined-status rollup.
@@ -424,6 +502,14 @@ type EditChangeInput struct {
 // interface's own parameter names) does not read a `query` argument as an endpoint address.
 type SearchIssuesInput struct {
 	Query string
+	// DecisionGateMarkers selects the fixed, repo-scoped decision-marker discovery
+	// query instead of free text. Both backends walk every page or return an error;
+	// only this mode carries Body. Query must be empty in this mode. Consumers must
+	// still read each selected issue and its ruling through the canonical evaluator.
+	DecisionGateMarkers bool
+	// DecisionGateBrief optionally narrows marker discovery to one exact brief
+	// spelling. It is an opaque marker token, never provider search syntax.
+	DecisionGateBrief string
 }
 
 // IssueSearchResult is one issue matched by SearchIssues: the fields deskfile's dedupe scores
@@ -438,6 +524,7 @@ type IssueSearchResult struct {
 	State  string // open | closed
 	Labels []string
 	URL    string
+	Body   string `json:",omitempty"` // decision-marker discovery only
 }
 
 // LabelSpec names a label plus the cosmetic metadata used ONLY when the label has to be
@@ -527,6 +614,13 @@ type Comment struct {
 	Minimized  bool
 	CreatedAt  string
 	URL        string
+	// UpdatedAt is the comment's last-update time (RFC3339) as the forge reports it, EMPTY
+	// where the read did not report one. Empty is could-not-check, never "unedited": it is never
+	// filled from CreatedAt, which would present every comment as unedited. Consumer:
+	// cmd/deskread's `comments` kind (forge-neutral brief 33), for the ruling resolver's edited-comment
+	// check (forge-neutral brief 35). omitempty keeps every comment read that predates this field
+	// byte-identical in the golden corpus.
+	UpdatedAt string `json:",omitempty"`
 }
 
 // CommentRef identifies a comment that was just posted. ID is the SAME opaque id
@@ -553,7 +647,27 @@ type FileContent struct {
 	// and empty" (true, Content == nil). A caller that must merge into an existing document
 	// reads Exists, never len(Content).
 	Exists bool
+	// Kind is what the forge says the path holds at the ref: FileKindRegular for an ordinary
+	// file served with its own bytes, FileKindSymlink for a symbolic link (served as its
+	// target's bytes or as nothing), FileKindSubmodule for a submodule, FileKindUnproven when the
+	// bytes served cannot be shown to be the entry's own, or "" when the forge does not say.
+	// A caller that must read a file as a plain record (the decision-gate hold's branch
+	// board) requires FileKindRegular and treats anything else as could-not-check.
+	// omitempty keeps every file read that predates the field byte-identical in the golden
+	// corpus.
+	Kind string `json:",omitempty"`
 }
+
+// The FileContent.Kind values.
+const (
+	FileKindRegular   = "file"
+	FileKindSymlink   = "symlink"
+	FileKindSubmodule = "submodule"
+	// FileKindUnproven is a typed file read whose served bytes are not shown to be the
+	// entry's own blob: a link to a file served as its target's bytes, or a file served with
+	// its content omitted. A caller that needs a plain record refuses it like a link.
+	FileKindUnproven = "unproven"
+)
 
 // ReadFileInput addresses one file at one ref. The fields are a struct rather than positional
 // arguments so the interface method takes no parameter that reads as an endpoint address (the
@@ -574,7 +688,7 @@ type WriteFileInput struct {
 	File string
 	// Branch is the branch the write lands on.
 	Branch string
-	// Content is the whole new file content (a Contents-API PUT / Repository-Files write is
+	// Content is the whole new file content (a Contents-API PUT / GitLab commit action is
 	// whole-file, not a patch).
 	Content []byte
 	// Message is the commit message.
@@ -587,11 +701,51 @@ type WriteFileInput struct {
 	// AllowShrink overrides AppendOnly when a row reduction is genuinely intended.
 	AllowShrink bool
 	// StartBranch, when set and Branch does not yet exist, creates Branch off StartBranch as
-	// PART of the write (GitLab's Repository-Files `start_branch`). It exists so the
+	// PART of the write (GitLab's Commit API `start_branch`). It exists so the
 	// Evidence-lane fallback needs no separate CreateRef op on the frozen interface. Empty
 	// means "write to Branch, which must already exist".
 	StartBranch string
+	// ExpectedSHA, when non-empty, makes the write CONDITIONAL on the file's current content id
+	// (the FileContent.SHA a caller's own ReadFile returned) being exactly this value. The
+	// backend refuses (Refused) when its own fetch reports a different id or no file at all, and
+	// its write then cites that same id as the forge's own precondition (GitHub's Contents-API
+	// `sha`, GitLab's `last_commit_id`), so a change landing after the backend's fetch is
+	// rejected by the forge itself. A caller that judged the content it is about to write
+	// against one specific read uses this so nothing that lands after that read can be
+	// overwritten unrefused. Empty means "no precondition beyond the backend's own fetch".
+	ExpectedSHA string
+	// ExpectedHead pins the whole parent tree for a verified-outcome write.
+	// A backend lacking an atomic branch-head precondition must refuse it;
+	// file-level ExpectedSHA alone cannot protect closure in other files.
+	ExpectedHead string
 }
+
+// expectedSHAPrecondition is the backend-neutral half of WriteFileInput.ExpectedSHA, run by
+// every backend right after its own pre-write fetch: nil when no precondition was asked for or
+// the fetched id matches it; Refused when the file is gone or is no longer the version the
+// caller judged against.
+func expectedSHAPrecondition(in WriteFileInput, exists bool, priorSHA string) error {
+	if in.ExpectedSHA == "" {
+		return nil
+	}
+	if !exists {
+		return Refused(fmt.Sprintf(
+			"refusing a conditional write to %s on %s: the file no longer exists (expected content id %s) — it changed under this write; re-fetch and retry",
+			in.File, in.Branch, in.ExpectedSHA))
+	}
+	if priorSHA != in.ExpectedSHA {
+		return Refused(fmt.Sprintf(
+			"refusing a conditional write to %s on %s: its content id is now %s, not the %s this write was judged against — it changed under this write; re-fetch and retry",
+			in.File, in.Branch, priorSHA, in.ExpectedSHA))
+	}
+	return nil
+}
+
+// ContentID is an opaque file precondition (a GitHub blob or GitLab file commit).
+type ContentID string
+
+// CommitSHA identifies a commit, never a file content digest.
+type CommitSHA string
 
 // WriteFileResult reports what a WriteFile actually did, so a caller can report the difference
 // rather than restating its own intent — the same reason LabelOutcome and PullRef exist.
@@ -600,12 +754,15 @@ type WriteFileResult struct {
 	// idempotent noop and nothing was committed. The idempotency read is folded into WriteFile
 	// so a caller does not issue its own read to find out.
 	Changed bool
-	// SHA is the resulting content id — the new blob/commit id when Changed, and the existing
-	// one on a noop, so a caller always has an id to report.
-	SHA string
+	// ContentID is the resulting file precondition when known, including on a noop.
+	// It must never be used for commit attribution or delivery ancestry.
+	ContentID ContentID
+	// CommitSHA is the exact commit returned by the write, empty on a noop or when
+	// the provider did not prove it. Never resolve a mutable branch head to fill it.
+	CommitSHA CommitSHA
 	// Author is the git author the forge recorded on the write, when the forge reports one.
 	// GitHub's Contents API returns commit.author.name (an App-token write records the App's
-	// bot); GitLab's file write returns none, so Author is EMPTY there — which a caller reads
+	// bot); GitLab's commit author is a display name, so Author is EMPTY there — which a caller reads
 	// as could-not-check, never as a wrong identity. It is not guessed.
 	Author string
 	// DefaultBranchNotWritable is the sentinel: Branch was the forge's default branch and this
@@ -662,7 +819,11 @@ func forgeRowCount(b []byte) int {
 // keys the latest-run-per-name reduction orders by — an entry carrying none sorts oldest, the
 // fail-safe direction (a stampless queued orphan never supersedes a completed run).
 type RollupNode struct {
-	Typename    string // "CheckRun" | "StatusContext" (empty when the forge did not tag it)
+	Typename string // "CheckRun" | "StatusContext" (empty when the forge did not tag it)
+	// ID is the CheckRun's forge run id, same meaning and rendering as CheckRun.ID ("" when
+	// none). omitempty keeps every rollup that carries no id (every GitLab node) byte-identical
+	// in the forge golden corpus.
+	ID          string `json:",omitempty"`
 	Name        string // CheckRun name
 	Status      string // CheckRun: queued | in_progress | completed
 	Conclusion  string // CheckRun: success | failure | ...
@@ -682,13 +843,18 @@ type RollupNode struct {
 // UNKNOWN/…) — the consumer reads its four-state mergeVerdict off it, and an empty value is
 // could-not-check, never mergeable. Consumer: cmd/deskboard's fetchOpenPRs → prBase.
 type OpenChange struct {
-	Number           int
-	Title            string
-	Body             string
-	State            string // OPEN | CLOSED | MERGED
-	Draft            bool
-	CreatedAt        string // RFC3339
-	LastEditedAt     string // RFC3339, "" until the title/body is first edited
+	Number       int
+	Title        string
+	Body         string
+	State        string // OPEN | CLOSED | MERGED
+	Draft        bool
+	CreatedAt    string // RFC3339
+	LastEditedAt string // RFC3339, "" until the title/body is first edited
+	// UpdatedAt is the forge's last-activity time for the change (GitHub's updatedAt: it
+	// moves on a push, a comment, a review, a label, a base retarget or an edit; it does NOT
+	// move when a check run changes). "" when the backend does not report it — a consumer
+	// that keys reuse on it must treat "" as "could have changed" and re-read.
+	UpdatedAt        string `json:",omitempty"`
 	Author           Account
 	Labels           []string
 	HeadSHA          string
@@ -696,6 +862,12 @@ type OpenChange struct {
 	BaseRef          string
 	MergeStateStatus string
 	Rollup           []RollupNode
+	// HeadCommittedAt is the head commit's COMMITTER date (RFC3339), read on the same node
+	// the rollup already comes from — no extra request. It is set only when that commit's oid
+	// is HeadSHA, so it can never describe a different commit; "" when the backend does not
+	// report it (GitLab) or the oids disagree, and a consumer that needs it (the #3093
+	// stale-approval test, ReviewPredatesHead) reads it per change or fails closed.
+	HeadCommittedAt string `json:",omitempty"`
 }
 
 // OpenChanges is the result of the bulk open-change read: the changes plus whether the read
@@ -711,6 +883,38 @@ type OpenChanges struct {
 	TruncatedAtCap bool
 	// Cap is the page cap the read was bounded to (the `first:`/`per_page` ceiling).
 	Cap int
+}
+
+// ReviewQueue is the typed result of ReviewQueueSnapshot: a repo's open-change population
+// AND each change's reviews, read as ONE snapshot. It is the first access-pattern operation
+// (spec Principle 3): a consumer that used to read ListOpenChanges and then ReviewsAtHead once
+// per change (N+1 calls) reads this instead, and gets a head and a review set that cannot
+// straddle a push — N sequential reads can see the list at one head and a change's reviews
+// after a newer head landed. Truncation carries the SAME meaning as OpenChanges.
+type ReviewQueue struct {
+	// Changes are the open changes, newest first, up to Cap of them, each with its reviews.
+	Changes []QueuedChange
+	// TruncatedAtCap is true when the read returned exactly Cap changes (see OpenChanges).
+	TruncatedAtCap bool
+	// Cap is the page cap the read was bounded to.
+	Cap int
+}
+
+// QueuedChange is one open change of a ReviewQueue: the same fields ListOpenChanges reports,
+// plus the change's reviews when the snapshot carries all of them.
+//
+// ReviewsComplete is three-state honesty in a bool. TRUE means Reviews is the change's WHOLE
+// review set, in ReviewsAtHead's ascending order, read in the same round-trip as HeadSHA.
+// FALSE means the snapshot does NOT carry the full set — the change has more reviews than the
+// snapshot's per-change bound, or the backend cannot serve this change's reviews inside the
+// one query (see each backend) — and Reviews is then EMPTY. It never means "no reviews": the
+// caller reads that change per-item with ReviewsAtHead, so a missing or partial set can never
+// reduce to a verdict (the last-verdict-wins reductions would read a truncated set as a
+// different answer).
+type QueuedChange struct {
+	OpenChange
+	Reviews         []Review
+	ReviewsComplete bool
 }
 
 // ChangeStates is the set of change lifecycle states a ListChanges read is scoped to. It is a
@@ -766,6 +970,29 @@ type ChangeRef struct {
 	Title    string
 	Body     string
 	MergedAt string // RFC3339, "" unless State == MERGED
+	// Author is the change's author, Type per Account.Type (empty where unresolved). An author
+	// the forge does not report (a deleted account) keeps ID == 0, which is could-not-check.
+	// Consumer: cmd/deskread's `changes` kind (forge-neutral brief 33), for statusgen's autonomy
+	// authorship count (forge-neutral brief 18). omitzero keeps every list that predates this field
+	// byte-identical in the golden corpus.
+	Author Account `json:",omitzero"`
+	// BaseRef is the TARGET branch (GitHub baseRefName ↔ GitLab target_branch), EMPTY where the
+	// forge did not report one. Consumer: as Author, for statusgen's brief-flow review.
+	BaseRef string `json:",omitempty"`
+	// CrossRepo is CrossRepoSame or CrossRepoFork (the PullRequest.CrossRepo vocabulary), EMPTY
+	// where the read did not establish it — never CrossRepoSame by default.
+	CrossRepo string `json:",omitempty"`
+	// HeadRepo is the head branch's repository as `owner/name`, EMPTY when unreadable (a deleted
+	// fork, or a GitLab fork whose source project path is not read). It is never filled with the
+	// base repository by default.
+	//
+	// On GitHub CrossRepo and HeadRepo are two INDEPENDENT forge fields (isCrossRepository and
+	// headRepository). On GitLab they derive from ONE signal, the source/target project-id
+	// comparison (equal → CrossRepoSame with HeadRepo = the target path; different →
+	// CrossRepoFork with HeadRepo empty; either id missing → both empty), so a consumer must not
+	// count their agreement on GitLab as corroboration. Consumer: as Author, for statusgen's
+	// claim decay fork-spoof guard (forge-neutral brief 18).
+	HeadRepo string `json:",omitempty"`
 }
 
 // ChangeList is the result of a ListChanges read: the changes plus whether the bounded walk was
@@ -791,7 +1018,8 @@ type ChangeList struct {
 // IssueSummary is one open issue in the bulk issue-board read: the fields the issue lane
 // classifies on. Author.Login is the RENDERED login (a bot carries its "<slug>[bot]" suffix)
 // and Author.ID the permanent numeric id the trust gate pins on. CreatedAt is the escalation
-// clock's baseline (the question was posed then). Consumer: cmd/issueboard's fetchOpenIssues.
+// clock's baseline (the question was posed then). Consumers: cmd/issueboard's fetchOpenIssues,
+// and cmd/deskmonitor's inbound poll (number + UpdatedAt, the keyset its per-repo baseline holds).
 // The read returns ISSUES only, never changes (PRs/MRs): a forge that serves both from one
 // number sequence (GitHub) filters the changes out, so the caller never has to.
 type IssueSummary struct {
@@ -800,6 +1028,11 @@ type IssueSummary struct {
 	Author    Account
 	Labels    []string
 	CreatedAt string // RFC3339
+	// UpdatedAt is the issue's last-activity time (RFC3339, the forge's own `updated_at`): it
+	// moves on a new comment, which is how cmd/deskmonitor's inbound poll tells a resumed thread
+	// from a quiet one. omitempty keeps a summary whose forge reported none byte-identical in the
+	// forge golden corpus.
+	UpdatedAt string `json:",omitempty"`
 	// URL is the issue's human-facing page, EMPTY where the forge did not report one.
 	// Consumer: cmd/deskboard's cmdQueue, which prints the verify-gate issue's location in
 	// its JSON row. omitempty keeps a change that carries no URL byte-identical in the forge
@@ -807,6 +1040,108 @@ type IssueSummary struct {
 	// already carried, so the queue lane reuses ListOpenIssues (label-filtered client-side)
 	// rather than growing a redundant label-scoped list op.
 	URL string `json:",omitempty"`
+	// State is the issue's lifecycle word, `open` or `closed`, and ClosedAt its close time
+	// (RFC3339, EMPTY while open). Both are set by ListIssues (op 55) only; ListOpenIssues
+	// predates them and leaves them empty. omitempty keeps every existing golden byte-identical.
+	State    string `json:",omitempty"`
+	ClosedAt string `json:",omitempty"`
+}
+
+// The states IssueListQuery.State takes. Any other value is refused before a request exists.
+const (
+	IssueStateOpen   = "open"
+	IssueStateClosed = "closed"
+	IssueStateAll    = "all"
+)
+
+// IssueListQuery is ListIssues' (op 55) closed query: a STATED lifecycle state and at most ONE
+// label name. There is no free-form filter — the surface stays closed.
+//
+// A Label the repository does not carry is NOT refused: both forges answer an empty, complete
+// list, and ListIssues does not read the label set to tell "no such label" from "no issue
+// carries it". That is deliberate — a label created on first use (a fresh repository that has
+// never filed a needs-decision issue) is legitimately an empty population, and refusing it would
+// turn a true zero into could-not-check. A consumer for which a renamed or mistyped label must
+// not read as zero checks the label's existence itself before trusting an empty result.
+type IssueListQuery struct {
+	State string // IssueStateOpen | IssueStateClosed | IssueStateAll
+	Label string // optional; one label, never a comma-separated list
+}
+
+// Validate refuses an unknown state and a label carrying a comma, before any request.
+func (q IssueListQuery) Validate() error {
+	switch q.State {
+	case IssueStateOpen, IssueStateClosed, IssueStateAll:
+	default:
+		return Refused(fmt.Sprintf("issue list: unknown state %q (want open, closed or all)", q.State))
+	}
+	if strings.Contains(q.Label, ",") {
+		return Refused(fmt.Sprintf("issue list: label %q contains a comma, which the forge reads as a list of labels — one label only", q.Label))
+	}
+	return nil
+}
+
+// IssueList is ListIssues' result: the issues, newest first, plus whether the bounded walk
+// reached the end. Incomplete=true means PageCap pages were read with the forge still
+// paginating, so absence from Issues is could-not-check, never a confident negative.
+type IssueList struct {
+	Issues     []IssueSummary
+	Incomplete bool
+	PageCap    int
+}
+
+// The two values IssueStateEvent.Kind takes.
+const (
+	IssueEventClosed   = "closed"
+	IssueEventReopened = "reopened"
+)
+
+// IssueStateEvent is one close or reopen of an issue. Actor.Type follows Account.Type (empty
+// where unresolved); an actor the forge does not report keeps ID == 0 (could-not-check).
+type IssueStateEvent struct {
+	Kind      string // IssueEventClosed | IssueEventReopened
+	Actor     Account
+	CreatedAt string // RFC3339
+}
+
+// ClosingChange is one change the forge records as closing an issue. Repo is the change's OWN
+// `owner/name` (a change in another repository can close the issue, and a bare number would
+// then name the wrong change), EMPTY where unresolvable — and an EMPTY Repo clears the enclosing
+// IssueStateHistory's Complete, since a closer that cannot be placed is could-not-check, never a
+// clean answer. Merged is meaningful only while the enclosing IssueStateHistory is Complete: an
+// unreadable merged state clears Complete rather than reading as false.
+type ClosingChange struct {
+	Repo   string
+	Number int
+	Merged bool
+	Author Account
+}
+
+// IssueStateHistory is IssueStateEvents' (op 56) result. Complete=false means a connection
+// still paginated, or a closing change's merged state or own repository could not be read; the
+// consumer then reads the issue as could-not-check, never as "closed by no merged change".
+type IssueStateHistory struct {
+	Events         []IssueStateEvent
+	ClosingChanges []ClosingChange
+	Complete       bool
+}
+
+// ChangeCommits is ListChangeCommits' (op 57) result: the SHAs of the commits the change
+// introduced, in the forge's order, and whether the list is known to be whole. Consumers use
+// membership, not order; Complete=false means a SHA missing from the list is could-not-check.
+type ChangeCommits struct {
+	SHAs     []string
+	Complete bool
+}
+
+// LabelHistory is IssueLabelHistory's (op 64) result: every label add and remove event of one
+// issue, oldest first, INCLUDING an event whose label the forge no longer names (Name is empty,
+// the action, time and actor are kept). Complete=false means the walk stopped at its page bound
+// with the forge still paginating, so the list is a prefix of the history and a consumer must
+// read it as could-not-check, never as the whole.
+type LabelHistory struct {
+	Events   []LabelEvent
+	Complete bool
 }
 
 // TrustPayload is the parsed result of a trust-gate content-events read: the item's
@@ -818,10 +1153,16 @@ type IssueSummary struct {
 // not (it moves on unrelated events). Consumers: cmd/deskboard (prBlessed/issueBlessed),
 // cmd/issueboard (the trust gate + escalation clock), cmd/scanloop (the queueing trust gate).
 type TrustPayload struct {
-	BodyEdited time.Time
-	Events     []ContentEvent
-	Complete   bool
+	// BodyHistoryKnown distinguishes explicit provider provenance from omitted fields.
+	BodyHistoryKnown bool `json:"-"`
+	BodyEdited       time.Time
+	Events           []ContentEvent
+	Complete         bool
 }
+
+// forgeFileCommitsMax is the one-page ceiling of ListFileCommits (and the page size of
+// ListCommitChanges): both forges serve at most 100 entries per page.
+const forgeFileCommitsMax = 100
 
 // RepoCommit is one commit on a repository's default branch or at a ref: its sha, the
 // committed date, and the forge accounts the commit is ATTRIBUTED to. AuthorLogin/
@@ -835,7 +1176,11 @@ type TrustPayload struct {
 // Consumers: cmd/deskboard's fetchHeadCommit (the stall clock reads CommittedDate and the
 // committer/author login) and fetchRecentCommits (branch-health reads only SHA) — freeze
 // rule: these land with their call sites.
+// Review-history evidence is internal; it must not expand existing JSON result contracts.
 type RepoCommit struct {
+	Parents        []string      `json:"-"` // nil means the parent list was not read
+	Files          []ChangedFile `json:"-"`
+	FilesComplete  bool          `json:"-"` // a complete per-commit file read, including renames
 	SHA            string
 	CommittedDate  string // RFC3339, "" when the forge reported none
 	AuthorLogin    string // rendered account login, "" when unattributed / not resolved
@@ -848,13 +1193,15 @@ type RepoCommit struct {
 // is the forge's own divergence word (GitHub: identical | ahead | behind | diverged) — EMPTY
 // where the forge does not report one, which a caller reads as could-not-check rather than
 // inventing a verdict. Consumers: cmd/deskboard's changedFilesBetween (the MERGE-CURR
-// benign-merge check reads Files) and fetchBehindMain (the close-candidate hint reads BehindBy
+// benign-merge check reads complete commit history) and fetchBehindMain (the close-candidate hint reads BehindBy
 // and refuses on an empty Status) — freeze rule: this lands with its call sites.
 type RefComparison struct {
-	Files    []ChangedFile
-	AheadBy  int
-	BehindBy int
-	Status   string // "" when the forge reported none
+	Commits         []RepoCommit `json:"-"` // commits reachable from head but not base
+	CommitsComplete bool         `json:"-"` // all commits in the interval were read
+	Files           []ChangedFile
+	AheadBy         int
+	BehindBy        int
+	Status          string // "" when the forge reported none
 }
 
 // ChangeSearchResult is one open change (PR ↔ MR) found by an owner-wide search, carrying the
@@ -1330,6 +1677,37 @@ type Forge interface {
 	// number, title, rendered author, labels, creation time (see IssueSummary). Consumer:
 	// cmd/issueboard's fetchOpenIssues (freeze rule).
 	ListOpenIssues(repo ForgeRepo) ([]IssueSummary, error)
+	// ListIssues (op 55, forge-neutral brief 33) reads a repo's ISSUES in a stated state (open,
+	// closed or all), optionally filtered to ONE label, newest first, each summary carrying
+	// State and ClosedAt. It lists issues only — each backend excludes changes on the server
+	// side, so the page ceiling is spent on issues — and a walk that hits the ceiling with the
+	// forge still paginating comes back Incomplete=true with PageCap set, never a short list
+	// presented as the whole population. An unknown state, or a label containing a comma (which
+	// both forges read as a LIST of labels, silently widening the filter), is refused before any
+	// request. Consumer: cmd/deskread's `issue-list` kind; statusgen's issue metrics and
+	// decision latency are the consumers to come (forge-neutral brief 18).
+	ListIssues(repo ForgeRepo, in IssueListQuery) (*IssueList, error)
+	// IssueStateEvents (op 56, forge-neutral brief 33) reads ONE issue's close/reopen timeline (each
+	// event's kind, actor and time) and the changes the forge records as closing it (each one's
+	// own repository, number, merged flag and author). Complete=false when either connection
+	// still paginates, or when a closing change's merged state is unreadable or disagrees with
+	// its lifecycle state — Merged is never derived by default. Consumer: cmd/deskread's
+	// `issue-states` kind; statusgen's self-improvement human-touch count is the consumer to
+	// come (forge-neutral brief 18).
+	IssueStateEvents(repo ForgeRepo, number int) (*IssueStateHistory, error)
+	// ListChangeCommits (op 57, forge-neutral brief 33) reads the SHAs of the commits a change
+	// introduced, in the forge's order. Complete is true only when the read is known to hold
+	// every commit (GitHub: the listed count equals the change's own commit count, since the
+	// list stops at 250; GitLab: the walk ended below the page ceiling). Consumer: cmd/deskread's
+	// `change-commits` kind; statusgen's auto-flip owner check is the consumer to come
+	// (forge-neutral brief 18).
+	ListChangeCommits(repo ForgeRepo, number int) (*ChangeCommits, error)
+	// RepoDefaultBranch (op 58, forge-neutral brief 33) reads the repository's default branch. An
+	// empty answer is could-not-check, never "main". It is its own operation, not a
+	// PullRequest field, so GitLab's GetPullRequest does not gain a project read on every call.
+	// Consumer: cmd/deskread's `default-branch` kind; statusgen's auto-flip is the consumer to
+	// come (forge-neutral brief 18).
+	RepoDefaultBranch(repo ForgeRepo) (string, error)
 	// PRTrustEvents reads a change's trust-gate content events: the body-edit time plus every
 	// comment, review and review-comment with its author identity and edit time, bounded to a
 	// single page and reporting completeness (see TrustPayload). Consumer: cmd/deskboard's
@@ -1373,6 +1751,17 @@ type Forge interface {
 	// verdict may be superseded by any dated one and may never supersede one, which is the
 	// fail-closed placement.
 	ReviewsAtHead(repo ForgeRepo, number int) ([]Review, error)
+	// ReviewQueueSnapshot reads a repo's OPEN changes together with each change's reviews
+	// as ONE snapshot (see ReviewQueue): the access-pattern operation that replaces
+	// ListOpenChanges + one ReviewsAtHead per change. The caller passes only the typed repo
+	// coordinate — the query document is private to each backend, and nothing about it
+	// crosses this interface. The change fields are exactly ListOpenChanges'; the reviews,
+	// where QueuedChange.ReviewsComplete, are exactly ReviewsAtHead's (same fields, same
+	// ascending order); where not complete, the caller falls back to ReviewsAtHead for that
+	// change alone. A read failure fails the whole snapshot, like ListOpenChanges.
+	// Consumer: cmd/deskboard's actions sweep (sweepActionsRepo — freeze rule: this op lands
+	// with the call site that consumes it).
+	ReviewQueueSnapshot(repo ForgeRepo) (*ReviewQueue, error)
 	// ListChangedFiles returns a change's file entries (paginated, rename-aware). The
 	// caller reconciles len against PullRequest.ChangedFiles before trusting it complete.
 	ListChangedFiles(repo ForgeRepo, number int) ([]ChangedFile, error)
@@ -1391,14 +1780,25 @@ type Forge interface {
 	// Consumer: cmd/deskflip's checks-green condition (freeze rule: this read lands with the
 	// call site that consumes it).
 	RequiredStatusChecks(repo ForgeRepo, branch string) ([]string, error)
-	// IssueReactions returns the reactions/awards on an issue or PR (the admission gate
-	// surface: reaction ↔ award emoji).
+	// IssueReactions returns the reactions/awards on an issue or PR (reaction ↔ award
+	// emoji). The public-repo write gate does not read it: that gate is repository-scoped.
 	IssueReactions(repo ForgeRepo, number int) ([]Reaction, error)
-	// ListLabelEvents returns the change's label-APPLICATION events — the label name AND
+	// ListLabelEvents returns the change's label application/removal events — the label name AND
 	// the actor that applied it. The applier is the whole point: it is what separates a
 	// dispatcher's attestation from a self-applied stamp, so a read that returned only the
 	// names would make the model-capability floor unenforceable.
 	ListLabelEvents(repo ForgeRepo, number int) ([]LabelEvent, error)
+	// ListIssueLabelEvents reads issue stamp provenance without conflating an issue with a change.
+	ListIssueLabelEvents(repo ForgeRepo, number int) ([]LabelEvent, error)
+	// IssueLabelHistory (op 64, the label-removal hold brief) reads ONE issue's whole label add/remove
+	// history with each actor's login AND numeric id, keeping the events of a label the forge no
+	// longer names (an empty Name), and reports Complete=false when the walk reached its page
+	// bound. It is its own operation, not a change to ListIssueLabelEvents, because that read
+	// drops the unnamed events (deliberately: an unnamed stamp attests to nothing) and errors,
+	// rather than reports, a page bound, and seven current readers depend on exactly that. A
+	// transport or permission failure is an error. Consumers: cmd/deskread's `label-events`
+	// kind (statusgen's label-removal hold) and cmd/issueboard's un-briefed-row classifier.
+	IssueLabelHistory(repo ForgeRepo, number int) (*LabelHistory, error)
 	// ListComments returns the comments/notes on a change or issue, oldest first.
 	ListComments(repo ForgeRepo, number int) ([]Comment, error)
 	// ListCommentsTyped is ListComments for a caller that has STATED which kind of object
@@ -1411,7 +1811,10 @@ type Forge interface {
 	// which is exactly how an unread precondition becomes a satisfied one. This op routes
 	// on the stated kind, so an issue's thread is read from the issue. Consumer:
 	// cmd/deskclose's two-role superseded lane (freeze rule: it lands with that call site).
-	// An unknown kind is refused rather than defaulted.
+	// An unknown kind is refused rather than defaulted. Unlike ListComments, it returns the
+	// WHOLE thread of either kind or an error — never a first page presented as the thread —
+	// so an id lookup on the result (cmd/deskmerge's R-5 and cmd/deskclose's R-1 sign-off
+	// reads) can read "not found" as absence.
 	ListCommentsTyped(repo ForgeRepo, number int, kind TargetKind) ([]Comment, error)
 	// RepoVisibility returns the repo's visibility (private | public | internal | ...).
 	RepoVisibility(repo ForgeRepo) (string, error)
@@ -1430,11 +1833,28 @@ type Forge interface {
 	// failure the caller surfaces as could-not-check. Consumer: cmd/deskboard's
 	// fetchRecentCommits (freeze rule).
 	ListRecentCommits(repo ForgeRepo, limit int) ([]RepoCommit, error)
-	// GetCommit reads ONE commit's committed date and attributed author/committer accounts
+	// GetCommit reads ONE commit's committed date, attributed author/committer accounts,
+	// and (where available) parents and complete file paths for review currency.
 	// (GitHub `/repos/{o}/{r}/commits/{sha}` ↔ GitLab `/projects/:id/repository/commits/:sha`).
 	// The account-login fields are a per-field could-not-check where the forge resolves no
-	// account (see RepoCommit). Consumer: cmd/deskboard's fetchHeadCommit (freeze rule).
+	// account (see RepoCommit). Consumers: cmd/deskboard's fetchHeadCommit and
+	// changedFilesBetween (freeze rule).
 	GetCommit(repo ForgeRepo, sha string) (*RepoCommit, error)
+	// ListFileCommits returns up to limit commits reachable from ref that touched file, newest
+	// first (GitHub `/repos/{o}/{r}/commits?sha=&path=` ↔ GitLab `/projects/:id/repository/
+	// commits?ref_name=&path=`): ONE page, limit in [1, 100]. A result of exactly limit
+	// commits may be truncated, and a caller that needs the file's whole history treats it
+	// so. Only the SHA is load-bearing for the consumer; a commit's own date is never a merge
+	// time. Consumer: cmd/deskautolane's enactment gate, which walks the rulings register's
+	// history to find the latest change to a ruling's text (freeze rule).
+	ListFileCommits(repo ForgeRepo, ref, file string, limit int) ([]RepoCommit, error)
+	// ListCommitChanges returns the numbers of the changes (PRs ↔ MRs) the forge associates with
+	// commit sha (GitHub `/repos/{o}/{r}/commits/{sha}/pulls` ↔ GitLab `/projects/:id/
+	// repository/commits/:sha/merge_requests`), in any state. An empty list is the ANSWER "no
+	// change is behind this commit". The caller reads each change with GetPullRequest for its
+	// merged state, merge time and base. Consumer: cmd/deskautolane's enactment gate, whose
+	// time check keys on the merging change's merge time, never a commit date (freeze rule).
+	ListCommitChanges(repo ForgeRepo, sha string) ([]int, error)
 	// CompareRefs compares two refs and returns the files that differ plus the divergence
 	// counts and the forge's own status word (see RefComparison). A forge that does not report
 	// the divergence status/counts in the shape GitHub's compare API does returns

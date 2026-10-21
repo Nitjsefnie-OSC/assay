@@ -44,7 +44,29 @@ func (v *VerifyLoop) Land(r loopengine.Result) error {
 		return err
 	}
 
-	evidence := renderEvidence(r, v.now())
+	run, admitted := v.takeRun(r.Item)
+	if run.cleanup != nil {
+		defer run.cleanup()
+	}
+	if !admitted {
+		return fmt.Errorf("no dispatcher attestation for verifier result %s", r.Item.ID)
+	}
+	receipt, err := v.attestRun(r.Item, run.home, "")
+	if err != nil {
+		return err
+	}
+	if receipt.Binding != run.receipt.Binding || receipt.Issue != run.receipt.Issue {
+		return fmt.Errorf("verifier result run binding changed")
+	}
+	if receipt.Binding.Version == 2 {
+		payload := make(map[string]string, len(r.Item.Payload))
+		for key, value := range r.Item.Payload {
+			payload[key] = value
+		}
+		payload["root"] = receipt.EvidenceRoot(run.home)
+		r.Item.Payload = payload
+	}
+	evidence := renderEvidence(r, v.now()) + "\n" + receipt.EvidenceBinding() + "\n"
 
 	switch r.Verdict {
 	case loopengine.VerdictPass:

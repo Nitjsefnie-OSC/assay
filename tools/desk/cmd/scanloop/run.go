@@ -81,11 +81,33 @@ func cmdRun(args []string, stdout io.Writer) error {
 			return ParseMonitorOutput(string(raw)), nil
 		}
 	} else {
-		script, ferr := FindMonitorScript(o.root, o.monitor)
+		script, ferr := ResolvePoller(o.root, o.monitor)
 		if ferr != nil {
 			return ferr
 		}
 		fmt.Fprintf(stdout, "poller: %s (wrapped, never copied)\n", script)
+
+		// A poll ADVANCES the per-repo baselines, so a --dry-run that polled the real state dir
+		// would consume the inbound delta it previews and the next real run would find nothing.
+		// Under --dry-run the poller runs against a THROWAWAY COPY, made here — before anything is
+		// polled — and removed when the pass ends. A copy that cannot be made refuses the pass; it
+		// never falls back to the real dir.
+		pollDir := stateDir
+		if o.dryRun {
+			copyDir, cleanup, cerr := dryRunStateCopy(stateDir)
+			if cerr != nil {
+				return cerr
+			}
+			defer func() {
+				if rmErr := cleanup(); rmErr != nil {
+					fmt.Fprintf(stdout, "dry-run: WARNING — the throwaway state copy %s could not be removed: %v\n", copyDir, rmErr)
+				}
+			}()
+			pollDir = copyDir
+			fmt.Fprintf(stdout, "dry-run: the poller runs against a THROWAWAY COPY of the state dir (%s), "+
+				"removed after the pass — the real baselines in %s are not advanced\n", copyDir, stateDir)
+		}
+
 		source = func() (*MonitorReport, error) {
 			// Running the poller IS the arming step: with no baseline it seeds silently, and the
 			// pass that seeds deliberately reports no inbound rather than replaying the whole
@@ -96,7 +118,7 @@ func cmdRun(args []string, stdout io.Writer) error {
 			// repo. Resolved per pass so a long-lived session never hands over an expired file.
 			id := ResolveMonitorIdentity(scope)
 			renderMonitorIdentity(stdout, id)
-			return RunMonitor(script, stateDir, scope, id.TokenFiles, nil)
+			return RunMonitor(script, pollDir, scope, id.TokenFiles, nil)
 		}
 	}
 
@@ -128,7 +150,24 @@ func cmdRun(args []string, stdout io.Writer) error {
 	// The open scan PR is read ONCE per pass and handed to the single scan dispatch. It used to be
 	// a static closure consulted per item, which was harmless only because there is one scan
 	// dispatch — and was a live hazard the moment there was more than one.
-	openPR := o.openScanPR()
+	//
+	// It is DISCOVERED on the forge (discover.go) unless the operator named it with --scan-pr, the
+	// pass is --offline (no network read at all), or coalescing is disabled. Before discovery the
+	// flags were the only source, and the drain is invoked without them, so every tick cut a
+	// duplicate of the scan PR it should have joined.
+	openPR := func() (*OpenScanPR, error) { return o.openScanPR(), nil }
+	switch {
+	case o.openScanPR() != nil:
+		fmt.Fprintf(stdout, "open scan PR: #%d, as named by --scan-pr (the forge is not read for it)\n", o.scanPR)
+	case o.offline:
+		fmt.Fprintf(stdout, "open scan PR: NOT READ (--offline) — only a --scan-pr can be coalesced into\n")
+	case o.window < 0:
+		fmt.Fprintf(stdout, "open scan PR: not read — coalescing is disabled by configuration\n")
+	default:
+		window := CoalescePolicy{Window: o.window}.window()
+		openPR = onePerPass(func() (*OpenScanPR, error) { return discoverOpenScanPR(target, now, window) })
+		fmt.Fprintf(stdout, "open scan PR: read from %s at the scan dispatch — any open scan PR by this App, from any session\n", target)
+	}
 	loop := &ScanLoop{
 		Root:         o.root,
 		ScanTarget:   target,
@@ -137,7 +176,7 @@ func cmdRun(args []string, stdout io.Writer) error {
 		Scope:        scope,
 		Monitor:      source,
 		Probe:        probe,
-		OpenPR:       func() (*OpenScanPR, error) { return openPR, nil },
+		OpenPR:       openPR,
 		Emit:         stdout,
 		DryRun:       o.dryRun,
 		Now:          func() time.Time { return now },
@@ -299,7 +338,19 @@ func renderPassReport(w io.Writer, loop *ScanLoop) {
 	if parked := loop.Parked(); len(parked) > 0 {
 		fmt.Fprintf(w, "\nEMITTED — awaiting a routing decision from the model tier (%d):\n", len(parked))
 		for _, id := range parked {
+			kind, opened := loop.ParkedEvent(id)
 			fmt.Fprintf(w, "  %-28s route to exactly one of: %s\n", id, strings.Join(exitNames(), " · "))
+			// The land command for THIS event. --opened is the event half of the record key: an
+			// issue that already left once (say as a new issue) and is now parked as an update is
+			// a second event, and it is recorded against this time, not the first one's.
+			hint := "scanloop land --item " + id
+			if !opened.IsZero() {
+				hint += " --opened " + opened.UTC().Format(time.RFC3339)
+			}
+			if kind != "" {
+				hint += " --kind " + kind
+			}
+			fmt.Fprintf(w, "    record it: %s --exit <exit> --artifact <ref> --tier any|strong\n", hint)
 		}
 		fmt.Fprintf(w, "  these are NOT recorded as exited — the item leaves the front door when its exit is recorded, not when it is emitted.\n")
 	}
@@ -311,6 +362,13 @@ func renderPassReport(w io.Writer, loop *ScanLoop) {
 		fmt.Fprintf(w, "  leak check: CLEAN — every dispatched item left by a tracked exit\n")
 	} else {
 		fmt.Fprintf(w, "  leak check: %d item(s) with NO exit — %s\n", len(leaked), strings.Join(leaked, ", "))
+	}
+
+	// Post-write failures, each on its own line. The exit above stands — the artifact exists — but
+	// local state was left behind and an operator has to see it, so it is never folded into the
+	// ledger line or dropped.
+	for _, warning := range loop.Warnings() {
+		fmt.Fprintf(w, "  WARNING: %s\n", warning)
 	}
 
 	if rep := loop.Report(); rep != nil {

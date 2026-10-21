@@ -236,6 +236,19 @@ unresolved-argv rows (`allowlist.go:227,240`).
 | 30 | [Release-N cutover — ship, prove the narrowed reviewer on a live cell, then the operator narrows the grant](brief-30-cutover-and-lower-layer-proof.md) | 7 | M | todo | — | — |
 | 31 | [Remaining roles' write audit — what the desk, worker, verifier and loop roles actually write, measured after the reviewer change is live](brief-31-remaining-roles-write-audit.md) | 8 | M | todo | — | — |
 | 32 | [Release-N+1 deletion — the forge claim store is removed and an unset store key is refused](brief-32-forge-store-deletion.md) | 8 | M | todo | — | — |
+| 33 | [Forge reads for statusgen's remaining sites — four operations and their result fields, each consumed by a deskread kind](brief-33-forge-reads-for-statusgen-s-remaining-sites.md) | 1 | L | implemented | — | — |
+| 34 | [deskread CI workflow-token transport — an explicit, CI-only, read-only opt-in beside the App custody default](brief-34-deskread-ci-workflow-token-transport.md) | 1 | M | implemented | — | — |
+| 35 | [Human-ruling resolvers onto the read verb — the decision-record ruling check, the transcribe lanes' sign-off check and their verdict-issue read go through deskread; the two ruling checks accept only a User author, the verdict-issue read keeps its Bot pin, and none holds a credential of its own](brief-35-ruling-resolver-onto-the-read-verb.md) | 6 | M | todo | — | — |
+| 36 | [Importable fact reader SDK and first shared read](brief-36-importable-fact-reader-sdk-and-first-shared-read.md) | 1 | L | implemented | — | — |
+| 37 | [Scoped forge mirror with persisted freshness, coverage and polling repair](brief-37-scoped-forge-mirror-with-persisted-freshness-coverage-and-polling-repair.md) | 7 | L | todo | — | — |
+| 38 | [Forge event adapter, feedback observations and durable reevaluation demand](brief-38-forge-event-adapter-feedback-observations-and-durable-reevaluation-demand.md) | 8 | L | todo | — | — |
+| 39 | [Typed forge service contract and scoped client SDK](brief-39-typed-forge-service-contract-and-scoped-client-sdk.md) | 3 | M | todo | — | — |
+| 40 | [Authenticated forge serving and role executor custody](brief-40-authenticated-forge-serving-and-role-executor-custody.md) | 6 | L | todo | — | — |
+| 41 | [Write-through forge receipts and read-after-write projection](brief-41-write-through-forge-receipts-and-read-after-write-projection.md) | 8 | L | todo | — | — |
+| 42 | [SHA-bound source queries and immutable result caching](brief-42-sha-bound-source-queries-and-immutable-result-caching.md) | 7 | L | todo | — | — |
+| 43 | [Incremental forge indexes and dependency-aware invalidation](brief-43-incremental-forge-indexes-and-dependency-aware-invalidation.md) | 8 | M | todo | — | — |
+| 44 | [Shared Git object and fetch reuse qualification trial](brief-44-shared-git-object-and-fetch-reuse-qualification-trial.md) | 8 | M | todo | — | — |
+| 45 | [Forge service fault simulation and scoped cutover qualification](brief-45-forge-service-fault-simulation-and-scoped-cutover-qualification.md) | 9 | L | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -275,6 +288,55 @@ replacing 144 `git log` plus 62 `git blame` invocations), a memo over the 3,351 
 that today re-read 172 files up to 23 times each, and a batched object read. Forge-neutrality
 and speed are the same change here, not two asks: the reads that belong to a forge leave, and
 what is left is local.
+
+**33 sits in front of 18's last slice.** 18 consumes the frozen surface and adds no operation,
+but its precheck on #2025 found that part of statusgen's remaining forge-CLI sites ask
+for reads the surface does not carry: all-state issue lists with close times, an issue's closer
+and close/reopen history, a change's own commits, its merge commit, author and fork facts, per-file
+patches, and the repository's default branch. The routing on #2025 kept 18's row 3 whole and
+put those reads in their own brief under the freeze rule. 33 adds them as four operations plus
+result fields, each with both backends, goldens, inventory rows 55–58 and a `deskread` kind as its
+consumer, so `33 → 18`. 33 touches no statusgen file and no workflow, and it does not decide which
+identity CI reads under (#2253).
+
+**34 sits in front of 18's CI-lane sites.** Most of statusgen's remaining forge-CLI calls run
+only inside CI (`--corroborate`, `--auto-flip-model`, the transcribe lanes), under the
+workflow's own job token. `deskread` reads only as a minted desk App, and a CI job holds no
+desk-role custody for it to resolve, so 18's row 3 cannot reach its expected count (2 until 35 lands) for those sites. The
+driver's ruling on #2253 chose an explicit, opt-in `deskread` transport that reads with the
+job token, for read-only kinds only.
+34 adds it: a `--ci-workflow-token` flag, refused outside CI, refused for a personal or OAuth
+token, bound to the job's own repository, built on a default-deny forge that refuses every write
+method, and recorded in the envelope's identity. Under the flag in CI, `deskread` activates from
+the job's environment roster. Its threat model is accidental or ambient use in an honest CI job:
+against a caller who forges the CI environment, only the read-only forge and the closed
+`ciTransportKinds` read-kind set hold, and the identity record's repository and run id are
+unverified. It is gated human because it relaxes the no-ambient-token rule (ratchet 4 → 5),
+and it touches no statusgen file and no workflow, so `34 → 18`. 18 inherits five hand-offs,
+each named in 34's `consumers:`: move each CI-lane site onto `deskread --ci-workflow-token` (the three that 35 takes move there);
+add each kind those sites need to the closed `ciTransportKinds` set by reviewed diff; edit this
+repository's statusgen workflow to hand the job token over in the dedicated variable with the
+roster variables, never in a `pull_request_target` or `workflow_run` job; give each scaffolded
+adopter job that hands the token to `deskread` a read-only `permissions:` block (the
+release-download steps and the `regen` job, which commits the board, keep their scopes); and
+route cross-repository reads (which land in `partial`) to custody or could-not-check.
+
+**35 sits behind 18 and 33.** 18 moves no human-ruling resolver; 35 moves both, and the transcribe lanes'
+verdict-issue read with them. The first is
+the decision-record ruling resolver in `decisionruling.go`, including its `gh auth token`
+fallback. Moving its two reads onto `deskread` rewrites the inputs of the ruling-authenticity
+control (deleted-comment detection, the comment-to-issue binding, edit detection, the bot check)
+and the credential it reads under. The second is `ghCommentResolver` in `transcribescan.go`, the
+sign-off check both transcribe lanes' enactment gates read; moving it changes how the comment is
+found and where its author type comes from. The verdict-issue read, `ghVerdictIssueResolver` in
+`transcribeverdict.go`, feeds both lanes' author, signature and edit checks and takes its author
+type from the same source, so it moves with the sign-off read. Either resolver is enough to make the work its own brief,
+human-gated, needing an approved design record before dispatch. 35 consumes 33's comment fields
+and `issue` kind and the `issue` entry 18 adds to `deskread`'s CI-transport kind set, so
+`{18, 33} → 35`. 18's row 3 excludes `decisionruling.go` by path and counts the two lines left in the transcribe
+lanes, so its completion Expect is `2`: 18's row 19 pins the one in `transcribescan.go` to
+`ghCommentResolver`, and its row 20 the one in `transcribeverdict.go` to `ghVerdictIssueResolver`.
+35's row 5 runs the same count with no exclusion and takes it to 0.
 
 The chain is real, not conventional. 08's auto-flip has to recognise a reviewer identity on the
 configured forge, which is 07's roster-parity deliverable inside statusgen; 07's actor matching
@@ -419,6 +481,15 @@ findings and do not exist yet.
 
 - **Wave 1** — `forge-neutral/01`. The resolver, the per-forge custody binding, and the
   refusal contract. Everything else depends on it.
+- **Wave 1 (beside 01)** — `forge-neutral/33` (the `Forge` reads statusgen's remaining sites
+  need; depends on nothing, since the seam it extends already exists on `main`).
+- **Wave 1 (beside 01)** — `forge-neutral/34` (the CI workflow-token transport in `deskread`;
+  depends on nothing, since the read verb and the seam it builds on already exist on `main`).
+  18 depends on 08, 33 and 34 and stays in wave 5.
+- **Wave 1 (beside 01)** — `forge-neutral/36` (the importable fact-reader module and its first
+  shared read, human-gated; depends on nothing and unblocks nothing — its library-first
+  premise is ruled on #2395 for offline and frozen inputs only, `DR-forge-neutral-36`, and it
+  keeps its own human gate; no other brief waits on it).
 - **Wave 2** — `forge-neutral/02`, `03`, `04`, `05` (all depend only on 01, all
   parallelizable): identity, the two write-verb wiring briefs, and the claim layer.
 - **Wave 3** — `forge-neutral/06` (reads; depends on 01 + 03 for the established wiring
@@ -432,8 +503,11 @@ findings and do not exist yet.
   re-homes onto the desk-tools read verb). 18 sits in wave 5 rather than 4 by the tree's own
   derivation rule — a brief's `depends:` must point to strictly-earlier waves
   (`statusgen/brieffile.go:1492-1522`), and 08 is wave 4.
+- **Wave 6** — `forge-neutral/35` (both human-ruling resolvers and the verdict-issue read onto the read verb, human-gated; its
+  `depends:` names `forge-neutral/18` and `forge-neutral/33`).
 
-One-line path: `01 → 02 → 07 → 08 → {10, 11, 18}`.
+One-line path: `01 → 02 → 07 → 08 → {10, 11, 18}`, with `{33, 34} → 18` and `{18, 33} → 35`;
+`36` stands alone.
 
 **Reviewer write boundary (briefs 20–25, 28–32)** — waves are derived from `depends:` like
 every other brief here, so they interleave with the numbers above rather than restarting:
@@ -453,6 +527,18 @@ every other brief here, so they interleave with the numbers above rather than re
 
 One-line path: `20 → 21 → 23 → 24 → 28 → 29 → 30 → 32`, with 31 beside 32.
 
+**Forge mirror (non-CI R6, briefs 37–38)**: waves are derived from `depends:` on graph-execution
+briefs, so the numbers interleave with those above:
+
+- **Wave 7** — `forge-neutral/37` (scoped mirror, persisted freshness and coverage, conditional
+  refresh, polling repair; human-gated; depends on graph-execution/28, /29 and /19, and on the
+  implemented forge-neutral/33 and /36 and the verified desktools-v2/09 it builds on).
+- **Wave 8** — `forge-neutral/38` (authenticated event adapter, feedback observations and durable
+  reevaluation demand; human-gated; depends on 37 and on graph-execution/28, /29, /19 and /04).
+
+One-line path: `{graph-execution/28 → 29, graph-execution/19} → 37 → 38`, toward R7 once R7 has
+briefs.
+
 ## Shared conventions the briefs inherit
 
 - **Refusal, never fallback.** Every forge-touching path that cannot be served on the
@@ -468,3 +554,136 @@ One-line path: `20 → 21 → 23 → 24 → 28 → 29 → 30 → 32`, with 31 be
 - **No hand-built API call is evidence.** A pilot or Verify row satisfied by `curl` proves
   the forge works, not that the verbs do — which is precisely the gap
   [`pilot-report.md` §2](../forge-gitlab/pilot-report.md) records.
+
+## Library-first work — 2026-10-08
+
+Ruled on #2395 for offline and frozen inputs only (`DR-forge-neutral-36`): `forge-neutral/36`
+(human-gated) extracts the first SDK read slice. The ruling makes it eligible for pick-up and is
+not its sign-off. It blocks nothing. /18 keeps its dependencies and its `deskread` transport for
+every online read, and /35 retains its control-specific human gate. Final no-forge-CLI
+enforcement in desktools-v2/08 waits for both /18 and /35.
+See [the component contract](../../library-first.md). Existing completed history is unchanged.
+
+## Non-CI coordination applicability — 2026-10-13
+
+The ratified non-CI target (medici-finance/assay#2500, revision 23f655f5d) puts runtime
+coordination for the non-CI runtime in the cell's PostgreSQL database, owned by
+graph-execution/19 with operator incarnation in graph-execution/16 (package R2 in the
+[amendment manifest](../../proposals/non-ci-architecture/20-amendment-manifest.md), lines 49 and
+101–102). This note dispositions this stream's claim store against that record. **It is an
+applicability note only.** No brief here is retired, reprioritised or re-gated, and no Task,
+Verify or Evidence text changes.
+
+- **Supported legacy path.** forge-neutral/22–32 (claim readers on the seam, the file and
+  served claim stores, their guards, scaffold defaults, docs, cutover and the release-N+1
+  deletion) stay the supported claim path for the existing desk tools, building on the
+  implemented seam (/20, /21). Urgent claim fixes continue to land here.
+- **Not the coordination owner.** This claim store is not the non-CI runtime's lease or
+  attempt authority. No `workflow/` or `loopadmin/` code binds to it as lease authority; the
+  coordination record lives in graph-execution/19's store.
+- **/32 keeps its gate.** Its human gate and scope are unchanged.
+- **Retirement is decided later.** Whether this path is retired, migrated or adapted is decided
+  in R8 against the installed-consumer inventory, the release and pin migration and the recovery
+  window ([delivery sequence](../../proposals/non-ci-architecture/16-delivery-sequence.md),
+  lines 98–104). Until then a command break fails clearly and never falls back silently to a
+  different state store.
+
+## Forge mirror (non-CI R6) — 2026-10-13
+
+The maintainer ratified the whole non-CI target on medici-finance/assay#2500 (23f655f5d). The
+step-3 manifest (`docs/proposals/non-ci-architecture/20-amendment-manifest.md`, landed in
+medici-finance/assay#2739) gives R6, the forge mirror and shared observations, to this stream as
+new briefs. `forge-neutral/37` and `forge-neutral/38` are those briefs. Approval activates nothing;
+activation stays gated per `docs/proposals/non-ci-architecture/16-delivery-sequence.md`.
+
+- **R1 and R2 edges.** Both depend on graph-execution/28 and /29 (R1) and on graph-execution/19,
+  the store the R2 follow-up amends to PostgreSQL coordination. 38 also depends on
+  graph-execution/04 for the intent and outbox handoff R2 amends. Neither brief builds a store,
+  a demand table or an outbox of its own. Each stops with NEEDS_CONTEXT if the R2 amendment it
+  needs has not landed.
+- **forge-neutral/18 is not rebound.** /18 stays in progress with its Task, Verify, sites,
+  dependencies and `deskread` transport unchanged. Each new brief states this in a dated note
+  and pins it with a Verify row that keeps statusgen off every `forgeread` subpackage.
+- **Toward R7.** R7 has no owner yet, so 37 and 38 name no R7 brief in `unblocks:` (the lint
+  refuses an edge to a brief that does not exist). Each carries a dated note naming what R7
+  consumes. When R7's briefs are authored, their `depends:` add the inverse edge here.
+- **Frozen surface.** 37 adds exactly two read operations to the frozen inventory on both
+  backends. Their consuming call site is the mirror source composition, not a verb, and 37's
+  human review covers that. 38 adds no operation.
+
+## Write-through forge service and source queries — 2026-10-14
+
+Extend the existing R6 mirror/event owners with the bounded Scion-inspired architecture
+amendment in the accompanying architecture PR. It supplies caller/executor authentication,
+write-through receipts, exact-SHA queries, immutable reuse and incremental query indexes.
+The query database stays view-only to consumers; provider-confirmed effects update it through
+the existing effect ledger. GitHub/GitLab remain authoritative, and no role gains another's
+credential or approval authority. Private cached content, existence and counts require current
+permission plus the exact source admission. Approval/implementation activates nothing.
+
+The existing R6 draft is merged with main's landed R2 amendments in this authoring branch;
+37 is wave 7 and 38 is wave 8. Reciprocal edges are unioned without changing historical Task,
+Verify, Evidence, human retention decisions or dated source accounts. This resolves the prior
+merge-order prerequisite; it does not certify any R1/R2 implementation or deployed runtime.
+
+| Brief | Bounded delivery | Current implementation state |
+|---|---|---|
+| 39 | Typed service contract and credential-free client surface | Authored; no service implementation |
+| 40 | Authenticated serving and isolated role executor | Authored; needs current incarnation/ownership contract |
+| 41 | Confirmed write receipts, mirror transaction and observation-token reads | Authored; depends on qualified mirror/store/effect implementations |
+| 42 | Exact-SHA FileAt/Diff/MergeBase and immutable result reuse | Authored; existing Git readers are reuse input |
+| 43 | Incremental derived indexes with input/access/time invalidation | Authored; domain evaluators unchanged |
+| 44 | Shared Git-object/fetch reuse experiment and go/no-go report | Authored; no production daemon authorized |
+| 45 | Served fault/recovery/cutover qualification | Authored; actual R3/R4 proofs required before write activation |
+
+**Critical path:** R1 contracts/regression and R2 store -> 37 mirror -> 41 write-through -> 45.
+Parallel authority path: graph-execution/16 -> 40 -> 41; source path: 39 -> 40 -> 42 ->
+43/44 -> 45. Event 38 also feeds 45. Contract 39 is the independently useful first delivery;
+a source-query fixture needs no live forge, cell deployment or newly provisioned credential.
+The real managed-service blockers are qualified R1/R2 and R3/R4 custody, not a shared-cache
+performance experiment. The trial may complete with a no-go result.
+
+**Waves:** 39 at 1; 40 at 6; 37 and 42 at 7; 38, 41, 43 and 44 at 8; 45 at 9. These numbers
+follow current cross-stream dependencies; workers refresh them at dispatch. No new capacity
+allocation is requested here, and in-progress forge-neutral/18 remains unchanged. The new
+local surface is a narrow R6/R4 capability; full remote OIDC ingress/cockpit remains R7.
+
+**Rollout:** qualify contracts and synthetic boundaries; shadow authorized reads; qualify
+real local SQL/executor/recovery; inventory old publishers; accept read and write release
+separately; perform one operator-controlled repository cutover. No direct/raw fallback on
+service failure, no SQL UPDATE publication path and no inferred permission from cache warmth.
+
+### Verification packaging correction — 2026-10-14
+
+The mirror/event source checker and compiler fixtures now live in
+`tools/forge-import-check/`, outside the shipped desk tree. Their exact Verify commands
+are updated (brief versions 2); the source-only harness still compiles and runs every
+selected literal/escaped import case. The desk bridge reads this neutral helper path,
+and its CI registry declares the whole stream-root input without publishing a withheld
+stream name. Disclosure/secret guards retain their rules and negative controls. These
+command-path corrections supersede the earlier unchanged-Verify statement for these two
+rows only; existing human decisions and historical Evidence remain intact.
+
+## Workflow-efficiency contract amendment — 17 October 2026
+
+The approved workflow-efficiency spec adds review/issue consumer acceptance to /37–45. /39 maps the qualified desk-tools/39 contract through a legal public API; /45 requires desk-tools/43–44 caller/cost qualification. Direct-reader /38–44 in desk-tools do not depend on this service path. See the [delivery map](../../desk-workflow-efficiency-change-map.md#authored-delivery-routing). Existing Evidence and activation gates remain unchanged.
+
+## Performance reuse — 2026-10-16
+
+The immediate local lane remains desktools-v2/58–62 plus statusgen/26. This stream keeps
+the shared online ownership: /37 refresh coalescing and coverage, /38 event hints, /40
+isolated role executors, /43 incremental recomputation, /44 Git reuse trial and /45
+served qualification. /40 now explicitly consumes /58–59's internal provider; /45 consumes
+/62's matched workload. Their existing later waves and activation gates remain. No
+local credential/startup fix is made dependent on the service or PostgreSQL.
+
+## Query/cache performance observations — 19 October 2026
+
+The [perf-v3 boundary contract](../../performance-attribution-spec.md#querycache-service-and-passthrough-boundaries)
+uses /37–45's existing service owners. /39 defines typed client diagnostic context, /37–38
+refresh/poll/event origins, /40–41 service/executor/passthrough, /42–43 query/cache outcomes
+and /45 the served 50-query/three-page/coalescing/report flow. Client, handler and provider
+measurements stay separately named; shared upstream cost is observed once and missing
+instrumentation is a gap. These remain planned todo packages at inspected main 2e02111ed,
+not claims of deployment. Reuse /63–65's local contract/adapters without creating a new
+measurement service or making local v3 depend on the future forge service.

@@ -3,6 +3,9 @@ package main
 import (
 	"strconv"
 	"strings"
+
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
 // verifyrows.go — parse a brief's `## Verify` table into typed rows the DETERMINISTIC
@@ -15,8 +18,12 @@ import (
 // (the verify.d convention).
 type verifyRow struct {
 	Num     int
+	ID      deskkit.VerifyRowID
 	Class   string // check | check:ci | gate:model | gate:human
 	Command string
+	// CommentLed is verifycmd.CommentLed of the raw cell: why the row's command is
+	// only a shell comment, or "". runBriefRows never executes such a row (#2684).
+	CommentLed string
 }
 
 // runnerExecuted reports whether this class is one the deterministic runner executes.
@@ -30,16 +37,24 @@ func (r verifyRow) runnerExecuted() bool {
 // located by header NAME (#, class, command), never position — mirroring row-classes.md and
 // the statusgen parser — so inserting a Class column disturbs nothing. A table with no
 // `Class` column is legacy: every row defaults to `check`. Rows whose `#` cell is not an
-// integer (a separator, a stray line) are skipped.
+// integer are outside verdict-v1; the scheduling reader retains exact suffixed IDs.
 func parseVerifyRows(briefContent string) []verifyRow {
-	return parseVerifyRowsIn(extractSection(briefContent, "## Verify"))
+	// Preserve the exact historical Atoi execution contract, independently of the
+	// stricter canonical identities required before scheduling can reuse observations.
+	return parseVerifyRowsMode(extractSection(briefContent, "## Verify"), false)
 }
 
 // parseVerifyRowsIn parses the rows of an already-extracted Verify SECTION body. It is the
 // shared half of parseVerifyRows (exact `## Verify` heading, the runner's contract) and the
 // per-row content derivation in briefscan.go, which reads the qualifier-aware extractVerify
 // section — so both read the Command cell by the same header-named rule.
+// ID retains an exact positive number plus optional ASCII letter suffix; Num is
+// populated only for the separate integer-only verdict-v1 execution contract.
 func parseVerifyRowsIn(section string) []verifyRow {
+	return parseVerifyRowsMode(section, true)
+}
+
+func parseVerifyRowsMode(section string, scheduling bool) []verifyRow {
 	if section == "" {
 		return nil
 	}
@@ -70,9 +85,23 @@ func parseVerifyRowsIn(section string) []verifyRow {
 				}
 				return ""
 			}
-			num, err := strconv.Atoi(cell(numCol))
-			if err != nil {
-				continue
+			rawID := cell(numCol)
+			id, exact := deskkit.ParseVerifyRowID(rawID)
+			num, numErr := strconv.Atoi(rawID)
+			if scheduling {
+				if !exact && rawID == "" {
+					continue
+				}
+				// Keep every nonempty noncanonical cell in the inventory. Reuse must surface
+				// them as could-not-check, never silently omit an original row.
+				if !exact {
+					id = deskkit.VerifyRowID(rawID)
+				}
+			} else {
+				if numErr != nil {
+					continue
+				}
+				id = deskkit.VerifyRowID(rawID)
 			}
 			class := "check"
 			if hasClass {
@@ -80,10 +109,16 @@ func parseVerifyRowsIn(section string) []verifyRow {
 					class = c
 				}
 			}
+			// verifycmd.Lift honours the `cmd:` marker (spec §4.4, #1805) and
+			// otherwise unwraps a fully-backticked cell exactly as before.
+			// verifycmd.CommentLed judges the RAW cell, not the lift: a cell whose
+			// first span is a comment can lift (whole) as a runnable no-op (#2684 S1).
 			rows = append(rows, verifyRow{
-				Num:     num,
-				Class:   class,
-				Command: stripInlineCode(cell(cmdCol)),
+				Num:        num,
+				ID:         id,
+				Class:      class,
+				Command:    verifycmd.Lift(cell(cmdCol)),
+				CommentLed: verifycmd.CommentLed(cell(cmdCol)),
 			})
 		}
 		return rows
@@ -113,14 +148,4 @@ func extractSection(content, heading string) string {
 		out = append(out, l)
 	}
 	return strings.Join(out, "\n")
-}
-
-// stripInlineCode unwraps a `…` inline-code span from a Command cell so the runner sees the
-// bare command; a cell with no wrapping backticks passes through unchanged.
-func stripInlineCode(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && strings.HasPrefix(s, "`") && strings.HasSuffix(s, "`") {
-		return strings.TrimSpace(strings.Trim(s, "`"))
-	}
-	return s
 }

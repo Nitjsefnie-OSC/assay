@@ -623,7 +623,9 @@ func newBriefStreamSchema(streamDir string) string {
 		if err != nil || !ok {
 			continue
 		}
-		if bf.Schema == briefSchemaV2 {
+		if isBriefV2Family(bf.Schema) {
+			// A brief-v3 sibling is a brief-v2 stream too: brief-v3 exists only to
+			// carry a withdrawal, so a NEW brief is still authored as brief-v2.
 			return briefSchemaV2
 		}
 	}
@@ -730,7 +732,7 @@ func newBriefRegenReadme(readme string, rows []genRow) (string, error) {
 // writing a second one: no code span → not a row; a code span that tokenizes to
 // nothing → not a row; an unsubstituted placeholder → not a row.
 func usableVerifyCommand(cell string) error {
-	cmd := codeSpan(cell)
+	cmd := verifyCommand(cell)
 	if strings.TrimSpace(cmd) == "" {
 		return fmt.Errorf("the command carries no code span (wrap it in backticks so a verifier can lift the literal command)")
 	}
@@ -765,7 +767,7 @@ func usableVerifyCommand(cell string) error {
 // bash escapes); the "use forward slashes" rule for hand-authoring lives in the
 // author-brief skill and brief-template prose, where a human reads it in context.
 func looksWindowsNative(cell string) bool {
-	for _, t := range tokenizeCommand(codeSpan(cell)) {
+	for _, t := range tokenizeCommand(verifyCommand(cell)) {
 		if t.op {
 			continue
 		}

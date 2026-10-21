@@ -35,21 +35,31 @@ func renderWalk(w io.Writer, r rendered) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Reply shape")
 	fmt.Fprintln(w, "  "+r.Reply)
+	fmt.Fprintln(w, "  command: "+commandOrFill(r.Command))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Verification")
 	fmt.Fprintln(w, "  "+r.Verification)
+}
+
+// commandOrFill is the oracle's `.command // "not derivable — desk to fill"`: an item
+// built without a command still renders the honest fallback, never an empty line.
+func commandOrFill(c string) string {
+	if c == "" {
+		return commandNotDerivable
+	}
+	return c
 }
 
 // runWalk resolves the repo queue, builds the requested 1-based item's detail + rendering,
 // and prints it. It returns the process exit code (deskkit's shared taxonomy — see
 // summary.go) and writes to stdout/stderr exactly as the oracle's walk case does: the
 // block, a blank line, then the terminating summary.
-func runWalk(stdout, stderr io.Writer, repos []string, walkItem int, now time.Time) int {
+func runWalk(stdout, stderr io.Writer, repos []string, walkItem int, now time.Time, observers ...deskkit.RequestObserver) int {
 	if err := validateRepos(repos); err != nil {
 		fmt.Fprintln(stderr, err)
 		return deskkit.ExitCodeOf(err)
 	}
-	items, failures := fetchQueue(repos)
+	items, failures := fetchQueue(repos, observers...)
 	for _, f := range failures {
 		fmt.Fprintf(stderr, "deskinbox: QUERY FAILED for %s: %v\n", f.Repo, f.Err)
 	}
@@ -72,7 +82,7 @@ func runWalk(stdout, stderr io.Writer, repos []string, walkItem int, now time.Ti
 	if owner, name, ok := splitRepo(it.Repo); ok {
 		fr = deskkit.ForgeRepo{Owner: owner, Name: name}
 	}
-	d := fetchDetail(fr, it.Number)
+	d := fetchDetail(fr, it.Number, observers...)
 	r := buildRendered(it, d, k, len(items), now)
 
 	renderWalk(stdout, r)

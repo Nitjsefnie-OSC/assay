@@ -8,18 +8,20 @@ import (
 )
 
 func main() {
-	// The roster class is an EXPLICIT declaration, never the zero value by accident. This tool
-	// ACTS on the roster — it applies the trust gate and writes through the sanctioned verbs — so
-	// ciEligible=false: the config-home file only, never the environment, in CI as well as locally.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	// Echo the effective trust/authority configuration before doing anything. The roster, the scan
-	// scope and the write boundary live in settings rather than in a diff, so the RUN is the only
-	// place a change to them becomes visible — and a NARROWING has to be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("scanloop", nil, os.Args[1:], func([]string) int {
+		// The roster class is an EXPLICIT declaration, never the zero value by accident. This tool
+		// ACTS on the roster — it applies the trust gate and writes through the sanctioned verbs — so
+		// ciEligible=false: the config-home file only, never the environment, in CI as well as locally.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		// Echo the effective trust/authority configuration before doing anything. The roster, the scan
+		// scope and the write boundary live in settings rather than in a diff, so the RUN is the only
+		// place a change to them becomes visible — and a NARROWING has to be as visible as a widening.
+		deskkit.EchoEffectiveConfig(os.Stderr)
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:])
+	}))
 }
 
 func run(args []string) int {
@@ -36,6 +38,10 @@ func run(args []string) int {
 		return deskkit.ExitOK
 	}
 
+	// What the SESSION declared, read before the default below fills it in. 'land' writes the
+	// declared loop into the record as triager_role, so it must see the session's own declaration:
+	// the drain's default is not a statement about who decided a judgment exit.
+	declaredLoop := os.Getenv("DESK_LOOP")
 	// Declare the loop identity BEFORE Guard so the per-loop stop flag is scoped to this drain.
 	// An unrecognised name is could-not-check inside Guard, never "no flag held".
 	if os.Getenv("DESK_LOOP") == "" {
@@ -61,6 +67,12 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, err.Error())
 		}
 		return deskkit.ExitCodeOf(err)
+	case "land":
+		err := cmdLand(args[1:], declaredLoop, os.Stdout)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
+		return deskkit.ExitCodeOf(err)
 	default:
 		fmt.Fprintf(os.Stderr, "scanloop: unknown subcommand %q\n\n%s", args[0], usage)
 		return deskkit.ExitRefused
@@ -76,6 +88,9 @@ USAGE:
                 [--now <RFC3339>]
   scanloop run  --root <repo> [--worktree-base <abs dir>] [--offline --inbound <file|->]
                 [--dry-run] [everything 'plan' takes]
+  scanloop land --item <owner/repo#N> --exit <exit> --artifact <ref> --tier any|strong
+                [--opened <RFC3339>] [--detail rejected|watching] [--kind <reason>]
+                [--dispatch-ref <ref>]
   scanloop --version
 
 'plan' is READ-ONLY. It prints the inbound queue — surface, item, lane, age, claim state — the
@@ -87,8 +102,29 @@ Pass the standing window's captured poll with --inbound.
 'run' is the drain. It arms the poller if it is not armed (arming and draining are the same act:
 the seeding pass reports no inbound rather than replaying the backlog), applies the trust gate
 BEFORE anything is queued, executes the dispatch lanes and records exactly ONE tracked exit per
-item. --dry-run prints every lane step without running it; --offline takes the pass's events from
---inbound and opens no network read at all.
+item. --offline takes the pass's events from --inbound and opens no network read at all.
+
+Every exit 'run' lands also appends one intake-exit-v1 record (decided_by: mechanical) to
+<state dir>/intake-exits.jsonl, after the audit 'land' line. --dry-run writes neither. A record that
+is refused or cannot be written never costs an audit line or another batch member's exit: the pass
+lands and audits every member, then exits 5 or 6 naming each record not written.
+
+'land' records a JUDGMENT exit: run it after routing a parked item, with the 'record it:' command
+the EMITTED report prints. It refuses (exit 5), before anything is written, an exit outside the five
+(unrouted included), an artifact that is not a typed ref (<stream>/<NN>, owner/repo#N, #N, F-<slug>,
+scan-pr:owner/repo), a tier other than any or strong, a --kind outside the classifier's reasons, a
+--dispatch-ref or --opened that does not parse, and a $DESK_LOOP the session did not declare or that
+is not a canonical desk loop name. The record file holds one exit per inbound EVENT (item, compared
+without regard to case, plus --opened): a DIFFERENT exit for the same event is refused and the first
+stands; the same exit again is a no-op (exit 0). It writes the audit 'land' line, then the record
+(decided_by: judgment). Schema: spec/intake-exit-v1.md.
+
+--dry-run prints every lane step without running it, and it does not advance the poller's per-repo
+baselines. A live dry-run polls a THROWAWAY COPY of the state dir, so the preview starts from the
+real baselines and reports the real delta, and the copy is removed when the pass ends. If the copy
+cannot be made (an unreadable entry, a symlinked baseline, no temp dir), the pass is refused with
+exit 5 before anything is polled. It never falls back to the real dir. With --offline --inbound
+there is no poll at all, so there is nothing to copy.
 
   the five tracked exits   placeholder · bug · finding · needs-decision · rejected-watching
                            An item that lands with none of them, or with two, is a refusal.
@@ -98,6 +134,11 @@ item. --dry-run prints every lane step without running it; --offline takes the p
   the coalesce window      An open scan PR younger than the window absorbs the batch; at or past it
                            the PR stays sealed at a stable head and a fresh one is cut. An age that
                            cannot be read never coalesces.
+  the open scan PR         'run' READS it from the scan target: the youngest open draft scan PR by
+                           this App, whichever session opened it. --scan-pr names it instead and
+                           skips the read; --offline reads nothing, so only --scan-pr coalesces. An
+                           open-PR list that cannot be read refuses the scan dispatch (exit 6) rather
+                           than cutting a possible duplicate. 'plan' does not read the forge.
   the flip boundary        A scan PR that has been flipped ready-for-human (--scan-pr-state ready) is
                            push-quiet: a post-flip push re-signals the review loop, so a new batch
                            opens the NEXT scan PR regardless of the window. A draft/ready state that
@@ -116,6 +157,10 @@ item. --dry-run prints every lane step without running it; --offline takes the p
                            placeholder lands here under a repo-stemmed name.
   blind never exits 0      A degraded repo, a suppressed burst, an unarmed poller, or a trust read
                            that could not be taken all make the pass unverifiable.
+  the poller               'run' arms the deskmonitor verb ('deskmonitor inbound') from PATH. A
+                           missing verb is unverifiable, never an empty queue. --monitor <path.sh>
+                           or ASSAY_INBOUND_MONITOR arms the bash oracle inbound-monitor.sh instead
+                           (parity mode), through a bash resolved from PATH.
 
 Stop flags are honoured on every cycle boundary, precedence DISABLED > STOP > STOP.` + LoopName + `.
 

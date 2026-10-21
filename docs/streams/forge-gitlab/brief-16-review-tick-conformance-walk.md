@@ -80,9 +80,7 @@ converts each into a verdict an issue can be closed on, or into a named residue 
 new brief.
 
 files:
-- `docs/streams/forge-gitlab/pilot-report.md` — a review-tick appendix: the per-verb conformance
-  table, the per-issue close-out verdicts, and the negative-path results. No transcripts, no
-  host names, no credentials, no project identifiers beyond what the report already carries.
+- `docs/streams/forge-gitlab/pilot-report.md` — a review-tick appendix: the per-verb conformance table, the per-issue close-out verdicts, and the negative-path results. No transcripts, no host names, no credentials, no project identifiers beyond what the report already carries.
 - `docs/streams/forge-gitlab/README.md` — the status row and the finish-line proven-on date.
 - `changelog/forge-gitlab-16-review-tick-conformance-walk.md` (planned).
 
@@ -144,7 +142,7 @@ Options:
    project, so the blast radius is smaller but not zero, and the resulting table has to say which
    steps were narrowed.
 
-Default if no answer: none — the walk blocks until answered. It cannot be started on an assumed
+Default if no answer: none — blocks until answered. The walk cannot be started on an assumed
 project or an assumed credential.
 
 ## Edition

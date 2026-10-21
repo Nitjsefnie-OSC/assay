@@ -45,15 +45,19 @@ func TestForgeSurfaceUnchangedByDeskread(t *testing.T) {
 		"CompareRefs", "CreateDraftChange", "DeleteRef", "EditChange", "EditComment",
 		"FileIssue", "GetCommit", "GetIssue", "GetIssueTyped", "GetPullRequest",
 		"IssueContentEvents", "IssueReactions", "IssueTrustEvents", "ListChangedFiles",
-		"ListChanges", "ListComments",
-		"ListCommentsTyped", "ListLabelEvents", "ListLabels", "ListOpenChanges",
+		"ListChanges", "ListComments", "ListCommitChanges", "ListFileCommits",
+		"ListCommentsTyped", "ListIssueLabelEvents", "ListLabelEvents", "ListLabels", "ListOpenChanges",
 		"ListOpenIssues", "ListRecentCommits", "ListWorkflowFiles", "MarkReadyForReview",
 		"MatchingRefs",
 		"OpenChangeForBranch", "OpenMergeHold", "PRTrustEvents", "PostComment",
 		"PostCommentTyped", "PostReview", "PushTransportHint", "ReadFile", "ReadMergeHold",
 		"RefExists", "ReopenIssue", "RepoHardeningRead", "RepoVisibility",
-		"RequiredStatusChecks", "ReviewsAtHead", "RunStatus", "RunWorkflow", "SearchIssues", "SearchOpenChanges",
+		"RequiredStatusChecks", "ReviewQueueSnapshot", "ReviewsAtHead", "RunStatus", "RunWorkflow", "SearchIssues", "SearchOpenChanges",
 		"SetMergeHold", "WriteFile",
+		// Ops 55-58, added under the freeze rule by forge-neutral brief 33 with deskread kinds as consumers.
+		"ListIssues", "IssueStateEvents", "ListChangeCommits", "RepoDefaultBranch",
+		// Op 64, added under the freeze rule by the label-removal hold brief with deskread's `label-events` kind as its consumer.
+		"IssueLabelHistory",
 	}
 	sort.Strings(want)
 
@@ -73,10 +77,21 @@ func TestForgeSurfaceUnchangedByDeskread(t *testing.T) {
 	// Re-based 5→6 by the credfence balancing-loops work: its preflight ambient-identity
 	// check legitimately ADDED one forge-CLI permit (internal/deskkit/preflight.go's
 	// ambientLoginProbe reads `gh api user` to learn the ambient identity — the D2 identity
-	// layer that cannot route through the token-minting interface). That is a real, reviewed
-	// widening of the permit list, not the silent deskread drift this row guards against, so the
-	// base moves with it — exactly the "re-base in whatever change legitimately moved it" this
-	// test's own message names.
+	// layer that cannot route through the token-minting interface; #1528). That is a real,
+	// reviewed widening of the permit list, not the silent deskread drift this row guards
+	// against, so the base moves with it — exactly the "re-base in whatever change legitimately
+	// moved it" this test's own message names.
+	//
+	// Re-based 6→7 by the deskapps manifest-flow installer (#1260): its driver-ruled permit
+	// cmd/deskapps/identity.go::runGH::gh reads the signed-in `gh auth` login before any App
+	// token can exist. 7 = the #1528 ambientLoginProbe row plus the #1260 runGH row on top of
+	// the five pre-existing permits; the same two rows forgeban's allowedInvocationCeiling cites.
+	//
+	// Re-based 7→6 by desktools-v2/03 (#2025, under the read-path ruling on #1911): deskmerge's
+	// reads moved onto a minted App token — minted for the repository's installation and valid for
+	// all of it — and its cmd/deskmerge/exec.go::runGH::gh permit was REMOVED with the
+	// reach-around — a narrowing of the permit list, re-based in the change that made it, as this
+	// test's own message asks.
 	const baseCeiling = 6
 	if c := forgeban.Ceiling(); c != baseCeiling {
 		t.Fatalf("forgeban.Ceiling() = %d, want %d — this diff must not move the shell-exec ban's "+

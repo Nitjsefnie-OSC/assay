@@ -72,9 +72,12 @@ func dispatchPromptOriginRC(t *testing.T, origin, kit, item string, extra ...str
 	promptFile := filepath.Join(t.TempDir(), "prompt.md")
 	args := []string{item, "--root", root, "--repo", allowedRepo, "--kit", kit,
 		"--dry-run", "--prompt-file", promptFile}
+	if kit == "verifier" {
+		args = append(args, "--model", "gpt-6-astra", "--brief", "spec.md")
+	}
 	args = append(args, extra...)
 	rc := run(args)
-	body, err := os.ReadFile(promptFile)
+	body, err := os.ReadFile(emittedPathFor(promptFile))
 	if err != nil {
 		// No prompt file is the expected outcome of a refusal; return the code so the caller
 		// asserts on it rather than the read error masking the verdict under test.
@@ -101,7 +104,7 @@ var workerScaffold = []string{
 // workerScaffold assertion below fires and the review-shaped ones are absent. It passes only
 // once the review kit's Assignment is made review-shaped.
 func TestReviewKitAssignmentIsReviewShapedNotWorkerScaffold(t *testing.T) {
-	prompt := dispatchPrompt(t, "review", "medici-finance/assay/pr/547", "--pr", "547")
+	prompt := dispatchPrompt(t, "review", "assay--pr-547", "--pr", "547")
 	asg := assignmentSection(t, prompt)
 
 	for _, bad := range workerScaffold {
@@ -178,7 +181,7 @@ func TestReviewKitHeadFetchIsGitLabShapedOnAGitLabRepo(t *testing.T) {
 	// Numbered: the resolved GitLab forge (origin gitlab.com, no roster forge entry) yields
 	// the merge-requests refspec by iid.
 	asg := assignmentSection(t, dispatchPromptOrigin(t,
-		"git@gitlab.com:medici-finance/assay.git", "review", "medici-finance/assay/mr/1", "--pr", "1"))
+		"git@gitlab.com:medici-finance/assay.git", "review", "assay--pr-1", "--pr", "1"))
 	flat := strings.Join(strings.Fields(asg), " ")
 	if !strings.Contains(flat, "merge-requests/1/head") {
 		t.Errorf("the GitLab review Assignment must fetch the MR head at merge-requests/1/head:\n%s", asg)
@@ -203,7 +206,7 @@ func TestReviewKitHeadFetchIsGitLabShapedOnAGitLabRepo(t *testing.T) {
 // forge, not swap one hard-coded shape for another.
 func TestReviewKitHeadFetchIsGitHubShapedOnAGitHubRepo(t *testing.T) {
 	asg := assignmentSection(t, dispatchPromptOrigin(t,
-		"git@github.com:medici-finance/assay.git", "review", "medici-finance/assay/pr/1", "--pr", "1"))
+		"git@github.com:medici-finance/assay.git", "review", "assay--pr-1", "--pr", "1"))
 	flat := strings.Join(strings.Fields(asg), " ")
 	if !strings.Contains(flat, "pull/1/head") {
 		t.Errorf("the GitHub review Assignment must fetch the PR head at pull/1/head:\n%s", asg)
@@ -218,7 +221,7 @@ func TestReviewKitHeadFetchIsGitHubShapedOnAGitHubRepo(t *testing.T) {
 // coordinate the reviewer cannot check out. The refusal is pre-claim, so nothing durable is
 // touched, and it carries deskkit's could-not-check exit (never ExitOK, never a prompt).
 func TestReviewKitRefusesWhenForgeUnresolvable(t *testing.T) {
-	body, rc := dispatchPromptOriginRC(t, "", "review", "medici-finance/assay/pr/1", "--pr", "1")
+	body, rc := dispatchPromptOriginRC(t, "", "review", "assay--pr-1", "--pr", "1")
 	if rc == deskkit.ExitOK {
 		t.Fatalf("an unresolvable forge must refuse the review dispatch, got rc=%d and a prompt:\n%s", rc, body)
 	}

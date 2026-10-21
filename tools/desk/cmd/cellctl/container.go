@@ -14,6 +14,10 @@ import (
 // owns container mounts, credentials, state validation and the runtime. This boundary is not a
 // sandbox around the launcher, and the port does not make it one.
 func (c *Cell) containerRun(args ...string) {
+	if c.Env.Get("CELL_CONTAINER_CONFIG") != "" {
+		c.nativeContainer(args...)
+		return
+	}
 	if c.Env.Get("DRY_RUN") == "1" {
 		var b strings.Builder
 		for _, a := range args {
@@ -25,7 +29,7 @@ func (c *Cell) containerRun(args ...string) {
 		return
 	}
 	cmd := exec.Command(c.Env.Get("CELL_CONTAINER_LAUNCHER"), args...)
-	cmd.Env = []string{
+	cmd.Env = c.telemetryEnv([]string{
 		"HOME=" + c.Env.Get("HOME"),
 		"PATH=" + c.Env.Get("PATH"),
 		"TERM=" + c.Env.GetOr("TERM", "xterm-256color"),
@@ -36,7 +40,7 @@ func (c *Cell) containerRun(args ...string) {
 		"CELL_ROOTS=" + c.Env.Get("CELL_ROOTS"),
 		"CELL_HARNESS=" + c.Harness,
 		"ROLES=" + c.Env.Get("ROLES"),
-	}
+	})
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		exitWith(exitStatus(err))

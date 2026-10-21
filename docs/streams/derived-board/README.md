@@ -59,6 +59,10 @@ cells can be reconciled before the staged workflow patch lands.
 | 05 | [desk skills — reference the brief, never flip the cell (author-brief, worker-desk, pr-review-desk, verify-desk; public copies)](brief-05-skill-updates.md) | 1 | S | done | 2026-09-01 opus-4.8[1m]-verifier | 2026-09-02 assay-reviewer-app[bot] (approved PR #316 @ 7d9ab3f8a772155ef8e4347a16b5f25b421e23e6) |
 | 06 | [v1.0.0 — deskmigrate statusgen-regen op, the v0.28.0→v1.0.0 migration, paired-versions bump, same-tag pin lint, brief-reading tools refuse v2 below v1](brief-06-v1-migration-and-cut.md) | 3 | M | implemented | — | — |
 | 07 | [per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills](brief-07-rollout-backfill.md) | 4 | L | in-progress | — | — |
+| 08 | [witness ledger — the board writer records every merged-PR fact the fold reads, so a merged PR is read from the forge once, ever](brief-08-witness-ledger.md) | 2 | M | todo | — | — |
+| 09 | [incremental reconcile — forge reads scale with open PRs plus PRs changed since the last regen, never with total PR history](brief-09-incremental-reconcile.md) | 3 | M | todo | — | — |
+| 10 | [Complete candidate coverage for partial-delivery reconciliation](brief-10-complete-candidate-coverage-for-partial-delivery-reconciliation.md) | 0 | M | todo | — | — |
+| 11 | [Preserve incomplete delivery in the audited board cohort](brief-11-preserve-incomplete-delivery-in-the-audited-board-cohort.md) | 0 | M | implemented | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -94,7 +98,16 @@ rows. The cell is derived or it is not trustworthy; there is no third option.
   under immutable releases).
 - **Wave 4** — `derived-board/07` (depends on 05 + 06; workflow-file pushes need the human).
 
+- **Wave 2 (forge-cost follow-on)** — `derived-board/08` (depends on 03): the witness ledger.
+- **Wave 3 (forge-cost follow-on)** — `derived-board/09` (depends on 08): incremental reconcile.
+  Both edit the staged workflow (`ci/staged-workflows/assay-statusgen.yml`) that a
+  maintainer promotes, and 08 asks the maintainer to make `lint` a required check.
+
 Path: `01 → 03 → 04 → 06 → 07`, with `02 → 03` joining at wave 1 and `05` running beside 03.
+The forge-cost follow-on `03 → 08 → 09` is off that path: it changes what a regeneration
+costs in rate-limited forge requests, not what a cell may claim. Its head is 08, because 09
+has nothing to read until the ledger exists, and until the promoted workflow carries 08's edit every run is
+today's full read.
 
 ## Shared conventions
 
@@ -110,3 +123,44 @@ Path: `01 → 03 → 04 → 06 → 07`, with `02 → 03` joining at wave 1 and `
   what the backfill in 07 will read).
 - Public-tree content is self-contained: no private issue numbers, internal slugs, or
   withheld-doc paths in bodies, comments, or docs.
+
+## Candidate-coverage proof (2026-10-20)
+
+[derived-board/10](brief-10-complete-candidate-coverage-for-partial-delivery-reconciliation.md)
+is a wave-0, bounded evidence-and-test follow-up for issue #2703. At c8c4020d1,
+source fix c45ef4ec6 is merged through #3787: #735 is declared partial, while
+the regression still enumerates five hardcoded candidates. The remaining work
+independently establishes the candidate cohort and proves omission detection.
+It does not reapply the source fix or wait for the optional witness ledger.
+
+Its critical path is design review and human merge → cohort-proof implementation
+→ independent review and human merge. Separately, the repaired source's downstream
+chain remains legitimate board regeneration → fresh board trust admission,
+independent reviews and human merge → independent graph-execution/28 verification
+→ graph-execution/29. This proof neither supplies those receipts nor adds a new
+runtime gate. Existing generated lifecycle cells remain producer-owned.
+
+## Bounded partial-delivery repair — 20 October 2026
+
+[Brief 11](brief-11-preserve-incomplete-delivery-in-the-audited-board-cohort.md)
+authors the source-bound statusgen/26 repair and ten-row audit proof for issue #2703.
+At main c8c4020d1, the existing declaration reader and admission/reconcile seams
+already support it. **Wave 0**, independent of the proof-only derived-board/10
+authored in merged [PR #3794](https://github.com/medici-finance/assay/pull/3794)
+at fdc231b22 (merge da85bf699, 2026-10-20). The authoring is landed; its future helper is still unimplemented and is not a dependency.
+
+Critical path: independent design review + human merge of brief 11 → source repair
+and bounded regressions in a separate draft PR → reviewed human source merge →
+normal producer regeneration → fresh board trust admission and independent reviews
+→ human board merge → nonimplementer graph-execution/28 Verify → graph-execution/29.
+The smallest unblocking move is the reviewed source declaration and meaningful
+production-owner regression. A generated-cell edit would be overwritten and does
+not repair the source. No workflow is triggered by this plan.
+
+Both board reviews assessed the same ten changed rows: nine adequate scoped
+deliveries and partial #3759. The correctness reconcile timeout remains
+could-not-check; security separately reproduced the ten pairs while retaining
+ten unknowns in its wider output. This bounded evidence does not clear all
+historical candidates or reset the existing finding class. Tasks 3/4 and Verify 2
+remain owned by statusgen/26. This plan delivers no Linux cellctl runtime,
+Kubernetes deployment or independent verification; Windows is outside the outcome.

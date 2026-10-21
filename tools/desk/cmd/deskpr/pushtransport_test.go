@@ -38,8 +38,11 @@ func TestCreateSSHPushRemoteRefuses(t *testing.T) {
 		t.Fatalf("create over an SSH push remote rc = %d, want %d (refused)", rc, deskkit.ExitRefused)
 	}
 	assertNoPushNoCreate(t, *calls)
-	if !anyCall(gitCalls(*calls), "config", "--list", "-z") {
-		t.Fatalf("the gate's config read never happened, so rc=5 came from some OTHER refusal: %v", gitCalls(*calls))
+	// Since #1623 the push-DESTINATION gate runs ahead of the transport gate and refuses an
+	// SSH destination itself (with a worktree-scoped remedy), so its read of git's resolved
+	// push list is the fingerprint that proves rc=5 came from a push gate.
+	if !anyCall(gitCalls(*calls), "remote", "get-url", "--push", "--all", "origin") {
+		t.Fatalf("the push gate's read never happened, so rc=5 came from some OTHER refusal: %v", *calls)
 	}
 	_ = stderr
 }
@@ -78,9 +81,33 @@ func TestSshFetchHttpsPushCreates(t *testing.T) {
 	if rc != deskkit.ExitOK {
 		t.Fatalf("SSH FETCH url with a non-SSH push url rc = %d, want 0 — only the push transport is gated", rc)
 	}
-	if !anyCall(gitCalls(*calls), "push", "-u", "origin", "feature/test-branch") {
-		t.Fatalf("expected the push to proceed; git calls: %v", gitCalls(*calls))
+	if !pushedTo(*calls, "feature/test-branch") {
+		t.Fatalf("expected the push to proceed; calls: %v", *calls)
 	}
+}
+
+// httpsPushURL is the https push url the NOTICE cases configure. It never has to resolve:
+// routePushOffline sends the push itself to the local bare.
+const httpsPushURL = "https://example.com/example-org/tracker.git"
+
+// routePushOffline keeps an https-push fixture offline without lying to the gates. Every
+// gate read — `config --list -z`, `remote get-url --push --all` — still sees the https url
+// the fixture configured; only the in-process push's ENDPOINT resolution (endpointFn, the
+// step that would build the forge URL + in-memory credential) is pointed at the local bare,
+// so the push lands there. It also proves an https destination is pushed through the
+// endpoint resolver for the gated repo, never to the configured string itself.
+func routePushOffline(t *testing.T, bare string) {
+	t.Helper()
+	inner := endpointFn
+	endpointFn = func(repo, originURL string) (deskkit.ForgeGitEndpoint, error) {
+		if repo != "example-org/tracker" {
+			t.Errorf("push endpoint resolved for %q, want the gated repo example-org/tracker", repo)
+		}
+		ep := deskkit.ForgeGitEndpoint{Kind: deskkit.ForgeGitHub}
+		ep.Opts.URL = bare
+		return ep, nil
+	}
+	t.Cleanup(func() { endpointFn = inner })
 }
 
 // TestCreateHttpsNoAppHelper: https is the sanctioned transport, so
@@ -88,13 +115,13 @@ func TestSshFetchHttpsPushCreates(t *testing.T) {
 // credential is the same ambient-identity shape one layer along, so it says so.
 func TestCreateHttpsNoAppHelper(t *testing.T) {
 	work := newBaseFixture(t)
-	// An https push url that still routes to the offline bare: `insteadOf` rewrites it at
-	// transport time, so the gate sees https and the push stays local and offline.
+	// An https push url in the worktree's config — what every gate reads — while the push
+	// process alone is routed to the offline bare (routePushOffline).
 	bare := mustGit(t, work, "remote", "get-url", "--push", "origin")
-	mustGit(t, work, "remote", "set-url", "--push", "origin", "https://example.com/example-org/tracker.git")
-	mustGit(t, work, "config", "url."+bare+".insteadOf", "https://example.com/example-org/tracker.git")
+	mustGit(t, work, "remote", "set-url", "--push", "origin", httpsPushURL)
 	mustGit(t, work, "config", "credential.helper", "osxkeychain") // ambient, not the App's
 	calls := withEnv(t, work)
+	routePushOffline(t, bare)
 	stderr := withStderrCapture(t)
 
 	rc := run([]string{"create", "--title", "x", "--body-min", "y\nBrief: fixture/01"})
@@ -105,8 +132,35 @@ func TestCreateHttpsNoAppHelper(t *testing.T) {
 	if !strings.Contains(got, "NOTICE") || !strings.Contains(got, "osxkeychain") {
 		t.Fatalf("expected a NOTICE naming the ambient helper; stderr:\n%s", got)
 	}
-	if !anyCall(gitCalls(*calls), "push", "-u", "origin", "feature/test-branch") {
-		t.Fatalf("a NOTICE must not stop the push; git calls: %v", gitCalls(*calls))
+	if !pushedTo(*calls, "feature/test-branch") {
+		t.Fatalf("a NOTICE must not stop the push; calls: %v", *calls)
+	}
+}
+
+// TestUpdateHttpsNoAppHelper is update's half of the NOTICE contract. Since #1623 the
+// push-destination gate runs ahead of the transport gate and refuses an SSH destination on its
+// own, so the SSH refusal cases no longer prove the transport gate is WIRED into update — this
+// NOTICE, which only the transport gate emits, does.
+func TestUpdateHttpsNoAppHelper(t *testing.T) {
+	work := newBaseFixture(t)
+	bare := mustGit(t, work, "remote", "get-url", "--push", "origin")
+	mustGit(t, work, "remote", "set-url", "--push", "origin", httpsPushURL)
+	mustGit(t, work, "config", "credential.helper", "osxkeychain") // ambient, not the App's
+	calls := withEnv(t, work)
+	routePushOffline(t, bare)
+	t.Setenv("FAKEGH_LIST_HAS_PR", "1")
+	stderr := withStderrCapture(t)
+
+	rc := run([]string{"update"})
+	if rc != deskkit.ExitOK {
+		t.Fatalf("https push url rc = %d, want 0 — the missing App helper is a NOTICE, never a refusal", rc)
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "NOTICE") || !strings.Contains(got, "osxkeychain") {
+		t.Fatalf("expected a NOTICE naming the ambient helper; stderr:\n%s", got)
+	}
+	if !pushedTo(*calls, "feature/test-branch") {
+		t.Fatalf("a NOTICE must not stop the push; calls: %v", *calls)
 	}
 }
 
@@ -131,6 +185,9 @@ func TestEditIsNotPushTransportGated(t *testing.T) {
 	run([]string{"edit", "--body-file", body})
 
 	if anyCall(gitCalls(*calls), "config", "--list", "-z") {
-		t.Fatalf("edit ran the push-transport gate, but it pushes nothing: %v", gitCalls(*calls))
+		t.Fatalf("edit ran the push-transport gate, but it pushes nothing: %v", *calls)
+	}
+	if anyCall(gitCalls(*calls), "remote", "get-url", "--push", "--all", "origin") {
+		t.Fatalf("edit ran the push-destination gate (#1623), but it pushes nothing: %v", *calls)
 	}
 }

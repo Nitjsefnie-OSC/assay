@@ -21,7 +21,9 @@ variables, the ci-config-project runbook, and token custody.
 4. **§2a runner, §2c `STATUSGEN_PUSH_TOKEN`, §2e `STATUSGEN_ROSTER_ENV`** — the human acts the
    scaffolded `.gitlab-ci.yml` needs before its first pipeline can prove anything.
 
-`glab` is an optional convenience CLI for a human's own reads; no step in either file requires it.
+`glab` is an optional convenience CLI for a human's own reads. No install step in either file
+requires it. The one tool here that drives `glab` is the later PAT renewal (§2g), a human-run
+operation that comes after the install.
 
 The accepted design this doc implements is
 [`docs/streams/forge-gitlab/spec.md`](streams/forge-gitlab/spec.md) — read it first if
@@ -185,7 +187,25 @@ a GitLab deployment has no PEMs to install.
 
 ## 2. Provisioning script — `tools/create-fleet-gitlab.sh`
 
-The script is idempotent bash + curl + jq, run by a human holding a **group-owner PAT**
+**On Windows, prefer `deskfleet provision` instead — this section is the fallback.**
+`windows-port/08` ships a native Go verb that does the same provisioning natively on every OS,
+including Windows, with no bash/curl/jq: `deskfleet provision --group <path> --prefix <name>
+--owner-token-file <file> [--project <path>]` — see [`adopting-assay.md`](adopting-assay.md) §
+**GitLab fleet provisioning**. It writes each minted token straight to `gitlab-<role>.token`, so
+the link/copy custody step below (§2's "Where the role-token store is") does not apply to it. The
+script below remains a supported, clearly-labelled fallback (#1646), run from Git-Bash or WSL. It is
+never a Windows prerequisite for provisioning. **Renewal is different:** §2g's
+`tools/renew-fleet-gitlab-tokens.sh` (bash + `glab`) has no native equivalent yet. `deskfleet` has
+no renew verb, and a re-run of `deskfleet provision` mints nothing for accounts that already exist.
+A Windows adopter therefore still runs renewal from Git-Bash or WSL until `windows-port/16` ships
+`deskfleet renew`.
+
+The script is a thin bash adapter onto the Go command `deskgitlab create`
+(`tools/desk/cmd/deskgitlab`): every flag below passes through unchanged, and the output and
+exit codes are the provisioner's (0 ok · 1 a step failed · 2 usage, before any effect). It
+runs the `deskgitlab` on PATH (the desk-tools release archive), or builds one from
+`tools/desk` with Go; it needs neither curl nor jq, and `deskgitlab create` takes the same
+flags directly. It is idempotent, run by a human holding a **group-owner PAT**
 (supplied only via the `GITLAB_TOKEN` environment variable — never a flag, never
 committed, never stored by the script). It creates the seven service accounts above,
 their group memberships, and their PATs; when `--project` is given, it also configures
@@ -212,7 +232,11 @@ the protected-branch/approval steps with a printed NOTICE, not silently); `--git
 defaults to `https://gitlab.com` (point it at your self-managed instance otherwise);
 `--pat-expiry-days` defaults to 7, the RECOMMENDED backstop from spec.md §5;
 `--out-dir` controls where minted token files land (default: a fresh `mktemp -d`);
-`--avatars-dir`, `--no-avatars` and `--avatars-only` control the avatar step below. Run
+`--avatars-dir`, `--no-avatars` and `--avatars-only` control the avatar step below (give
+`--avatars-dir` or `--no-avatars`, not both); `--tier` and the `--status-check-*` pair are §2b's.
+Flags take `--flag value` or `--flag=value`; an unknown flag or a bad value (a `--tier` outside
+free/premium/ultimate, a `--pat-expiry-days` that is not a whole number of days, 1 or more, a
+plain-http `--gitlab-url` off loopback) exits 2 before anything is read or sent. Run
 `tools/create-fleet-gitlab.sh --help` for the full reference.
 
 **Idempotency.** A re-run against an already-provisioned group is a set of named no-ops,
@@ -222,10 +246,14 @@ checks group membership before adding it, and — deliberately — mints a PAT *
 an account it just created. Re-running against an existing account prints a NOTICE
 instead of silently minting a second live credential; get a fresh one via the group
 service-accounts rotate endpoint (`api/v4/groups/:id/service_accounts/:user_id/personal_access_tokens/:token_id/rotate`),
-which is what rotate-on-mint (§5) actually calls at operation time.
+which is what rotate-on-mint (§5) actually calls at operation time. To renew every
+role's PAT in one run, use `tools/renew-fleet-gitlab-tokens.sh` (§2g).
 
 **Token custody.** Every minted token is written to a `0600` file under `--out-dir`; the
-script prints the file's **path**, never the token value, on stdout or in argv. Move the
+script prints the file's **path**, never the token value, on stdout or in argv. Each file is
+created new and then moved into place, replacing whatever was at that name. An existing
+`--out-dir` that other users can write to is refused before any request is sent (Unix; use a
+directory only you can write to). Move the
 files out of the default `mktemp` location into your role-token store immediately — the
 directory is not cleaned up for you, by design, so a run's tokens survive the script
 exiting.
@@ -262,8 +290,10 @@ holds an invalidated one, so on that layout never copy the provisioned file back
 `gitlab-<role>.token` — doing so installs a dead credential, and the next desk verb fails `401`
 on its first API read. Prefer the link on any platform that has one. (#1112)
 
-The script itself is **bash + curl + jq**. On native Windows run it from Git-Bash or WSL,
-not from PowerShell.
+The script itself is a **bash** adapter onto `deskgitlab create` — a labelled **fallback**
+(#1646), not the Windows path (see **`deskfleet provision`** at the top of this section). If you
+do run it on native Windows, run it from Git-Bash or WSL, never from PowerShell, or run
+`deskgitlab create` with the same flags directly.
 
 **`GITLAB_API_BASE` — required before the next boot, and it is not a `roster.env` key.**
 Every GitLab-side token operation — the read-only custody check `deskboot` / `deskroster
@@ -331,8 +361,11 @@ it, and `ASSAY_ALLOWED_REPOS` already listing the adopter project does not set i
 - **Verify.** Run the tool and read the effective value it echoes to **stderr**:
 
   ```
-  issueboard 2>&1 >/dev/null | grep -E 'ASSAY_SCAN_REPOS=|configured='
+  ASSAY_CONFIG_ECHO=full issueboard 2>&1 >/dev/null | grep -E 'ASSAY_SCAN_REPOS=|configured='
   ```
+
+  `ASSAY_CONFIG_ECHO=full` makes the tool print the whole echo; without it, a run whose
+  configuration was already shown prints one digest line with no `ASSAY_SCAN_REPOS=`.
 
   A non-empty `ASSAY_SCAN_REPOS=` listing at least the adopter slug is the pass; `exit 6`
   with an empty value is the silent half-configured state this step exists to close.
@@ -569,6 +602,31 @@ protected branch). Refusing rather than guessing.
   `protected=true` (a GitLab adopter cell's review found a masked-only variable in the field;
   that variable is now protected).
 
+**Failure classes — what a red regen job is telling you.** Before it regenerates the
+board, the regen job checks the token: it asks GitLab about the token itself
+(`GET /personal_access_tokens/self`, the token sent as a header on stdin), then makes a
+dry-run push, which authenticates without writing. The token reaches git through an
+inline credential helper that reads `STATUSGEN_PUSH_TOKEN` at run time, so it is never in
+a URL, an argument or the job log, and git's output is masked before it is printed. A
+failed check or push prints exactly one of these lines (the logic lives in
+`statusgen/pushcred.sh`, embedded verbatim in the generated file):
+
+| Class | What it means | What to do |
+|---|---|---|
+| `expired` | the token is past its expiry date | rotate the token, re-run the job |
+| `revoked` | the token was revoked | mint a new one, re-run the job |
+| `scope` | the token cannot push: no `write_repository`, or its role cannot push the protected default branch | fix the scope or the role (see Minimum role above) |
+| `auth` | authentication failed and GitLab did not say why | check the variable's value, then rotate |
+| `nonff` | the default branch moved while the job ran | nothing; the next push to the branch regenerates the board |
+| `other` | neither a credential failure nor a moved branch (a hook, a push rule, the network) | read the masked git output above the line |
+
+Only `nonff` is a race. Every credential class stops the job at once, before the board is
+regenerated when the preflight catches it, and never reads as "main moved". GitLab
+answers a refused push with one message for invalid, expired and under-scoped tokens
+alike, so a refused push is classified by asking about the token again. A token holding
+only `write_repository` may be refused the self-introspection read itself; the job then
+prints a could-not-check NOTICE and the dry-run push is the check.
+
 The runners section above used to send the reader to the per-role fleet credential section
 by a wrong number — the section that actually holds the per-role rotation rules is §5, and
 its subject is a different credential entirely. Read `STATUSGEN_PUSH_TOKEN` from this
@@ -670,12 +728,16 @@ ASSAY_GITLAB_DISPLAY_NAMES=example-verifier-bot=Assay verifier (fleet bot)
 - Renaming the service account's display name to equal its username is a valid deployment
   workaround, but it silently re-breaks whenever an admin edits the display name; declaring it
   here is the durable fix.
-- **Online alternative.** The desk verb that lands Evidence (`deskevidence`) resolves the landed
-  commit's GitLab account to its username through the typed forge (`GET /users?search=`) and
-  compares that to the verifier binding — so a deployment whose runners can reach the API gets the
-  check for free without declaring display names. The offline map is the fallback for the
-  network-free `--lint` path; unset, that path is simply could-not-check for the display-name case
-  (never a false pass).
+- **Online alternative — not available yet.** The desk verb that lands Evidence
+  (`deskevidence`) can resolve a landed commit's GitLab account to its username through the
+  typed forge (`GET /users?search=`) and compare that to the verifier binding, but on GitLab it
+  never reaches that step today: before any write it runs the decision-gate hold's branch-board
+  read, which needs a ref compare, and the GitLab backend serves none. Every `deskevidence`
+  landing on GitLab therefore stops as **could-not-check (exit 6)** with nothing written, until
+  the GitLab backend serves a compare; [adopting-assay.md](adopting-assay.md) gives the reason
+  (the decision-gate hold, under "PRIMITIVE: add-statusgen-ci"). The offline map above is what
+  the network-free `--lint` path compares against; unset, that path is could-not-check for the
+  display-name case (never a false pass).
 
 A roster-known **human** verifier on GitLab is accepted by the Evidence-actor check via GitLab's
 private commit noreply address `<user-id>-<username>@users.noreply.<host>` the way a GitHub human
@@ -750,6 +812,110 @@ branches are missing from it. That hides work; it never hands the same brief to 
 sessions, which is the failure the claim read's own `--require-claims` flag exists to stop.
 Read the banner as *some backlog may be hidden*, and regenerate once the listing is
 readable to release it.
+
+## 2g. Renewing every role PAT at once — `tools/renew-fleet-gitlab-tokens.sh`
+
+The provisioner mints a PAT only for an account it creates in that run (§2 *Idempotency*). The
+same holds for the native `deskfleet provision`. **On Windows this script has no native
+equivalent yet.** It is bash + `glab`, so run it from Git-Bash or WSL. `windows-port/16` ports it as
+`deskfleet renew`. The
+renewal is the companion for accounts that already exist: one command rotates each configured
+role's live PAT, creates one only where the role has none, and replaces each
+`gitlab-<role>.token` in the role-token store. It reads the same role table as the provisioner
+(`tools/fleet-gitlab-roles.sh` — the one copy both scripts source), so the scopes, the
+`assay-<role>-fleet` PAT names and the `<prefix>-<role>-bot` usernames cannot drift between
+them.
+
+It drives `glab api`, logged in as an **Owner (access level 50) of the top-level group** named by
+`--group <top-level-group>`. That is the one authority model. The calls are the group
+service-account endpoints the provisioner already uses:
+`groups/:id/service_accounts/:user_id/personal_access_tokens` (list with `?state=active`,
+`…/:token_id/rotate`, create). The script never requires instance administrator and never probes
+for it: it makes no `application/settings` read and does not use `glab token … --user`, which is
+administrator-only and the wrong transport for this.
+
+Every deployment-specific value is an argument; nothing is built in. `--duration` defaults to
+the shared `FLEET_PAT_DAYS` in `tools/fleet-gitlab-roles.sh` (7 days — spec.md §5's "7 days
+RECOMMENDED" expiry backstop), so leaving it off keeps the backstop; passing a longer value
+widens it, which matters most on Free tier, where there is no group token-expiry policy to cap
+it independently (§Free-tier degradations above):
+
+```
+tools/renew-fleet-gitlab-tokens.sh --dry-run \
+  --hostname gitlab.example.com --group mygroup --prefix myorg \
+  --out-dir "$HOME/.config/assay"
+
+tools/renew-fleet-gitlab-tokens.sh \
+  --hostname gitlab.example.com --group mygroup --prefix myorg \
+  --out-dir "$HOME/.config/assay"
+```
+
+An installation that does not use the provisioner's naming describes each role explicitly with
+`--role ROLE=USERNAME:TOKEN_NAME:SCOPES[:FILE]`, repeated once per role. `SCOPES` is
+comma-separated, and `FILE` is a bare file name that defaults to `gitlab-<ROLE>.token`. Used
+with `--prefix`, a record replaces that role's table row, and a record for any other role (for
+example `auditor`) adds it. Run `--help` for the full reference.
+
+What one run does, in order:
+
+1. **Preflight, before any token changes.** The script checks the arguments, `glab` and `jq`,
+   the output directory (it must be writable) and each destination file. It also checks that
+   the active `glab` identity is an Owner of the group. It resolves each service account from
+   the group's own service-account listing and lists each role's active PATs, and each role gets one
+   of four outcomes: **rotate** (exactly one active PAT with that name, and it is not
+   protected — see below), **create** (none), **skip-in-use** (exactly one active PAT, but its
+   `last_used_at` falls inside the in-use window), or **refuse** (more than one active PAT; the
+   script will not guess which one is live, so revoke the extras). The script decides a listing
+   from its parsed JSON, never its byte count, and refuses an unreadable one instead of
+   treating it as "no match", which would otherwise create a second live credential. That
+   covers a listing with no JSON value at all (zero bytes, a bare newline, whitespace only), a
+   non-array, and a record missing its id, name, `active` flag or `last_used_at` key. A
+   multi-page listing is merged across pages. A literal `[]` is a real "no active PAT" and
+   leads to a create. Any preflight
+   problem aborts the run before any role is rotated. `--dry-run` runs this whole phase and
+   prints the plan (`would-rotate` / `would-create` / `would-skip-in-use` for each role), then
+   stops. It makes no mutating call and writes no file.
+2. **In-use protection.** Rotating a live PAT invalidates it immediately (see below), so a role
+   whose active PAT was used inside the in-use window is **skipped by default** and reported as
+   `skipped-in-use`, not rotated. Pass `--rotate-in-use` to rotate it anyway — do that only after
+   confirming nothing is still relying on that credential (stop the fleet's desk sessions first).
+   A PAT that has never been used (`last_used_at` is null) is never in-use, and a PAT last used
+   before the window (for example three days ago) is not in-use either. Both rotate normally.
+3. **Renewal, one role at a time.** `glab` writes the returned secret straight into a new
+   owner-only (`0600`) temp file in the destination's own directory. The secret never goes
+   through argv, an environment variable, a log line or the report. The file must hold exactly
+   one line that looks like a token. If it does not, the output is malformed: the script
+   deletes the temp file, keeps the old file, and stops. Otherwise it renames the temp file
+   onto the destination, which replaces the file atomically. If `gitlab-<role>.token` is a
+   symlink (§2's link layout), the rename lands on the link's target, so the link survives,
+   the same way `desktoken` handles it (§5). A link that resolves outside `--out-dir` is
+   refused during preflight.
+4. **The report** gives only the role, the destination path and the outcome for each role
+   (`rotated`, `created`, `skipped-in-use (…)`, `failed (…)`, `not-attempted`). It never
+   includes a secret, a username or a token id. The summary counts renewed roles and skipped
+   roles separately, and states the new expiry only for the renewed ones: a skipped role's
+   PAT keeps its previous expiry.
+
+**Exit status.** `0`: every selected role was renewed (with `--dry-run`, the plan passed
+preflight). `1`: a preflight refusal (nothing changed) or a role failed part-way. `2`: a usage
+error. `3`: the run finished, but at least one role was skipped as in-use and **not** renewed.
+The summary names those roles and prints the `--only <roles> --rotate-in-use` re-run for once
+nothing holds them. A run that skipped a role never exits `0`, so a fleet with one role left
+behind cannot look fully renewed.
+
+**A rotation invalidates the old credential immediately.** GitLab revokes a role's previous PAT
+as soon as it accepts the rotation. Any process still holding the old value then gets a `401`.
+Stop the fleet's desk sessions before you renew. `desktoken`'s per-role rotation lock applies
+only between `desktoken` calls, and this script does not take it.
+
+**The operation is not atomic across the fleet.** Each role's file swap is atomic. The fleet as
+a whole cannot be, because each role is a separate rotation on the forge. The run stops at the
+first role that fails. Roles before that one have been renewed, and roles after it have not
+been touched. The script then prints the `--only <role,...>` list that resumes the run: fix the
+cause and re-run the same command with that flag. A role that failed during its own rotation
+(a `glab` error or malformed output) may already have lost its old credential on the forge. The
+resume rotates that role's current active PAT again, or creates one if it has none, so it
+recovers without any hand work.
 
 ## 3. By-hand table — what the script does, if you'd rather read the REST calls
 

@@ -18,7 +18,7 @@
 // never by agents. Its conflict-stage-reading companions (the conflict-enumeration
 // `diff` and the regenerable-resolution `add` — both proven, not assumed, to need the
 // binary; see internal/gitcore/write.go) are fenced beside it for the same reason, and
-// deskmerge's still-unmigrated transport verbs (`fetch`/`push`, briefs 05/06) and its
+// deskmerge's still-unmigrated transport verb (`push`, brief 06) and its
 // scratch-worktree family (`worktree`, a separate go-git gap, follow-on stream) remain
 // until their own briefs land. That is the stream's documented exception, not a
 // deferral: `allowlist` must be shrunk, not grown, and any edit must name the brief
@@ -66,16 +66,22 @@ var allowlist = map[verbTool]bool{
 	// scratch-worktree family (create/remove/prune around the trial) — a separately
 	// documented go-git gap (no linked-worktree support at all), explicitly
 	// out-of-scope-for-07 and left to the named follow-on stream, not re-justified
-	// here. Every other deskmerge verb (rev-parse, rev-list, merge-base, remote, the
-	// non-conflict diff reads, commit, update-ref) migrated to gitcore in this brief.
+	// here. Every other deskmerge verb (rev-parse, rev-list, merge-base, the non-conflict diff
+	// reads, commit, update-ref) migrated to gitcore in this brief; `remote` did too, and is back
+	// below for the origin-resolution read (#1623).
 	{tool: "deskmerge", verb: "merge"}:    true,
 	{tool: "deskmerge", verb: "diff"}:     true,
 	{tool: "deskmerge", verb: "add"}:      true,
 	{tool: "deskmerge", verb: "worktree"}: true, // linked worktrees: go-git gap, follow-on stream
 
-	// Transport verbs not yet migrated — briefs 05 (fetch) and 06 (push).
-	{tool: "deskmerge", verb: "fetch"}: true,
-	{tool: "deskmerge", verb: "push"}:  true,
+	// Transport verb not yet migrated — brief 06 (push). Fetch is in-process (brief 05).
+	{tool: "deskmerge", verb: "push"}: true,
+	// `remote` is back ONLY for `remote get-url [--push] --all origin` — the read of where the
+	// push above will actually connect (#1623). Brief 07 had migrated it to gitcore's
+	// RemoteURL, which reads the repository config file alone: it misses worktree- and
+	// global-scope values, global insteadOf rules and multi-valued lists, so a gate on it passed
+	// a repo git then never used. Only git can say what git will resolve, so the gate asks git.
+	{tool: "deskmerge", verb: "remote"}: true,
 
 	// Read-heavy tools (briefs 03-05).
 	{tool: "deskgit", verb: "ls-remote"}:         true,
@@ -91,7 +97,6 @@ var allowlist = map[verbTool]bool{
 	{tool: "deskscanbody", verb: "diff"}:         true,
 	{tool: "deskscanbody", verb: "clean"}:        true,
 	{tool: "deskpr", verb: "rev-parse"}:          true,
-	{tool: "deskpr", verb: "push"}:               true,
 	{tool: "deskpr", verb: "diff"}:               true,
 	{tool: "deskpr", verb: "symbolic-ref"}:       true,
 	{tool: "deskpr", verb: "rev-list"}:           true,
@@ -113,16 +118,12 @@ var allowlist = map[verbTool]bool{
 	{tool: "writeguard", verb: "rev-parse"}:      true,
 	{tool: "desksourceguard", verb: "rev-parse"}: true,
 	{tool: "deskadvisory", verb: "init"}:         true,
-	{tool: "deskadvisory", verb: "fetch"}:        true, // third-party-fork fetch; hardening disappears with gitcore transport
 	{tool: "deskadvisory", verb: "commit"}:       true,
-	{tool: "deskadvisory", verb: "checkout"}:     true,
-	{tool: "verifyloop", verb: "push"}:           true, // durable-Evidence push half migrates; pull --rebase is a follow-on gap
 	{tool: "verifyloop", verb: "pull"}:           true, // go-git gap: rebase / non-fast-forward pull — follow-on design brief
 	{tool: "verifyloop", verb: "commit"}:         true,
 	{tool: "verifyloop", verb: "add"}:            true,
 	{tool: "deskkit", verb: "remote"}:            true, // preflight ls-remote --get-url probe; replaced by authenticated List
 	{tool: "deskkit", verb: "symbolic-ref"}:      true,
-	{tool: "deskkit", verb: "push"}:              true, // preflight transport probe
 	{tool: "deskkit", verb: "config"}:            true,
 }
 

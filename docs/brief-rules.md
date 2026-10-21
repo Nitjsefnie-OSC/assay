@@ -67,6 +67,41 @@ nothing measured.
 
 7. **Verify rows must be runnable by someone who didn't do the work.** A row with no literal
    command and no expected exit/output is not a DoD item — it's a hope.
+   **Which span is the command.** The execution witness (`statusgen verifyrun`, rule 36)
+   runs the FIRST code span of the Command cell — right for a cell that is one code span,
+   wrong for a prose cell that mentions a function, a file, an `owner/repo` or a label
+   before the real command: the witness runs the mention (exit 127) and the check is never
+   witnessed. In a prose cell, mark the command explicitly with a code span starting
+   `cmd:` — `` In `PublicRepoGate` change the check, then `cmd: cd tools/desk && go test ./internal/deskkit/ -count=1` ``
+   — and every tool that lifts the command (verifyrun, the check:ci re-execution lane,
+   `newbrief`, the row lint, and the tools/desk executors `verifyloop` and
+   `deskrebaseline`) takes the first honoured `cmd:` span. A cell whose first span is
+   already its command needs no marker, and a cell with no marker lifts exactly as
+   before — except that a row the lint flags `prose-led-command` (including a lifted
+   command that is only a `#` shell comment) is recorded could-not-run
+   without being executed (running the mention measures nothing, and a word like `gh`
+   or a comment exits 0), until its command is marked; the check:ci verdict re-execution lane refuses such a
+   row the same way, and `verifyrun --check` does not audit an old pass witness on it as pass.
+   A `cmd:` span whose command is itself only a `#` comment is refused the same way, by
+   statusgen and the tools/desk executors alike: replace it with the command that
+   performs the check.
+   A marker counts only where the rendered table shows it as code: not between
+   escaped backticks, and not in a cell whose prose carries an unescaped `<` or `[` (raw
+   HTML, a comment, a link or an image can hide text from the reader) or a dollar in any
+   spelling (`$`, `\$`, or a character reference such as `&#36;` — GitHub renders
+   dollar-wrapped text as math, so any `&…;` reference in prose counts), and not in a cell
+   where a span's opening backticks are fused to the text before them (only whitespace, the
+   cell start or a `(` may lead a span). The marker span itself must follow whitespace or the
+   cell start, and end the cell or be followed by whitespace or plain punctuation. Escape
+   `<` and `[` as `\<`, `\[`; keep dollars out of a marked Command cell. `statusgen --lint`
+   NOTICEs a prose cell whose first span is not a command shape, or is only a shell comment such as an inline `## Coverage` heading (`prose-led-command`), a
+   cell with two markers (`cmd-marker-ambiguous`), a marker that replaces a command-shaped
+   first span (`cmd-marker-overrides-command`), and a `cmd:` span that is not honoured
+   (`cmd-marker-not-honoured`), and a marked command that cannot fail — `true`, `:`,
+   `exit 0`, a lone `echo` — (`cmd-marker-vacuous`). A closed brief's `prose-led-command` rows collapse
+   into one summary NOTICE, since closed records are not rewritten.
+   The marker is `cmd:`, not `run:`: `run:` is the GitHub Actions step key, and a quoted
+   workflow line in Verify prose must never become the command the witness executes.
 8. **Prose deliverables get PRESENCE gates; quality is the human gate (the honesty rule).**
    For docs/articles, executable checks verify that required elements *exist* (a file, a
    section, a token) — `wc -w ≥ N` or `grep -c` passes N words of garbage with the right
@@ -101,6 +136,11 @@ nothing measured.
    | `CORROBORATED` | every path the `fixed-here` site resolves to is in the diff; `follow-up <stream>/<NN>` exists **and** references back | — |
    | `DISPROVED` | the diff contradicts the claim: a path the site names is absent from the diff, the target brief does not exist, `out-of-scope` names a file this same diff edits, or the entry states no routing at all | **exit 1 — the gate** |
    | `UNCHECKED` | the evidence is not visible here: an out-of-repo path, a component named in prose, `out-of-scope` whose truth is a judgement no diff settles, or an entry **inherited unchanged from the merge-base** (some earlier branch made that claim) | printed and counted, never a pass |
+
+   For post-merge verification, pin the delivery and its first parent with the explicit
+   [delivery-check contract](consumer-delivery-checks.md); the branch default is not a
+   historical verification range. Assert exact corroborated/unchecked counts and retain
+   the unchecked review obligations.
 
    Site grammar, as the gate reads it:
    - a **directory** site (`statusgen/`) is touched when anything under it is — and because
@@ -175,7 +215,7 @@ nothing measured.
     |---|---|
     | `#` | the Verify row this witnesses, by its own `#` cell |
     | `Command` | the command **as authored in the Verify table** — code-spanned, pipes still `\|`-escaped, so a later run can prove the row has not been edited since |
-    | `Result` | `<state> exit=<code>`, where state is `pass`, `fail` or `could-not-run`, and the code is `-` when nothing executed |
+    | `Result` | `<state> exit=<code>`, where state is `pass`, `fail` or `could-not-run`, and the code is `-` when nothing executed; a row a network-off sandbox stood behind adds `sandbox=<mode>` (`unshare` or `container-netns`, rule 45) |
     | `Output` | `sha256:` + the first 12 hex of the sha256 of the combined stdout+stderr — a fingerprint two people can compare, **not** a tamper-proof seal |
     | `Date` | `YYYY-MM-DD` |
     | `Runner` | `<identity> @ <12-char HEAD SHA>`, the SHA suffixed `+dirty` when the working tree was modified and `+unknown` when cleanliness could not be determined |
@@ -334,7 +374,9 @@ nothing advances a cell but the witness its row names.
     delivers by exactly one trailer line in its body — `Brief: <stream>/<NN>` (the
     hierarchical forms of brief-v2 are accepted on read: `<stream>:<NN>`,
     `<repo>:<stream>:<NN>`, `<cell>:<repo>:<stream>:<NN>`; issue-only work with no brief
-    carries `Issue: #<N>` instead). No title parsing, no branch-name heuristics: a
+    carries `Issue: #<N>` instead, and a PR that only AUTHORS briefs carries
+    `Authors: <stream>/<NN>[, …]`, which names them without asserting delivery — `deskpr create`
+    refuses `Brief:` on a branch that only authors that brief). No title parsing, no branch-name heuristics: a
     derivation that cannot find the trailer finds nothing, and a merged PR with no
     trailer is a lint finding (NOTICE during backfill, PROBLEM after), never a guess. A
     trailer inside a fenced code block is documentation, not a link. There is
@@ -515,18 +557,44 @@ passing run — which is why they are lint rules and not review vigilance.
       reads identically in both.
     - For a genuinely literal pipe: `grep -F`, or a `[\|]` bracket class.
 
-27. **RE2 selectors get one token or a chain, never an alternation**
-    (`rE2-literal-pipe` / `shredded-cell`, #374). `go test -run` / `-bench`
-    compiles RE2, where `\|` is a literal pipe: `-run 'Forged\|Sub\|Onboard'`
-    matches zero tests, prints "no tests to run", and exits 0 — and the Evidence
-    row records the vacuous command as though the tests ran (two live briefs did
-    exactly this). Writing the pipe RAW does not fix it: a bare `|` is a
-    table-cell delimiter wherever it sits, so the command is cut at the pipe, the
-    Expect column becomes a fragment of the command, and every other row check
-    goes blind past the cut. There is no spelling of an RE2 alternation that
-    survives a table cell unambiguously.
+27. **RE2 selectors get one token or a chain, never an alternation — and every
+    `-run` needs its own `--- PASS` assertion**
+    (`rE2-literal-pipe` / `shredded-cell` / `gotest-run-vacuous`, #374,
+    statusgen/14). `go test -run` / `-bench` compiles RE2, where `\|` is a
+    literal pipe: `-run 'Forged\|Sub\|Onboard'` matches zero tests, prints "no
+    tests to run", and exits 0 — and the Evidence row records the vacuous
+    command as though the tests ran (two live briefs did exactly this). Writing
+    the pipe RAW does not fix it: a bare `|` is a table-cell delimiter wherever
+    it sits, so the command is cut at the pipe, the Expect column becomes a
+    fragment of the command, and every other row check goes blind past the cut.
+    There is no spelling of an RE2 alternation that survives a table cell
+    unambiguously.
     - Write: `-run Forged`, or `go test -run A ./... && go test -run B ./...`,
       or move the command to a fenced block outside the table.
+
+    A single unambiguous token is not enough on its own: `go test -run
+    'TestNoSuchName'` also prints "no tests to run" and exits 0 whether or not a
+    test by that name exists, so a row that never checks a `-run` selector
+    actually matched anything is silently green from the day it ships to the
+    day the named test is renamed out from under it (measured on this repo's
+    `qualgen` module, statusgen/14). `--lint` flags this as `gotest-run-vacuous`
+    (advisory, open briefs only — a closed brief's rows are summarised, not
+    individually flagged). Anchor a NAMED selector (`Test` + letters/digits/`_`,
+    after stripping one leading `^`/trailing `$`) and assert its OWN
+    `--- PASS: <name>` line; a GROUP token (`Cadence`, matching several tests)
+    needs only some `--- PASS` line. A negated grep (`! grep …`) or one
+    neutralised with `|| true` does not count as an assertion, and a mismatched
+    `--- PASS:` line (naming a different test than the selector) does not
+    satisfy a named selector.
+    - Write: `go test -run '^Name$' -v ./pkg/... > "${TMPDIR:-/tmp}/x.out" 2>&1
+      && grep -F -e '--- PASS: Name' "${TMPDIR:-/tmp}/x.out"`.
+
+    `-run '^$'` is exempt: it is the standard idiom for running NO tests
+    alongside `-bench`/`-fuzz`, deliberately matches no test name, and so has
+    no `--- PASS:` line it could ever assert — the same reason `-bench`/`-fuzz`
+    selectors themselves are out of scope. An unanchored empty pattern
+    (`-run ''`) is not the same thing and is not exempt: in Go, an empty regexp
+    matches every name, so that row runs everything.
 
 28. **A comparison base must be a pinned SHA or a computed merge-base, never a
     branch** (`moving-ref`, #639). A row based on `origin/main` is a function of
@@ -538,6 +606,21 @@ passing run — which is why they are lint rules and not review vigilance.
     - Write: `--base $(git merge-base origin/main HEAD)`, an explicit SHA, or
       the PR's own `base.sha`.
     - `refs/remotes/origin/main` is the same moving ref by its long name.
+
+28a. **A zero-count row must not pipe a bare `grep` into a later stage**
+    (`grep-pipe-zero-count`, #1862). `statusgen verifyrun` runs every row under
+    `bash -o pipefail`, and grep exits 1 when it matches nothing. A row like
+    `grep -rn old docs/ | wc -l` with Expect `0` therefore FAILS when the property
+    holds (nothing found), and when a match is present grep exits 0, so a bare `0`
+    Expect leaves the verdict to exit status alone.
+    - Write: `{ grep -rn old docs/ || [ $? -eq 1 ]; } | wc -l`, with Expect
+      ``output is `0` ``. Tolerate only grep's no-match status; a plain `|| true`
+      also hides a real grep error.
+    - Where the searched path could vanish, add a positive leg that proves it
+      exists: `test -n "$(git ls-tree --name-only HEAD docs)" && …`.
+    - A leading `!`, the guarded `{ … || … ; } |` form, a `≥ 1` Expect and an
+      Expect that also declares a non-zero exit (``output is `0`, exit 1``) are
+      silent.
 
 29. **Rows run on macOS too — no GNU-isms** (`gnu-only`, #650). A Verify row is
     run by whoever verifies, on their own machine, and a row that only works on
@@ -562,6 +645,20 @@ passing run — which is why they are lint rules and not review vigilance.
     - `check:ci` — HERMETIC (tree-only). CI re-executes it **network-off** and
       refuses the verdict on mismatch; hermeticity is enforced at execution
       (`statusgen verifyrun` disables the network), never merely declared.
+      The default sandbox is `unshare --net --map-root-user`, and the CI lane
+      always uses it. **`--sandbox=container-netns`** is an explicit opt-in for a
+      runner that is ALREADY inside a container started with `--network none`
+      under the engine's default seccomp profile, where that `unshare` is denied.
+      Its preconditions: it is selected only by the flag, never inferred from the
+      environment; the `unshare` wrapper is skipped, so before any row runs
+      verifyrun checks that no interface other than loopback has `IFF_UP` set
+      (a down interface such as `tunl0` is fine) — any other interface up, or an
+      interface list it cannot read, refuses the run and every row is
+      `could-not-run`, never `pass`; it is refused under `--ci`, under
+      `GITHUB_ACTIONS=true`, and with `--in-container`. Every row a sandbox stood
+      behind records which one in its witness Result cell — `sandbox=unshare`
+      (namespace-wrapped) or `sandbox=container-netns` (container-sandboxed) —
+      so a reader can tell the two apart.
     - `check` — deterministic but ENV-BOUND (a live PEM, a real queue, a tool on
       PATH). A runner executes it; CI skips an explicitly-classed one (its verdict
       rests on the verifier's authorship+signature, not on a CI re-run).
@@ -631,6 +728,22 @@ Briefs table, whose lifecycle cells derive from the witnesses rule 30 names — 
 becomes a generated surface with exactly one writer (rule 47) as each stream is wrapped
 in markers, and is diffed against merge history until then (rule 35).
 
+A stream README's generated region sits between `<!-- statusgen:briefs:begin -->` and
+`<!-- statusgen:briefs:end -->`; its README frontmatter carries `board: generated`.
+`statusgen regen --readmes` rewrites only the lines between the markers, so everything
+outside them is hand-written prose it never touches. The scheduled writer is a staged
+proposal until a maintainer promotes it: the board workflow's hourly reconcile job
+(`ci/staged-workflows/assay-statusgen.yml`), which
+will never push the default branch: it carries a change as one pull request on the branch
+`board/reconcile`, and the push-to-default-branch job keeps writing `STATUS.md` alone.
+Until that promotion, the desk-side `deskreconcile` verb carries changes on the same branch
+and pull request; after it, each of the two replaces the other's tree on that branch
+(the job writes trailer-witnessed rows only, the verb also backfills). Either way a
+Status cell moves to `implemented`, and a table is re-rendered, only by a reviewed pull
+request. Other lifecycle cells are not covered by that sentence: the board workflow's
+`model-autoflip` job and the verify-gate close workflow write their rows on the default
+branch.
+
 32. **A worker's terminal verdict on a PR is a DISPOSITION RECORD, not a prose comment.**
     A conclusion that only a human can read is one a sweep must re-derive. In one
     2026-08-12 batch-fanout cycle, 8 of 10 completed orphan dispatches re-derived a
@@ -657,7 +770,11 @@ in markers, and is diffed against merge history until then (rule 35).
     |---|---|---|---|
     | `SUPERSEDED` | the work landed through a different branch/PR | required | no |
     | `RESOLVED-ELSEWHERE` | the outcome was reached another way (issue already closed, row already advanced on main) | required | no |
-    | `NEEDS-REBASE` | live work, mechanically blocked | optional | yes |
+    | `NEEDS-REBASE` | established stale-base/conflict defect | optional | yes |
+
+    Advisory markers and routine progress are not disposition records. Still-actionable
+    work without a base/conflict defect requires no disposition write; keep progress in the
+    PR workpad. Waiting-on-input remains a hold label with its explanation.
 
     Evidence is required for the terminal verdicts because "superseded" with no link to
     what superseded it is the same unfalsifiable claim the prose comment was.

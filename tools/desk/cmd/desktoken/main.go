@@ -49,6 +49,8 @@ package main
 import (
 	"os"
 
+	"github.com/medici-finance/assay/perfrec"
+
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -152,7 +154,25 @@ chain, every child process with its command line, exit status and elapsed time, 
 failing child's stderr in full. Credentials are redacted. With it off, output is
 unchanged. See tools/desk/README.md, "Diagnostics — DESK_TRACE".`
 
+// perfVerbs is desktoken's registered first-argument set for the opt-in local perf record
+// (deskkit.PerfRun): the `coverage` verb plus the App role names a mint takes
+// as its positional, all from the compiled role table. args[0] is recorded only when it is one
+// of these, and as "other" otherwise, so no argv text can reach the record.
+func perfVerbs() []string {
+	verbs := []string{"coverage", "--version", "--help"}
+	seen := map[string]bool{}
+	for _, role := range deskkit.LoopTokenRoles() {
+		if !seen[role] {
+			seen[role] = true
+			verbs = append(verbs, role)
+		}
+	}
+	return verbs
+}
+
 func main() {
+	selected := perfrec.ResolveContext(perfrec.ContextInput{})
+
 	// Explicit roster class: desktoken ACTS (it mints a credential) and, when --repo
 	// is absent, it READS the configured allowed-repo roster to resolve the owner —
 	// file-only, never the environment — so ciEligible=false. The P3 echo makes that
@@ -163,5 +183,13 @@ func main() {
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRunMeasured("desktoken", perfVerbs(), os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		return runMeasured(a, sink, measurement), selected
+	}))
 }

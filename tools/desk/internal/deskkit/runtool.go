@@ -2,8 +2,10 @@ package deskkit
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -30,6 +32,8 @@ import (
 
 // ToolCall describes one child process to run.
 type ToolCall struct {
+	// Context optionally carries the caller's immutable performance context.
+	Context context.Context
 	// Name and Args are the argv, ALWAYS as an explicit slice of literal verbs plus
 	// already-validated values — never a shell string. The runner never interposes a shell,
 	// so no value in Args can be re-read as an option by anything but the child itself.
@@ -38,7 +42,8 @@ type ToolCall struct {
 	// Dir is the working directory; empty inherits the parent's.
 	Dir string
 	// Env, when non-nil, REPLACES the child's environment (the os/exec contract). A caller
-	// that means to add one variable passes append(os.Environ(), "K=V").
+	// that means to add one variable passes append(os.Environ(), "K=V"). Either way Run sets
+	// ASSAY_CONFIG_ECHO=full in it (UnsurfacedEchoEnv).
 	Env []string
 	// Start is the command constructor. Nil means exec.Command. It exists so a package that
 	// already owns a recording seam (`var execCommand = exec.Command`, which its tests wrap
@@ -78,14 +83,31 @@ func Run(c ToolCall) ToolRun {
 	if c.Dir != "" {
 		cmd.Dir = c.Dir
 	}
-	if c.Env != nil {
-		cmd.Env = c.Env
+	// The child's stderr is captured and its echo stripped as preamble (ToolMessage), so the
+	// child must not record a config digest nobody saw: it gets the stateless full echo.
+	env := c.Env
+	if env == nil {
+		env = cmd.Env
 	}
+	if env == nil {
+		env = os.Environ()
+	}
+	resolvedContext := false
+	if c.Context != nil {
+		if pc, ok := PerfContext(c.Context); ok {
+			env = PerfContextEnv(env, pc, true)
+			resolvedContext = true
+		}
+	}
+	if !resolvedContext {
+		env = unknownPerfParentEnv(env)
+	}
+	cmd.Env = UnsurfacedEchoEnv(env)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	began := time.Now()
-	err := cmd.Run()
+	err := RunProcess(cmd)
 	r := ToolRun{
 		Name:     c.Name,
 		Args:     append([]string(nil), c.Args...),
@@ -98,6 +120,22 @@ func Run(c ToolCall) ToolRun {
 	}
 	traceRecord(r)
 	return r
+}
+
+// RunProcess observes a child without changing os/exec stream, environment,
+// cancellation or error semantics. Callers needing raw streams use this instead
+// of Run; Run itself delegates here, so each attempt is counted exactly once.
+func RunProcess(cmd *exec.Cmd) error {
+	began := time.Now()
+	defer func() { perfCountChild(time.Since(began)) }()
+	return cmd.Run()
+}
+
+// OutputProcess preserves Output's bytes and *exec.ExitError (including Stderr).
+func OutputProcess(cmd *exec.Cmd) ([]byte, error) {
+	began := time.Now()
+	defer func() { perfCountChild(time.Since(began)) }()
+	return cmd.Output()
 }
 
 // ExitStatusOf recovers a child process's exit status so a wrapped tool's own deskkit exit
@@ -139,7 +177,8 @@ func (r ToolRun) CommandLine() string {
 
 // ToolMessage is what a wrapped desk tool actually SAID, kept whole.
 //
-// Every desk tool opens its stderr with the effective-config echo (`assay-config: …`) and,
+// Every desk tool opens its stderr with the effective-config echo (`assay-config: …` — one
+// digest line by default, the full block when configecho.go's conditions call for it) and,
 // on an unpinned build, the drift warning. A report that shows only the FIRST stderr line
 // therefore shows the config echo and never the tool's own message — which is how a
 // stale-branch collision reached an operator as "worktree-create failed (assay-config: …)"

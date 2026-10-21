@@ -23,6 +23,43 @@ tools/desk/
 Everything after that is the deep reference, one section per tool, and you do not need
 it on day one.
 
+## Review observation library contract
+
+The desk module's `internal/reviewflow` package provides a pure, typed
+[review-observation-v1](../../spec/review-observation-v1.md) boundary. It binds the
+full admitted population to provider/host/repository identity, exact revisions,
+independent lane facts, coverage and explicit freshness policy. Derived row totals
+are uncapped; incomplete reads cannot become an idle success. Observations and
+proposed verbs are advisory and do not grant claims or permission to write.
+
+`deskboard` shares classifier input assembly and `reviewloop plan` shares plan
+assembly with this API. Their existing flags and output remain compatible. The
+new contract has no collection command or observation-file CLI flag in this change;
+that handoff is desk-tools/40. The legacy idle cadence is unchanged; new library
+callers must supply their own policy revision, clock and oldest acceptable input.
+
+## Review planner state contract
+
+`reviewloop plan` proposes review dispatches and draft-to-ready operations from the
+supplied board; it does not execute either operation. A posted review verdict is
+not evidence that a reviewer is currently assigned, and verdict kinds and outcomes
+must remain distinct. The audit ledger records completed writes; planning must not
+reparse its complete history separately for each proposed operation.
+
+Planning uses only the supplied board observations and performs zero audit-history
+loads ([issue #2793](https://github.com/medici-finance/assay/issues/2793)). Historical
+review verdicts, including legacy generic `review` entries, cannot suppress a new
+review dispatch. Historical `ready` entries cannot suppress a current `FLIP`: a
+still-draft PR needs the retry that `deskpost ready` already permits (#805).
+
+Coalescing suppresses repeated keys within a plan and operations whose head is
+unresolved. It does not reserve a reviewer or authorize a write. Before execution,
+`deskdispatch` must acquire a live reviewer claim; `deskpost` must validate history
+under its outward lock and recheck current forge state and exact write identity.
+Missing, unreadable or corrupt audit history does not change a plan, and still
+retains its existing meaning at those write boundaries. No retained history is
+changed or discarded.
+
 ## Tool reference
 
 | Tool | Verb(s) | Class | Write budget + breaker |
@@ -30,13 +67,13 @@ it on day one.
 | `deskboard` | `prs`, `actions`, `reviews`, `queue`, `health`, `awaiting` (alias `nextup`), `dispatch` (aliases `todo`, `next`, `next-up`), `throughput`, `scope`, `policydrift`, `stalled`, `diff`, `files` | read-only | no |
 | `issueboard` | `board`, `issues`, `intake` | read-only | no |
 | `verifyloop` | `plan` | read-only (spawns nothing, writes nothing) | no |
-| `scanloop` | `plan` (read-only queue print), `run` (one drain pass) — the intake desk's drain consumer: it wraps the durable inbound poller, applies the trust gate BEFORE queueing, dispatches the whole-scope scan ONCE per pass (batching every mechanical item behind one branch and one PR), bounds the scan-PR coalesce window, regenerates the scan PR's title/body on every push, and records exactly ONE tracked exit per inbound item | read-only (`plan`) / outward write (`run`, through `deskpr` and `deskfile`) | yes (`run`) |
+| `scanloop` | `plan` (read-only queue print), `run` (one drain pass), `land` (record a judgment exit for a parked item) — the intake desk's drain consumer: it wraps the durable inbound poller, applies the trust gate BEFORE queueing, dispatches the whole-scope scan ONCE per pass (batching every mechanical item behind one branch and one PR), bounds the scan-PR coalesce window, regenerates the scan PR's title/body on every push, and records exactly ONE tracked exit per inbound item, each also appended as an `intake-exit-v1` record to `<state dir>/intake-exits.jsonl` (schema: `spec/intake-exit-v1.md`) | read-only (`plan`) / outward write (`run`, through `deskpr` and `deskfile`) / local state (`land`) | yes (`run`) |
 | `reviewloop` | `plan` — pr-review-desk's BOARD REACTOR: classifies a `deskboard` sweep against an action table derived from deskboard's own ACTION constants, coalesces outward verbs on `(repo, pr, head, verb)`, and answers the #79 idle question in THREE states. Not a drain: it does not link `internal/loopengine`. `--records <thread.json>` additionally derives the PERSISTENT REVIEW-FINDING ledger for one PR (`review-finding/v1`; `deskkit.DeriveLedger`): outstanding findings, per-class rounds against the existing cap, the single arbiter packet, and every could-not-check — so finding IDs and round counts survive a replacement agent | read-only (spawns nothing, writes nothing, makes no GitHub call) | no |
-| `deskboot` | `<role>` — the adapter verb for a loop's BOOT seam: loop identity, worktree prune + lock, roster register, envelope preflight, token-mint proof, board summary. Fails closed with the step NAMED | local-only (delegates every step to the verb that owns it) | no |
+| `deskboot` | `<role>` — the adapter verb for a loop's BOOT seam: loop identity, worktree prune + lock, roster register, envelope preflight, token-mint proof, board summary, worktree currency, first-sweep prerequisites (a roster forge mapping for the repo; desk-tools provenance — a pin line or the in-tree source, never statusgen lines alone). Fails closed with the step NAMED | local-only (delegates every step to the verb that owns it) | no |
 | `deskdispatch` | `<item-key>` — the adapter verb for a loop's DISPATCH seam: durable claim, worktree in the item's own repo, the `before_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (failure ⇒ exit 6, no prompt, claim released), roster register, human-decision gate, model-stamp labels, assembled agent prompt from `cmd/deskdispatch/references/` | outward write (the wrapped claim + stamp) | no |
-| `deskflip` | `<N>` — the adapter verb for a loop's LAND seam: the ready-flip gate. Refuses unless the reviewer App approved AT HEAD, checks are green, the PR is mergeable, a risk-classed PR carries a security verdict at head, and the caller is the review role | outward write | no |
-| `deskpost` | `review`, `comment`, `ready` — as the reviewer App | outward write | yes |
-| `deskpr` | `create` (draft-only), `update` (follow-up push), `edit` (body/title of the branch's open PR, no push); each takes `--check`, an OFFLINE gate run — every local check the write path runs, stopped before any token mint or connection | outward write | yes |
+| `deskflip` | `<N>` — the adapter verb for a loop's LAND seam: the ready-flip gate. Refuses unless the reviewer App approved AT HEAD, checks are green, the PR is mergeable, the `desk-decided` label and body block agree with no standing `Undeclared-desk-decision:` finding, a risk-classed PR carries a security verdict at head, and the caller is the review role | outward write | no |
+| `deskpost` | `review`, `security-review`, `comment`, `ready` — as the reviewer App; `finish` posts a verdict, confirms it at the reviewed head and releases the review claim in one command | outward write | yes |
+| `deskpr` | `create` (draft-only), `update` (follow-up push), `edit` (body/title of the branch's open PR, no push); each takes `--check`, an OFFLINE gate run — every local check the write path runs, stopped before any token mint or connection; `--decided <file>` on `create`/`edit` declares a desk-taken reversible default as a `## Desk-decided` body section (decision:/alternative:/cost: triples) plus the `desk-decided` label — see "Desk-decided: the merge is the gate" below | outward write | yes |
 | `deskreply` | PR reply comment under the **worker** identity; `--workpad` upserts ONE marked progress comment per PR (find the worker's own newest unresolved comment carrying the workpad marker and edit it in place, or create the first one) instead of always posting a new reply — `--dry-run` (plain reply or `--workpad`) reports what would post without writing | outward write | yes |
 | `deskfile` | `new`, `attach`, `check` — the issue-filing gate (dedupe first) | outward write | yes |
 | `deskclose` | `duplicate`, `superseded` (two-role: a worker token proposes, a reviewer token confirms or disputes), `review-request`, `manifest` (the documented human-ruled BATCH lane) — the issue-CLOSING gate (a fetched human authorization or nothing); plus two identity+structure lanes that cite no artifact because they close nothing belonging to another party: `self-withdraw` (the authoring App's own draft, pinned by login AND bot id) and `verify-gate-refire` (the verifier session reopens + re-closes a closed `verify-gate` card) | outward write | yes |
@@ -45,20 +82,24 @@ it on day one.
 | `deskdisposition` | `set`, `read`, `sweep` — machine-readable PR disposition records (#728/#827); records a verdict, never closes | outward write (`set`) / read-only (`read`, `sweep`) | yes |
 | `deskmerge` | `check` — merge-currency in three states, writes nothing; `merge` — merges main INTO a PR branch, gated on a fetched human sign-off of R-5 (unsigned today, so it merges nothing) | read-only (`check`) / outward write (`merge`) | yes (`merge`) |
 | `deskscanbody` | `emit`, `check` — derives the issue-loop scan PR title/body from the branch diff (#685) | local-only (git read) | no |
-| `deskevidence` | `commit` — Evidence via the Contents API, as the verifier App | outward write | yes |
+| `deskevidence` | `commit` — conditional Evidence publication, as the verifier App | outward write | yes |
 | `deskrun` | `<owner/repo> <workflow> --ref <r> [-f k=v …]` (dispatch one run, print the run it created), `approve <owner/repo> <run-id> --gate <name>` (clear ONE named deployment gate), `status <owner/repo> <run-id>` — under the repo's roster-bound run credential (`ASSAY_RUN_CREDENTIALS`): the dedicated `release-runner` credential proceeds, a `human:<name>` binding is REFUSED (exit 5) before anything is minted, an unbound repo is could-not-check (exit 6). On GitHub, `approve` is could-not-check under an App credential (required reviewers are users or teams). Never `repository_dispatch`; GitLab starts pipelines with the trigger token | outward write (`status`: read) | yes |
-| `deskreconcile` | (no verbs) `--worktree DIR [--issue N] [--dry-run]` — the desk-side board-reconcile writer: fetches origin/main into an isolated worktree, runs `statusgen reconcile --backfill --apply` (the only writer of a stream README Status cell: `todo`/`in-progress` → `implemented`, real merged-PR witness only), and — only when a stream README changed — commits ONLY those README files as ONE commit on the fixed branch `board/reconcile` and opens/UPDATES exactly one draft PR titled `chore(board): reconcile`. Removes the scheduled-CI dependency #1175 is blocked on (no App may push the workflow change). `--dry-run` reports the rows it would flip and writes nothing | outward write (the commit + `deskpr` carry) | yes |
+| `deskreconcile` | (no verbs) `--worktree DIR [--issue N] [--dry-run]` — the desk-side board-reconcile writer: fetches origin/main into an isolated worktree, runs `statusgen reconcile --backfill --apply` (the command that flips a stream README Status cell `todo`/`in-progress` → `implemented`, real merged-PR witness only), and — only when a stream README changed — commits ONLY those README files as ONE commit on the fixed branch `board/reconcile` and opens/UPDATES exactly one draft PR titled `chore(board): reconcile`. Removes the scheduled-CI dependency #1175 is blocked on (no App may push the workflow change). `--dry-run` reports the rows it would flip and writes nothing | outward write (the commit + `deskpr` carry) | yes |
 | `deskrelease` | `cut <tag>` — create-only tag ref, as the desk App | outward write | yes |
 | `deskclaim` | `acquire`, `release`, `list`, `stale` — the flock-backed claimable-action lock | local-only (claims dir) | no |
 | `desksupervise` | `tick` (one classification sweep of every `state=dispatched` dispatch claim against `internal/loopengine`'s liveness taxonomy; `--claims-fixture`/`--observations-fixture` run it fully offline), `run --interval` (loop `tick` forever) — turns a wedged worker into a logged, minutes-scale reclaim (`RECLAIM-ELIGIBLE` / `BLOCKED-TIMEOUT`) instead of a silent hold on the 120-minute stale-claim backstop; fires the `after_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (logged, non-fatal) when it releases or lands a claim | read-mostly (probes read the audit trail, a branch's SHA, and a PR's `updated_at`) / outward write on a non-dry-run reclaim or blocked-timeout filing | no |
 | `opmetrics` | (no verbs) — operator-layer collector: reads transcripts/beacons/claims, writes one **aggregates-only** day-file | local-only (strictly read-only against every input) | no |
-| `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); each takes `--dry-run` to report the hook plan without touching anything | local-only | no |
+| `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest; forge calls per tool and per release against the App rate-limit budget), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
+| `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `maintain objects` inventories and compacts the common Git directory offline; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); inspection takes `--dry-run` | local-only | no |
 | `deskgit` | `fetch` (bare / `--prune` / `--pr <N>` / `--branch <B>`) — the only git verb | local-only (inbound refs) | no |
 | `desktoken` | `<role>` — mint/reuse an App installation token | local-only (token cache) | no |
+| `deskapps` | `init` — the GitHub App Manifest-flow installer: serves the loopback page, posts the tier's manifests, converts the callback code, writes the PEM/records/role bindings. `resume`/`status`/`avatar` are later briefs (03/04/06) | local-only + loopback HTTP (no outward GitHub write of its own — the App is created by GitHub on the person's own click) | no |
+| `deskfleet` | `provision` — GitLab fleet bootstrap, the Go port of `tools/create-fleet-gitlab.sh`: seven role service accounts, memberships and PATs written owner-only to `gitlab-<role>.token` and read back through the deskkit custody check (inconclusive read-back = WARN; definite failure = stop; a partial run STOPS and REPORTS every minted token, every account created with no token and every could-not-check request, never revokes — the recorded custody ruling), then with `--project` the protected `main` / approvals / release tags / merge checks / labels; `--avatars-dir` has each new account set its own avatar (no default icon fetch; skipped and named without it), `--avatars-only` sets existing accounts' avatars; `labels` — the nine fleet labels on a GitHub repo or GitLab project from ONE table. `--dry-run` makes zero network calls; a real run refuses without `GITLAB_API_BASE` | outward write (bootstrap: reads no roster; the credential is a human-supplied file) | no |
+| `deskgitlab` | `create` — the Go port of `tools/create-fleet-gitlab.sh` (desktools-v2/30), which is now an adapter that execs `deskgitlab create` with its arguments unchanged: the same flags, output, exit codes and idempotent steps (seven role service accounts, memberships, first PATs and own avatars, then with `--project` the protected `main` / approvals / release tags / merge checks / labels, and `--tier ultimate`'s two refinements). The owner PAT is read from `GITLAB_TOKEN` only, never a flag. `--dry-run` makes zero network calls; help and version read nothing | outward write (bootstrap: reads no roster; the credential is a human-supplied environment variable) | no |
 | `deskroster` | `set`, `drop`, `list`, `mine`, `width`, `repos`, `apps`, `preflight` | local-only, out-of-git (`preflight` mints a token and runs one read-only transport probe) | no |
 | `muhar` | `-spec <file>` mutation harness, `-j <n>` mutations in flight (isolated tree per worker), `-shard i/n` this invocation's slice of the spec (shards partition it; baseline + control run per shard) | local diagnostic (no `Guard`) | no |
 | `writeguard` | PreToolUse hook (F-34 isolation backstop) | hook | n/a |
-| `deskpushguard` | pre-push hook — refuses a push to a MERGED/CLOSED branch, one carrying a foreign/laundered commit, a single-parent merge masquerade, or a branch point sitting on a stray local `origin/main`, or one introducing a register-entry `id:` collision with an in-flight sibling branch (#22, #72). Cannot determine the base → prints `COULD-NOT-CHECK` and allows (fail-open, brief-10); that line means UNVERIFIED, not clean | git hook | n/a |
+| `deskpushguard` | pre-push hook — refuses a push to a MERGED/CLOSED branch, one carrying a foreign/laundered commit, a single-parent merge masquerade, or a branch point sitting on a stray local `origin/main`, or one introducing a register-entry `id:` collision with an in-flight sibling branch (#22, #72). Every base check uses the remote git is actually pushing to — the hook's first argument, `refs/remotes/<remote>/main` — never an assumed `origin` (#1201). Cannot determine the base (including no remote name, or no `main` on the pushed remote) → prints `COULD-NOT-CHECK` and allows (fail-open, brief-10); that line means UNVERIFIED, not clean | git hook | n/a |
 | `desksourceguard` | CI gate — refuses a materialised desk-tools source tree that is not the pinned commit | CI | n/a |
 | `clusterguard` | exec-boundary shim for cluster CLIs (`kubectl`, `flux`, `helm`, `talosctl`, `k9s`) — installed as a directory of symlinks on the FRONT of a session's PATH. Refuses every shimmed CLI unless an operator shell exported `ASSAY_ALLOW_CLUSTER`, logs both verdicts, and otherwise execs the real CLI further along PATH. See [clusterguard — the cluster-CLI exec boundary](#clusterguard--the-cluster-cli-exec-boundary) | PATH shim | n/a |
 
@@ -68,6 +109,39 @@ tools touch state under your own config home; hooks and CI gates are invoked by 
 Actions, not by you. The safety contract behind the last column — `Guard`, the audit
 line, the two meters, the configured repo scope — is in
 [Guard, the two meters, and repo scope](#guard-the-two-meters-and-repo-scope).
+
+`deskroster repos --scope roots` reports sorted `<owner>/<repo>\troot=<path>` rows from
+`ConfiguredRoots`: an explicit `DESK_ROOTS` replaces the compiled defaults; unset uses those
+defaults. Malformed, duplicate or disallowed entries refuse the whole inventory (exit 5),
+before printing any rows. This read checks the mapping, not checkout existence or board contents.
+`--scope topology` retains the stated compiled topology. The default `--scope all` retains its
+write, scan and topology inventories; request `roots` explicitly for board-root coverage.
+
+### Evidence publication requests
+
+`deskevidence` shares a snapshot within one publication. On GitHub its admission
+read batches the dispatcher attestation, body-edit history, current labels and
+label provenance, live repository visibility, and the destination file under one
+branch commit. Existing validators consume those facts only after admission.
+The outbound checker and the write use the same file bytes. The existing Contents write
+requires that exact file revision, so a concurrent edit refuses the publication
+rather than overwriting a change. Commits to unrelated files remain compatible. A normal single-file Evidence update takes
+**two requests: one read and one conditional commit**. An already-landed update
+or a dry run needs only the read.
+
+GitLab reuses the attestation issue, destination file and project metadata within
+the publication. It retains its native description-edit history, resource-label
+events and author-identity reads; file updates carry the observed `last_commit_id`.
+The protected default branch still returns the existing sentinel and the caller
+publishes through a side branch and draft merge request. It does not inherit a
+two-request promise: the offline ordinary-update fixture takes seven requests,
+including the author lookup; merge-request publication adds its own calls.
+
+Snapshots never survive an invocation. Overflowing GitHub label histories use
+the complete existing reader. Outcome records can require additional related-file
+and blocker reads. Token minting, conflicts and recovery are outside the two-call
+happy path. A failed commit acknowledgement stays unknown and is never replayed
+automatically; a fresh invocation reads the branch to reconcile it.
 
 ## Your first hour with desk-tools
 
@@ -119,6 +193,34 @@ Each run echoes the effective configuration (`assay-config:` lines) before its o
 the allowed-repo set, the trusted identities, the risk triggers. That echo is the point:
 a widened scope shows up in run output and CI history rather than in someone's memory.
 
+By default the echo is **one line** carrying a digest of the full block:
+
+```
+assay-config: class=write source=config file … configured=true digest=sha256:<12 hex> humans=N bots=N roles=N repos=N (full: ASSAY_CONFIG_ECHO=full)
+```
+
+The digest is sha256 over the full block, so it moves on any change in either direction. The
+**full block** prints instead whenever any of these holds:
+
+- the run is in CI (`CI=true` or `CI=1`, any case, or `GITHUB_ACTIONS=true`) — CI history keeps
+  every line;
+- the roster carries a `REFUSED` or `unrecognised-keys` line — those are never quieter;
+- the digest differs from the last recorded one (in `config-echo.state`, beside the roster) —
+  so the first run after a change shows it whole. Only a default-form run whose output someone
+  sees records, and only after the whole block was written without error (a closed or failing
+  stderr records nothing); a forced, CI or refused run prints the full block without recording;
+- the run is one whose stderr nobody sees: a harness hook (`writeguard`, the `cellctl
+  model-policy hook`) and a child whose stderr a desk tool captures (it is given
+  `ASSAY_CONFIG_ECHO=full`) print the full block and never read or record the state;
+- that state file cannot be read or written, or is not a regular file (a symlink is not followed);
+- `ASSAY_CONFIG_ECHO=full` is set (any value other than `compact` counts as `full`); this forced
+  form neither reads nor updates the state file.
+
+To inspect every roster line without board roots or forge reads:
+`ASSAY_CONFIG_ECHO=full deskroster repos --scope write`.
+Inspect its exit status as well as the echo; an empty write scope is could-not-check (exit 6).
+`deskboard` help (`deskboard help <verb>`, `<verb> --help`) and version are offline and read no roster.
+
 ### 3. Learn the exit codes before you run a write verb
 
 This is the single most common new-operator mistake on this toolchain, so learn it here:
@@ -166,14 +268,16 @@ how you notice you are on a stale binary.
 | Reply on **your own** PR as the worker | `deskreply <owner/repo> <pr> --body-file F` | `gh pr comment` |
 | Upsert your ONE workpad comment on your own PR | `deskreply <owner/repo> <pr> --workpad --body-file F` | none — the edit path needs the candidate comment's GraphQL node id, which only the tool's own find step resolves; escalate on exit 6 rather than guess |
 | Post a review verdict / flip ready | `deskpost review\|comment\|ready` | (reviewer desk only) |
+| Finish a review: post the verdict, confirm it, release the claim | `deskpost finish review\|security-review … --claim <claim key>` | the three separate steps: the verdict verb, a look at the change, the release command in the assignment |
 | File an issue | `deskfile new -R <owner/repo> --title T --body-file F` | none — dedupe is the point |
 
 `deskpr create` is **draft-only by construction**: `--draft` is hardcoded into the
 `gh pr create` argv it builds, so there is no `--draft` flag for *you* to pass — passing
 one is an unexpected argument and exits 5. The git argv is likewise built literally so no
 force-push flag can be emitted, and there is no ready/close/merge verb anywhere in this
-tree. `deskpr update` takes only `[--as-app]`: it pushes follow-up commits and never
-touches the description. Correcting the description is `deskpr edit`'s job — it replaces
+tree. `deskpr update` takes no PR text, only `[--pr N | --branch B] [--root DIR]
+[--explain] [--force-scan-override REASON] [--check]`: it pushes follow-up commits and
+never touches the description. Correcting the description is `deskpr edit`'s job — it replaces
 the body (and optionally the title) of the branch's open PR and pushes nothing. Flipping
 a PR ready and merging it are somebody else's decision, and the tools cannot make them
 for you.
@@ -189,9 +293,14 @@ gh pr view <pr> -R <owner/repo> --json isDraft   # must print true
 Two constraints worth knowing before you reach for them. `deskreply` replies **only on
 your own PR** — it compares the branch checked out in this worktree against the PR's head
 branch and refuses with exit 5 otherwise, so it is not a way to comment on someone else's
-work. And `deskpost comment` posts under the reviewer App identity
-(`assay-reviewer-app[bot]`), not yours; it offers no worker identity, which is precisely
-why `deskreply` exists.
+work. `deskpost comment` uses reviewer credentials and admits only callers whose
+`DESK_LOOP` resolves to the reviewer role. Other roles refuse before credential minting
+or forge access, with guidance for the caller's target: use
+`deskfile attach -R <owner/repo> --to <issue-number> --body-file F --kind issue`
+for an issue comment under your session's role, or `deskreply` for your own PR.
+Keep your own loop identity; changing it to the reviewer loop would change the role you
+are claiming rather than select your caller's App. Review, security-review and ready
+retain their existing reviewer authority.
 
 Every write verb runs `deskkit.BodyCheck` over what you are about to post — titles,
 branch name, body, and for `deskpr create` the diff against the default branch. A hit is
@@ -236,7 +345,9 @@ export DESK_TOOLS_DISABLED=1       # env-var arm, same effect, one session
 ```
 
 `STOP` halts every loop at its next iteration boundary; `STOP.<loop-name>` halts one
-loop. Precedence is `DISABLED` > `STOP` > `STOP.<name>`, and stop flags are **not**
+loop; `STOP.cell.<cell>` and `STOP.cell.<cell>.<loop-name>` halt one cell's desks.
+Precedence is `DISABLED` > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` =
+`STOP.cell.<cell>.<name>` (any one present is a stop), and stop flags are **not**
 self-clearing. The full semantics, including the optional `HEARTBEAT` dead-man lease,
 are in [Runtime state](#runtime-state-not-created-by-this-repo).
 
@@ -267,7 +378,7 @@ no tool reinvents it with holes:
 | `AllowWrite(tool) error` / `AllowWriteAt(tool, now)` | **Two meters** (C-5/TM-4, #209). Budget: ≤20/tool/rolling hour (`RateLimitPerPRPerHour`, raised 10→20 by PR #1053, 2026-08-14), charged only by attempts that may have reached the remote (`ok`, `unverifiable`). Breaker: 5 consecutive non-progress attempts (`refused`, `noop`) → open for 15m. Neither meter counts `ratelimited`/`disabled` — its own output — which is what made the old single counter non-recovering; nor `dryrun` (#214), which wrote nothing. Exit-4 errors carry a **retry-after** (`RetryAfterOf(err)`). The cap is a **chosen throughput ceiling**, not a figure derived from an incident — `ratelimit.go` states what each value is chosen against. |
 | `AlreadyDone(repo, pr, head, verb) bool` / `AlreadyDoneIn(entries, …)` | Idempotency: only prior `ok`/`noop` entries count as done (C-5). `dryrun` never counts — a rehearsal must not suppress the real write. |
 | audit `result` | `ok` · `noop` (attempted, idempotency short-circuited it) · `dryrun` (`--dry-run`: stopped **before** the write, invisible to both meters, #214) · `refused` · `disabled` · `ratelimited` · `unverifiable`. |
-| `BodyCheck([]byte) error` | Shared secret scan (C-3); refuses token/PEM/JWT/AKIA/sops shapes + high-entropy runs. Exempts 40/64-char lowercase-hex git SHAs and **paths** — absolute or repo-relative — whose slash-separated segments are *word-shaped* (#1052, #209). Opaque material between slashes still refuses, including an AWS **secret access key**, whose `/` characters defeat a length-only segment gate. **Also refuses impersonated human rulings (#45)**: a body claiming a configured human's decision BY NAME — `"Decision (Alex, ...)"`, `"Ruling: ... — Alex"`, `"I (Alex) have decided"` — is refused categorically, since no desk write path ever posts as a human; see `ImpersonatedRulingClaim` (`impersonation.go`). |
+| `BodyCheck([]byte) error` | Shared secret scan (C-3); refuses token/PEM/JWT/AKIA/sops shapes + high-entropy runs. Exempts 40/64-char lowercase-hex git SHAs and **paths** — absolute or repo-relative — whose slash-separated segments are *word-shaped* (#1052, #209). Bare CamelCase identifiers are word-shaped too: a 2-4 letter acronym (optionally plural, `PRs`/`IDs`), a `V` version segment of 1-2 digits between words or closing the name (`V1`, `V10`; one per name, sharing the acronym budget), and the numeronyms `K8s`/`I18n`/`L10n`/`A11y` count as words, and one acronym that closes the name spends no acronym budget unless the name carries a version segment (a version and an acronym never share one name); a 40/64-hex git SHA assigned to an ALL-CAPS env var whose name ends in a closed digest key (`SHA`, `SHA1`, `SHA256`, `DIGEST`, `CHECKSUM`, `COMMIT`, or `HEX` directly behind one, as in a Dockerfile `ARG BASE_DIGEST_HEX=<sha256>`) is exempt, unless the name contains a credential stem (`SECRET`, `TOKEN`, `KEY`, `PASS`, …); any other value, and any other key, refuses as on main (#1642). `${NAME}`/`$NAME` substitutions never form a run (`$`, `{`, `}`, `_` are outside the run class). Refuses `glpat-` GitLab tokens (#1642). Opaque material between slashes still refuses, including an AWS **secret access key**, whose `/` characters defeat a length-only segment gate. **Also refuses impersonated human rulings (#45)**: a body claiming a configured human's decision BY NAME — `"Decision (Alex, ...)"`, `"Ruling: ... — Alex"`, `"I (Alex) have decided"` — is refused categorically, since no desk write path ever posts as a human; see `ImpersonatedRulingClaim` (`impersonation.go`). |
 | `Version()` / `WarnIfUnpinned(w)` | Reports the embedded `sourceSHA`/`builtAt`; warns loudly when unpinned (C-1). |
 | exit codes | `ExitOK 0`, `ExitDisabled 3`, `ExitRateLimited 4`, `ExitRefused 5`, `ExitUnverifiable 6`. `ExitCodeOf(err)` maps a typed error, failing **closed** to 6 for any unexpected error. |
 
@@ -289,6 +400,29 @@ it is stripped before the verb's own flag parsing, so it never collides with a p
 grammar. **Prefer the env var.** It is the portable form: a desk verb that shells out to
 another desk verb passes the environment along, so one export traces the whole chain, while a
 flag is honoured by the verb you typed and lost by every child it starts.
+
+`deskclaim-ref` also traces in-process forge-ref writes. Each attempt emits a
+bounded receipt with the ref, CAS old/new object IDs, advertised target, encoded
+pack SHA-256/size/object count, negotiated diagnostic capabilities, completion
+phase, verdict, HTTP status and approved request-correlation header. It emits no
+URL, credentials, claim payload, pack bytes or response body; the normal scrubber
+still applies. A missing field means it was not observed, not a successful check.
+The receipt does not establish which principal the server authenticated or explain
+an opaque remote rejection, and it does not trigger a retry.
+
+Claim writes require negotiated `report-status` and exactly one matching complete
+acknowledgment. Missing, mismatched, duplicated or malformed reports fail closed.
+HTTP additionally checks the original `ok`/`ng` marker and both framing layers;
+`ng <ref> ok` is a rejection even though the dependency decoder loses the marker.
+The local Git transport exposes only its decoded report, so that raw-marker check
+is HTTP-specific. Retained HTTP response bytes are capped at 1 MiB and channel-1
+acknowledgment data at 64 KiB; overflow is unverifiable. The HTTP check also
+requires the literal `unpack ok` record with its terminating newline, which the
+dependency decoder would tolerate missing; a server that omits it makes every write
+unverifiable. A non-2xx receive-pack response is unverifiable and keeps the
+transport's own cause (authentication, authorization, not found, or the status
+code). An absent release remains a no-op without a POST. No key, credential, store
+or retry policy changes.
 
 What the switch changes:
 
@@ -321,6 +455,107 @@ assertions. A verb opts into the whole contract by routing its terminal error th
 Retrofitted so far: `deskdispatch`, `deskwt`, `desktoken`, `deskfile`. Other verbs are
 unaffected and keep their current behaviour until they are moved over.
 
+### Local performance history — `deskperf`
+
+Optional perf-v3 provider/auth instrumentation and its exact coverage are described
+in [Own provider observations](../../docs/provider-performance.md). The legacy
+counter descriptions below remain the perf-v1/perf-v2 contract.
+
+The audit ledger records WHAT a verb did; it records nothing about how long it took. With
+`ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
+desk commands append ONE `perf-v2` line per completed invocation to a local day file
+(boot and launch steps still write the legacy `perf-v1` line; `statusgen` writes `perf-v2` too).
+All 67 operational commands are wrapped, including deskfile, deskreply, scanloop, issueboard,
+reviewloop, verifyloop and the supervisor. `deskperf` is excluded so reading a report cannot
+change its input; `muhar` is a developer mutation harness with separate execution accounting.
+A command-inventory test fails when a new entrypoint forgets its wrapper. `statusgen` writes the same
+record (tool `statusgen`, verb = its mode) through the same shared `perfrec` module, so
+`deskperf report --tool statusgen` reads it too:
+
+```sh
+export ASSAY_TELEMETRY=1        # opt in; unset it to stop — the history then ages out
+deskperf report                 # last 7 UTC days, every wrapped tool
+deskperf report --tool deskpr --days 2 --top 5
+deskperf boot --role worker-desk --json
+```
+
+**What is recorded** — and nothing else, enforced by the record's type: the schema tag, a
+second-resolution UTC timestamp, the tool (canonical key, else `other`), the verb (the verb's
+own registered subcommand, else `other`; boot steps as `step:<name>`), the role (`$DESK_LOOP`
+canonical name, else `none`), the exit code and its fixed result word, the build stamp (hex,
+else `unpinned`), and a random per-install id. A `perf-v2` invocation record adds: the
+measurement `boundary` (`process-init`: wall and CPU both start at a mark taken as the
+shared recorder initialises, so `main`'s configuration and activation checks are inside),
+wall ms and — only when `cpu` is `measured` — process CPU ms over that same interval, the
+CPU state (`measured`, `unsupported`, `failed`, `missing`), the `subprocess`,
+`subprocessMs` and `http` counters (child processes through the shared runner, their summed
+inclusive wall, HTTP round-trips through the forge client's counting transport), the cache
+and coalesced-waiter counters listed as `unavailable` (not observed, never zero), and timed
+phases (none yet). A legacy `perf-v1` record has wall ms, optional CPU ms and the three
+counts as `childProcs` / `childWallMs` / `forgeCalls`. Field tables: `docs/telemetry.md`.
+
+**Newly covered commands use the fixed verb `other` rather than copying arbitrary argv;
+the original seven retain their registered verb lists. Tool-level timing/counts are complete
+for completed wrapped invocations when the local sink is writable. Long-running commands
+write only on return; killed processes can have no terminal sample.
+
+The two counts are lower bounds.** A verb's own child-process runner or its own direct
+HTTP client is outside both seams and is not counted: `deskboot`'s boot-step children,
+`desktoken`'s token mint, `deskpost`'s posts, and the repository-visibility read when no
+client is injected. A `0` from those means "not counted", not "none made".
+
+**What is never recorded:** argv, flags or their values, repo, PR or issue numbers, branch,
+path, title, body, error text, session tag, any environment value, hostname, user name, or
+any token. Every string field passes through a mapper whose return is one of its OWN
+constants — an unknown input becomes `other` / `none`, never the input.
+
+**Where it lives:** `<state dir>/perf/<YYYY-MM-DD>.jsonl` (state dir: `~/.config/assay`), files
+0600 in a 0700 directory, plus `perf/install-id`. With the switch off, nothing is created —
+no directory, no file, no id. Nothing is ever sent anywhere: no file this adds opens a
+network connection.
+
+**Retention: 7 UTC days, pruned on write.** The first record a process writes removes day
+files older than today and the six days before it. The pruner removes only a name that is
+EXACTLY `YYYY-MM-DD.jsonl`; `install-id`, anything else in `perf/`, and everything outside it
+— the audit ledger and its segments included — are never touched.
+
+**It is not the audit ledger, and never touches it.** The ledger is load-bearing (the
+rate-limit counter, the circuit breaker and the idempotency store read its rows) and is never
+pruned; the perf history is opt-in, disposable and read by nobody but you. A perf write is
+best-effort and silent: a full disk or an unwritable directory never changes a verb's exit
+code or its output. Per-invocation agent usage (tokens, cost) is the agent runner's to report
+(`loopadmin/runner`'s `Usage`), not this record's.
+
+`deskperf` reads it:
+
+- `deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]` — per tool: count,
+  p50 / p90 / max wall ms (nearest-rank), total wall ms, share of total wall, and refusal ratio
+  (refused + unwritten + unverifiable over count); then the N slowest invocations (default
+  10) as ts / tool / verb / wall ms. Boot- and launch-step records are excluded (they
+  subdivide a `deskboot` or `cellctl` run already counted once). Legacy `perf-v1` records
+  render first, exactly as before; `perf-v2` records render as a SEPARATE group (JSON
+  `perfV2`) whose total is labelled summed invocation wall, with boundary and CPU-state
+  counts, the CPU distribution over measured records only, per-counter measured/unavailable
+  coverage (totals over measured records only) and per-phase distributions. The two groups
+  are never summed, and no inclusive child or phase time is added to a wall total. A
+  forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
+  runs, unavailable runs, total forge calls, calls per run p50 / p90 / max, share of all forge
+  calls, and the rate-limit cost — the busiest UTC hour's calls, and that hour and the p90 run
+  as a percentage of the 5000/hour App budget floor (pooled over every tool and installation:
+  a gauge, not a bound). It pools perf-v1 `forgeCalls` and the perf-v2
+  `http` counter (one seam, one budget); a run whose counter is unavailable — or a perf-v1
+  `statusgen` record from an older build, whose 0 means "not counted" — prints as
+  unavailable, never as zero. Current `statusgen` writes perf-v2, whose `http` count is
+  measured like any other.
+  Rules: `docs/telemetry.md`.
+- `deskperf boot [--days N] [--role R] [--json]` — `deskboot`'s per-step p50 / p90 / max, in
+  boot order, and the summed boot cost per role.
+
+`--days` defaults to 7 and refuses anything above it (exit 5): there is no eighth day to read.
+An empty history is a REFUSAL (exit 6) that names its reason — logging off, or on but nothing
+recorded yet — never an all-zeroes report; a filter matching nothing is exit 5; unparseable
+lines (a truncated final line) are counted and reported, never silently dropped.
+
 ### Runtime state (NOT created by this repo)
 
 At runtime the tools read/write, under `~/.config/assay/`:
@@ -342,6 +577,26 @@ At runtime the tools read/write, under `~/.config/assay/`:
   whatever the ledger's size. An absent ledger says so and exits 0; an unreadable one is
   exit 6; a malformed line is printed with a note naming `deskaudit recover`, never
   dropped.
+- `ci-checks.jsonl` (+ `ci-checks.jsonl.<YYYY-MM-DD>` segments, `ci-checks.lock`) — **CI
+  check history**. One line per FINISHED check run or terminal commit
+  status (`success`/`failure`/`error`) that a desk tool read: repo, head SHA, PR when the
+  read carried one, kind, name, attempt (the forge run id, or the creation/start stamp),
+  conclusion, timestamps and duration — never check output, URLs, or who posted it. It is
+  written by the single Forge decorator from the `ChecksAtHead` / `ListOpenChanges` /
+  `ReviewQueueSnapshot` results the tools already fetch, so it costs **no extra forge
+  request**; recording is best-effort (a failed write, a lock held past 2 s, or a recorder
+  panic drops the batch with one stderr line; after one lock timeout the process stops
+  recording) and never changes the read's result. It
+  rotates daily like the audit log; no tool deletes a segment (retention is yours), and no
+  desk decision reads it — it is local operational state for later analysis, never
+  committed. `deskkit.LoadCIChecks` reads every segment, de-duplicated on (repo, head SHA,
+  kind, name, attempt, conclusion). A check name is whatever the check's poster supplied:
+  unauthenticated, sanitize before display. Schema: [`ci-check-v1`](internal/deskkit/ci-check-v1.md);
+  fail-first: `muhar -spec internal/deskkit/cicheckhistory-mutations.json`.
+- `perf/` — the OPT-IN local perf history (`ASSAY_TELEMETRY=1` only; absent otherwise):
+  `perf/<YYYY-MM-DD>.jsonl` day files kept 7 UTC days and pruned on write, plus
+  `perf/install-id`. Separate from the audit ledger by design — see
+  [Local performance history](#local-performance-history--deskperf).
 - `DISABLED` — kill switch. `touch ~/.config/assay/DISABLED` (or export
   `DESK_TOOLS_DISABLED=1`) halts the whole suite: every tool exits 3 after auditing
   `result=disabled`. Its first line is shown as the reason.
@@ -351,7 +606,8 @@ At runtime the tools read/write, under `~/.config/assay/`:
 - `STOP.<loop-name>` — per-loop stop flag (brief 08). Halts only the loop whose
   `DESK_LOOP` env var matches `<loop-name>`; other loops and plain tool invocations
   (no DESK_LOOP set) are unaffected. Removed with `rm`. Precedence chain:
-  `DISABLED` (C-6) > `STOP` > `STOP.<name>`. A DISABLED that is cleared re-enables
+  `DISABLED` (C-6) > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` =
+  `STOP.cell.<cell>.<name>` (the cell flags are described below). A DISABLED that is cleared re-enables
   everything; stop flags are NOT self-clearing (C-10: a switch that un-flips itself
   is not a switch).
 
@@ -390,6 +646,44 @@ At runtime the tools read/write, under `~/.config/assay/`:
 
   `deskboard` marks a `STOP.<name>` whose name matches no known loop as **inert**:
   it halts nothing, and a human must not read it as a stop that is being honoured.
+- `STOP.cell.<cell>` / `STOP.cell.<cell>.<loop-name>` — cell-scoped stop flags. Host
+  cells share this one state directory, so `STOP` and `STOP.<loop-name>` reach every
+  cell's desks; these reach one cell. `STOP.cell.<cell>` halts every loop of that
+  cell, `STOP.cell.<cell>.<loop-name>` one loop of it (`<loop-name>` resolves through
+  `loopnames.go` exactly as for `STOP.<loop-name>`, so an alias-named flag holds).
+  Removed with `rm`; not self-clearing. Full precedence chain: `DISABLED` > `STOP` >
+  `STOP.cell.<cell>` > `STOP.<name>` = `STOP.cell.<cell>.<name>` — any one present
+  is a stop.
+
+  - **Membership is the cell marker only.** A session belongs to a cell through
+    `ASSAY_CELL` (its role through `ASSAY_CELL_ROLE`), the process-environment marker
+    `cellctl` stamps on every desk it launches — never a `roster.env` key, and never
+    the comms-only `DESK_CELL`. The per-loop cell flag is checked for the loop named by
+    `DESK_LOOP` and for the role `ASSAY_CELL_ROLE` names, when that is a known loop. A
+    session with no marker is unaffected by every cell flag.
+  - **Cell flags only add stops.** They are resolved after `DISABLED` and `STOP`, and
+    they never clear or override `STOP.<name>`. `STOP.cell.<cell>` is resolved before
+    the loop name, so it also holds over an unrecognised `DESK_LOOP`.
+  - **The cell name is validated before any path is built.** A marker outside
+    `[a-z0-9-]` (for example `../x` or `a/b`) is refused **exit 6 (unverifiable)**:
+    the Guard cannot name the file that would speak for that session, so it never
+    reports "not stopped".
+  - **Two layers.** The iteration-boundary check of `pr-review-desk`, `verify-desk`
+    and `worker-desk` reads both cell flags in the skill body, and the Guard refuses
+    every outward verb independently. `intake-desk` and `the-desk` have no
+    iteration-boundary check and rely on the Guard alone.
+
+  `deskboard` lists cell flags beside the others and tags one **INERT**. It says the
+  flag "halts nothing" only when it can prove that: the cell name breaks the
+  `[a-z0-9-]` rule (the same rule `cellctl` holds every cell name to) or the loop part
+  matches no known loop. A flag whose cell has no registration
+  (`<cells-root>/<cell>/cell.env`) under the cells root *as the board's own shell
+  resolves it* (`$CELLS_ROOT`, else `$XDG_DATA_HOME/assay/cells`, else
+  `~/.local/share/assay/cells`) is tagged INERT too, but its reason names the root it
+  looked in and does not say "halts nothing": the Guard keys on the session's marker
+  alone, so a cell registered under another root is still stopped by it. Any desk on the
+  machine can write a cell flag for another cell — no escalation over `STOP`, which
+  any desk can already write.
 - `HEARTBEAT` — dead-man lease (brief 08, optional). If the file EXISTS and its
   mtime is older than 24h, it is treated as STOP-ALL. Absent file = feature off
   (no behaviour change until Ada opts in by touching it once). **Renewal is a HUMAN
@@ -422,6 +716,63 @@ mv ~/.claude/desk-tools/* ~/.config/assay/ 2>/dev/null; rmdir ~/.claude/desk-too
 
 The audit ledger, roster beacons, and any active `STOP`/`DISABLED` flags carry over. New
 installs start clean — no migration needed.
+
+### Roster beacon writes and recovery
+
+`deskack` receipts, `deskroster` role/work changes and resource-vitals updates share
+`<state>/roster/<session>.json`. They serialize the complete read-modify-write operation
+with a per-session OS file lock, then publish a complete replacement from a temporary
+file in the same directory. Roster pruning uses the same transaction and preserves
+updates made after its scan. Writers preserve fields they do not own. The lock file
+stays in place: removing it while a process holds it could create two independent locks.
+
+Install the fixed desk-tools version for **all** writers sharing a state directory and
+restart them. An older binary does not participate in the lock protocol. The change
+prevents partial writes and lost concurrent updates; it cannot reconstruct data already
+lost from a damaged beacon.
+
+If a beacon is already malformed, the tools refuse to overwrite it. Stop the affected
+session's writers, retain a byte-for-byte backup of the damaged file, and restore a
+known-good complete beacon for that same session while the writers remain stopped.
+Validate the JSON and reconcile its role, open work, receipts and resource fields before
+restarting. If no trustworthy copy exists, retain the damaged file for reconciliation
+and start a fresh session with a distinct identity; account for the old session's open
+work explicitly. Do not replace a damaged beacon with an empty object, delete it to
+bypass the refusal, or remove a lock file as a recovery step. An OS lock is released
+when its holding process exits.
+
+### Beacon file boundary and retention
+
+Beacon reads and lock opens refuse leaf symlinks, Windows reparse points, and
+non-regular files using handle-based checks. Unix FIFO opens are nonblocking.
+The state directory and its ancestors must remain private and trusted: this is
+not protection against parent replacement or hard links, and it does not change
+Windows ACLs. The supervisor's resource join uses the same strict beacon reader;
+malformed or duplicate-key state yields `could-not-check` resource vitals.
+
+`deskroster list` still prints valid snapshot rows when a beacon read or automatic
+prune fails, then exits 6 with the failed operation. Open PRs with uncertain roster
+coverage are labelled ownership unverified, not unclaimed. The table is a snapshot,
+not proof that pruning committed or that an unreadable session has no work.
+
+**Retention defaults to preservation.** No age-based cleanup of beacons, receipts,
+resource data, unknown fields, stable `.json.lock` files or abandoned
+`.roster-beacon-*` publication files is performed. A timestamp, absent heartbeat,
+or successfully acquired lock cannot establish that a file is safe to delete.
+In particular, a waiting process may already have opened the old lock inode even
+when another process can acquire it. Never unlink or rotate a stable lock file.
+
+Before considering space recovery, an operator must first stop every participant sharing the
+state directory, disable all launchers/restarts, and verify their processes and
+handles have exited. If that cannot be established, retain the files. While
+quiescent, make and verify a complete restricted-access archive outside the live
+roster directory, including receipts, resource data, unknown fields and abandoned
+temporaries; preserve original paths and bytes. A temporary is an uncommitted
+candidate, never automatically a newer or valid recovery source. Reconcile open
+work and identify an authoritative committed snapshot before any session resumes.
+Copying an archive is not permission to remove live records: deletion needs a
+separate operator-approved retention policy and recovery test. Stable locks stay
+in place even after archiving. There is intentionally no cleanup command or TTL.
 
 ## Trust gate (deskkit/trust.go)
 
@@ -507,15 +858,44 @@ work queue or steer a desk action.
 `deskroster liveness --repo OWNER/NAME` is a **read-only** NOTICE surface, separate from the
 trust gate above. The trust gate (`TrustedAuthor`/`TrustedHumanAuthor`/`Blessed`, all in
 `trust.go`) compares a login against the CONFIGURED roster — a pure string/id comparison
-that never asks GitHub whether the account behind that login still exists. `liveness`
-closes that gap by asking GitHub, right now, what it says about every login the roster
-configures (`Config.Humans`, `Config.Bless`, `Config.Bots` — GitHub-only; a GitLab identity
-lives in `Config.BotIdents`/`Config.Logins` and is untouched here), and printing one
-`NOTICE:` line for each identity that is not exactly what the roster expects:
+that never asks the forge whether the account behind that login still exists. `liveness`
+closes that gap by asking the repo's own forge, right now, what it says about every login
+the roster configures, and printing one `NOTICE:` line for each identity that is not
+exactly what the roster expects. Both GitHub and GitLab are supported (assay#1667), reading
+a different identity set per forge:
 
-- **deleted** — the login no longer resolves to any GitHub account.
+- On **GitHub**: `Config.Humans`, `Config.Bless`, `Config.Bots`.
+- On **GitLab**: the forge-qualified bot/service-account identities in `Config.BotIdents`
+  whose entry is `gitlab:`-qualified — GitLab has no human/bless roster of its own, only
+  service accounts (`GitLabRosterIdentities`, `trustliveness_gitlab.go`). It looks an
+  identity up with GitLab's exact-match `GET /api/v4/users?username=<name>` and reads both
+  the returned numeric id and the account's `state`. GitLab's users API always reports a
+  `state` field on a matching entry; a response that does not is treated as a
+  partial/malformed read — **could-not-check**, never defaulted to active.
+
+The classes:
+
+- **deleted** — the login no longer resolves to any account (a GitHub 404, or an EMPTY
+  GitLab users-list response — GitLab's endpoint never 404s on a no-match query, it returns
+  `200 []`). On GitLab this is **not unambiguous**: GitLab hides `blocked`/`banned`/
+  `ldap_blocked` accounts from a non-admin token's user search entirely (GitLab's own
+  `UsersFinder#base_scope`/`FORBIDDEN_SEARCH_STATES`), and a desk forge credential
+  (project/group/service-account token) IS a non-admin caller — so an empty result means the
+  account was deleted, OR that it is blocked/banned/ldap_blocked and simply hidden from this
+  token. The DELETED notice for a GitLab identity says so; a GitHub 404 carries no such
+  caveat.
 - **reclaimed** — the login resolves, but to a DIFFERENT numeric id than the one pinned —
-  the two classes the check actually exists to catch.
+  one of the classes the check actually exists to catch. Checked first (pinned identities
+  only), so it is reported whatever the new account's state is.
+- **suspended** — the login resolves, but the forge reports the account in any non-`active`
+  state (GitLab-only today — GitHub's account read exposes no such field). In practice this
+  fires for the GitLab states a non-admin token's user search does NOT hide —
+  `deactivated`, `blocked_pending_approval`, and similar — since `blocked`/`banned`/
+  `ldap_blocked` accounts are hidden entirely and classify **deleted** instead (see above).
+  Checked AFTER **reclaimed** and BEFORE **unpinned**/**renamed**: a non-active GitLab
+  account is reported suspended even when the identity is unpinned, but a pinned identity
+  whose id has moved is reported **reclaimed** whatever the new account's state. Never
+  reported as alive.
 - **renamed** — the pinned id's canonical login changed (advisory).
 - **unpinned** — the login resolves, but the roster carries no id to compare against
   (advisory: pin one).
@@ -523,16 +903,23 @@ lives in `Config.BotIdents`/`Config.Logins` and is untouched here), and printing
 An identity that is exactly alive produces no output — the same quiet-on-the-happy-path
 shape every other NOTICE in this codebase uses.
 
+A GitHub bot identity (`Config.Bots`, keyed on the App's bare slug) is probed at its
+`"<slug>[bot]"` REST rendering, never the bare slug — GitHub's `GET /users/{login}` only
+resolves a GitHub App's bot account under that suffixed form, so probing the bare slug 404s
+for every live App and misreports it as **deleted** (medici-finance/assay#1665). Human and
+Bless identities resolve directly at their configured login and are untouched by this. A
+GitLab service account is never suffixed — GitLab has no decorated rendering at all, the
+account's username is the one form its API attributes anything to.
+
 **What it does NOT do.** It never wires a finding into `TrustedAuthor`/`TrustedHumanAuthor`/
 `Blessed`/`ItemTrusted*`'s pass/fail return, never auto-revokes anything, posts no comment,
-files no issue, and mutates nothing on the forge. Who is trusted today is unchanged by
-running it. Auto-revocation is separate, explicitly human-gated follow-up, tracked on
-medici-finance/assay#933 (the issue this check was scoped from).
+files no issue, and mutates nothing on the forge (GitLab included: the check is one read,
+`GET /users`, nothing is written). Who is trusted today is unchanged by running it.
+Auto-revocation is separate, explicitly human-gated follow-up.
 
-It is GitHub-only in this version: a `--repo` backed by a non-GitHub forge prints one
-explicit "GitHub-only" line rather than skipping silently or refusing — the roster itself
-may be perfectly configured, only that repo's forge is unsupported. GitLab account-liveness
-is untracked follow-up.
+A `--repo` backed by neither GitHub nor GitLab prints one explicit could-not-check
+`NOTICE:` line rather than skipping silently or refusing — the roster itself may be
+perfectly configured, only that repo's forge has no liveness implementation yet.
 
 ## Risk classification — how a PR becomes risk-classed
 
@@ -541,6 +928,14 @@ One computation, `deskkit.RiskPathTriggered(repo, changedFiles)`, consumed by
 answers TRUE on every uncertain input; the ONLY way to get a waiver is a repo in the
 compiled-in allowed set, compiled in as `VisibilityPrivate`, with a complete, readable
 changed-file list matching none of that repo's triggers.
+
+`deskboard actions` exports `riskClassed` on every trusted PR row, including
+NEEDS-REVIEW, RE-REVIEW and BLOCKED, before an approval or green checks. Review
+dispatch can therefore select correctness and security lanes concurrently. Public or
+unknown visibility, the owning brief's gate/risk, unreadable or incomplete changed
+paths, path triggers and the trailer-absent App anomaly only widen classification.
+The action still follows its review/CI precedence; the ready gate independently
+re-reads the change before authorizing a flip.
 
 Adopting this gate for your own repositories (the three modes, the callout JSON/exit
 contract, and the fail-closed guarantees) is documented in
@@ -598,6 +993,29 @@ there is no ready/close/merge verb. Three subcommands:
 - `deskpr edit --body-file F [--title T]` — replace that same open PR's **body**, and
   optionally its **title**. It pushes nothing and runs no git write at all.
 
+### Read-only preflight for published Evidence
+
+Use `deskpr create --check-remote --title T --body-file F` when a conditional
+forge-file write has already published the branch. Unlike offline `--check`, this
+explicitly mints the session-role App token and reads the credentialed push
+endpoint. It reuses the live create path's immutable source/destination proof and
+judges every commit actually new to that destination, then stops before write
+budget, push or PR creation. It refuses unknown, divergent or unreadable remote
+state and new foreign authors or committers. The two check modes are mutually
+exclusive; ordinary `--check` still opens no connection and judges the whole range.
+
+A successful remote check is a snapshot, not permission to ignore a later refusal.
+Run ordinary create from the same owned branch with a fresh body file; it rechecks
+all gates and pins the observed destination tip during its plain push. If either
+operation refuses, stop that operation and retain its evidence. Do not reauthor
+forge-created history, change identity or substitute a raw push.
+
+Conditional `deskevidence` file writes judge their admitted immutable source
+against its fetched-main baseline, independently of an older Evidence destination
+branch. They push no source commits. Exact-run admission, verifier-token custody,
+conditional destination writes and landed-author checks still apply. Local flip
+commits and PR pushes retain their own full new-commit identity gates.
+
 ### `deskpr edit` — correcting a PR's own text
 
 The rework cycle whose finding is "the PR body says X, it should say Y" — a provenance
@@ -618,7 +1036,36 @@ branch diff: those are surfaces a *push* publishes, and `edit` pushes nothing �
 a body correction over code the branch already carries would strand the one verb whose
 job is fixing text.
 
-**The link trailer is not editable.** `Brief: <stream>/<NN>` / `Issue: #<N>` is the
+**`--pr N` names the PR instead (#1901).** Git allows one worktree per branch, so a rework
+worker whose PR head branch is still checked out elsewhere works on a neutral branch or a
+detached HEAD and pushes by explicit refspec. From there `edit --pr N` reads PR #N and
+admits the checkout by one of two rules. The PR must be OPEN first, whatever the checkout.
+Rule 1 is the shared own-PR guard (`deskkit.CheckOwnPR`, the same rule `deskreply` uses): the
+worktree's branch is the PR's head branch, or its HEAD commit is EXACTLY the PR's head
+commit. Rule 2 (#2085) admits any other checkout — a desk window, a neutral branch with no
+commits ahead of the default branch — only when the PR's head branch is in this repository
+(a fork PR, or one whose head repository the forge does not report, is refused) and the PR's
+current body already carries a link trailer, which the trailer-immutability rule below then
+holds fixed. A trailer-less PR (a human's, a pre-trailer one) is therefore edited only from
+its own checkout. Preflight still refuses a checkout on the default branch or with staged
+changes, `--pr` or not. Without `--pr`, a detached HEAD is refused (exit 6) with a message
+that points at `--pr N`.
+
+**`update --pr N` / `--branch B` (#2085)** push HEAD to the head branch the forge reports for
+that PR (`git push origin HEAD:refs/heads/<head-branch>`, no `-u`), for a worktree whose local
+branch name differs from the PR's head branch. Before the push: the PR must be OPEN; its
+head branch must be in this repository (fork or unreported → refused); the head branch name
+is secret-scanned; HEAD must be the PR's head commit or descend from it; a PR head already
+contained in the default branch is refused; and the push destination must already hold the
+head branch at the head commit the forge reports (absent or different → refused). The
+publish-identity gate then judges only the commits the push adds beyond that verified head
+(#2432), so a PR whose head already carries another identity's commits can take more of this
+role's own. `--pr N --check` cannot read the head, so it judges the whole range from the
+default branch (a mixed-identity PR is refused there); `--branch <head-branch> --check` judges
+against the local tracking ref instead.
+
+**The link trailer is not editable.** `Brief: <stream>/<NN>` / `Authors: <stream>/<NN>[, …]` /
+`Issue: #<N>` is the
 derived board's edge from the PR to its work item, and a body-rewrite verb that could
 re-point or drop it would make that edge assertable exactly once and silently revocable
 forever after. The replacement body must carry exactly one trailer, and when the PR's
@@ -656,15 +1103,37 @@ is the ambient-identity lane the forge-side custody ruling retired.
 `deskpr create`, `deskpr update` and `deskwt add` therefore **refuse, fail-closed** (exit 5)
 when the resolved **push** URL of `origin` is an SSH one *and* the session presents a bot
 identity — `$DESK_LOOP` resolving to a role App. The refusal names the config key, the URL,
-the acting App, and the one-line remedy (a `remote set-url --push` to the equivalent https
-URL, which it computes for you). Implementation: `internal/deskkit/pushtransport.go`.
+the acting App, and the remedy (usually a `remote set-url --push` to the equivalent https
+URL, which it computes for you; a rewrite rule in the way is named below). Implementation: `internal/deskkit/pushtransport.go`.
+
+The URL judged is the one git will actually push to — `git remote get-url --push --all
+origin`, a local read that contacts no remote and applies `url.<base>.pushInsteadOf` and
+`url.<base>.insteadOf` exactly as a push does (#884). An https remote that such a rule
+rewrites to SSH is refused, and the refusal names the rule, the configured URL and what it
+became. The remedy is decided by the https URL it would propose, not by the kind of rule: git
+never applies `pushInsteadOf` to an explicit pushurl, but it DOES apply `insteadOf` to one. So
+the refusal proposes `remote set-url --push <https URL>` unless an `insteadOf` rule would rewrite
+that very https URL back to SSH — then, and only then, the remedy is to remove or narrow that
+rule. An SSH URL that an `insteadOf` rule turns into another SSH URL (an ssh alias on port 443,
+say) is therefore cleared by an https push URL, and removing the rule would not clear it. When
+removing that rule is not enough on its own — the configured URL is itself SSH, or a
+`pushInsteadOf` alias would still apply once it is gone — the refusal names both steps, the rule
+first and the `set-url` second, so the operator is not sent round the gate twice. On a
+multi-valued `remote.<name>.pushurl` the plain `set-url --push` form fails ("has multiple
+values"), so the proposed line names the value it replaces as git's `<oldurl>` pattern and keeps
+every other push destination.
+
+In `deskpr` this refusal is mostly shadowed by the push-destination gate (#1623), which runs
+first and refuses any non-https destination on its own terms; the surface where this gate is
+the one that speaks is `deskwt add` without `--role`, where nothing else inspects the push URL
+before the new worktree inherits it.
 
 Four boundaries are deliberate:
 
 - **Only the push transport.** Fetch over SSH is untouched — a read carries no identity the
   forge records against a ref. An SSH `remote.origin.url` with an https
-  `remote.origin.pushurl` override is a normal, allowed run, and `remote.origin.pushurl` is
-  what the gate reads whenever it is set, exactly as git resolves a push.
+  `remote.origin.pushurl` override is a normal, allowed run: git pushes to the pushurl, and
+  so does the gate's resolved URL.
 - **Only a bot session.** With `$DESK_LOOP` unset the gate is inert: a human at a terminal
   pushes under their own key, which is what the SSH remote is for. A `$DESK_LOOP` this
   process cannot resolve to a role is a stderr **NOTICE** saying the gate did **not** run —
@@ -672,16 +1141,26 @@ Four boundaries are deliberate:
 - **Only the verbs that push.** `deskpr edit` rewrites a PR body and pushes nothing, so it
   is not gated. `deskwt add` is gated because the worktree it cuts inherits the remote, and
   refusing before the branch exists is cheaper than refusing after an agent has filled it.
+  `deskwt add --role <role>` (what `deskdispatch` runs) does not inherit it: it writes the
+  role App's own transport at worktree scope — `remote.origin.pushurl` and `remote.origin.url`
+  each reset with an empty entry (git 2.46+) and set to `https://<host>:443/<owner>/<name>.git`,
+  plus the role's host-scoped credential helper — then refuses and rolls the worktree back
+  unless `git remote get-url [--push] --all origin` resolves to exactly that URL. The shared
+  checkout's config is never touched. Its fail-first evidence is
+  `cmd/deskwt/transport-mutations.json`.
 - **https without an App credential helper is a NOTICE, not a refusal.** An https push
   answered only by a machine keychain is the same ambient-identity shape one layer along,
   but the evidence is weaker — a helper this code does not recognise may well be the App's —
   so it says so on stderr and proceeds.
 
-Could-not-check is exit 6, never a pass: a `git config` read that fails, and a remote with
-no URL at all, are both unverifiable rather than "no SSH found, carry on".
+Could-not-check is exit 6, never a pass: a `git config` read that fails, a push URL git
+cannot resolve, and a remote with no URL at all are all unverifiable rather than "no SSH
+found, carry on". Real git never resolves a url-less remote to nothing — it resolves it to the
+remote's bare NAME (a local path) — so the gate treats "no non-blank `url`/`pushurl` configured,
+and git resolves exactly the remote's name" as the no-URL case too.
 
-The guard's own fail-first evidence is `internal/deskkit/pushtransport-mutations.json` — ten
-mutations plus a positive control, run with
+The guard's own fail-first evidence is `internal/deskkit/pushtransport-mutations.json` —
+thirty mutations plus a positive control, run with
 `go run ./cmd/muhar -j 0 -spec internal/deskkit/pushtransport-mutations.json`.
 
 ### The publish-identity gate (`deskpr create` / `update`, `deskevidence`)
@@ -718,6 +1197,28 @@ Boundaries mirror the push-transport gate's:
 - **Three-state.** An unbound role is a refusal (exit 5); a GitHub role whose bot USER id the
   roster does not pin, or a base ref that will not resolve, is could-not-check (exit 6), never
   rounded up to a pass; an empty range and every commit matching are clean.
+- **Only the commits the push ADDS are judged (#1967).** A PR head can already carry a
+  commit by another trusted App (a mixed-author PR); re-judging it refused every later
+  `update`, though the push publishes none of it. `update` therefore offers the gate the
+  remote tip — first the local `refs/remotes/origin/<branch>` (this is what `--check` runs),
+  then, immediately before the push, the forge's own live PR head sha — and the range becomes
+  `HEAD ^refs/remotes/origin/<base> ^<tip>`, always a subset of the whole range. The tip is
+  used only when it is spelled as a full object name or a `refs/remotes/origin/…` ref (never
+  `HEAD`, a local branch, an abbreviated sha or revision syntax), resolves to a commit here,
+  and is an ancestor of HEAD; otherwise — first push, unfetched head, force-moved or diverged
+  remote, no head reported — the **whole** range is judged and the refusal says why the tip
+  was not used (usually: `git fetch origin` and retry). A tracking ref that LAGS the remote
+  only widens the range. Under `update --pr N` the head branch is unknown offline, so a real
+  run skips the offline stage and is judged once, at the live stage — after the head is
+  shown to be an ancestor of HEAD and to be what the push destination holds (#2432); `--pr N
+  --check` judges the whole range and says how to narrow it. A live `create` confirms the
+  destination branch directly through its credentialed push endpoint, excludes only that
+  confirmed history, and pins the existing ref during its plain push. An absent branch
+  keeps the whole range; unreadable or divergent state refuses. `create --check` judges
+  the whole range and explicitly reports that it cannot confirm the remote head.
+  `deskevidence` offers no tip (its base already is the branch it writes). Every caller's tip choice is pinned
+  by `TestPubIdentityCallersTip`; the fail-first evidence is
+  `internal/deskkit/publishidentity-mutations.json`.
 - **`deskevidence` commits as the verifier App via the Contents API**, so its own landing is
   correctly attributed — this gate is the defence-in-depth layer over the verifier worktree it
   derives witness attribution *from*. In the sanctioned post-merge verify flow that worktree
@@ -752,6 +1253,248 @@ grep scan_override ~/.config/assay/audit.jsonl
 
 The scan's accuracy in both directions, the acceptance run behind these verbs, and the
 proof each refusal can fail, are the ship bar in `docs/desk-tools-gate-bar.md`.
+
+### The house callout — a deployment's own outbound rule (desktools-v2/11)
+
+The outbound-write check (desktools-v2/10) is a compiled table. A deployment that has a rule
+the table cannot know (a list of words, a naming scheme, an internal classifier) names ONE
+executable of its own, and the check consults it on every outward write the compiled layer
+passed — including one with no text, which it receives with an empty `fields` list. A push is
+put to it once for the branch name, once per commit message and once for the added lines, so
+a push of N commits is N+2 consults. The callout can only **narrow**: the compiled layer runs first, and only a write it passed is
+put to the callout. A callout cannot clear a compiled refusal, and for a write the compiled
+layer refused it is never executed.
+
+Three roster keys, all optional (`~/.config/assay/roster.env`):
+
+| Key | Meaning |
+|---|---|
+| `ASSAY_OUTBOUND_CALLOUT` | Absolute path of the executable. Unset means compiled checks alone. |
+| `ASSAY_OUTBOUND_CALLOUT_REQUIRED` | `public`: a write to a public or unknown target with no callout configured is refused. Private targets are unaffected. Also read from the environment: set it there as well, because a roster that fails validation loses its own copy and the environment copy is what keeps the requirement. |
+| `ASSAY_OUTBOUND_CALLOUT_TIMEOUT` | Go duration, 1s to 60s, default 5s. |
+
+A key that is SET but malformed (relative path, a list, a timeout outside the range, a
+`REQUIRED` value other than `public`) is not "unconfigured": the roster still loads and every
+outward write is refused, naming the key. The startup configuration echo prints the path, the
+required mode and the timeout, and marks the path `INVALID` whenever any of the three keys is
+malformed — a valid path beside a bad timeout still refuses every write.
+
+**The contract.** The executable is run directly, with no shell. It must be an absolute
+path to a regular, executable file that is not group- or world-writable, in a directory that
+is not either. Its environment is exactly `PATH`, `HOME`, `TMPDIR` and `LANG`: it never
+holds the caller's token or any `ASSAY_*` variable. Those four carry the **calling process's
+own values** (one that is unset there is left out), so whoever runs the desk verb chooses
+them. A callout must not let them decide anything. It sets its own `PATH` or names its tools
+by absolute path, or a missing or substituted tool decides for it; and it sets its own locale
+(`LC_ALL=C`, exported), or a caller's `LANG` naming a multibyte locale in which the write's
+UTF-8 bytes are not all characters makes a text tool skip that field without an error. The
+example below does both.
+It receives ONE JSON object on stdin:
+
+```json
+{"version":1,"verb":"deskfile new","role":"worker","repo":"example-org/example-k8s",
+ "visibility":"public","kind":"issue",
+ "fields":[{"name":"title","text":"..."},{"name":"body","text":"..."}]}
+```
+
+`visibility` is `public`, `private` or `unknown` (a target the roster does not list is
+`unknown`, never `private`). `kind` is `issue`, `change`, `comment`, `review`, `label`, `file`,
+`commit` or `ref`. A field with no text is not sent. The object is one line.
+
+Each `text` is a JSON string, and the callout must **decode** it before matching anything
+against it. `&`, `<` and `>` arrive as themselves (no HTML escaping), but a line break arrives
+as `\n`, a tab as `\t`, a quote as `\"`, a backslash as `\\`, and other control characters
+and U+2028/U+2029 as `\uXXXX`. A callout that greps the raw JSON misses a listed word that
+contains `"` or `\`, and a listed phrase that a line break splits in the write.
+
+On stdout it prints, as its first word, exactly `allow` or `block` (lower case; the first word
+ends at any whitespace, a line break included); anything after `block` is the reason, and
+anything after `allow` is ignored, so a wrapper that prints a child's answer and then its own
+text is read by the child's first word. Exit status must be 0.
+
+Everything else is a refusal, and the message says which failure it was: the file is missing
+or unreadable, or group/world-writable; a non-zero exit; no answer within the timeout; empty
+output; more than 64 KiB of output; a first word that is neither `allow` nor `block`. For those,
+the refusal says WHICH failure in generic words; what the callout printed is shown on stderr
+only, as below.
+
+The refusal is `house.callout`, exit 5, and `--force-scan-override` does not apply to it.
+Everything the callout printed — its reason, an off-vocabulary answer, its own stderr — is
+printed to **stderr only**, on one line each, control characters removed. It is deliberately not
+in the returned error, the audit log or anything sent to the forge, because verbs log their
+errors and the reason can quote the text it matched. The audit log gets one
+`outbound_callout` row: the rule id, the outcome, the kind and a digest, never the text.
+When the callout answers `allow`, anything it wrote to its own stderr is still printed to
+stderr, the same one line, so a diagnostic beside an `allow` is never silent.
+
+An example executable (invented word list; the shipped test fixture is
+`tools/desk/internal/deskkit/testdata/outbound-callout/example-sweep.sh`):
+
+```sh
+#!/bin/sh
+# EXAMPLE house callout (invented values): block any write whose "text" fields contain a word
+# or phrase listed in a file the deployment owns. Reads the request on stdin; prints `allow`
+# or `block <reason>`. List: one word or phrase per line, one space between a phrase's
+# words, no blank lines, LF line endings; matched case-insensitively as fixed strings.
+# It answers `allow` ONLY when every step below ran and the match reported "no match": a tool
+# that is missing, fails or is killed is a block, as an unreadable list is.
+# Its own tools and its own locale, never the caller's: the PATH and LANG values it is handed
+# are the calling process's. In a locale where the write's bytes are not all characters, the
+# extraction below would leave a field out with no error; in C every byte matches as itself.
+PATH=/usr/bin:/bin
+LC_ALL=C
+export PATH LC_ALL
+words=/etc/example-house/withheld-words.txt
+# A blank line would match every write and a CRLF ending would match none: refuse either.
+grep -q -e "$(printf '\r')" -e '^$' "$words"
+case $? in
+  1) ;;
+  0) echo "block the word list has a blank line or a CRLF line ending"; exit 0 ;;
+  *) echo "block the word list is unreadable"; exit 0 ;;   # fail closed: no list, no verdict
+esac
+# Each "text" value is a JSON string: decode it before matching. `\\` is held aside first so
+# an escaped backslash followed by n is not read as a line break; every whitespace escape and
+# \uXXXX (control and line-separator characters) becomes a space; any other escape (`\"`,
+# `\/`) is the character itself; runs of spaces fold to one, so a listed phrase matches
+# across a line break, a tab or a run of spaces in the write. Each step's own exit status is
+# checked: a pipeline reports only its last command's.
+texts=$(grep -oE '"text":"([^"\\]|\\.)*"')
+case $? in 0 | 1) ;; *) echo "block the text could not be extracted"; exit 0 ;; esac
+hold=$(printf '\001')
+decoded=$(printf '%s\n' "$texts" |
+  sed -e 's/^"text":"//' -e 's/"$//' \
+      -e 's/\\\\/'"$hold"'/g' \
+      -e 's/\\u[0-9A-Fa-f]\{4\}/ /g' -e 's/\\[bfnrt]/ /g' -e 's/\\\(.\)/\1/g' \
+      -e 's/'"$hold"'/\\/g' -e 's/  */ /g') || { echo "block the text could not be decoded"; exit 0; }
+printf '%s\n' "$decoded" | grep -qiF -f "$words"
+case $? in
+  0) echo "block the write names a word on the house list" ;;
+  1) echo allow ;;
+  *) echo "block the word match did not run" ;;
+esac
+```
+
+Install it, then set it:
+
+```bash
+install -m 0755 example-sweep.sh /opt/example-house/outbound-callout
+echo 'ASSAY_OUTBOUND_CALLOUT=/opt/example-house/outbound-callout' >> ~/.config/assay/roster.env
+echo 'ASSAY_OUTBOUND_CALLOUT_REQUIRED=public' >> ~/.config/assay/roster.env
+echo 'export ASSAY_OUTBOUND_CALLOUT_REQUIRED=public' >> ~/.profile
+```
+
+The roster copy of `REQUIRED` is lost with the rest of a roster that fails validation; the
+environment copy is not. Set it in the environment every desk verb runs in (a login profile
+here, the container spec in a pod), not in the roster alone.
+
+The example is an example. It reads its tools from `/usr/bin` and `/bin` only: where yours
+live elsewhere, change its `PATH` line, or every write is refused because the match cannot
+run. It folds ASCII whitespace only, so a listed phrase whose words a no-break space separates
+in the write is not matched. And it refuses every write while its list has a blank line or
+CRLF line endings, rather than matching everything or nothing. It matches in the `C` locale,
+so case is folded for ASCII letters only: a non-ASCII letter in a listed word matches only
+in the case the list spells it. An empty list (a file of zero bytes) names
+nothing, so every write is allowed.
+
+The shipped fixture is this script with its list beside it, and a test holds the two
+identical and drives the fixture through the real request encoding with listed words that
+contain `&`, `<`, `>`, `"` and `\`, and a phrase split by a line break, a CRLF and a tab.
+Further tests drive it with the caller's `PATH` emptied or led by a substitute `grep` (the
+listed word is still refused), and with each of its tools missing or failing (every write is
+refused, never let through).
+
+One callout round trip is a process start (a few milliseconds for a shell script) on top of
+whatever the executable does, per consult — a push pays it N+2 times; the timeout bounds the
+worst case of each.
+
+### Desk-decided: the merge is the gate (attention-budget/19)
+
+The driver holds merge on every pull request, so a desk that takes a REVERSIBLE default
+does not need a ruling first — the `default-forward-reversibility` guardrail already says
+so. What it needs is for the pull request to SAY, at merge time, that this is a choice the
+desk made rather than one the driver already ruled on. A one-line design patch put to the
+driver as a bare "do it / drop it" is the shape this closes: a draft PR that states what
+was chosen, what the alternative was, and what it costs to reverse would have been the
+whole conversation.
+
+**One term, one label, one marker.** The term is **desk-decided** — the counterpart of the
+existing `human-decided` label (which records a HUMAN act and is refused for every role;
+this one records a DESK act and is applied directly through `deskkit.LabelChange`, the
+same create-if-missing path `deskflip`'s queue-label swap and `deskpost`'s verdict labels
+already use). The machine marker is the existing `<!-- desk-r3-decision v1 -->` comment —
+the same one the weekly decision digest already reads on issue comments — reused verbatim
+on PR bodies rather than inventing a second word.
+
+**The block.** `deskpr create --decided <file>` / `deskpr edit --decided <file>` takes a
+file of numbered items, each carrying exactly three fields:
+
+```
+1. decision: <what the desk chose>
+   alternative: <the option not taken — a real one, or "none workable — <why>">
+   cost: <what reversing it costs the driver: "decline this PR", "one revert", or the
+     concrete cost>
+```
+
+The tool writes it into the PR body under the fixed `## Desk-decided` heading, with the
+marker on its own line, and applies the `desk-decided` label alongside it. `create`
+REFUSES (exit 5) an empty file, an item missing a field, or a body that already carries a
+**hand-written** `## Desk-decided` heading (a brand-new PR has no prior block of its own to
+replace — remove the hand-written one and use `--decided` instead). `edit` does not refuse
+on that shape: its replacement body is routinely a copy of the PR's own current body, so a
+prior `--decided` block already present is **replaced in place**, not duplicated. If the
+label write fails after the body has already landed, the tool reports that failure AS
+ITSELF (a non-zero exit naming the PR URL) rather than rolling it into, or masking it
+behind, the create/edit's own result — the block is the record, the label is only the
+at-a-glance view. On `edit` the re-review notice is posted BEFORE the label write, so a
+label failure never swallows it. The remedy is `deskpr edit --decided` with the PR's
+current body: an unchanged body is otherwise a no-op, but when `--decided` is given and the
+label is missing it applies the label (and nothing else — no body write, no notice).
+
+A PR that only carries out rulings already recorded elsewhere declares nothing: it passes
+no `--decided` and gets neither the label nor the block. The tool cannot tell "this needed
+no declaration" from "this should have declared one" by itself — that is the reviewer's
+call (below).
+
+**The ready-flip gate — mechanical about a FOUND decision, not about silence.**
+`deskflip`'s `desk-decided` condition (evaluated right after `checks-green`) is mechanical
+on two points: a `## Desk-decided` block, when present, must PARSE, and the `desk-decided`
+label and the block must AGREE — a label with no block, or a block with no label, refuses.
+What is NOT mechanical is whether a PR that declares nothing in fact took an undeclared
+desk decision; that is the reviewer's question, and the reviewer kit (`cmd/deskdispatch/
+references/review-prompt.md` §15) asks it on every review. A reviewer who judges that the
+diff took an undeclared reversible default names it in the verdict with the fixed line
+`Undeclared-desk-decision: <one line>`, and the flip refuses while that line stands at the
+CURRENT head — cleared by `deskpr edit --body-file <the PR's current body> --decided F`
+and a fresh DECISIVE verdict (APPROVE or REQUEST_CHANGES) at the same head, in the same
+lane, that omits the line; no new commit required. The two review lanes are read separately, because the correctness and security
+verdicts are posted by the same reviewer App in parallel: a `Security-Review:` verdict never
+clears a correctness-lane finding (nor the reverse), and a COMMENTED note that is not a
+verdict clears nothing — so the answer never depends on which lane posted last. The
+head-stable re-gate re-runs this condition against its fresh read of the reviews, body and
+labels, so a finding posted during the checks is still seen. `deskpost ready`, the other
+verb that performs the same ready-flip, runs the SAME condition — one shared implementation,
+`deskkit.DeskDecidedRefusal` — on its first read and again on its pre-mutation re-read, so a
+PR `deskflip` refuses here cannot be flipped through `deskpost ready` instead (#1694).
+**Absence of a block, by itself, is NEVER a refusal** — that is the stricter alternative (option 2 of the driver's
+decision on #1677) and is not built without a ruling naming it specifically.
+
+A `## Desk-decided` heading inside a fenced code block is a quoted example, not a
+declaration: the section reader skips fenced regions, so a PR body that documents the
+format neither trips `create`'s hand-written-heading refusal nor `deskflip`'s label/block
+check.
+
+The reviewer kit also asks the converse question: a DECLARED item that falls inside the
+`default-forward-reversibility` guardrail's fixed human-gated set (merge, weakening a
+security control, identity/auth, money movement, durable-data deletion, anything leaving the
+repo) is itself a blocking finding — the label and block grant nothing, so a mislabelled
+one-way call is caught there or nowhere.
+
+**Interim practice, retired by this feature.** Before `--decided` existed, a desk-taken
+default was declared in one PR comment opening with the literal line `**Desk-decided**`
+followed by the same numbered decision/alternative/cost list — searchable
+(`in:comments "Desk-decided"`) but neither a label nor a body section, so it never showed
+in a PR listing. That comment form is retired now that the tool exists; a PR should carry
+the `## Desk-decided` body section and label instead.
 
 ## deskboard health — default-branch health (#295)
 
@@ -794,10 +1537,68 @@ covered, so silence can never be mistaken for health.
 **Read cost.** The probe is 2 `gh api` GETs per watched repo on the common path (one
 `commits?`, one `check-runs`), worst case 1 + 5 when every commit in the lookback window
 is check-less. `actions` is the desk's hot path, so this is the budget to watch as the
-watched-repo set grows; nothing is cached.
+watched-repo set grows. These GETs ride the conditional-request cache below: an unchanged
+`main` answers 304 and is not charged.
 
 **It annotates; it does not block.** deskpost owns the ready-flip gate. Whether a red
 `main` should hard-block a flip on that repo is the open human call on #295.
+
+## deskboard read cost — conditional reads, the per-PR skip, and the refuse-floor (#2421)
+
+An App installation's REST quota is 5000 calls an hour and a watcher sweeps `actions`
+every few minutes. Before #2421 every sweep re-read every open PR in full, so the
+per-sweep cost grew with the open-PR count (measured on a fake forge: 15 charged calls at
+5 PRs, 105 at 50, on EVERY sweep of an unchanged board) and a busy board exhausted the
+quota. Now a repeat sweep of an unchanged board costs a constant handful of charged calls
+for PRs by trusted authors (the same fake forge, all PRs by one trusted author: 1 charged
+call at 5 PRs and at 50). Each open PR by an untrusted author still costs one uncached
+GraphQL trust-blessing read per sweep, so that part of the cost grows with the number of
+such PRs.
+
+**Conditional reads (every deskboard verb).** deskboard — and only deskboard; no other
+tool's transport changes — installs a transport on the resolved GitHub backend. A GET whose
+last `200` carried an `ETag` or `Last-Modified` is re-sent with `If-None-Match` /
+`If-Modified-Since`; on a `304` (which GitHub does not charge against the core quota) the
+cached body is served as the `200` it was. A cached body is served ONLY after the forge
+itself answered `304` for that exact validator — there is no time-to-live, so a cached
+"approved" or "green" can never be served without the forge confirming it is current.
+The cache lives under the desk-tools state dir at `<state dir>/deskboard-cache/`
+(`http/` for response entries, `prfacts/` for the per-PR skip); entries unused for 7 days
+are pruned after a successful `actions` sweep. A missing, unreadable, corrupt or
+mismatched entry is a miss — the read goes out unconditionally. Writes are temp-file +
+rename, so concurrent deskboard runs never read a torn entry. Bodies over 4 MiB pass
+through uncached. GraphQL (POST) reads are never cached. The GitLab backend is unchanged.
+
+**Per-PR skip (`actions`).** The changed-file set and the reviewed-sha→head file interval
+are reused from the previous sweep only when the PR's head sha, `updatedAt`, base branch
+AND a digest of its check rollup all match; the review set and the check rollup themselves
+are always fresh from the sweep's one repo-level snapshot. A backend that reports no
+`updatedAt` never skips. Only complete, error-free reads are remembered. The trust-gate
+blessing read for an untrusted author is never skipped. When unsure, it re-reads.
+
+**Cost report (`actions`).** The JSON header carries `cost` — `requests`, `charged`,
+`notModified`, `skipped`, `byClass` (requests and 304s per endpoint class), `rateLimit`
+(lowest `X-RateLimit-Remaining` seen per resource, with its limit and reset time) and the
+`floor` in force — and stderr gets exactly one line:
+
+```
+deskboard: cost requests=5 charged=1 notModified=4 skipped=10 byClass[requests/304]=... core.remaining=4890 reset=... floor=500
+```
+
+**Refuse-floor (`actions`).** When a response during the sweep reports the core or graphql
+quota below the floor, the sweep stops sending, prints no board, and exits **4**
+(rate-limited) with a message naming the reset time. A sweep that stopped part-way never
+prints: a board missing the PRs it could not read would look complete, and a could-not-read
+is never an empty board.
+
+```sh
+deskboard actions                       # floor 500 (10% of the hourly App quota)
+deskboard actions --rate-floor 1000     # flag wins over the env var
+DESKBOARD_RATE_FLOOR=200 deskboard actions
+deskboard actions --rate-floor 0        # disable the floor
+```
+
+A malformed floor (flag or env) refuses with exit 5 before any read.
 
 ## deskboard zero-CI disambiguation (#1652)
 
@@ -836,6 +1637,13 @@ gate is unchanged (a `ciEmpty` on a CI-required repo is still exit 6 there); mak
 the gate consume the same distinction is the natural follow-up, not this PR.
 
 ## deskboard stalled — the stalled-draft detector
+
+A PR whose owning brief is `withdrawn` receives advisory disposition `reconcile`,
+before the behind-main close-candidate heuristic. Inspect surviving code, evidence
+and current claims before retargeting it or proposing closure through the ordinary
+independent confirmation gates. Retirement alone is neither completed work nor a
+stopped worker. Use `statusgen withdrawal-audit` against a candidate board to find
+these overlaps before rollout, including PRs that are fresh and thus not stalled.
 
 The review loop assumes a persistent worker: the reviewer requests changes, the worker
 fixes and replies. Sessions die, so sometimes nobody replies — and nothing noticed. The
@@ -914,7 +1722,8 @@ absent, so "we enumerated everything" is a positive statement.
 
 **Disposition is advisory.** `shepherd` is the default; `close-candidate` requires
 positive evidence — the branch is more than 200 commits behind main, or its owning brief
-is `done`/`superseded`. A signal that could not be read never produces a
+is `done`/`superseded`. A withdrawn owner takes precedence and reports `reconcile`,
+including when the behind-main threshold is exceeded. A signal that could not be read never produces a
 `close-candidate` (an unreadable compare reports `behindMain: -1`, not `0`). PR ownership
 is invisible: the desk or the human decides whether to adopt, and no loop auto-adopts.
 
@@ -1439,6 +2248,28 @@ cross-compile, so this is orchestration + Windows path handling (`.exe` suffixes
 the Makefile's `.PHONY` set (run `cd tools/winparity && go run . --root ../..`, exit 0 = in
 parity); the Windows script runs that guard as a preflight before any target.
 
+## deskapps — the GitHub App Manifest-flow installer (example-stream/02)
+
+`deskapps init --tier team|family [--org <login>] [--owner org|me] [--prefix <name>] [--port 41873] [--no-browser] [--dry-run]`
+serves the loopback page (`http://127.0.0.1:<port>/`, `127.0.0.1` ONLY — never `0.0.0.0` or
+`::`) that drives GitHub's App Manifest flow end to end: it posts the tier's manifest JSON to
+GitHub's own new-App page, receives the redirect at `/callback`, exchanges the one-hour code
+for the App's credentials (`POST /app-manifests/{code}/conversions`), and writes the PEM
+(0600, never printed/logged/rendered), `apps.env` (App id, client id, webhook secret, plus
+the brief-01 `<ROLE>_APP=`/`READ_APP=` role bindings) and `apps.state.json`
+(`deskapps-state-v1`, the per-App state machine). `--dry-run` prints the planned URL and App
+rows without touching the network; every other test and CI invocation runs with
+`--no-browser`. `resume`, `status` and `avatar` are later briefs (03, 04, 06).
+
+The single control behind `/callback` is the per-row state nonce: an unmatched `state`
+refuses (403) before any conversion is attempted. The independent second layer is the owner
+check on the conversion result (the `gh` login on the personal path, the org on the org
+path), which fails closed on an empty owner and writes nothing on a mismatch; the loopback
+bind is a precondition of the nonce, not a layer behind it. Full reference, the tier
+manifests' exact permission sets, the trust boundaries, and the design.md §9 measured
+facts (blocked on live GitHub access — see that file) are in
+[`docs/desk-tools/deskapps.md`](../../docs/desk-tools/deskapps.md).
+
 ## deskpost — the reviewer App's verdict / comment / ready-flip (brief 03)
 
 `deskpost` posts the review verdict, plain comments, and the draft→ready flip **AS the
@@ -1461,6 +2292,7 @@ token **in memory only** — it mints fresh per invocation and never caches it t
 deskpost review  <owner/repo> <pr>     --verdict approve|request-changes --head <full-40-or-64-char-sha> --body-file F
 deskpost comment <owner/repo> <number> --body-file F     # <number> = a PR **or** an issue
 deskpost ready   <owner/repo> <pr>
+deskpost finish  review|security-review <owner/repo> <pr> … --claim <claim key>   # post + confirm + release — see below
 
 # modifiers, accepted by all three verbs, both off by default:
 deskpost review  ... --dry-run        # run every check, stop before the write
@@ -1661,6 +2493,116 @@ Constraints in code:
   now prints the assertion recipe itself on exit 4 — read its stderr rather than
   reconstructing the command from memory.
 
+### `deskpost finish` — post, confirm, release, in one command (#2437)
+
+A reviewer's last acts were three commands: post the verdict, check that it landed, release
+the dispatch claim. A reviewer that stopped after the first left a claim held on a change
+nobody was reading. `finish` runs the three in order and stops at the first that does not
+succeed.
+
+```bash
+deskpost finish review          <owner/repo> <pr> --verdict approve|request-changes --head <full sha> --body-file F --claim <claim key>
+deskpost finish security-review <owner/repo> <pr> --verdict pass|fail              --head <full sha> --body-file F --claim <claim key>
+
+# e.g.
+deskpost finish review example-org/project 42 --verdict approve \
+  --head 5d529c27e3b1a04f9c2d8e7b6a1f0c3d4e5f6a7b --body-file verdict.md --claim project--pr-42
+# stdout, exactly one line:
+# deskpost finish: review=<link or id> state=APPROVED head=5d529c27e3b1a04f9c2d8e7b6a1f0c3d4e5f6a7b claim=released
+```
+
+The arguments after `finish review` / `finish security-review` are that verb's own, parsed by
+the same code, plus `--claim` — the claim key the review assignment names.
+
+| Step | What runs | A stop here means |
+|---|---|---|
+| 1. post | the function `deskpost review` / `deskpost security-review` itself calls — one post path, so the same body checks, head pin, trust gate, identity, budget, audit row and refusals, with the same text and the same exit code | nothing was confirmed and the claim is still held. A refusal posted nothing. A failure after the write was sent (a server error answering the post, or a later part of the post step failing) may have left the verdict on the change; the verb's own message, printed above the stop line, says what failed |
+| 2. confirm | the change's reviews are read back; one by the reviewer identity, at `--head`, in the state this verdict produces, of this verdict kind, with this body, must be there | exit 6 — the post step reported success but the verdict could not be read back; the claim is **not** released |
+| 3. release | the dispatch claim named by `--claim` is released through the configured claim store (see [the dispatch-claim store](#the-dispatch-claim-store--resolveclaimstore)), and an audit row records how that went | non-zero — the verdict **is** posted and confirmed, the claim is **still held**; the message says both |
+
+Every stop is one stderr line naming the step and what was and was not done. Nothing after
+the failed step runs.
+
+**Running the same command again does not post the verdict a second time** — from this
+session or from another one. Before it posts, the post path looks in two places: this
+machine's audit log, and the change's own reviews. A review by the reviewer identity, at
+`--head`, in the state this verdict produces, of this verdict kind, whose body is this one,
+means nothing is posted; `finish` then confirms that review and goes on to the release. The
+bodies are compared as the caller wrote them: line ends normalised, the on-behalf-of lines
+the tool adds to every body it posts removed from both sides, surrounding whitespace
+trimmed. That second look is what covers a run whose log has no row for the first post — a
+re-dispatched reviewer, or a post the forge accepted and then answered with an error. If the
+change's reviews cannot be read, the post step refuses rather than post without looking. A
+claim that is already gone is reported as `claim=already-released`, not as a failure.
+
+One limit on that: a re-run whose **body file changed** between attempts is a different
+verdict to this check and is posted, with a warning naming the review it landed next to.
+
+**A re-run still does the merge-hold step.** On a forge with a merge-hold, a correctness
+verdict has a second half after the post: an approve releases the change's hold at the head,
+a request-changes re-arms it. A run can land the verdict and not complete that half. Either
+the hold write fails, and the message names the half that landed; or the forge accepts the
+post and its answer is lost, and the message is that error alone, with the hold step never
+reached. Both exit non-zero. The run that then finds the verdict on the change posts nothing
+and checks the hold against it before it may exit 0. On that path it **arms or confirms** the
+hold and **never releases** one. This applies to `deskpost review` as it does to `finish
+review`; the security lane's verdict has no hold step.
+
+| The verdict found recorded | The hold reads | What the re-run does |
+|---|---|---|
+| request-changes, with no later approve or request-changes by the reviewer identity after it (a later security-lane verdict does not count) | armed, or resolved in any way | runs the hold step again — a re-arm, as after a post. Exit 0, audit row `ok` whose detail says the verdict was not posted again |
+| request-changes, with such a later verdict after it | armed | no write. Exit 0 |
+| request-changes, with such a later verdict after it | released at this head, or resolved with no head named | no write. Exit 6, naming the later review: this run cannot tell which of the two the hold should follow |
+| approve | released at this head by the reviewer identity | no write. Exit 0 |
+| approve | still up, resolved with no head named, or resolved by another account | no release is sent. Exit 6, saying so |
+| either | resolved at a head other than this one | re-armed, whatever the verdict. A request-changes then exits 0; an approve exits 6, because the release it needs was not at this head and this path does not send one |
+| either | unreadable, or the change has no hold thread | no write. Exit 6 |
+
+A re-arm on this path is an outward write with no post before it, so it first passes the two
+gates the post passes (the trust gate and the public-repo gate), and `--dry-run` sends none.
+A non-zero exit here stops `finish` at step 1, with the claim held. A hold that an approving
+run failed to release is not released by running the same command again: post the approve
+again with a body that says the release is being retried (a body that differs is posted as a
+new review, and its hold step releases). On a forge with no merge-hold the step does not
+apply and none of this runs.
+
+- **Why the claim is released last.** The post step validates the reviewer's dispatch stamp,
+  and that stamp stops counting once the review claim is released. Releasing first would make
+  the tool refuse its own verdict.
+- **`--claim` is checked before anything is written, twice.** It must be a review-dispatch
+  claim key of this change (`<short label>--pr-<N>`, optionally followed by `--<segment>`
+  parts); any other value — another change's key, another repository's, a ref path — is an
+  argument error (exit 2) and nothing is posted. And it must be **this lane's** key: `finish
+  security-review` takes only a key with a `security` segment after `--pr-<N>`, `finish
+  review` only a key without one. The review dispatch packet reads the lane it lays out from
+  the same function. So the release can only address this change's review claim, and one
+  lane's finish cannot release a claim named for the other lane.
+- **The lane tie is by claim-key naming, and only that.** Whoever dispatches a review picks
+  its key, and no record behind the key states a lane. A security review dispatched under a
+  key with no `security` segment would be accepted by `finish review` and refused by `finish
+  security-review`. The check does not prove which lane a key was dispatched for.
+- **Who holds the claim is not checked.** The claim record names the dispatcher that placed
+  it, and a reviewer is handed the key and nothing that identifies that dispatcher, so
+  `finish` has nothing sound to compare. A run that holds this lane's key for this change can
+  release that claim whoever placed it — as the release command in the assignment can.
+- **"Already gone" is verified, never assumed.** A delete the forge answers with not-found is
+  followed by a read of that one ref; only a positive "absent" is reported as
+  `already-released`. A forbidden, a server error or an unreadable ref is a failed release.
+- **Two audit rows on a full run.** The first is the post step's, as for the plain verdict
+  verbs. The confirm is a read and writes none. The second is the release step's, verb
+  `finish:release`: `ok` when the claim was released, `noop` when it was already gone, and
+  the failure's own result when the release failed, each naming the claim key. The release is
+  not held back by the write budget (the verdict is already posted); a release that was sent
+  counts toward that budget afterwards. A stop at step 1 or 2 writes no release row.
+- **`--dry-run`** rehearses step 1 only: exit 0, nothing posted, read back or released, and no
+  result line. `--wait` and `--explain` act on step 1 as they do on the plain verbs.
+- **The result line's `review=`** is the forge's own link to the review when the listing
+  carries one, otherwise `<owner/repo>#<pr>/review-<id>`. The tool never builds a link.
+- **Limit.** With no claim store configured the claim is a ref on the forge and the release is
+  a typed ref delete under the reviewer identity. A forge whose API cannot delete a ref
+  outside its branch namespace answers that step with a refusal; `finish` then stops at step
+  3 with the verdict posted, and the release command in the assignment remains the way out.
+
 ### Verdict format (the machine-checkable review body)
 
 Review bodies (`deskpost review`) must carry, in addition to the size cap + secret scan:
@@ -1746,17 +2688,20 @@ format.
 
 `cmd/deskwt` makes the isolate-first rule (CLAUDE.md "Parallel sessions & worktrees") the
 path of least resistance, and makes cleanup safe by construction. Every verb acts ONLY on
-paths that RESOLVE under the sanctioned prefixes `/private/tmp/tracker-*` or
+paths that RESOLVE under the sanctioned temporary-root prefix or
 `<repo-root>/.claude/worktrees/`, refuses the shared checkout by IDENTITY (git-common-dir's
 parent), and there is **no `--force` flag anywhere**. It is a local-only verb class: it
 takes the C-5 audit line and the C-6 kill switch but NOT the outward-write rate limit.
 
 ```bash
-deskwt add <name> [--branch B] [--base origin/main] [--role R]   # create tracker-<name> on a tracking branch
+deskwt add <name> [--branch B] [--base origin/main] [--upstream refs/remotes/REMOTE/BRANCH] [--role R] [--lock-session <id>]   # create tracker-<name> on a tracking branch
 deskwt remove <path>                                   # remove ONE proven-safe worktree
-deskwt prune [--repo <path>] [--interval <dur>]        # bulk-reduce stale worktrees, safely
+deskwt prune [--repo <path>] [--interval <dur>] [--min-idle 1h]   # bulk-reduce stale worktrees, safely
 deskwt prune --reclaim-stale-locks [--lock-ttl 24h]    # …and retire locks whose session is gone
 deskwt prune --reap-dead-sessions [--dry-run]          # …and reap the worktrees no live session owns
+deskwt prune --branches-only                           # …or run ONLY the local-branch GC (see Step C)
+deskwt prune --no-branches                             # …or skip the branch GC for one sweep
+deskwt prune --no-cache                                # …or skip the cell-cache pressure pass (Step D)
 deskwt role-init <role> [--repo-root <checkout>] [--session <s>] [--no-fetch]   # a desk role's own locked worktree
 deskwt role-clean <role> [--repo-root <checkout>] [--session <s>]              # …and its teardown
 ```
@@ -1773,14 +2718,24 @@ deskwt role-clean <role> [--repo-root <checkout>] [--session <s>]              #
   `verify-desk`, `intake-desk`), positionally or as `--role`; a spelling in neither vocabulary
   refuses (exit 5) naming both. An existing valid worktree is reused (idempotent); a stray or
   foreign-repo path is refused, never clobbered; a fetch that cannot run is could-not-check
-  (exit 6) — `--no-fetch` is the explicit opt-out, never the default. The shared checkout's index
+  (exit 6) — `--no-fetch` is the explicit opt-out, never the default. Before the first network
+  fetch, the requested role's credential is refreshed and supplied through a command-scoped,
+  host-scoped helper, replacing inherited helpers without editing the source checkout.
+  HTTPS origins must omit embedded credentials. SSH origins (including configured host aliases)
+  use the same derived HTTPS App endpoint as worktree provisioning. As with Git fetch, the first
+  origin URL selects the destination; additional URLs do not block local or network initialization.
+  The fetch isolates its home directory, suppresses inherited HTTP authentication and redirects,
+  and retains effective TLS/proxy settings. Source checkout configuration is unchanged.
+  An installed `deskwt` initialization failure stops `cellctl` and reports its diagnostic;
+  only a missing tool or explicit `CELLCTL_DESKWT=0` selects the legacy fallback.
+  The shared checkout's index
   and `user.*` config are untouched; its only writes are enabling `extensions.worktreeConfig`
   (once) and the new branch's own tracking section. `deskboot`'s shared-checkout refusal prints
   this command verbatim (with the loop name it was given and the absolute `--repo-root`), plus
   `cellctl desk <cell> <role>` when `cellctl` is on PATH.
 
 - **`add`** creates `tracker-<name>` on a new tracking branch, under the sanctioned prefix
-  that is PORTABLE on the host OS: `/private/tmp/tracker-<name>` on POSIX, and
+  that is PORTABLE on the host OS: `tracker-<name>` beneath `/private/tmp` on POSIX, and
   `<repo-root>/.claude/worktrees/tracker-<name>` on Windows (`role-init` follows the same rule
   for its session-scoped worktree). Both prefixes are already in the allowlist above; the OS
   only decides WHICH one is targeted, never widening it. `/private/tmp` is not a usable
@@ -1804,7 +2759,15 @@ deskwt role-clean <role> [--repo-root <checkout>] [--session <s>]              #
   fall through to), so a commit there fails closed until an identity is set rather than
   committing under an unrelated inherited one. The shared checkout's config is never touched
   either way; the identity (or the cleared state) is echoed to stderr, and stdout stays the
-  bare worktree path.
+  bare worktree path. `--lock-session <id>` LOCKS the new worktree for a live session, with
+  the reason `deskwt add live session (deskwt add session=<id>)`, so no prune arm removes it
+  while that session works there. The lock is the LAST step, taken after every other step
+  (including the `after_create` hook) has succeeded, and is read back from git before `add`
+  reports success; if it cannot be taken or verified, the new worktree is rolled back and
+  `add` fails. `<id>` must be a plain name (no `/`, no `..`). The reason carries role-init's
+  `session=<id>` form, so `--reclaim-stale-locks` and `--reap-dead-sessions` retire the lock
+  only once that session's roster beacon is stale. Without the flag `add` locks nothing, as
+  before.
 
 - **`remove`** refuses a dirty TRACKED tree, unpushed commits, a no-upstream branch, an
   unregistered path, or anything resolving outside the prefixes; untracked build artifacts
@@ -1814,25 +2777,206 @@ deskwt role-clean <role> [--repo-root <checkout>] [--session <s>]              #
 - **`prune`** exists because stale worktrees accumulate (the desk loops spawn one per worker
   and rarely remove them — ~1065 observed) until tooling breaks: the bash sandbox hits
   **E2BIG** (one deny-path per registered worktree) and the #742 writeguard mis-classifies
-  top-level worktrees as the shared checkout. It runs two steps:
+  top-level worktrees as the shared checkout. It runs these steps:
   1. **Step A (always safe):** `git worktree prune` — drops admin entries whose directories
-     are already gone (pure bookkeeping, no working tree touched). Unconditional: no flag
-     turns it on or off.
-  2. **Step A2 (opt-in, `--reclaim-stale-locks`):** the lock lifecycle — see below.
-  3. **Step B (safe gate):** walk the registered worktrees under the sanctioned prefixes and
+     are already gone (pure bookkeeping, no working tree touched). Unconditional within the
+     worktree arms: no flag turns it on or off there. (`--branches-only` runs the branch GC
+     alone, skipping every worktree arm including this one.)
+  2. **Step A1 (always safe):** the **stale-registration sweep** — handles admin entries
+     whose worktree directory still EXISTS but whose `.git` gitdir file is GONE (a partial
+     delete). `git worktree remove` refuses the shape ("validation failed … does not
+     exist") and a lock makes `git worktree prune` keep it forever, so without this pass
+     the registration is immortal: it still counts as a branch holder, and every content
+     gate in Step B fails closed on it sweep after sweep. Clearing deletes the admin dir
+     (`.git/worktrees/<id>/` — HEAD, index, reflog), so it happens only behind three
+     gates: the **scope gates** every arm enforces (never the shared checkout, never the
+     current worktree, never outside the sanctioned prefixes); a **content proof** read
+     from the admin dir's HEAD — a valid branch target that positively resolves to a commit, or a
+     detached commit already on `refs/remotes/origin/main`, else HELD (clearing would
+     strand possibly-unpushed commits), and a content-held husk is also excluded from the
+     lock-reclaim pass so the post-reclaim prune cannot drop it; and the **lock rule** —
+     the default sweep NEVER retires a lock, so a locked husk clears only when
+     `--reclaim-stale-locks` has proven its lock stale this same sweep (git's own
+     in-flight `"initializing"` add lock is never retired by any arm). A husk whose clear
+     fails after its lock was reclaimed is re-locked with its original reason. If restoration
+     fails, the sweep stops before later pruning and reports the failure, leaving the
+     surviving registration for operator recovery. The directory is always left on disk, untouched.
+  3. **Step A2 (opt-in, `--reclaim-stale-locks`):** the lock lifecycle — see below.
+  4. **Step B (safe gate):** walk the registered worktrees under the sanctioned prefixes and
      remove — via the exact same safe primitive as `remove` — ONLY those it can prove safe:
      **not** the shared checkout, **not** the current worktree, **tracked-clean**, AND
      **fully merged into `origin/main`** (`git merge-base --is-ancestor HEAD origin/main`; a
      detached HEAD that is an ancestor also qualifies). The merge check is the
      **active-worker guard** — an UNMERGED branch (an open PR still in flight) is never an
-     ancestor of `origin/main`, so it is LEFT untouched. Dirty / unpushed / unmerged / the
-     current worktree / out-of-prefix are all LEFT and reported as skipped with a reason. No
+     ancestor of `origin/main`, so it is LEFT untouched. A worktree whose HEAD **is** the
+     `origin/main` tip (zero landed commits — the fresh-worktree case, and the shape a
+     reclaim-by-detach leaves behind) must additionally pass three at-tip gates: **old
+     enough** to be no session's just-created workspace (the fresh-worktree safety window —
+     `deskwt add` never locks what it creates, so a new pristine tree is otherwise
+     indistinguishable from residue), **nothing uncommitted or untracked** (the
+     untracked-INCLUSIVE status), and **no git-ignored payload** (ignored files exist in no
+     commit). An at-tip tree passing all three drains; any other is LEFT with the reason
+     named. Dirty / unpushed / unmerged / the
+     current worktree / out-of-prefix are all LEFT and reported as skipped with a reason.
+     Every unlocked candidate must ALSO pass the **activity gate**: a tree whose newest
+     activity evidence is younger than `--min-idle` (default `1h`) is HELD with its age
+     named (`active 12m ago (inside the 1h0m0s --min-idle window)`), whatever its content
+     proves. The evidence is the newest mtime of the worktree root directory and of the
+     files git rewrites as a session works there: the admin entry's `HEAD` (required),
+     `index`, `logs/HEAD`, `ORIG_HEAD` and `FETCH_HEAD`. Evidence that cannot be read holds
+     the tree as `unverifiable worktree activity`, never judges it idle. The gate applies to
+     `--reap-dead-sessions` too. It is a recency check on what git writes, not proof of
+     an absent session: a session that only reads or runs tests in a clean tree, with no
+     git operation and no top-level file created or deleted, for longer than `--min-idle`
+     is invisible to it; such a session locks its tree. `--min-idle` must be a positive duration: the gate can be
+     tuned, not disabled, and `--branches-only` (which removes no worktree) refuses it. No
      `--force`. `--repo <path>` targets a repo without a session cwd (used by the multi-repo
      sweep script). Exit `0` ok/noop · `3` disabled · `5` refused · `6` unverifiable.
+  5. **Step C (default ON — `--no-branches` skips it, `--branches-only` runs it alone):**
+     the **local-branch GC**. Worktrees have this sweep and remote branches have the
+     forge's delete-on-merge, but the LOCAL branch a finished worktree leaves behind has
+     neither, and they accumulate without bound. Step C deletes a local branch ONLY when
+     its content is provably on `refs/remotes/origin/main`: its tip is an ancestor of the
+     mainline (a fresh, never-used handle is exactly this shape — tip == fork point), or
+     every unique commit's **patch-id** is already in the mainline's history (the
+     squash-merge case; computed against a whole-history patch-id set built once per
+     sweep, not per branch, so thousands of residue branches cost one mainline diff pass).
+     Never collected: `main`/`master`, any branch checked out in any registered worktree,
+     any branch with a merge commit ahead of the mainline (a patch-id proof cannot see
+     merge-introduced content), any branch with unique patches, and any branch whose proof
+     cannot be completed — an unreadable gate is not a passed one. The delete is a
+     compare-and-delete against the proven sha (`git update-ref -d <ref> <sha>`), never a
+     force verb. Live sweeps print per-class counts only; `--dry-run` prints the
+     per-branch COLLECT plan and deletes nothing.
+  6. **Step D (default ON — `--no-cache` skips it; `--cells-root` re-points it):** the
+     **cell-cache pressure pass**. A cell's managed Go cache (see
+     `docs/cellctl-go-cache.md`) is otherwise pressure-checked only at launch admission
+     and dispatch, so a long-lived cell can sit over its byte budget — or the filesystem
+     under its free-space floor — indefinitely. Each sweep discovers the marked cache
+     roots under the cells root (`--cells-root`, then `$CELLS_ROOT`, then the compiled
+     per-user default; a custom `CELL_GO_CACHE_ROOT` outside it is out of the sweep's
+     sight) and runs the package's own `Check` against each root's last recorded policy,
+     never a warm purge. Whole roots go only under pressure with no consumer record.
+     Otherwise, under pressure or above the high-water mark (75% of the budget),
+     `build/` entries are trimmed oldest first down to the low-water mark
+     (`CELL_GO_CACHE_LOW_WATER_PERCENT`, default 60%), never touching one younger than
+     the safety floor (`CELL_GO_CACHE_TRIM_MIN_AGE`, default 2h); active consumer
+     records protect `mod/` and `gopath/`. A root whose owning directory the same sweep removed is reaped as an orphan,
+     gated on its lease set re-read under its own lock at act time. The pass is silent
+     when every cache is within policy; the summary gains a cache segment only when it
+     reclaimed, reaped, or found pressure it could not clear.
 
 Every sweep prints one summary line with four counts — **pruned** (bookkeeping entries
 dropped), **removed**, **held** (with **locked-held** broken out), and **locks-reclaimed** —
-so an operator can tell a repo that is draining from one that is stuck, and on which gate.
+plus **stale-registrations-cleared** when the Step A1 pass cleared any (each cleared entry
+also prints its own line — the registration is dropped, the directory left on disk) and,
+when the branch GC ran, **branches-gc** (split into its **merged** and
+**cherry-clean** proof classes) and **branches-held** — so an operator can tell a repo
+that is draining from one that is stuck, and on which gate. The cache pass adds its counts
+(**cache-checked** / **cache-reclaimed** / **cache-deferred** / **cache-orphans-reaped**)
+only when it acted or found pressure it could not clear.
+
+### Offline repository maintenance
+
+Deleting finished branches and worktrees does not consolidate the object store.
+Every ordinary prune invocation also attempts one bounded maintenance pass, coalesced
+across linked worktrees by a lock and attempt/success stamps in their canonical common
+Git directory. The default attempt interval is **24 hours** and the total inventory
+plus task budget is **two minutes**. An overlapping coordinator or recent attempt
+is reported as held, including failed attempts so a persistent late failure cannot
+repeat expensive packing on every prune loop. `--no-maintenance` skips this pass; `--branches-only` continues
+to run only branch cleanup. A maintenance failure prints `could-not-check` without
+preventing the lifecycle sweep or desk boot.
+
+Inspect before applying:
+
+```sh
+deskwt maintain objects --repo .                  # read-only inventory and plan
+deskwt maintain objects --repo . --json           # full machine-readable inventory
+deskwt maintain objects --repo . --apply          # apply if the shared cadence is due
+deskwt maintain objects --apply --min-interval 48h --timeout 1m
+```
+
+The report includes ref namespace counts, registered worktree heads and locks,
+dispatch claims, declared alternate object stores, effective reflog recovery settings, task
+outcomes and before/after loose-object and pack counts/bytes. Inspection creates no
+repository lock, stamp, config, scheduled job or pack. A preflight-approved attempt is stamped before mutation; successful apply separately
+stamps only after every task and the final inventory complete; malformed, unreadable or future
+state refuses maintenance rather than authorizing another pass.
+
+The fixed offline tasks pack refs, write a reachable commit graph, pack at most 1,000
+loose objects per pass, and consolidate small packs through Git's multi-pack index.
+Incremental consolidation uses a positive selection threshold capped at 64 MiB;
+the threshold selects input packs, rather than imposing an output-byte limit. One
+packing thread, bounded delta memory, the time budget and a 500,000-object / 2 GiB
+packed-store eligibility cap limit work. Registered worktree metadata is bounded
+to 4,096 holders; pack-directory enumeration separately admits at most 4,096
+entries, including junk. Metadata files use bounded regular-file reads. Stores above those
+caps are reported as held for a separate maintenance window. Reference/shared clones
+with declared alternates are also held: local object counts cannot bound traversal of
+their borrowed history. Both inspection and apply report that hold without running tasks.
+Providers with unknown reverse borrowers can still consolidate duplicate storage while
+retaining every object ID. Process supervision kills and observes the entire
+Unix process group or Windows job before releasing repository ownership. A crash or
+unproven child cleanup leaves `assay-maintenance-active.json` in the common Git
+directory; subsequent maintenance refuses. An operator must confirm all owned Git
+children stopped before removing that custody marker. Its age alone never clears it.
+
+These tasks retain **every object ID**, including unreachable objects that an
+unregistered reference clone may still borrow. Git removes only duplicate loose
+copies and packs whose objects are retained in other indexed packs. Maintenance
+never runs GC, expires reflogs, prunes unreachable objects, rewrites history,
+removes a worktree or deletes a branch/dispatch claim. Actual object reclamation
+requires a separate borrower-aware operator procedure; compacting duplicates does
+not reclaim all history retained for recovery.
+
+Tool-owned merge fetches use unique `refs/deskmerge/tmp/` refs with ownership receipts.
+Completed receipts may be recovered with compare-and-delete against their observed
+object ID. One shared cleanup lock serializes receipt transitions with maintenance.
+A producer can durably declare completion while that lock is busy; deletion waits
+for a later pass. Pending child cleanup blocks all maintenance until operator
+confirmation, even if the ref is already absent. More than 256 receipt-directory entries
+refuses automatic maintenance because complete custody cannot be proved within
+the inspection budget. Changed refs, worktree holders, active/incomplete receipts and legacy
+unowned refs are held. No ref is deleted merely for being old. Dispatch claim
+release remains exclusively owned by the claim protocol.
+The producer's completion declaration ends consumption of its private nonce ref;
+the holder check covers registered heads at that gate. This protocol does not
+synchronize an external actor manually assigning a HEAD to that private ref
+during cleanup. A detached checkout's object remains available because every
+object ID is retained. A worktree on an unborn (fresh or orphan) branch holds no
+object; an invalid branch name or unreadable branch stays held as could-not-check.
+For temporary destinations, a reader reporting no ref is insufficient: cleanup
+also proves filesystem absence before draining the receipt, including after a
+failed compare-and-delete. Unreadable or malformed destinations retain custody.
+
+Producer cleanup is best-effort: deskmerge answers from the base and head SHAs it
+observed before completion, so a hook refusal or missing native `git hook list`
+never changes its verdict. It warns on stderr naming the retained ref, and the
+receipt stays. Recovery requires a durable producer completion declaration; if
+that declaration failed, the warning preserves its error and maintenance holds the
+incomplete receipt. A completed receipt is eligible for a later
+`deskwt maintain objects --apply` pass.
+
+Remote-tracking refresh stays a separate, explicit forge operation:
+
+```sh
+deskgit fetch --prune --as worker
+deskwt maintain objects --apply
+```
+
+`deskgit` selects the role's sanctioned forge credentials and confines pruning to
+its explicit `refs/heads/*:refs/remotes/origin/*` refspec. Maintenance never fetches,
+prefetches or installs Git's default maintenance strategy. Ambient Git overrides,
+global/system task config and credential helpers are excluded. Before creating a
+maintenance lock and before every mutation, Git's effective global, repository and
+worktree hook settings are inspected. Any configured reference-transaction hook
+refuses maintenance; its configuration is preserved. Native `git hook list` is
+required, and unsupported Git versions refuse before mutation. Repository config
+includes, filtered repacks, partial clones and unreadable alternates refuse apply.
+Managed publishing clones should copy their objects (`git clone --no-hardlinks`);
+if a reference optimization is necessary, use `--reference … --dissociate` and prove
+the resulting clone works with the provider unavailable before publishing.
 
 ### `--reclaim-stale-locks` — giving the lock a lifecycle
 
@@ -1882,6 +3026,10 @@ That backlog is not merely untidy: git permits exactly **one worktree per branch
 later resume or dispatch of such a branch fails at worktree-create, and the queue wedges on
 the leftovers it produced.
 
+Use `--reap-dead-sessions` on its own: combining it with `--reclaim-stale-locks`
+is refused before any mutation. Reaping needs the original named lock as owner evidence
+and already unlocks a worktree only after its safety checks pass.
+
 `--reap-dead-sessions` (default **OFF**) answers a different question from Step B's. Not "has
 this landed?" but "does anything LIVE still own this, and is deleting it lossless?" — two
 independent gates, both of which must hold:
@@ -1894,8 +3042,19 @@ independent gates, both of which must hold:
 - **Safety.** The tree must be clean with **untracked files counted** — stricter than Step B's
   tracked-only gate on purpose, because an untracked file is reachable from no commit and this
   directory is its only copy — *and* HEAD must already be reachable from its own upstream, or
-  (no upstream) from `refs/remotes/origin/main`. Every commit is then on the remote and the
-  directory is the only thing deleted.
+  (no upstream) from `refs/remotes/origin/main`. Detached review heads instead require
+  a named session lock judged inactive and reachability from a remote-tracking ref,
+  so a squash merge does not strand them while
+  the fetched source branch still preserves their history. This detached proof also holds
+  **ignored files**, which may contain evidence; their owner must finish evidence handoff
+  and remove disposable output before retrying. No PR state is inferred. Once the source
+  remote-tracking ref is gone, an otherwise unpreserved detached head remains held.
+  Worktrees with submodules require separate preservation and remain held by this
+  detached proof, including when the submodules are uninitialized.
+
+The detached reap itself deletes no implementation branch. The default final branch-GC
+pass can independently collect a squash-equivalent branch; add `--no-branches` to run
+only the worktree arms.
 
 On a reap it also deletes the **stale local branch**, when that branch is equal to or behind
 its upstream, with the non-force `git branch -d` — whose own merged-into-upstream refusal is a
@@ -1907,6 +3066,67 @@ no-upstream-and-not-on-main / could-not-check) and left alone — never silently
 it with `--dry-run` first: that prints the whole plan — path, session (or `unowned`),
 `REAP`/`KEEP`, reason — for every registered worktree, including the ones the identity
 refusals put out of reach, and changes nothing at all.
+
+### Offline repository indexes — `deskwt maintain`
+
+```bash
+deskwt maintain --repo .          # JSON inventory + read-only plan
+deskwt maintain --repo . --apply  # bounded offline index maintenance
+```
+
+The plan reports ref namespace counts, registered/locked worktree counts, native
+`count-objects -v` output (local object/pack counts and any reported alternate
+paths, not object counts for those stores), and configured reflog retention
+overrides. An empty override string means Git's defaults apply. Apply emits before/after
+inventories and runs exactly two native builtins: `pack-refs --all`, then a reachable,
+split commit-graph write with no new Bloom filters. Ref values, working files and
+recovery history are preserved. The plan writes nothing in the repository; the standard
+desk audit record still records the invocation.
+
+All linked worktrees and roles coordinate through one kernel advisory lock in the
+resolved common Git directory, independent of their `HOME`. Attempts, including failed
+or interrupted attempts, are coalesced for six hours by default (`--min-interval`, minimum
+one hour). A held or recent attempt reports `held` or `recent` without repeating inventory
+or work. Each invocation has a 30-second total command budget (`--timeout`, one second to
+five minutes). The lock is kernel-released on exit; its file must never be unlinked during
+operation. Unreadable/corrupt timestamps fail closed and require operator inspection.
+Apply also owns the shared temporary-ref lock and records durable child custody before
+launching either index task. Process supervision owns the Unix group or Windows job;
+a coordinator crash or uncertain cleanup leaves the shared active marker and holds both
+maintenance modes until an operator confirms all owned Git children stopped. Native Git
+lockfiles are never automatically removed.
+
+This is an explicit command for the repository supervisor to invoke; it does not install
+a scheduler or add work to every agent boot. It disables lazy fetching and all network
+protocols for its Git children, ignores ambient `GIT_*` redirects, and never invokes
+configured maintenance strategies, prefetch, full GC, reflog expiry or object deletion.
+Object reclamation is explicitly **held**: a source repository cannot enumerate every
+external clone borrowing its objects. Even an empty alternates list does not prove there
+are no borrowers. For bounded consolidation that retains every object ID, use `deskwt maintain objects`.
+A managed borrower registry and object deletion remain separate work. Branch/worktree retirement stays in `deskwt prune`, claims in their
+claim protocol, and remote-tracking refresh in the sanctioned transport.
+
+Maintenance requires native `git hook list` support. Before the attempt stamp and again
+before each index task, it inventories the relevant ref-transaction event using Git's
+effective configuration. Any listed entry holds maintenance; hooks and their configuration
+are preserved. Unrelated events do not hold it. Disabled entries are conservatively held
+because Git's display can be ambiguous with configured names. Unsupported inventory,
+missing or unreadable hook directories, broken hook paths, and unexpected output fail closed.
+Directory inspection requires a directory during the open operation; special-file paths
+fail closed. On Windows, only drive-rooted paths are supported; other namespaces fail
+closed. This removes the demonstrated blocking-open case, but native command deadlines
+do not impose a hard bound on arbitrary filesystem latency.
+The common-directory lock coordinates maintenance callers, not external configuration
+editors: configuration must remain stable during a run. Rechecks narrow the race window
+but do not provide an atomic security boundary against concurrent configuration changes.
+
+The targeted regression audit is reproducible with
+`go -C tools/desk run ./cmd/muhar -j 2 -spec cmd/deskwt/maintenance-mutations.json`.
+It requires local loopback for the HTTP transport-denial fixture and symlink support for
+the no-follow fixture. A green baseline and a caught read-only-plan control gate the committed
+mutations: locking, cadence, environment isolation, unreadable inventory and command warnings, valid stash refs, symlink refusal,
+command budget, transport denial, and recovery/borrowed-object preservation. Read the
+per-mutation verdicts; a healthy harness exit alone does not mean every mutation was caught.
 
 ### The prune loop — one command, two supervisors
 
@@ -1941,7 +3161,9 @@ repos, `scripts/deskwt-prune-all.sh` invokes `deskwt prune --repo <path>` per ex
 Because every desk loop runs a one-shot prune at boot, N windows starting inside a minute
 used to run N identical full sweeps over the same repository at once. The singleton makes
 that one sweep. It is two mechanisms over one stamp file under `~/.config/assay/prune/`
-(never inside the target repository, so `--dry-run` can promise it writes nothing there):
+(never inside the target repository, so `--dry-run` can promise it writes nothing there).
+The stamp is keyed on the repository's shared git common directory, so sweeps started from
+the shared checkout and from any of its worktrees contend for the same singleton:
 
 - **A non-blocking exclusive advisory lock.** A sweep that cannot take it prints
   `deskwt prune: held by pid <pid>, running <age> — skipping this sweep`, exits **0** (a
@@ -2007,9 +3229,25 @@ Read-only classification is an **allowlist per CLI**, which is the fail-closed d
 nobody classified is MUTATING, so a subcommand added upstream tomorrow is refused rather than
 waved through on the day it appears. `k9s` carries an EMPTY allowlist on purpose: it is an
 interactive TUI whose mutating operations are reachable from inside the session, so nothing in its
-`argv` can establish that a call is read-only. The verb scan skips flags and the values of global
-flags that consume one (`-n ns get pods` classifies on `get`, not on `ns`); that table can only
-remove false REFUSALS, since an unrecognised token still lands on the mutating side.
+`argv` can establish that a call is read-only. The verb scan skips `--flag=value` tokens and the
+global flags it knows consume a value, with that value (`-n ns get pods` classifies on `get`, not
+on `ns`). Any OTHER flag before the subcommand makes the call unclassifiable, so it lands on the
+mutating side: its arity is unknown, and a flag that consumes the next argument hides the real
+verb — real `kubectl --username get delete pod x` runs `delete`, with `get` as the username. So
+the value-flag table can be incomplete without a false pass; a missing entry costs a false
+refusal, which the operator answers by writing the flag as `--flag=value` or after the subcommand.
+The table's one hazard is the reverse: an entry for a flag that takes NO value would make the
+scan skip the real verb, so a flag goes into it only when the CLI's own help shows it consumes an
+argument.
+
+An allowlist entry can also be **bare-form only**. `talosctl services` is read-only as a bare
+listing, but the subcommand also accepts positional arguments, and the entry does not vouch for
+what an argument selects. So the guard inspects what follows that verb: with no positional
+argument (listed value flags with their values, and `--flag=value`, are not positional) the call
+is read-only; with one, it is classified like an unlisted verb and refused at the read-only tier,
+exit `5`. Any other flag after the verb is taken to consume nothing, so the token after it counts
+as positional — the fail-closed guess on this side of the verb. A lone `-` is positional, as the
+flag parser reads it, and so is anything after a bare `--`.
 
 Exit `5` is a **refusal, not a fallback trigger**. The message says so explicitly: reaching the
 same CLI by absolute path, by a rebuilt `PATH`, or through another tool is not the sanctioned
@@ -2102,10 +3340,16 @@ sudo make desk-install   # HUMAN ONLY
    `BuiltAt` ldflags.
 2. Installs the already-built `dist/` binaries to `/opt/desk-tools/bin/<tool>`,
    root-owned 0755 — agents cannot overwrite them.
-3. Runs `desk-hook-install`: copies `tools/desk/hooks/pre-push` to `.githooks/pre-push`
-   (the `deskpushguard` shim, activated by the repo's `core.hooksPath = .githooks`). It is
-   idempotent, and **refuses to clobber** a pre-existing non-`deskpushguard` pre-push hook
-   unless invoked with `FORCE=1`.
+3. Runs `desk-hook-install`: delegates to the built `deskpushguard hook-install`. Where
+   no hook exists it writes the PATH-resolving `.githooks/pre-push` shim (plus
+   `pre-push.cmd` on Windows). An exact copy of the shipped anchored hook
+   (`tools/desk/hooks/pre-push`, which runs `/opt/desk-tools/bin/deskpushguard` by
+   absolute path) is **kept** on Unix, so a routine install never trades that anchor for
+   PATH resolution; `FORCE=1` replaces it with the PATH shim. On Windows, where the
+   `/opt` path cannot exist, it is migrated to the current pair. Exact current hooks are
+   skipped, and foreign hooks are **refused** unless invoked with `FORCE=1` (`-Force` in
+   PowerShell). Standalone hook installation requires `desk-build` first; an absent
+   built guard refuses without changing hooks. No static-copy fallback remains.
 4. Runs `desk-manifest`: writes `tools/desk/MANIFEST.sha256` from the installed binaries.
 
 `/opt/desk-tools/bin` is deliberately **not on `PATH`** — every desk tool is invoked by its
@@ -2307,8 +3551,9 @@ Four things a hand-rolled check has to get right, each of which a naive version 
 ### Kill switch and stop flags
 
 Arm and disarm are file operations under `~/.config/assay/`; the flag semantics,
-the `HEARTBEAT` dead-man lease, and the precedence chain
-`DISABLED` > `STOP` > `STOP.<name>` are specified once in
+the `HEARTBEAT` dead-man lease, and the full precedence chain
+(`DISABLED` > `STOP` > `STOP.cell.<cell>` > `STOP.<name>` = `STOP.cell.<cell>.<name>`)
+are specified once in
 [Runtime state](#runtime-state-not-created-by-this-repo) above.
 
 ```bash
@@ -2389,12 +3634,12 @@ for why a refusal-guard that honoured `DISABLED` the ordinary way would fail ope
   *failed* creates (which record no number) locked the tool out for an hour while
   ninety-nine successes did not move it.
 
-  Creates therefore gate on `AllowWriteRepoWide` — every charged write the tool made on that
-  repo, held at the **per-PR cap**. That scope is a superset of wherever a create's line
-  lands, whatever number it gets, and it keeps the created number in the audit trail (the
-  one field that makes a create traceable) rather than blanking it to force the buckets to
-  agree. `TestGateReadsTheBucketItsWritesLandIn` pins the invariant for every gated call
-  site: seed the shape that call site really writes, and its own gate must refuse.
+  `deskpr create` gates on `AllowPRCreate`: new PR attempts are counted across
+  the repository, including their created PR numbers and uncertain outcomes.
+  Updates and body edits have their own per-PR budgets and do not consume this
+  20/hour creation counter. All verbs still share the aggregate 100/hour ceiling.
+  Legacy missing or unknown verbs count conservatively rather than opening an
+  unmetered lane. Other new-object call sites retain `AllowWriteRepoWide`.
 
   **The cap values are pinned by test** (`TestCapValuesArePinned`). Every other test seeds
   by reading the constant the code reads, so raising 10 → 20 was green across the whole
@@ -2688,10 +3933,329 @@ Rotating the session id does reset the bucket — a new session is a new session
 **every `new` audit line records the sessionTag it charged**, so rotating to buy budget
 leaves a trail rather than erasing one. That trace is the control here, not a hard block.
 Sessions with no session variable set at all share the single `unknown` bucket (the
-conservative direction). deskfile **gates WHETHER and WHERE, never WHO**: the caller's ambient `gh`
-credential is the filing identity and no App token is ever minted. Repo scope comes from
+conservative direction). deskfile **gates WHETHER and WHERE, never WHO**: the filing identity is the session's own
+role App credential, resolved from `$DESK_LOOP` through `desktoken` (the worker App, with a NOTICE,
+when no role resolves), never an ambient `gh` login. Repo scope comes from
 `deskkit.IsAllowedRepo` — there is no second repo list, and a test parses the sources to
 prove it.
+
+### The `### Fork test` block — the decision filing gate
+
+A `needs-decision` label is a claim that the driver has a real choice to make. Without a
+check on the SHAPE of the question, `deskfile new` accepts items that hold no choice at all —
+a technical question whose only workable answer is already known, or a note that a piece of
+work belongs in a different repository — and each one costs the driver a decision slot. This
+gate makes the shape binding: a filing labelled `needs-decision` must carry a `### Fork test`
+section (any heading level) with these lines, in any order —
+
+```
+option: <letter> — <what it is> | works-because: <why this can actually be carried out> | consequence: <what follows if chosen>
+option: <letter> — <what it is> | works-because: <...> | consequence: <...>
+default: <letter>            (or `default: <letter> — <text>`)
+caught-by: <draft-pr | flip | issue-close | nothing> — <which one, e.g. the PR number>
+ruled-check: <the search that was run> → <what it returned>
+subject: <one line naming what is actually being decided>   (OPTIONAL)
+```
+
+**The block's grammar (round 7) is strict and fail-closed, on purpose.** Six rounds of security
+review each found one more shape of trailing or embedded content that could be misread as part
+of the block — a fence, an indent, a setext heading, a `>`-quote, a second `subject:` line, a
+comment — and each round closed the one shape named. Round 7 replaces the boundary-marker list
+with three rules that bound the block by its own grammar. Rule 1's strip still models specific
+Markdown constructs, so it is the one place a new shape can still matter; the backstop below
+covers the case where its reading and a raw reading disagree:
+
+1. **Strip first.** Before anything else runs, every FENCED code block and every HTML comment
+   is removed from the whole body, each stripped line replaced with an EMPTY one (never
+   deleted — deleting could join whatever came before a strip onto whatever came after it,
+   round 7.1, cor-1688-C15/sec-1688-S1 item 3). A fence closes only on a line using the SAME
+   delimiter character, AT LEAST as many repetitions as the opener, and under 4 columns of
+   indentation (a tab counts as 4) — CommonMark's own closing rule, so a shorter or
+   different-character delimiter nested inside a fence is fence CONTENT, never a closer, and
+   cannot end the strip early (round 7.1, sec-1688-S1(a)/S1(b)). An HTML comment that never
+   closes (no `-->` anywhere after its `<!--`) is blanked from the line that holds the `<!--`
+   to the end of the body, wherever on that line the `<!--` sits — at the line's start, after
+   other text, after a closed comment on the same line, or indented — since a renderer hides
+   an unclosed comment and everything after it (round 7.1, sec-1688-S1 item 2; widened from
+   line-start openers only in round 7.3, cor-1688-C18). So a quoted example (heading
+   and all) earlier in the body is blanked before the heading search runs, and a `subject:`
+   line hidden inside an HTML comment — between two of the block's own real key lines, trailing
+   off the last one, or never closed — is blanked before the block is parsed. The strip models
+   exactly these two constructs. It does not model everything a renderer or sanitizer may hide
+   or show differently (for example raw HTML elements a sanitizer drops, or a `<!--` inside an
+   inline code span, which a renderer shows but the strip removes — and, if no `-->` follows
+   it, blanks to the end of the body, so a block after it is not found); those are not claimed
+   covered by rule 1. Where the strip over-hides, the gate reads less, never more: it fails
+   closed.
+2. **The heading must be followed DIRECTLY by the block.** Blank lines between the heading and
+   the first key line are fine (none are required); anything else — a
+   sentence of context, a leftover note — is a MALFORMED block, refused by naming that specific
+   problem, never silently treated as an empty one.
+3. **The block is the CONTIGUOUS run of key lines that follows.** A key line is
+   `<lowercase-key>: <content>` at column zero — no leading whitespace, no bullet, blockquote,
+   or emphasis marker, no indentation, nothing before the key name. The run ends at the FIRST
+   line that does not match this shape, blank or not, and nothing past that line of the
+   STRIPPED body (rule 1) is read as part of the block. A `>`-quoted or bulleted line
+   was never a key line to begin with, so it can neither start the block nor extend it — the
+   round-5/6 quote and indent exclusions are now a consequence of this one rule rather than a
+   dedicated check.
+
+**A backstop, for whatever rule 1's strip still gets wrong (round 7.1, cor-1688-C15/sec-1688-S1).**
+Whatever a `subject:` reading above the bounded run computes, it is DISCARDED (treated as no
+declared subject) when either holds: the RAW, never-stripped body carries more than one line
+matching the `### Fork test` heading pattern anywhere, fenced or not; or re-deriving the subject
+from that raw body (no stripping at all) disagrees with the subject the stripped path produced —
+including one reading having a subject the other does not. Either condition is itself the
+ambiguity a stripper failing to hide something would create, so neither reading is trusted over
+the other. A third condition (round 7.3, sec-1688-A1) covers a hiding construct both readings
+see the same way: the raw body contains, anywhere, the opener of one of the three raw-HTML
+block kinds a renderer drops whole — a processing instruction (`<?`), a declaration (`<!`
+followed by an ASCII letter), or a CDATA section (`<![CDATA[`). A filing has no use for any of
+them, and a whole fork-test block wrapped in one would be invisible in the issue. This never
+touches the block's other required fields (`option:`/`default:`/
+`caught-by:`/`ruled-check:`) — only the subject — so a filing this catches still lands on
+`needs-decision` rather than being refused outright. Beyond those three openers the backstop
+catches DISAGREEMENT only: any other line that both readings see the same way but a renderer
+or sanitizer hides (a raw HTML element, for example) is not caught by it.
+
+**Known limit.** A key-shaped `subject:` line placed directly under the block's last line,
+with no blank line between, is part of the contiguous run (rule 3), so it is read as the
+block's subject. That line is visible in the rendered block and cannot be told apart from the
+documented subject-last form, and the gate reads the body once, at filing time, so a later edit
+to the issue does not change the outcome. It is stated here as a limit of the grammar, not
+claimed fixed.
+
+An `option:` line with an empty `works-because` or `consequence` is not COUNTED — an option
+the filer believes cannot work is not written as an option; it belongs in the prose as a
+rejected alternative. Each option needs its own letter: two `option:` lines with the same
+letter (case-insensitive on the LETTER; the `option:` key itself must be exactly lowercase, per
+the grammar above) are refused, since one option written twice is still one option.
+`default:` names a counted option by its bare letter, optionally followed by ` — <text>`; a
+value that does not open with a letter is reported as malformed, not as missing. `caught-by`
+is the human-held gate that would catch a wrong guess on the default (a draft PR awaiting
+merge, a flip CI still runs, an issue close still to happen, or `nothing`, meaning no gate
+catches it) — the KEY is case-bound, but its enum VALUE (`draft-pr`/`flip`/`issue-close`/
+`nothing`) still reads case-insensitively. `ruled-check` records the search for an existing
+ruling on the same question — the item's own thread and the tracker for the item id — so a
+filer cannot skip checking whether it was already decided. Name the search by its SUBJECT, e.g.
+`ruled-check: searched this item's thread and the tracker for "sla-days help text" → nothing on record`;
+that line reads clean. The line is read for one-way terms (below), so a line naming a
+driver-owned act — "searched closed needs-decision issues → nothing" matches the auto-close
+pattern — keeps the item on `needs-decision`: the safe direction, but a needless one. The arrow accepts `→` or `->`, and the dash before "what it
+is" accepts an em dash, en dash, or a plain hyphen. `subject:` is OPTIONAL and never checked
+for structural well-formedness — a missing or ambiguous one is never refused — but it is the
+ONLY line the notice lane's positive reversible-signal test reads (below), and only when the
+BOUNDED, CONTIGUOUS block (rule 3 above) carries EXACTLY ONE `subject:` line: a filing with no
+`subject:` line, or more than one, simply never admits (the same fail-closed default either
+way).
+
+**Outcomes, in this precedence:**
+
+1. **No block, an unparseable block, a missing or malformed line, a duplicate option letter,
+   or a `default` naming no counted option** → **exit 5**, naming every problem found.
+   `--force-new --reason` is the only bypass, as for every refusal in this tool; it files
+   the item under `needs-decision`.
+2. **Fewer than two counted options** → **exit 5**. For an item that is NOT one-way (below),
+   the refusal names the three `--no-fork` re-routes: a genuinely single-option question is a
+   work item, never a decision. For a ONE-WAY item the refusal names no re-route — every
+   `--no-fork` value files off the driver's queue — and offers only `--force-new --reason`,
+   which files it under `needs-decision`.
+3. **Two or more counted options and `caught-by: nothing`** → filed under `needs-decision`.
+4. **Two or more counted options, a `caught-by` gate, and the notice-lane test passes** →
+   the **notice lane**: the issue is labelled `desk-decided` and a `## Desk-decided` block is
+   appended — the fixed heading, the SAME `<!-- desk-r3-decision v1 -->` marker
+   `deskdigest`'s R-3 veto surface already reads (see "Classification (R-3)" above), then
+   `decision:` (the default's text), `alternative:` (the other counted options) and `cost:`
+   (the `caught-by` gate). The filer proceeds on the default; the item never parks.
+   Otherwise → filed under `needs-decision`.
+
+**The notice-lane test fails CLOSED** (`internal/deskkit/noticelane.go`,
+`deskkit.NoticeLaneVerdict`). An item is admitted only when ALL of these hold:
+
+- no caller label marks it one-way: `human-only`, `security`, `gate:human`;
+- it is not a human-only hand-off: `deskfile` checks this before the verdict, with the same
+  test its act gate uses, so a body whose first non-blank line opens with `BLOCKED-ON-HUMAN`
+  stays on `needs-decision` just as the `human-only` label does, and `--no-fork` refuses it;
+- no one-way term appears in the title or body — neither a `deskkit.HumanOnlySignals` needle
+  (the list `deskdigest`'s classifier uses) nor a `deskkit.OneWayPatterns` match. The
+  patterns are word-bounded and cover: merge; ready-flip; push to main and force-push;
+  tag/release/ship and version numbers; disabling, weakening, bypassing or loosening a
+  control, branch protection, rulesets, the leak sweep, guardrails; keys, signing, custody,
+  PII, passwords, certificates, rotation, encryption; money, funds, payment, vaults,
+  settlement, pricing, fees, refunds; identity, auth, login/sign-in, SSO/OAuth/OIDC/SAML,
+  realms, impersonation; delete, overwrite, wipe, purge, truncate, destroy, erase, drop of
+  durable data; public, publish, external, vendors, third parties, send, email, announce,
+  customers, partners, upload, export; infrastructure, deploy, prod, live, clusters, DNS,
+  databases, migrations, servers, runners; GitHub App permissions, `actions: write`,
+  read/write/admin access, grants, installations, admin, privilege, approval, self-review,
+  sign-off, ratification, veto, CODEOWNERS; `gate:human` / `human gate` / `human-only` in
+  any spelling; a commit or write straight/directly to main and anything "without a PR" or
+  "without review"; taking a PR out of draft or from draft to ready; required reviewers and
+  dismissing reviews; 2FA/MFA/two-factor; `--no-verify`, hooks, unsigned commits and
+  signatures; the trust gate, trusted lists, the roster, "anyone" and "any commenter"; owners,
+  roles, maintainers, members; archiving, transferring, visibility, private, moving to
+  another org, renaming a repo or org; auto-closing, or closing `needs-decision` /
+  `human-only` items; charges, cards, credit, purchases, subscriptions, billing; and a
+  control-verb class — turn off, switch off, stop requiring, no longer require, skip, opt
+  out, remove, relax, waive, suppress, silence, "allow … without", drop … requirement —
+  within a few words of a control noun (check, scan, gate, guard, hook, review, requirement,
+  protection, lint, test, CI, verification, assertion, signing, policy, rule, control, alert),
+  in either order;
+- a POSITIVE, CONTENT-BEARING R-3 reversible signal is present in the fork-test block's
+  DECLARED SUBJECT — the `subject:` line, and nothing else (`deskkit.FirstNoticeLaneSignal`:
+  docs wording, typo, phrasing, a table column). The SHAPE-only needles in
+  `deskkit.ReversibleSignals` (`deskkit.NoticeLaneShapeOnlyNeedles`) never admit on their own,
+  for two different reasons:
+  - `tool default`, `default value`, `flag default`, `rename the` name the SHAPE of a change
+    and nothing about what it governs ("tool default: build untrusted fork heads in CI"), so
+    as an admission signal they admitted every one-way act the keyword list had not named
+    (round 3).
+  - `lint level`, `lint severity`, `notice or error`, `port-or-drop`/`port or drop` are, BY
+    CONSTRUCTION, always a classification question about SOME check or job, named in the
+    subject or not — a lint level is the level of some check — so an admission rule keyed on
+    a check/job NOUN (below) only ever caught the phrasings it enumerated, never a check
+    named by its own name ("lint level for pin-consistency: notice or error?" admitted until
+    round 5, since `pin-consistency` names no noun the noun scan recognises).
+
+  A match on any of these nine is a VETO, checked BEFORE the content-needle scan: an item
+  whose subject pairs a shape-only phrase with an unrelated, otherwise-admitting needle
+  ("wording of the pin-consistency lint level: notice or error" — "wording" is a real
+  `ReversibleSignals` needle) still stays on `needs-decision` (round 6) — the shape-only phrase
+  is never outvoted by a second needle in the same subject. An item whose only reversible
+  signal is one of these nine, paired or not, stays on `needs-decision`.
+  `deskdigest`'s display classifier still reads every one of them (from title+body, unchanged
+  — the subject-only read below, and the shape-only exclusion, are deskfile's admission gate
+  ONLY: the classifier's "reversible" display class and deskfile's notice-lane admission can
+  disagree on the same item).
+
+  **Every needle match — shape-only veto and content-bearing alike — collapses separators
+  first** (`deskkit.collapseSeparators`, round 7.1, security review sec-1688-S1 advisory): a
+  run of whitespace, underscore, dot, slash or hyphen in either the subject or the needle
+  becomes a single space before comparing, so `lint_level`, `lint-level`, `lint.level` and a
+  doubled space all compare equal to the needle `lint level` as written. Before this, a
+  different separator spelling had to be enumerated as its own needle (`port-or-drop` next to
+  `port or drop`) and still missed whatever spelling was not enumerated. The CI check/job
+  backstop (`ciCheckOrJobRe`) reads the collapsed subject too, not only the raw one
+  (`deskkit.namesCICheckOrJob`, round 7.2), so `leak_sweep`, `leak.sweep` and `ci_checks` are
+  caught alongside `leak-sweep`. The veto also matches each shape-only needle's plural
+  (`lint levels`, `tool defaults`; `deskkit.subjectContainsVetoNeedle`, round 7.2) — the `-s`
+  and `-es` forms, and for a needle ending in `y` the `-ies` form (`lint severities`, round
+  7.3) — so a plural spelling cannot slip past it to a paired content needle.
+
+  **Any non-ASCII character anywhere in the subject fails closed, before any needle or
+  `ciCheckOrJobRe` check runs** (`deskkit.hasNonASCIIByte`, round 7.1, security review
+  sec-1688-S1 advisory). `normalizeHyphens` (round 6/7) widens to a fixed list of Unicode
+  hyphen/dash look-alikes, but a fixed list is inherently finite — a look-alike outside it, a
+  non-breaking space, or a zero-width character, still slips past a check-name or needle scan
+  built on ASCII literals. Refusing the whole class at once, rather than enumerating further
+  code points, is the fail-closed direction this file's own design already takes everywhere
+  else.
+
+  **The reversible signal is read from `subject:` alone, never the title or body prose**
+  (`deskkit.NoticeLaneVerdict`, security review sec-1688-S1, round 4). A title routinely
+  carries more than one clause — "Tool default: let the desk commit to main when CI is green?
+  Fix the help-text wording too." is a one-way governance question PLUS an incidental
+  "wording" fix tacked on — and a scan of the whole string admits on whichever clause happens
+  to carry a reversible needle, not on what the filing is actually about. The filer states, in
+  `subject:`, what is actually being decided; only that line is read for the reversible
+  signal, and only when the fork-test section carries EXACTLY ONE `subject:` line and it is
+  not `>`-quoted (round 5, below). No usable `subject:` line at all means no reversible
+  signal, ever — the same fail-closed default as an item on neither list.
+
+  A subject that names a real CI check or job by a GENERIC noun is refused independently of
+  the shape-only exclusion above: `deskkit.ciCheckOrJobRe` matches the
+  "check"/"job"/"workflow"/"pipeline" nouns, and this codebase's own `<word>-sweep` /
+  `<word> check` compounds — leak-sweep, control-sweep, pattern-sweep, "the leak check" — and
+  refuses admission on ANY reversible needle when the subject names one of these, not only the
+  four shape-only needles ("lint level for the control-sweep check: notice or error?",
+  "port-or-drop the pattern-sweep job?"). It is a backstop now, not the only guard on the
+  round-4 shape: a longer noun list here was tried and kept missing checks named by their own
+  name rather than a generic noun (pin-consistency, skillslint, forge-surface, build-test,
+  govulncheck, CodeQL — security review sec-1688-S1, round 5), which is why the four
+  lint-level/port-or-drop needles moved to the unconditional shape-only exclusion above
+  instead of growing this noun list further. `forkgate_round4_test.go` pins the round-4
+  mechanisms against the arbiter packet's twelve probes plus its control case
+  (issuecomment-5840449031); `forkgate_round5_test.go` pins the round-5 fix against the
+  security re-review's clause-1/clause-2 probes and the named-check subjects
+  (medici-finance/assay#1688).
+
+  **The declared subject itself must be unambiguous** (`parseForkTest`, security review
+  sec-1688-S1). Rounds 5-6 found that prose after the block with no heading in between was
+  still read as part of the section — including a `>`-quoted line, and a plain trailing line
+  separated only by a blank line — and that when two or more `subject:` lines appeared, the
+  parser used to keep only the LAST one, so an honest first subject could be silently
+  overridden by an incidental second line or a leftover template placeholder. Round 7's strict
+  grammar (above) closes the whole class at once: the section is the bounded, contiguous run of
+  key lines, so nothing past a blank line, a fence, a heading, or any other non-key line is ever
+  part of it regardless of what it looks like, and a `>`-quoted or bulleted line was never a key
+  line to begin with. `parseForkTest` reads a declared subject only when that bounded run has
+  exactly one `subject:` line; zero or more than one leaves no declared subject, the same
+  fail-closed default either way.
+
+An item that matches neither list stays on `needs-decision`: the absence of a one-way term is
+not evidence that an item is reversible, and a reversible signal never outranks a one-way
+term: "the docs wording for the trust gate" is one-way, because what the wording is about is
+a control. The one-way check reads the whole title and body, the `ruled-check:` and `subject:` lines
+included — `ruled-check:` is where a filer names the subject of the SEARCH (not to be
+confused with the block's own `subject:` line, which names the subject of the DECISION). The
+one exemption is
+the `ruling` needle on that line alone, whose wording is the grammar's own record of a search
+for a prior ruling (it would otherwise trip on every filing); every other needle and pattern
+still reads it (`deskkit.OneWayExempting`). The reversible signal is never read from the
+`ruled-check:` line, so that line can keep a filing on the queue but never admit it. The list is
+deliberately broad: a false one-way costs one item staying on the driver's queue; a miss
+costs a decision taken without them. A keyword list is still only a keyword list — review
+of the filing remains the layer above it, and the notice lane's own record (the digest's
+seven-day veto window) is the layer after it.
+
+**`--no-fork <brief-contradicts-artifact | wrong-repo | tool-false-positive>`** re-routes the
+fewer-than-two-options refusal by filing the item WITHOUT the `needs-decision` label:
+
+| value | title prefix | addressed | body must carry |
+|---|---|---|---|
+| `brief-contradicts-artifact` | `amend brief:` | `--to desk` (the coordinator's authoring work) | the brief id it amends and, backtick-quoted, the artifact it contradicts |
+| `wrong-repo` | `re-dispatch:` | `--to worker` (`--to` shares `--raised-by`'s roster vocabulary — the skill's own name `worker-desk` is never a valid role here) | an `owner/repo` token naming where the work belongs |
+| `tool-false-positive` | — | — (label `bug`) | the tool's refusal text in a fenced block |
+
+`--no-fork` refuses a one-way item (the same check as the notice lane's first two bullets):
+it is a route off the driver's queue, and a one-way item never takes one. `--no-fork` and
+`--label needs-decision` are mutually exclusive. The title prefix and addressee for the first
+two values are composed by the tool, not trusted to free text; the content requirement for
+each is checked against its shape (a repo token, a brief-id-shaped token plus a quoted path,
+a fenced block) rather than parsed for meaning — review still judges whether the content
+actually says what the shape requires.
+
+**Label writes are add-first.** The issue is created, then ONE label write applies the
+caller's labels — `needs-decision` included — plus, on the notice lane, `desk-decided`; only
+after that write lands does a SECOND write take `needs-decision` off. A failure of the second
+write exits 6 with the issue carrying both labels, so it is still on the driver's queue (and
+`deskdigest` keeps it as a Queue row). A failure of the FIRST write exits 6 with the issue
+carrying no labels — the same unlabelled state any `deskfile new` filing is left in when its
+label write fails — and the exit code is the signal to re-label it by hand.
+`desk-decided` is created on first use through `deskkit`'s `LabelChange` ensure-exists path
+(the one `deskflip` and `deskpost`'s mechanical labels use), with the one colour and
+description `deskkit` declares for it (`deskpr --decided` creates it with the same spec on a
+PR). It is never a caller `--label`: `deskfile new --label desk-decided` is refused (exit 5),
+`--force-new` included, and so is a caller body that already carries the
+`<!-- desk-r3-decision v1 -->` marker in ANY spelling — any case, any whitespace inside the
+comment, any version (`deskkit.HasDeskDecidedMarkerClaim`, a strict superset of
+`deskkit.DeskDecidedMarkerRe`, the one pattern `deskdigest` reads the marker with). The marker
+in an issue body is the notice lane's record that the gate admitted the filing, and only the
+tool writes it.
+
+**Audit.** Every `new` filing that reaches the gate records its route on the local audit
+line: `lane=desk-decided (<the reversible signal>)`, `lane=needs-decision (<why it stayed>)`,
+or `no-fork=<value>`.
+
+**In the digest.** `deskdigest` collects `desk-decided` alongside `needs-decision` and
+`human-only`, lists each notice once — in the desk-decisions section, with its veto date —
+and does not list that notice as a Queue row. The Queue skips a `desk-decided` item ONLY when
+the desk-decisions section actually lists it (a trusted author's marker): a `desk-decided`
+label with no marker, or with a marker from an author off the roster, keeps its Queue row
+rather than vanishing from both sections. An item that carries `desk-decided` AND still
+carries `needs-decision` or `human-only` keeps its Queue row too. The classifier strips the
+tool-written `## Desk-decided` block before matching, so a notice is never classified on the
+tool's own field names.
 
 ## deskclose — the issue-CLOSING gate (issue-flow brief 03)
 
@@ -2754,6 +4318,55 @@ manifest row is authorized by a human whose comment carries the row set's digest
 a stronger authority than a reviewer's confirmation. The design note (`superseded-confirmation.md`
 in the desk-tools planning stream) carries the flow, the pros/cons and the brief-level semantics;
 the mutation sweep is `cmd/deskclose/mutations.json`.
+
+### The human-decided triage close writes a decision record
+
+`deskclose triage --disposition human-decided --decision <ruling permalink> --tracker <ref>`
+closes a ruled decision issue. It authorizes only on the ruling comment on that issue, after
+verifying that its author is the blessing authority. It also writes one `human-decision-v1`
+record. The record holds:
+
+- the offered option ids, each with the sha256 of the option's text;
+- the recommended id;
+- the picked id, or `ambiguous` / `unparsed`;
+- `ruler: driver`;
+- the issue-opened, ask, ruling and recording times, with the two latencies in seconds;
+- `edit_state`: whether the body, a relay it read or the ruling was edited after the ruling
+  (`edited` records no pick and no recommendation; `unverifiable` when the forge did not say).
+
+It never holds option or ruling text, and never a login or account id the tool reads. Its one
+free-form field, `brief`, is copied from the issue body's marker and held to the
+`<stream>/<NN>` grammar, which bounds its shape, not its meaning. A ruling a person could read as
+anything other than one option is `unparsed`. The record is written twice, as the same JSON
+bytes:
+
+| Copy | Where | When |
+|---|---|---|
+| forge | a `<!-- human-decision-v1 {…} -->` block appended to the close comment | rides the comment write, before the close |
+| local | one line of `~/.config/assay/decision-records.jsonl` (0600, append-only, never through a symlink) | after the close is confirmed |
+
+The record never stops the close:
+
+- An invalid record is not written. The audit line says `decision-record: invalid (<field>)`.
+- If the outbound check refuses the comment with the block, the comment is posted without it
+  and the local line is the only copy. The audit line says `decision-record: local only (…)`.
+- A thread that cannot be re-read writes no record. The audit line says
+  `decision-record: unrecorded (…)`.
+- A failed local append leaves the forge copy standing. The audit line and stderr say
+  `decision-record: local-unwritten`.
+- `--dry-run` prints the block and writes nothing.
+
+A comment write that fails for any other reason fails the close as it would with no record;
+it is attempted once and never retried without the block.
+A re-run after a failed close writes a second record for the same ruling. The record's
+guards are pinned by `go run ./cmd/muhar -spec cmd/deskclose/decisionrecord-mutations.json`.
+
+The not-planned triage lane and every other lane write no record.
+
+The Options parse is `deskkit.ParseDecisionOptions`, shared with `deskinbox`. The schema,
+the pick rules (anchor, lettering, `ambiguous`), the visibility and authenticity rules, and
+the never-recorded list are in the `human-decision-v1` schema doc, which lives in the planning
+stream that specified the record.
 
 ### Two identity+structure lanes — no artifact cited, because nothing of anyone else's is closed
 
@@ -2862,7 +4475,10 @@ check never observed to both pass and fail is a comment that happens to compile.
 A manifest applies **one row at a time**, each with its own audit line, and each row is a
 comment **then** a close — two charged writes, in that order, so the trail naming the lane,
 the canonical target and the authorizing artifact survives even a batch that turns out to be
-wrong. Reopen is cheap; an unexplained close is not.
+wrong. Reopen is cheap; an unexplained close is not. A close whose post-close re-read still
+shows the item open adds one more charged write — a repair issue on the item's repo, deduped
+by exact title and recorded as its own audit line — and fails the row (exit 6), which stops
+the batch.
 
 - **A hard error stops the run**, leaving every later row untouched, and prints the exact
   `--resume-from <N>` to continue with.
@@ -3074,6 +4690,127 @@ Every refusal above carries a mutation in `cmd/deskmerge/mutations.json`, run by
 CI: disarm it, and the suite must redden. Eight of them survived as first written and each
 got the test that catches it (docs/desk-tools-gate-bar.md §4).
 
+## deskautolane — the auto-approve lane (ships inert)
+
+`cmd/deskautolane` is the verb of a narrow **auto-approve lane**: a PR is admitted by
+**category** — every changed path inside an area a named human opted in, no tripwire — and it
+stays in the lane only while a **score**, recomputed at every gate, finds no demotion signal.
+The score ejects; it never admits. An ejection is one-way. The decision logic lives in
+`internal/deskkit/autolane.go`; the verb reads the forge and performs the lane's writes.
+
+```bash
+deskautolane check     [<pr>] --repo <owner/repo> [--rulings-repo <owner/repo>] [--rulings <path>] [--root <dir>] [--fpy-file <path>]
+deskautolane recompute  <pr>  --repo <owner/repo> [--rulings-repo <owner/repo>] [--rulings <path>] [--root <dir>]
+deskautolane merge      <pr>  --repo <owner/repo> [--dry-run] [--rulings-repo <owner/repo>] [--rulings <path>] [--root <dir>] [--fpy-file <path>]
+```
+
+**It ships inert, three ways over.** (1) The lane is CLOSED unless all four roster keys below
+are set; absent is the shipped state and every verb refuses at `config` before its first forge
+request. (2) Every write — the `auto-lane` admission label, and the ejection's label swap,
+single marked comment and `autolane:eject` audit line — requires the **enactment gate** to
+hold; an empty `R-8` Sign-off line refuses `ruling-unsigned`. (3) This release carries **no
+merge mutation**: `merge --dry-run` evaluates the whole chain and prints
+`dry-run: would merge <head> into <base> (merge commit)`; `merge` without `--dry-run` refuses
+at `merge-write` after every condition held.
+
+**The enactment gate.** Every step must positively hold, and an unreadable step is
+could-not-check: (a) the rulings register (`--rulings`, default
+`docs/streams/issue-flow/rulings.md`, which must match `docs/streams/**/rulings.md`) is read
+**through the forge**, from `--rulings-repo` (default `--repo`, same owner, in the desk repo set)
+at that repo's **default branch** — never from the caller's worktree, which may be a checkout of
+a PR head; (b) its `R-8` Sign-off line names one comment permalink on a thread **in that same
+repo**, and on the **one configured sign-off thread** (`ASSAY_AUTOAPPROVE_SIGNOFF_THREAD`),
+which must be an **issue** — a comment on any other thread is refused, a pull-request permalink
+is refused (a pull-request thread's comment listing can stop before its newest comments, which
+(f) must see), and an unset thread is could-not-check; (c) the fetched
+comment's author is a forge `User` (never an App or Bot) and the roster-pinned blessing
+authority, login and numeric id; (d) its body's **first non-empty line** is `Enact: R-8` typed
+bare — exactly those bytes from the first column, not quoted, indented, fenced or backticked —
+(this first-column rule is stricter than a ruling text that ignores leading whitespace: the gate
+refuses an indented line such a text would accept, and the two must be aligned before the ruling
+is signed) and no word from the rejection/negation lexicon appears in it (`rejected`, `not accepted`,
+`do not`, `revoked`, `withdrawn`, `declined`, `vetoed`, `rescinded`, ...; a word lexicon, not a
+reading of intent) — a rejection recorded on the Sign-off line, or an unrelated comment by the
+same human, enacts nothing; (e) the comment was **created after the latest change to R-8's
+text** above its Sign-off line **that the register's path history records**. The gate walks the
+register's path history at the default branch (one page of 50 commits), passes over commits that
+changed only the Sign-off line or another ruling, and takes the `merged_at` of the change that
+merged the last recorded text change into the default branch (the latest, if several did) —
+never a commit date. A recorded text change with no merged change behind it is refused; a
+history page that ends before the change, or any read that fails, is could-not-check; (f) the
+comment is the blessing authority's **newest acceptance on the sign-off thread** — a later
+acceptance by the same authority supersedes it, and a superseded acceptance enacts nothing. The
+whole thread is read: the issue listing is walked to its end, and a listing the forge cannot
+complete is could-not-check. A later comment by the authority counts as an acceptance here even
+when its `Enact: R-8` line is indented — a wider reading than (d), which only refuses more. The
+signing order this admits: the ruling's text merges, then the acceptance comment is posted on the
+sign-off thread, then a PR fills the Sign-off line.
+
+**What the time check cannot see.** The forge's path history is simplified: when a merge commit
+leaves the register byte-identical to one parent, the other parent's line is not listed, text
+changes included. A merge that restores an old register (an old PR head, Sign-off and all) can
+therefore hide the text change it reverts, so the anchor falls back to the older text's merge.
+Step (f) refuses that restore when the authority accepted the newer text on the sign-off thread.
+An older acceptance revived with no later acceptance on the thread is a known residual. It must
+close before the lane gains a merge write.
+
+**`--dry-run` writes nothing.** When the category or the score fails, `merge --dry-run` prints
+`dry-run: would eject: <reasons>` and exits 5 with no label swap, no comment and no latch;
+`merge` without `--dry-run`, like `recompute`, performs the ejection.
+
+`merge` evaluates, in a pinned order: `caller-role` (the `pr-review-desk` loop, whose App is
+the reviewer role), `config`, `app-token`, `pr-open-ready`, `prior-ejection` (the latch: the
+local `autolane:eject` audit line OR the reviewer App's marked ejection comment on the PR, so a
+second host or a fresh `HOME` still sees it; with neither set, an unreadable half is
+could-not-check), `area-admit` (including: the PR's base must be the repo's default branch),
+`score`, `reviewer-approved` (at the current head), `checks-green`
+(latest run per check name, plus every required context present), `mergeable`, `lane-armed`
+(kill switch, kill signal, daily cap), `ruling-signed`, `head-stable`.
+
+**Category tripwires** (never scored): an author other than the roster's worker App; no single
+`Brief:`/`Issue:` trailer; any changed path outside the repo's opted-in globs; any stream brief
+file (`docs/streams/**/brief-*.md`, compiled — no opt-in can reach one); any other
+**never-admit** path, also compiled: a rulings register (`docs/streams/**/rulings.md`),
+`.assay-surfaces`, and agent-instruction files (`CLAUDE.md`, `AGENTS.md`, `SKILL.md` at any
+depth, `.claude/**`, `.mcp.json`); a risk-classed diff; a
+`surface:core` label or a changed path matching the default branch's `.assay-surfaces`; no
+`.assay-surfaces` on the default branch (no declared surfaces is never read as safe); a
+`Security-Review: fail` anywhere in the reviews array; anything unreadable.
+
+**Score signals, version 1** (each 0/1, the score is their count; a score above the eject line
+ejects): `review-rework` (any CHANGES_REQUESTED in the reviews array, any head, any identity),
+`ci-nonsuccess` (the latest run per check name, judged by `deskkit.ConclusionGreen` — the set
+deskflip's checks-green gate now delegates to; a pending or empty rollup is could-not-check,
+never this demotion), `push-after-request`, `size-large` (`size:L` fires whoever applied it;
+any other reading needs exactly one `size:` label applied by the reviewer App — absent, several,
+or set by another identity is could-not-check), `model-unstamped`, `unreadable`. An input that could not be read, and nothing else, is
+could-not-check (exit 6) and is not latched as an ejection.
+
+**Kill signal.** `--fpy-file` names the harvested per-class first-pass-yield file; its
+`auto-lane` class carries `n` and `firstPassYield`. Fewer than 10 lane merges reads `early`
+(the lane runs on the ejector and the daily cap alone); at 10 or more, a yield under the floor
+reads `lane: hold (fpy <x> < floor <y>, n=<n>)`. The file absent or unreadable is
+`lane: hold (could-not-check)` — never healthy.
+
+The roster keys (`~/.config/assay/roster.env`; file-only, never the environment):
+
+| Key | Value |
+|---|---|
+| `ASSAY_AUTOAPPROVE_AREAS` | comma-separated `<owner>/<repo>:<glob>:<login>` — one glob per entry (the `.assay-surfaces` subset, a literal first segment), the login the blessing authority or a trusted human who opted the area in. An entry whose glob can reach a declared surface, a risk-classed path or a stream brief file or another never-admit path refuses the lane |
+| `ASSAY_AUTOAPPROVE_EJECT_LINE` | integer in `[0, 5]` — a score above it ejects |
+| `ASSAY_AUTOAPPROVE_FPY_FLOOR` | decimal in `(0, 1]` — the kill signal's first-pass-yield floor |
+| `ASSAY_AUTOAPPROVE_DAILY_CAP` | integer in `[1, 100]` — lane merges per repo per UTC day, counted from `autolane:merge result=ok` audit lines |
+| `ASSAY_AUTOAPPROVE_SIGNOFF_THREAD` | positive integer — the ISSUE number, in the rulings register's repo, of the ONE thread the acceptance comment must sit on (a pull-request permalink is refused). Optional to load; unset, the enactment gate is could-not-check, so nothing is enacted |
+
+All four absent is CLOSED; any subset set without the rest refuses. There is no default value
+for any of them that opens the lane. The sign-off thread is not one of the four: set alone it
+opens nothing, and set to anything but a positive integer it refuses the lane. statusgen
+recognises all five keys and consumes none.
+
+Not in this release: the merge mutation itself (a forge operation), the ready-flip and
+verdict-post recompute hooks in `deskflip` and `deskpost`, the sticky `lane-disarm` issue
+filing and its human re-arm, and the main-red attribution input to the kill signal.
+
 ## deskevidence — Evidence commits as the verifier App
 
 `cmd/deskevidence` commits an Evidence row (or a whole brief file) via the GitHub
@@ -3123,6 +4860,117 @@ landing with no pre-commit check that the landed content was clean:
   re-summarised. Mirrors `deskpreflight`'s own `statusgen --lint` shell
   (`cmd/deskpreflight/main.go`) rather than reinventing it. statusgen not being on PATH is
   Unverifiable (exit 6), never a silent pass.
+
+### `--outcome-record` — one file per verify outcome (#882)
+
+```bash
+deskevidence <owner/repo> <branch> --outcome-record <local-file>
+```
+
+Mutually exclusive with `--evidence-file`/`--brief-path`. Retires the shared appended
+`docs/streams/verify-outcomes.jsonl` log: every verify Evidence PR used to append one line to
+that ONE path, and the forge merges pull requests server-side with no `merge=union` driver, so
+each landing turned every sibling Evidence PR touching that path CONFLICTING. Instead,
+`--outcome-record` reads one JSON object from `<local-file>`, computes the target path with
+`deskkit.RecordName` (a pure function of the record's own bytes:
+`docs/streams/verify-outcomes/<stream>/<NN>-<YYYYMMDDTHHMMSSZ>-<digest12>.json`), and commits a
+NEW file there. Two concurrent landings only ever pick the same path when they carry
+byte-identical content — the same outcome — and two identical adds merge cleanly with no driver.
+
+**Evidence/run binding.** Every new record must name the full Evidence commit SHA. The
+brief at that commit and on the target branch must be identical, preserve the admitted
+plan, and carry this admitted run's exact `Verification-Attestation` line inside Evidence.
+An older run, a stamp in a code example, or a refused Evidence write cannot back an outcome.
+Missing/mismatched Evidence is refused before the record write; unreadable Evidence is
+could-not-check. Existing byte-identical records remain idempotent no-ops.
+
+Records are **immutable**: an existing path with identical bytes is a noop; an existing path with
+different bytes is refused (exit 5) — a correction is a NEW record (a fresh `ts`, hence a fresh
+digest and path), never an edit of an existing one. The verified-outcome closure gates
+(`guardVerifiedOutcomes`, `gateVerifiedSidecarLanding`) apply to a `verified` record exactly as
+they applied to an added log line; `verify-fail` is never gated.
+
+**Committed closure history.** A new `verified` outcome (including a direct per-file
+Evidence write) runs full lint, identity attribution, the pending-record lint diff
+and closure acceptance in a disposable checkout of the exact target commit.
+The existing `statusgen brief --check-verified` call also requests
+`--check-attribution`, checking this closure through statusgen's canonical actor
+policy and judge. This requires a paired statusgen release with that capability;
+an older binary's unknown-flag error is could-not-check, with no fallback.
+The admitted home keeps its original detached HEAD; its refreshed brief and stream
+README must match the landed commit byte for byte. Fetch the target branch and
+`origin/main` before publication: missing local commit history or baseline is
+could-not-check, never a fallback to the admission history.
+
+GitHub commits the record with an atomic `expectedHeadOid` condition on that
+same inspected parent, retaining destination revision and append-only checks.
+A moved branch, unreadable receipt or mismatched parent requires reconciliation;
+there is no retry with a newer mutable head. The current GitLab writer supports
+only file revisions, so it refuses these pinned verified outcomes before writing.
+Non-verified outcomes and ordinary Evidence retain their existing publication paths.
+Shared appended JSONL publication remains refused; its retained closure parser
+is tested against the same pinned-history contract.
+
+**Receipt validation.** For a record carrying `wake_schema: "verify-wake-v1"`, the writer
+additionally refuses (exit 5, naming the field) the three recurring defects reviewers kept
+bouncing Evidence PRs for:
+
+- `inputs` must name every backticked path the brief's `## Context` `files:` block declares —
+  read from the brief AT the record's own `sha`, never the working tree — with one `file:<path>`
+  key per declared file (or one nested under a declared directory); a path absent at that sha (a
+  `(planned)` deliverable) is not required.
+- `blocker_ref` must be an actual reference — `#<N>`, `<owner>/<repo>#<N>`, or a forge issue/PR/run
+  URL, parsed and read through the configured forge API — never free text or an `action: …`
+  sentence.
+- the brief's own `file:<path>` revision must equal the SHA-256 of the brief AS IT LANDS on the
+  target branch (which already carries this very landing's own Evidence append), read from the
+  forge — never the pre-Evidence copy a receipt might have hashed at wake-evaluation time.
+
+An unreadable brief, forge read failure, or any other could-not-check condition in these checks
+is exit 6, never a silent pass.
+
+**Join keys, required receipt and redaction.** A `verify-fail` / `blocked` record must carry a
+complete verify-wake-v1 receipt (the writer names the first missing field: `wake_schema`,
+`receipt_id`, `blocker_kind`, `wake_predicate`, then the predicate's own input), and a record
+claiming `verify-wake-v1` also carries the run's join keys. Details are in the stream's
+`verify-wake-v1.md`; the writer's behavior:
+
+- **Input shape (exit 5, naming the field, no forge read).** `prs` is a list of
+  `{repo, number, merge_sha}` (repo `<owner>/<name>`, a JSON integer number >= 1, a lowercase full
+  object name), or `prs: []` beside `prs_unknown_reason: "no-pr-delivery"`; `verifier_tier` is
+  `any` or `strong` (never a model name); `started <= finished <= ts`; `row_results` covers all
+  `rows_total` rows and its `pass` count equals `rows_passed`; `dispatch_ref` matches
+  `<claim_key>@<YYYYMMDDTHHMMSSZ>.<12 lowercase hex>`. `withheld` and `dispatch_ref_sha256` are
+  never valid input. A record that repeats a key, or spells two keys alike but for letter case,
+  is refused.
+- **Order.** Shape checks run first, then admission on the submitted record's target (a caller
+  that is not admitted triggers no read the record names), then the `verifier_tier` check against
+  the admitted binding, then the record-driven forge reads, then the redaction. The redacted
+  record is re-named and must still be the admitted target (brief and `ts` byte-equal, final path
+  admitted by the receipt) or the landing is refused with nothing written.
+- **Dereference (exit 5 per failure, exit 6 when unreadable).** Each `prs` entry must exist, be
+  merged, have `merge_sha` as its merge commit, and be in the record's history: on GitHub an
+  ancestor of the record's `sha` (same repository) or of the other repository's default-branch tip;
+  on GitLab, merged into the default branch no later than `ts` (a weaker check; the compare read
+  is deferred there). The canonical repository spelling comes from the forge's change URL.
+- **Redaction (every record, before the outbound scan).** From the live visibility of the
+  register: private keeps `prs` in clear and replaces `dispatch_ref` with `dispatch_ref_sha256`;
+  any other register keeps an entry in clear only if its own repository is exactly `public`
+  (else `{withheld: sha256("<repo>#<number>@<merge_sha>")}`) and drops `dispatch_ref`. An
+  unreadable visibility is exit 6. The register's visibility is read at write time only, so a
+  private register made public later still carries its earlier records in git history.
+
+**Class guard.** `deskevidence` refuses (exit 5) ANY write to a file matching
+`docs/streams/*.jsonl` — not just `verify-outcomes.jsonl` — naming #882: a shared appended log is
+exactly the shape whose server-side merge conflicts every sibling PR that touches it
+concurrently, and the class must not reopen through a sibling log (the `repair-obligations.jsonl`
+projection included — its own real sink stays a dry-run, so arming it as a shared appended file
+would fail this guard red, forcing the same per-file layout at that time).
+
+**Migration.** `statusgen outcomes split --root <dir> [--check]` writes one record file per
+legacy log line (verbatim bytes plus a trailing newline), idempotent, leaving the log itself in
+place until every open PR that still touches it has landed (see
+`migrations/0004-*-per-file-verify-outcomes.md`).
 
 **The `flock`** (the third of #1282's guards, ported in #227).
 `cmd/deskevidence/writeflow.go` now holds a `syscall.Flock(…, LOCK_EX|LOCK_NB)` over the
@@ -3201,6 +5049,17 @@ to be either `return "", <non-nil error>` or an ID from one of exactly three san
 sources (the `VERIFIER_INSTALL_ID` override, the process cache, GitHub's parsed answer).
 Adding a fourth source is then a deliberate edit to a named allow-list, in a diff.
 
+Landing receipts separate `WriteFileResult.ContentID`, the opaque file precondition, from
+`CommitSHA`, the exact commit created by the write. GitHub supplies `content.sha` and
+`commit.sha` separately. GitLab uses one Commit API action with the existing file's
+`last_commit_id` and optional `start_branch`, and takes the commit id from that write's
+response. Neither backend infers a commit from a blob digest or a later branch head.
+Both Evidence and outcome-record landings, direct or through a draft change, dereference
+the exact receipt as a commit before checking attribution. Missing or unresolvable commit
+identity is could-not-check (exit 6). A resolved account that contradicts the verifier
+binding also fails, even when the write response display-author matches. Successful output and the audit carry the full commit
+id for ancestry joins. A backend noop reports only the content id and creates no commit.
+
 After the PUT, the commit GitHub actually created is checked: `commit.author.name` must be
 `assay-verifier-app[bot]`. Three states, not two — matches → ok; a **different** name →
 Unverifiable (exit 6), naming what landed, because a Contents-API commit is already on the
@@ -3227,6 +5086,56 @@ runner": a re-run on a different date or with a different runner is new evidence
 A partial re-run (a prefix of the standing block), a block differing by one character, and a
 superset that adds new rows are all new content and still land.
 
+**Row-scoped README landings (`--row`).** A whole-file Contents-API PUT
+has no notion of a table region: it commits whatever content it is handed, byte for byte. A
+stream README's generated Briefs table (the `<!-- statusgen:briefs:begin/end -->`
+marker-wrapped region `statusgen regen --readmes` maintains) is shared board state — every
+verify-desk landing that touches the README reads and writes the WHOLE file — so a landing
+built from an even slightly stale local copy silently reverted every OTHER row the copy had
+not yet seen. A board row that had just been corrected was put back to `todo` forty-nine
+seconds later by exactly this shape, independent of how careful the correction itself was.
+
+For a target whose **remote** content carries that marker-wrapped region, `--row <NN>`
+(repeatable) is now **required** and names which row(s) this landing may touch — absent, the
+landing refuses (exit 5) before any write. The committed content is then **rebased** onto the
+remote: only the named rows' **lifecycle cells** (the header's Status / Verified / Reviewed
+columns) come from the local file; the named rows' authoring cells, every other row, the
+header, the separator, and every byte outside the markers come from the remote **unchanged**,
+so a stale local copy cannot revert anything it did not name, nor a named row's title, wave or
+effort. A row present in both tables but not named, whose local line differs from the
+remote's, does not block the landing — it is reported and left alone: `stale-local: row <NN>
+differed and was NOT written`; a named row whose local authoring cells differ is reported the
+same way (`stale-local: row <NN> authoring cell(s) differed and were NOT written`).
+
+It refuses (exit 5), never guesses, when: a named row is absent from either table (the table
+changed under the caller, or there is nothing to rebase in from); either table carries a row
+key more than once; a named row's line on either side has a different cell count from the
+header; or a named local line carries a carriage return anywhere but its very end (it would
+render as an extra row). The region is located exactly as statusgen locates it — the first
+occurrence of each marker literal — and each marker must stand alone on its line; a stream
+`README.md` that carries either literal but does not parse that way is **refused**, not
+treated as table-less, so a drifted or mangled marker cannot silently disarm the guard.
+`TestRowScopeMarkersMatchStatusgen` pins the literals to `statusgen/readmetable.go`. A target
+whose remote content carries no marker at all — or a non-README file that merely quotes them —
+is unaffected by any of this: exactly today's whole-file behaviour, brief-path merges and
+`.jsonl` sidecars included.
+
+The guard is enforced **twice**, the same two-layer shape as the `--append-only` shrink guard
+above: the pre-check builds the rebase against the fetch already in hand, and the write op
+re-fetches the target **again**, independently, immediately before the commit, refusing
+unless the content about to be written is exactly that fresh read with only the named rows'
+lifecycle cells changed. The fresh read's content id then rides into the write as
+`WriteFileInput.ExpectedSHA`: the backend refuses if its own pre-write fetch reports a
+different id, and cites that id as the forge's own conditional-write precondition (GitHub's
+Contents-API `sha`, GitLab's `last_commit_id`), so a table change landing after the re-check
+is rejected by the forge rather than overwritten. On a forge whose default branch takes no
+direct write (GitLab), the landing goes to a side branch and a draft change instead, cut from
+the same content id: the fresh read's id rides into that write as `ExpectedSHA` too, so a table
+change in the window between the write-time re-check and the side branch's own creation is
+refused by the forge before the draft change is even opened — not left to surface later as a
+merge conflict, which a side branch cut from the already-moved table would never produce.
+(`cmd/deskevidence/rowscope.go`.)
+
 ## deskgit — the narrow git verb (#1555 F-1)
 
 `cmd/deskgit` gives the desk loops the one git verb they legitimately need unprompted —
@@ -3239,8 +5148,8 @@ end — unprompted arbitrary code execution, proven by execution. A glob has no 
 this tool does. Same structural argument as `deskrelease`.
 
 ```bash
-deskgit fetch                 # refs/remotes/origin/*
-deskgit fetch --prune         # + drop stale remote-tracking refs
+deskgit fetch                 # refs/remotes/origin/* only (no tags)
+deskgit fetch --prune         # + drop stale remote-tracking refs (never a symbolic one)
 deskgit fetch --pr <N>        # pull/<N>/head -> local branch pr<N>   (N digits only)
 deskgit fetch --branch <B>    # origin's <B> -> local branch <B>      (see --branch guards)
 deskgit fetch --as <role>     # any fetch mode above, authenticated from <role>'s token file
@@ -3261,36 +5170,91 @@ replaced by an unrelated commit at exit 0 — which is why the check is keyed on
 ref rather than the flag. An **exact**-spelling destination on an existing branch is unaffected
 and still subject to git's normal fast-forward rules.
 
-Safe by construction — but note that **a fixed argv closes flags, not config or the
-environment**. git honours the upload-pack program from `.git/config`
-(`remote.origin.uploadpack`) and from injected env config, so an argv-only guard is still
-RCE. deskgit closes the proven vectors:
+**fetch runs in-process — no git child.** The old shape of this verb was a fixed `git fetch`
+argv plus a stack of pins against what argv cannot close (config- and environment-supplied
+programs, refspecs, submodule recursion) and an allowlisted child environment. All of that
+existed because a git child honours config and environment; `deskgit fetch` now runs no child,
+so there is nothing for a pin to pin. It calls `gitcore`'s go-git fetch directly:
 
-- **Fixed argv from validated values.** Each mode builds a literal argv; the only
-  caller-derived values are the digits-only `<N>` and the ref-ish `<B>` (no leading `-`,
-  no `+`, no `:`), which flow only into a constructed refspec. Unknown flags and positional
-  operands are refused, never ignored.
-- **Transport-exec options refused BY NAME.** `--upload-pack`, `--exec`, `--exec-path`,
-  `--receive-pack`, `--upload-archive`, `--config-env`/`-c`, and `-C` are refused
-  explicitly, before the flag table sees the argv, in any position — including after a
-  positional operand, where Go's `flag` has already stopped parsing. Matching is on the
-  option name with prefix matching in both directions, because git honours unambiguous
-  long-option abbreviations (`--upload-p`). See `transportexec.go`.
-- **CLI pins beat config/env.** Every fetch carries `--upload-pack=git-upload-pack` (the
-  CLI value overrides `remote.origin.uploadpack` from config *or* env — the code-execution
-  vector), `--refmap=` plus an explicit `+refs/heads/*:refs/remotes/origin/*` (so a
-  malicious `remote.origin.fetch` cannot redirect writes to local branches), and
-  `--no-recurse-submodules` (so `fetch.recurseSubmodules` cannot expand one gated fetch
-  into fetches of arbitrary `.gitmodules` URLs, escaping the repo gate).
-- **Scrubbed child env.** `runGit` passes only an allowlist (`PATH`, `HOME`,
-  `SSH_AUTH_SOCK`, locale, …) and drops every `GIT_*` var — `GIT_SSH_COMMAND`,
-  `GIT_CONFIG_*`, `GIT_ASKPASS` — plus forces `GIT_TERMINAL_PROMPT=0`.
-- **Effective-URL repo gate.** It gates on `git ls-remote --get-url origin`, which expands
-  `url.<base>.insteadOf` (and makes no network call), so an insteadOf rewrite cannot present
-  an allowed identity while fetching elsewhere. It rejects remote-helper (`<helper>::…`)
-  transport forms and requires an exact `owner/repo` path for any **host-bearing** URL, so a
-  padded URL can't smuggle an allowed slug in trailing components. The repo must be in the
-  fixed C-4 set.
+- **Fixed refspec from validated values.** Each mode builds one Go refspec value; the only
+  caller-derived values are the digits-only `<N>` and the ref-ish `<B>` (no leading `-`, no
+  `+`, no `:`). Unknown flags and positional operands are refused, never ignored, and there is
+  no configured refspec list for a `remote.origin.fetch` value to widen. The transport-exec
+  option names `push` still needs refused (`--receive-pack`, `--exec`, `--exec-path`,
+  `--upload-archive`, `--config-env`/`-c`, `-C`) are refused **by name** before the flag table
+  (`transportexec.go`); `--upload-pack` is now simply an unknown flag (still exit 5).
+- **No program is started for any origin shape.** An https origin uses go-git's Go HTTP
+  client; an ssh origin uses its Go ssh client; a **local-path or `file://` origin** is served
+  from the local repository's own storage **in-process** (`internal/gitcore/localtransport.go`
+  replaces go-git's stock local transport, which would otherwise start `git-upload-pack`
+  with this process's whole environment). There is no `--upload-pack` to pin, no child
+  environment to scrub, no submodule recursion (go-git's fetch does not recurse) and no `PATH`
+  lookup. `TestFileFetchStartsNoChild` (gitcore), `TestFetch_RunsNoGitChild` (deskgit) and
+  `TestFetchFromOrigin_LocalOriginStartsNoChild` (deskmerge) put a recording `git-upload-pack`
+  stand-in first on `PATH`, under environment-supplied git configuration, and fail if it ever
+  runs; `TestFileProtocolIsInProcess` fails if any scheme in go-git's protocol table is served
+  by a client that is not in-process.
+- **What the environment still parameterises** (no program, but not nothing): the Go HTTP
+  client honours the standard proxy variables (`HTTPS_PROXY`, `NO_PROXY`, …) and the system
+  trust-store variables, and the ssh client reads `SSH_AUTH_SOCK`, `~/.ssh/known_hosts` and
+  the host/port entries of `~/.ssh/config`. These choose a route or a trust root for a
+  connection; they do not run anything.
+- **Origin-URL repo gate.** The gate is the repository's own configured `remote.origin.url`,
+  as go-git resolves it from the repository's config (that config's `url.<base>.insteadOf`
+  rules included; global- and worktree-scope config play no part, because no git binary
+  reads them) — and **the same string is the URL the fetch connects to**, so the allowed-repo
+  decision and the connection cannot disagree. Exactly one url value is accepted; a
+  multi-valued list is refused (exit 5). The parser rejects remote-helper (`<helper>::…`)
+  forms and requires an exact `owner/repo` path for any **host-bearing** URL, so a padded URL
+  cannot smuggle an allowed slug in trailing components. The repo must be in the fixed C-4
+  set. (`push` still runs git and gates on `git remote get-url`; see below.)
+- **The refspec is the whole write set — no tags.** No mode follows tags: a fetch writes its
+  refspec's destinations and nothing else, so no `refs/tags/*` ref is created or replaced.
+  (`git fetch` auto-followed tags but never replaced an existing local one; go-git's default
+  tag mode writes every advertised tag whose object is present and *replaces* a differing
+  local tag, so the in-process fetch sets `NoTags`.) `TestFetch_KeepsLocalTags` (deskgit) and
+  `TestFetchKeepsLocalTags` (gitcore) pin it; `TestEveryFetchSetsNoTags` fails on any go-git
+  fetch option literal under `tools/desk` that leaves tag-following on, with a planted
+  positive control (`TestFetchTagsGuardFlagsPlant`). The same holds for `deskmerge`'s
+  in-process fetch, which shares `gitcore.Fetch`.
+- **gitcore, not go-git, applies the ref updates.** go-git only transfers: every refspec is
+  rewritten into a forced one whose destination is a private per-call staging namespace
+  (`refs/gitcore-fetch/<nonce>/…`, dropped on every path), and `gitcore` then writes each
+  advertised value to its real destination under git's rules (`internal/gitcore/fetchstage.go`).
+  Two go-git v5.19.2 behaviours forced this. With tags off it returns from its reference update
+  *before* turning a refused non-fast-forward into an error, so `--pr`/`--branch` over an origin
+  ref rewritten to a non-descendant exited 0 with the local ref still on the superseded commit;
+  now that update is refused, the other destinations still land, and the fetch fails closed
+  (exit 6) naming the refused ref (`TestFetch_RewrittenRefFailsClosed`,
+  `TestFetchRefusesNonFastForward`). And its prune removed every unadvertised ref under the
+  destination, symbolic ones included, so `--prune` deleted `refs/remotes/origin/HEAD`; now a
+  symbolic ref is never pruned (`TestFetch_PruneKeepsOriginHEAD`, `TestFetchPruneKeepsSymref`)
+  and never written through. As in `git fetch`, the prune runs *before* the updates and
+  removes each pruned ref's reflog and the directories it empties, so when upstream replaces
+  branch `X` with `X/a` (or the reverse) `--prune` clears the stale tracking ref and lands
+  everything, and the git binary's own `git fetch` in that checkout still updates the new
+  name (`TestFetchPruneRemovesReflog`); without `--prune` the new name is refused (exit 6,
+  naming it) and every other ref still updates. A non-forced refspec never moves an existing
+  tag, and one destination that cannot be written never stops the rest
+  (`TestFetch_RefNameConflictMatchesGit`, which runs the git binary on an identical twin of
+  each fixture, compares, then runs `git fetch` in both after a prune;
+  `TestFetch_PruneScopeIsTheRefspec`). Unlike `git fetch`, the in-process fetch writes no
+  reflog entry for a ref it creates or moves, and no `FETCH_HEAD`.
+  `TestEveryFetchLeavesUpdatesToGitcore` fails on any go-git
+  `FetchOptions`/`PullOptions` literal under `tools/desk` that is not `Force: true` or that
+  sets `Prune`, with a planted positive control (`TestFetchUpdateGuardFlagsPlant`).
+- **A local origin tolerates local-only commits.** A checkout routinely holds commits its
+  origin has never seen; the client offers them as "haves", and the local in-process session
+  drops any have the origin cannot resolve before the server walks them — as `git
+  upload-pack` does — instead of failing the fetch (`TestFetch_LocalOnlyCommitOK`,
+  `TestLocalFetchWithUnpushedCommit`).
+- **Branches in use are never rewritten.** `--branch`/`--pr` refuse a destination branch that
+  **any** worktree of the repository — this one or a linked one — is using, as `git fetch`
+  itself did: the branch its HEAD names, the branch it is in the middle of **rebasing** or
+  **bisecting** (HEAD is detached meanwhile), and any branch an in-progress `rebase
+  --update-refs` will rewrite. The set is read from each worktree's admin directory under the
+  common directory; if it cannot be read, the fetch stops (exit 6) rather than assume none
+  (`TestFetch_RefusesBusyBranch`, `TestCheckedOutBranchesInFlight`).
 
 **Residuals on the gate — read before assuming it binds identity.** The exact-path rule
 only bites on URLs the parser ROUTES to the host-bearing branch, and that routing is where
@@ -3300,9 +5264,10 @@ host swallowed as userinfo, and a scp-like URL with **no** `user@` component fel
 the lenient bare-path branch — while the same URL *with* a user was correctly refused. What
 remains open:
 
-- **Host is not bound** to `github.com` — the desk's origins use ssh host aliases
-  (`git@github-example:owner/repo`), so an exact allowed `owner/repo` on an unexpected host
-  still passes and does a read-only fetch; host-allowlist binding is a follow-up.
+- **Host is not bound** to `github.com` for a plain fetch — the desk's origins use ssh host
+  aliases (`git@github-example:owner/repo`), so an exact allowed `owner/repo` on an unexpected
+  host still passes and does a read-only, unauthenticated fetch; host-allowlist binding is a
+  follow-up. (`--as` binds the credential to `github.com`; see below.)
 - **Bare local paths are gated by the local-roots allowlist** (#215, formerly a
   residual). A real local repo lives at an arbitrary absolute path, so no `owner/repo` shape
   applies — but the parser no longer reads its identity off the last two path components
@@ -3314,48 +5279,34 @@ remains open:
   compiled `.` home root when `DESK_ROOTS` is unset) is skipped: a root meaning "wherever I
   run" cannot anchor identity. `file://` URLs route through the **same** gate, since they too
   name a purely local path. So an `insteadOf` rewrite to a directory merely *named* to spell
-  an allowed slug — the old bypass, which landed foreign content on the tracking refs the
-  desk loops consume — is now refused with no lenient fallback.
-- **The audit line is not a second gate**, but it is no longer blind. C-5 remains a ledger of
-  what the gate *allowed* — it refuses nothing. It now records the **effective origin URL**
-  alongside the parsed slug on the success path (security review Q6), with any userinfo
-  redacted so the ledger never becomes a credential store. Before that change a legitimate
-  refresh, a foreign-host fetch and the (then-open) local-path smuggle produced byte-identical
-  lines in every security-relevant field; recording the effective URL made the smuggle
-  **detectable** even before the local-path gate above closed it outright.
+  an allowed slug is refused with no lenient fallback.
+- **The audit line is not a second gate**, but it is not blind. C-5 remains a ledger of what
+  the gate *allowed* — it refuses nothing. It records the **origin URL** alongside the parsed
+  slug on the success path (security review Q6), with any userinfo redacted so the ledger
+  never becomes a credential store.
 
-It is **not a sandbox**, and the boundary is wider than "a compromised repo" (security review
-S-2). `cmdFetch` binds to `os.Getwd()` and does not check the worktree against deskkit's
-known roots, so the **caller chooses the repo** and with it the `.git/config` governing the
-fetch. In the #1555 threat model the caller *is* the adversary, so an attacker-controlled
-`.git/config` is the ordinary reachable state, not an edge case. Under it, **any config key
-that names a program** is an execution route — the class, not just the examples:
-`core.sshCommand`, `core.gitProxy` (its env twin `GIT_PROXY_COMMAND` *is* scrubbed, which
-makes it easy to misread as closed), `core.fsmonitor`, and `remote.<n>.vcs` (git runs
-`git-remote-<name>` while `ls-remote --get-url` still reports an innocent URL, so the gate is
-structurally blind to it).
+It is **not a sandbox**. `cmdFetch` binds to `os.Getwd()` and does not check the worktree
+against deskkit's known roots, so the **caller chooses the repo** and with it the
+`.git/config` that names origin. What the fetch can no longer be made to do through that
+config or the environment is **run a program** — the class the old pins and scrub chased key
+by key — because the in-process fetch reads no program-naming key and starts no process.
+What the config still decides is the origin URL, and that is exactly what the gate above
+checks.
 
-deskgit also **trusts `PATH`** (security review S-3): `PATH` is allowlisted and `runGit`
-invokes `git` by bare name, so the binary that runs is whatever `PATH` resolves — and the
-`--upload-pack=git-upload-pack` pin binds that program's *name*, not its path. The "a glob
-has no end anchor, but a `main()` does" argument holds only while `PATH` is trusted.
-
-`git` is **not the only lever** (security review Q3). Anything git shells out to that is not
-a `git-*` core helper resolves from the inherited `PATH` — confirmed for **`ssh`**, which is
-executed from `PATH` for both `ssh://` and scp-like origins. (A stand-in `git-upload-pack` is
-*not* reachable: git prepends its own `--exec-path` for core helpers, and `--exec-path` is
-refused by name while `GIT_EXEC_PATH` is scrubbed — that surface is closed on both sides.)
-So resolving `git` to an absolute path is **necessary but not sufficient**: the child must
-also stop inheriting `PATH`. The follow-up is therefore *both* halves — absolute `git` **and**
-a fixed system `PATH` in the allowlist's place; the first half alone leaves the `ssh` lever
-open. It is deferred because a minimal `PATH` risks breaking ssh/credential helpers on the
-desk machine.
-
-deskgit closes the proven upload-pack, env, fetch-refspec and submodule vectors, and the
-insteadOf **identity-substitution** vector for **both** host-bearing URLs and bare local
-paths (the latter via the local-roots allowlist, #215). It claims no more.
+deskgit's **push** is unchanged by this: it still runs `git push` with a fixed argv, the
+`--receive-pack` and `--no-recurse-submodules` pins, and an allowlisted child environment
+(`runGit`), and it trusts `PATH` to resolve `git` and `ssh` (security review S-3/Q3) — so for
+push, the pins-and-scrub reasoning above still applies, and absolute `git` plus a fixed system
+`PATH` remains the deferred follow-up.
 
 ### Authenticated transport — `--as <role>` (fetch and push)
+
+**Repository selection.** Run `deskgit` from the repository whose origin is being
+checked. It accepts neither git's `-C` option nor a repository operand. For a
+worker reading a configured board root, use
+`(cd "$root" && deskgit fetch --as worker) && fanoutloop plan --root "$root"`,
+where `root` is the inventory's absolute path. Directory selection and fetch must
+succeed before planning; the subshell preserves the caller's working directory.
 
 `--as <role>` supplies a role's App installation token to git from the 0600 token file the
 role already owns, and is the **sanctioned replacement for the inline credential-helper
@@ -3365,14 +5316,18 @@ helper shadows per-worktree config and a token-in-URL is refused by policy). It 
 token path behind the same fixed-argv guard the rest of `deskgit` enforces. `deskgit fetch`
 (no `--as`) is unchanged: no identity check, no credential path.
 
-**What the token never touches.** It is READ from the role's token file and PASSED to the
-one child git process through exactly one environment variable (`DESKGIT_TOKEN`) and an
-ephemeral `GIT_ASKPASS` script (`x-access-token` as the username; `$DESKGIT_TOKEN` as the
-password), in a private `0700` temp dir removed on **every** return path including error. The
-token is **never** placed in argv, in a URL, in stdout/stderr, or in the audit line. The argv
-carries `-c credential.helper=` **before the verb**, which clears the helper list on the
-command line so **no ambient or configured credential helper is ever consulted** — only this
-askpass answers.
+**What the token never touches.** It is READ from the role's token file. For **fetch** it is
+then handed to the in-process transport as an in-memory Go value (HTTP basic auth,
+`x-access-token` as the username) — no file, no environment variable, no helper, no child.
+For **push** it is PASSED to the one child git process through exactly one environment
+variable (`DESKGIT_TOKEN`) and an ephemeral credential-helper script (`x-access-token` as the
+username; `$DESKGIT_TOKEN` as the password), in a private `0700` temp dir removed on **every**
+return path including error. Either way the token is **never** placed in argv, in a URL, in
+stdout/stderr, or in the audit line. The push argv carries `-c credential.helper=` **before
+the verb**, which clears the helper list on the command line so **no ambient or configured
+credential helper is ever consulted**, then adds the ephemeral helper under the host-scoped
+key `credential.https://github.com.helper` — see the answer-point binding below. No
+`GIT_ASKPASS` is set.
 
 **Identity binding.** `--as <role>` MUST equal the App role this session's loop identity
 binds (`$DESK_LOOP` → `deskkit.SessionTokenRole`); a mismatch is exit 5 **before any token is
@@ -3380,23 +5335,55 @@ read**, so a session cannot borrow another role's token by naming it. The token 
 **owner** of the effective origin slug (never a caller `--repo`), so it authenticates only the
 repository the effective-URL gate already admitted.
 
+**Host binding — github.com only, in two layers.** The helper answers the GitHub App-token
+username, so this transport speaks only GitHub.
+
+*Layer 1, the origin destinations.* Before any token is minted or read, `--as` checks every
+origin URL the verb will use. For push it asks git itself (`git remote get-url --push --all
+origin`, a config read that contacts nothing): every `remote.origin.pushurl` value, or with none
+every `url` value, with `insteadOf` and `pushInsteadOf` rewrites from every config scope (global
+and worktree included) applied. For fetch it is the single origin URL the gate above decided on
+— the one the fetch connects to. Each URL must name the
+origin repo, have a host of exactly `github.com` (no lookalike, subdomain, trailing dot,
+userinfo trick or self-hosted instance), and not be cleartext `http://`. If any URL fails, the
+verb is refused (exit 5) and nothing is minted. A repo the roster maps to another forge
+(`ASSAY_REPO_FORGES`) is refused the same way. A **local-path origin is refused** under `--as`:
+it has no host to bind a GitHub token to. Plain `deskgit fetch` (no `--as`) is unaffected.
+
+*Layer 2, the answer point.* The credential is bound where it is answered, not only where
+destinations are listed. For **fetch** that is the in-memory hand-off itself: the token is
+attached only when the URL being fetched is `https` with a host of exactly `github.com`
+(default port or `:443`); any other URL is fetched with no credential. For **push**, git can
+talk to hosts that are on no origin list during the verb — a recursed submodule's own remote,
+an `http.proxy` whose URL names a user and asks the credential machinery for its password, or a
+destination config rewritten after layer 1 read it — so git asks the host-scoped helper only
+about `https://github.com`, and the helper itself also answers only a request for
+`protocol=https`, `host=github.com` (or `github.com:443`). Any other prompt goes unanswered and,
+with terminal prompts disabled, fails closed. `push` also pins
+`--no-recurse-submodules`, so push recursion configured in any scope never pushes
+a submodule to its own remote.
+
 **`deskgit push --as <role>`** pushes the **current branch** to origin over that authenticated
 transport, with a FIXED argv and nothing appendable:
 
 ```
-git -c credential.helper= push --receive-pack=git-receive-pack origin refs/heads/<B>:refs/heads/<B>
+git -c credential.helper= -c credential.https://github.com.helper=!'<ephemeral helper>' \
+    push --receive-pack=git-receive-pack --no-recurse-submodules origin refs/heads/<B>:refs/heads/<B>
 ```
 
 - `<B>` is the current branch (`symbolic-ref --short HEAD`), validated by the **same** rule
   `fetch --branch` uses and **never `main`/`master` in any case**; a **detached HEAD** has no
   branch to push and is refused (exit 5).
-- `--receive-pack=git-receive-pack` is pinned (the push-side twin of fetch's upload-pack pin),
-  overriding any config/env receive-pack.
+- `--receive-pack=git-receive-pack` is pinned, overriding any config/env receive-pack.
+- `--no-recurse-submodules` is pinned, overriding `push.recurseSubmodules` /
+  `submodule.recurse` from any config scope.
 - `--force`/`--force-with-lease`, `--delete`, `--prune`, `--mirror`, `--tags` and `--no-verify`
   are refused **by name, with their own reason, before the FlagSet** (`checkPushSafety`); a
   caller `--receive-pack` is refused by the transport-exec guard. None of them is in the
   constructed argv, so none can be reached by any spelling.
-- push gates on the effective origin URL exactly as fetch does, is charged to the
+- push gates on its origin URL as git resolves it (`git remote get-url --all origin`, one value
+  only, the same parser and C-4 set as fetch), then on every push destination (the host
+  binding above), is charged to the
   **outward-write budget** (`deskkit.AllowWrite`, unlike fetch), and its **pre-push hook**
   (`deskpushguard`, via `core.hooksPath`) still runs — no `--no-verify` is ever passed.
 
@@ -3422,20 +5409,17 @@ unprompted-code-execution class this tool exists to remove. Until `sudo make des
 
 `cmd/writeguard` is the Claude Code PreToolUse hook (registered in `.claude/settings.json`)
 that mechanically refuses writes to the SHARED checkout: Edit/Write/MultiEdit/NotebookEdit
-targets inside it, and Bash commands that write into it or cd into it. Full decision model:
-the `guard.go` package doc comment. It fails OPEN (any parse/git error allows) so a broken
-guard can never brick every session.
+targets inside it, and recognized Bash commands that write into it or cd into it.
+Decisions come from `deskcore/writepolicy`; the command observes paths, Git, claims
+and callouts and renders the existing hook protocol. See [the contract](../../docs/write-policy.md)
+and [source/consumer qualification](../../docs/write-policy-consumers.md). Legacy
+parse/Git failures produce no decision; that mapping is not available to managed admission.
 
-**Deployment (#20).** This repo's own `.claude/settings.json` now wires the
-installed `/opt/desk-tools/bin/writeguard` binary into `hooks.PreToolUse` for both the
-file-edit tools and `Bash` — mirroring the wiring already live in the sibling
-a sibling adopter repo. Before #20, the guard was built and
-unit-tested here (`go test ./cmd/writeguard/...`) but never actually armed for sessions
-dispatched against this repo's own shared checkout: prompt discipline (worker-prompt
-essentials in the batch-fanout skill, §Guardrails' `git -C <shared> status --porcelain`
-dirt-poll) was the only backstop for THIS repo, which is exactly the F-34/F-35 class this
-hook exists to mechanically close. Any repo that adopts `tools/desk` and wants the same
-backstop copies the same `hooks.PreToolUse` block into its own `.claude/settings.json`.
+**Deployment.** The supported harness configuration invokes the installed writeguard
+binary for file-edit tools and Bash. This public source tree has no adopter
+`.claude/settings.json`; `TestSettingsJSONWiresWriteguard` therefore skips. Building
+or publishing this package does not install or arm a hook. An adopter must separately
+qualify its actual configuration, missing-binary behavior and sandbox boundaries.
 
 **The shared-homed exemption is OPT-IN (#1035).** A session homed in the shared checkout
 (project dir AND payload cwd both resolve there, per #1007) is exempt ONLY when the
@@ -3560,8 +5544,11 @@ never on a keyword appearing in it:
 
 **Known-uncovered** (true before this PR and unchanged by it; not regressions): escaped or
 split command names (`\rm`, `r"m"`, `'git' clean`), interpreters (`python3 -c`,
-`perl -i -pe`), `find . -delete`, `rsync --backup-dir`, and the git mutations not in the
+`perl -i -pe`), `rsync --backup-dir`, and the git mutations not in the
 alternation (`revert`, `pull`, `branch -f`, `worktree add`, `config`).
+
+`find` mutation forms already recognized by the existing classifier are covered by
+`TestIssue1193FindDeleteExec` (18 cases). This does not qualify arbitrary `find` commands.
 
 Backtick substitution was listed here as uncovered-and-unchanged. **That was wrong and is
 measured wrong** (#1259 security review S-3): this PR's masking is what hid it, so main
@@ -3585,7 +5572,7 @@ this; it is the fail-safe working as designed, not a regression (main behaves th
 and the fix is to name the destination literally or `cd` there along an `&&`-chain first.
 
 The shape you are most likely to meet first is a **`;`-separated `cd`**:
-`cd /private/tmp && … ; cd /private/tmp/wg && git fetch … && git checkout …`. The `;` makes
+`cd <temporary-root> && … ; cd <worktree> && git fetch … && git checkout …`. The `;` makes
 the second `cd` non-honorable, so the frame stays at the payload cwd — and if that cwd is
 the shared checkout, the `git fetch`/`git checkout` read as targeting it and block. Correct
 and unchanged by this PR: only an `&&`-chain guarantees the `cd` actually succeeded. Chain
@@ -3652,6 +5639,35 @@ harness reddens every leg. The selection is echoed to stderr (`shard i/n — run
 mutations`) so a shard's partial report is never mistaken for a complete sweep; the caller
 owns running all n shards. A malformed `-shard` (index out of range, zero shards,
 non-integers) is a refusal, never a silent fall-back to the full or empty set.
+
+**Mutant schemata: one build per worker, for a spec that opts in (#2635).** Most of a
+classic mutant's cost is compiling and vetting the mutated package, not running its tests.
+A spec that sets `"schemata": true` (and whose `test` is a `go test … -count=1` command)
+has every eligible mutant compiled into **one** build per worker: a `-overlay` tree (the
+real files are never touched) in which each mutated function starts with `if <selector> ==
+"<id>" { <mutated body> }`, the selector read from `MUHAR_SCHEMATA_MUTANT`, and `//line`
+directives keep every file, line and function name what the classic mutated file would
+report. A mutant then costs a link and a test run. A mutant is eligible only when its edit
+sits inside one function body of a writable file and leaves the declarations alone (no
+labels, no `:=` redeclaring a parameter or result); mutants that do not compile together
+are found by one `go build -gcflags=-e` probe and dropped; the schemata baseline (no mutant
+selected) must be green in every worker copy, and an eligible positive control must be
+CAUGHT through it, or that run (or worker) is classic. A schemata NOT CAUGHT is re-run the
+classic way, so every NOT CAUGHT on the report is a classic verdict.
+
+Schemata is **off unless the spec asks for it**, because it rests on one assumption about
+the suite: that no test cross-checks two views of the code. Under schemata the mutant is
+live only in processes that inherit the selector and build through the overlay; the file on
+disk stays pristine. A test that compares the running code with its own source file, or
+with a child process started with a scrubbed environment, can go red because the two views
+disagree, and that red would be reported CAUGHT for a mutant the classic run calls NOT
+CAUGHT (`TestSchemataIsOptIn` pins the classic verdict for exactly that suite). Tests that
+depend on closure names, inlining or allocation counts can do the same. Turn it on for a
+spec only after a classic-vs-schemata run of that spec gives identical reports, and re-check
+when the suite gains such a test. `internal/deskkit/mutations.json` is the one spec opted in
+(parity recorded on #2653). Everything else — the baseline, the control, ineligible mutants,
+`-shard`, `-j` — runs as before, the report on stdout keeps its shape, and schemata notes
+go to stderr.
 
 `muhar` does **not** call `deskkit.Guard()`: it is a local diagnostic that makes no
 outward writes (no GitHub, no shared-state mutation — it edits a source file and restores
@@ -3914,6 +5930,14 @@ is `Unverifiable`, never a silent success. When it takes over a stale claim its 
 prior-owner=<o> because=old-no-live-signal`, so a later sweep can see the reclaim happened
 through the tool — under the flock — rather than by hand.
 
+`list` preserves readable claim rows, but exits **6** if any claim file could not be
+read or parsed. Its diagnostic names each skipped file and says the listing is incomplete;
+a partial listing never means an item is free. The library returns those readable claims
+alongside a typed `ClaimListError` carrying skipped basenames and the underlying causes.
+`deskroster list` retains valid rows and marks ownership unverified; `scanloop plan` shows
+unknown claim states and exits 6. Recovery and liveness may still compare-and-delete an
+individually readable claim under the existing lock; unreadable claims remain untouched.
+
 ### Branch liveness — reclaiming a `--branch` claim through the tool (`stale` + the probe)
 
 A claim recorded with `--branch` is protected from age-only reclaim: `deskkit.isStale` will not
@@ -3981,6 +6005,14 @@ paths keep their exact behaviour on the shared primitive.
 
 ## The adapter layer — `deskboot`, `deskdispatch`, `deskflip`
 
+`deskdispatch` now generates help with Cobra. Use `deskdispatch --help`,
+`deskdispatch --stamp-only --help`, `deskdispatch --check-verifier --help` or
+`deskdispatch --attest-verifier --help`; `help --stamp-only` also selects mode help.
+Help and version do not read configuration or credentials. See the
+[compatibility matrix](../../docs/streams/desktools-v2/dispatch-cli-matrix.md) for
+flag precedence, preserved callers and the shared syntax-error exit 2. Domain
+refusals retain their existing exit codes.
+
 Three verbs sit between a desk loop and the tools it drives. Each corresponds to one seam
 in the drain engine's contract — the pre-loop **boot**, the per-item **Dispatch**, the
 per-result **Land** — and each replaces a block of operating prose that used to be carried,
@@ -4006,6 +6038,411 @@ skills and desk sessions bind to this **CLI surface**. That is the dependency di
 ends prose-vs-binary drift — prose → CLI → engine — and it is what lets the engine's
 internals (and even its module home) change without a rewrite anywhere else.
 
+**Stamp after the PR opens.** A worker dispatched before its PR exists leaves the model
+stamp PENDING. The dispatching worker-desk sends the new PR number and the actual selected
+model/tier from its real dispatch receipt to the coordinator desk (`the-desk`). The coordinator
+runs the following command; both worker-desk and its child worker are refused directly:
+
+```sh
+deskdispatch --stamp-only --repo example-org/project --pr 42 --model gpt-6.1-sol --tier strong
+```
+
+Pass the original `--kit` for a non-default kit. The session's bound dispatcher role must
+match that kit's stamp writer; worker sessions cannot self-attest. Sharing a `DESK_SESSION`
+for claim custody does not establish dispatcher authority. Never change session identity to
+make this command pass. This path acquires no
+claim, allocates no worktree, invokes no lifecycle hook, registers no roster entry and
+launches no worker. It does not revive a released review claim. `--model` and `--tier`
+are explicit, never inferred from an old stamp or a model-name lookup.
+
+**Worker pre-work attestation (opt-in, `--attest-worker`).** Without the flag a fresh
+worker dispatch reports its stamp PENDING, as above. With it,
+`deskdispatch <item> --kit worker --model gpt-6.1-sol --tier strong --brief <path> --attest-worker`
+gives the run a stamp target before any PR exists. Step 5 creates a dispatcher-authored
+`[worker-attestation] <run>` issue whose immutable JSON body binds a random run identifier,
+the repository, the claim key, the kit, the dispatched branch, the worktree's base commit,
+the source (the repo-relative brief path and its content digest, or an `issue-<N>` item's
+number and body digest) and the selected model/tier. The record is stamped with the
+authoring pair under the existing desk custody, closed and read back before the prompt is
+emitted. Refusals: a non-worker kit, `--pr`, no `--model`, no source, or a roster binding
+desk and worker to one actor (exit 5, before the claim). A failure to create, stamp, close
+or read the record back emits no prompt, releases the claim and exits 6. The worktree is
+kept, and the abandoned record stays open. An open record never binds a change, and
+`ListOpenIssues` excludes the reserved title when the bound dispatcher authored it, as for
+the verifier record. `--dry-run` prints the plan and writes nothing.
+
+The prompt hands the worker one exact `Worker-Attestation: <repo>#<N> run=<run>` line for
+the draft PR's description. The PR's own authoring stamp is still the coordinator's
+post-open `--stamp-only` call, with an explicit `--model`/`--tier` (and optionally
+`--attestation <N>`). That call reads the record the change names. It refuses (exit 5,
+nothing written) when the record's repository, kit, branch or model/tier disagree with the
+change or the stated selection, when `--attestation` and the description name different
+records, or when the description carries a malformed or duplicate line. An unreadable,
+open, edited, PENDING or unstamped record is never admitted. The change stamp is never
+inferred from the record: the record only constrains it. A change that names no record
+takes the plain path above, unchanged.
+
+**Two label pairs (#2760).** A worker kit (the default) writes the AUTHORING pair,
+`authored-model:<slug>` + `authored-tier:<tier>`: which model the coordinator launched to
+write the change. `--kit review` writes `dispatched-model:<slug>` + `dispatched-tier:<tier>`:
+the review session's attestation. Each stamp reads, removes and verifies only its own pair,
+so neither overwrites the other. Before the split both wrote `dispatched-*`, and whichever
+ran later replaced the other. A full worker dispatch with `--pr` writes the authoring pair
+too. The verifier kit retains `dispatched-*` for validation and stamp-only; normal
+verifier dispatch uses its separate issue-attestation path.
+
+The model slug vocabulary remains open. `gpt-6-astra` and `gpt-6.1-sol` are preserved;
+`gpt-6-1-sol` is a distinct accepted literal, not an alias. Use the exact harness selection.
+Existing label normalization (lowercase and trim) remains shared with ordinary dispatch.
+
+The existing stamp step owns both modes: absent stamps are applied, an identical accepted
+pair is a verified no-op, and partial/conflicting/foreign/unattributed stamps are repaired
+from the supplied selection through `ReStampRemovals`. A failed label or timeline read
+returns unverifiable before mutation. Writes are followed by label and timeline readback;
+only the exact pair accepted by the applier-aware reader for that kit's pair
+(`AttestedModelStampOf` for `dispatched-*`) produces an applied-and-verified receipt. Failed or unobserved writes return exit 6; retry with the same selection after
+investigating the failure. No receipt claims execution surveillance or invented provenance.
+`--dry-run` prints the read-derived plan without mutation or audit append.
+
+Real invocations record `verb=stamp-only` in the standard desk audit log, including the
+repo, PR, requested model/tier/kit and the verified result or refusal. The downstream
+capability floor (including review posting and ready-flip) and auto-lane reader still read
+`dispatched-*` only, with their existing applier-aware semantics. They never read
+`authored-*`, so an authoring stamp does not satisfy a review floor. Legacy `deskrestamp` remains the separate,
+cutoff-gated migration that preserves existing content; its provenance rules are unchanged.
+
+**Verifier pre-work admission.** A verifier has no result yet and needs no PR to start.
+`deskdispatch <item> --kit verifier --model gpt-6-astra --tier strong --brief <path>`
+creates a typed, dispatcher-authored attestation issue for the allocated detached worktree.
+Its immutable body binds a random run identifier digest, repository, exact merged-main
+commit, brief/content digest and selected model/tier. Existing desk custody owns both
+issue creation and the shared stamp applier; the verifier desk and child may share the
+verifier App, but that App never becomes stamp authority. Configurations binding desk
+and verifier to the same actor refuse this attestation. Existing PR self-stamp rules stay
+unchanged. No record claims execution surveillance or a verification result.
+
+**Cross-repository tracking (#2485).** Keep `--root` and `--repo` on the
+deliverable repository, with `--claim-root` on the tracking repository and `--brief`
+pointing to its absolute brief path. The immutable tracking brief must declare that
+deliverable through `deliverable_repo`, registered `homed-in`, or its registered
+`files:` aliases. Both checkouts must be at fetched `origin/main`. Before materializing the isolated
+tracking tree, Git 2.41 or later reads its immutable attributes: filter-backed trees,
+submodules and executable post-checkout hooks refuse before checkout programs run.
+Version 2 of the
+attestation binds the deliverable repository/commit/home separately from the tracking
+repository/commit/brief/plan/home. Same-repository runs retain version 1.
+
+The dispatcher creates an isolated tracking checkout outside both source roots and
+retains its exact location in local run metadata. The tracking repository owns the
+attestation issue, Evidence and outcome records; no tracking file is copied into the
+deliverable tree. Private tracking with a public deliverable, and two separate private
+repositories, are supported. Unknown visibility or a public tracking destination for a
+restricted deliverable refuses. Prompts and packets are local, owner-only files outside
+Git trees; they must not be published. The packet names both immutable revisions, reads
+its brief/history from tracking, and checks both heads before returning.
+
+`--check-verifier` returns the local `BriefRoot` and the admitted deliverable home
+(`SourceHome`) after admission. `statusgen verifyrun --brief <tracking-relative-brief>`,
+run from the deliverable home, reads the admitted tracking brief and writes its Evidence
+there while Verify rows execute in the admitted deliverable home and nowhere else: the
+row root is that home whether or not `--root` is given, and an explicit `--root` (or an
+admission root) naming any other directory, the tracking clone included, is refused
+before a row runs.
+For `deskevidence`, keep `--root <deliverable-home>` and select the **tracking** repository
+and branch; only the isolated tracking brief's Evidence and permitted index row may
+change. Refresh landed Evidence bytes in `BriefRoot` without moving either admitted HEAD.
+The native/interim adapters carry the same two-repository binding through queue, launch
+and landing; native ACP's filesystem fence remains the deliverable home. Container
+execution retains its existing single-root mount boundary, so `--in-container` refuses
+a cross-repository run outright, with or without `--root`.
+
+A failed/blocked outcome's `sha` names its landed tracking Evidence commit. Its
+`file:` inputs describe tracking files, while `repo-source:<owner/name>` binds the full
+observed deliverable commit. Delivery PRs for that source must also be ancestors of the
+admitted commit. The offline wake reader requires a configured root with the right origin
+and a clean readable tree. Any new clean deliverable commit, including an unrelated or
+empty commit, wakes this conservative manifest; tracking input changes also wake it.
+Missing, wrong or dirty roots are could-not-check. Older readers cannot establish
+unchangedness for the new key. Explicit-recheck receipts keep their existing predicate.
+
+Recovery retains the original nonce, source home and isolated tracking home, including
+a lost issue-create response. A legacy failure with no record or missing association
+provenance is could-not-check: the tool cannot reconstruct the original run and never
+creates a replacement under the name of recovery. Neither a refused dispatch nor a
+successfully stamped association is a verification result.
+
+Successful readback closes the record before the prompt is emitted. `ListOpenIssues`
+excludes its reserved typed title only when authored by the bound dispatcher, across
+issueboard, deskread, deskinbox, deskmonitor and deskboard intake/work scans, including
+the create-to-close window. Direct typed reads
+and exact-run recovery search remain available for audit. The record uses the existing
+model/tier labels, not a second model vocabulary.
+
+Before any Verify row, run `deskdispatch --check-verifier --root <home> --brief <path>`.
+`statusgen verifyrun` does this automatically in a verifier session or an attested worktree;
+its dry-run still executes commands and therefore needs admission. `--check` only audits
+existing witnesses. The native verifier adapter gates before spawning; the interim adapter
+requires its `--root` (the scan root) to be the already-attested verifier home before
+invoking its feeder. Both check again before landing. `deskevidence` also reads the same
+binding, at its `--root`, before any outcome or Evidence write, and carries
+`Verification-Attestation` into its Evidence draft. Land from the dispatched verifier home:
+`deskevidence <owner/repo> <branch> --root <home> --brief-path <brief> --evidence-file
+<absolute fragment outside the home>`; the stream-index flip lands from the same `--root`
+after the desk (never the verifier, whose `--check-verifier` refuses any stream-index
+change) edits this brief's own row in the home's tracked index file, and an outcome record
+names an absolute file outside the home. Before an outcome record, refresh only the brief in
+the home from the target branch; moving the home's HEAD refuses admission. With
+`statusgen --in-container`, admission runs on the host before the handoff, so the inner
+witness output carries no binding line. Edits to the brief's Evidence section preserve
+admission. The stream index is a source file until Evidence landing, when it may carry only
+this brief's own row's lifecycle cells (Status, Verified, Reviewed); another row, prose or
+this row's authoring cells refuse, and if another row moved on the target branch after
+dispatch the outcome record refuses and the brief is re-dispatched (a new record and stamp
+from fresh main; Evidence already landed is kept). Admission binds the home's index to the
+attested tree (same paths, modes and blobs, no staged change) and renders each file from
+the attested commit with that commit's own attributes (`--attr-source`) and the checkout
+conversion pinned in the dispatch record; a home carrying its own attributes file refuses,
+and the global and system attributes files, a configured attribute tree and later
+conversion config are not read. The home must be its own git work tree: git's resolved
+work tree must be the home, and a configured work tree (`core.worktree`, at any scope,
+including the worktree's own config) or a bare setting refuses, so a row's git cannot read
+files other than the ones admission compared. Rendering a converted file needs git 2.41 or
+later; an older git refuses any file that differs from its blob rather than render it from
+attributes the home could move. That refusal says the home cannot be admitted on this git
+(which cannot tell a converted file from a changed one); re-run on git 2.41 or later, where
+only a real change refuses, never relax the check. Inherited `GIT_*` variables are dropped for every
+admission read. Out of scope: config that changes how a Verify row presents or matches
+content (diff drivers, pagers, aliases, grep settings) and refs other than `HEAD`, which
+the refresh flow moves by design.
+Write logs, binaries and other
+outputs outside the admitted source worktree; additional files (including ignored files)
+refuse admission at execution and Evidence landing. Keep the worktree detached; changing
+the source commit or Verify commands refuses admission. Missing tools, absent/PENDING stamps, stale sources, edited records and unreadable
+provenance are non-success. Container verification needs the same readable worktree binding;
+no environment override or caller-supplied receipt bypasses it.
+
+Failed dispatch emits no verifier prompt, releases the claim and retains the worktree and
+run metadata for recovery. The coordinator can run `deskdispatch --attest-verifier --root
+<home>` without claim acquisition, allocation or launch. It reuses the exact record and
+selection. A lost create response is recovered by the persisted run identifier; if that
+record is not yet readable, recovery refuses instead of creating a duplicate. Recover,
+reacquire the original claim, then admit and launch the same run. Abandoning a failed run
+requires reconciling its typed record before deleting the retained worktree. `--dry-run`
+mutates nothing and grants no admission. A genuinely new pass gets a new run identifier.
+
+**Re-review preserves earlier evidence.** Every `deskdispatch --kit review` allocates a
+fresh detached worktree with a bounded random directory suffix, even in the same desk session.
+The original PR/lane claim key stays unchanged, so a live holder still blocks a second dispatch.
+`--branch` is refused for reviews. Re-run the ordinary ceremony with the actual `--model` and
+`--tier` before resuming the original reviewer; give it the new emitted kit and complete prior
+finding records. The existing claim, reviewer credential, hook, and model-attestation gates
+still apply. Keep old reviewer worktrees and their evidence; their eventual cleanup is separate
+work governed by `deskwt`, never a prerequisite or an automatic side effect of re-review.
+
+**The dispatch packet — one read-ahead file per dispatch (#2437).** A dispatched reviewer
+used to spend its first dozen calls fetching the same things: the change, its description,
+the checks, the earlier verdicts, the diff, the touched files. `deskdispatch --kit review
+--pr N` now reads them **once**, at dispatch, and writes one Markdown file. The assignment
+gains exactly one line:
+
+```
+Packet: <absolute path>
+```
+
+```bash
+deskdispatch project--pr-42 --kit review --pr 42 --repo example-org/project --prompt-file /work/pr-42.md
+# stdout: /work/pr-42.emitted.md   the path of the assignment, carrying "Packet: /work/pr-42.packet.md"
+# → /work/pr-42.packet.md          the packet, mode 0600
+# /work/pr-42.md itself is the caller's file and is never written
+```
+
+**`--prompt-file` names the caller's file and is never modified (#2749).** The assembled
+assignment (tens of KB) goes to a NEW sibling, `<F without extension>.emitted.md` (mode `0600`,
+replaced by a re-dispatch), and that path is printed alone on stdout. A caller that hashes or
+re-reads its own task file after the dispatch gets what it wrote. The flag must name a file: an
+existing directory is refused before the claim.
+
+The emitted file is replaced atomically through an owner-only temporary file: a link at the
+destination is replaced, never followed, and an existing wider mode is replaced with `0600`.
+Callers must check the exit status and read the path printed by this successful invocation,
+rather than read `F` or infer success from an existing emitted file. A refused re-dispatch can
+leave the previous emitted file in place. Files differing only in extension share the same
+emitted and packet paths; use distinct stems for concurrent dispatches. Keep `F` outside
+the agent worktree, especially a verifier home: the emitted sibling is an additional file
+even when the verifier packet provider declines to write its packet there.
+
+**What a review packet holds, in order:** the head commit and the build time (at the top);
+the change's number, title, author, base, head and draft / mergeable state; its description;
+the brief text, when the dispatch resolves one; check and status states at the head; the
+earlier verdicts of **this lane** in full (state, commit, time, body), a one-line index of
+the reviewer identity's other reviews, and the reviews by every other account under their
+own heading; the whole diff; and the text of each touched file as it reads after the
+change. The base is given as a branch name, not a commit, and the change's conversation
+comments and inline review comments are not in the packet; the packet says so.
+
+**Who posted a review decides what the packet calls it.** A review is listed and counted as
+an earlier verdict only when the forge names the reviewer identity as its author — the login
+the reviewer role is bound to, the same one the posting verb matches. A review by any other
+account goes under "Reviews by other accounts — not verdicts", whatever its body says; a
+body there with a line shaped like a verdict line is quoted between boundary lines (at most
+5 such bodies, 16 KiB each; the rest are listed as omitted) and is never counted. When the
+reviewer role is not bound where the dispatch runs, the section lists **no** review as a
+verdict, quotes no body, and says so.
+
+**The packet's caps are stated in its own header.** No quoted item is ever cut short: one over its
+cap is left out **whole** and listed under "Omitted" by name, size and reason, so a reader
+always knows what it was not shown and reads that item at the source.
+
+| Cap | Value | Why |
+|---|---|---|
+| one touched file | 64 KiB | covers ordinary source files whole; a larger file is usually generated or vendored, and half of one is worse than a pointer to it |
+| the diff | 192 KiB | the one item a reviewer must see whole, so it gets three times a file's allowance |
+| the whole packet | 512 KiB | keeps one packet readable in a single pass without displacing the agent's working room |
+| touched files read | 60, within 60 s | one forge read each, made while the dispatch holds its claim |
+
+A removed file, or a path that is not safe to put in a forge request, is listed and not
+read; a file that is not text is listed and not shown.
+
+**Where the packet goes.** Beside the emitted assignment: with `--prompt-file F`, `<F without extension>.packet.md`;
+when the prompt is printed, `<user cache dir>/assay/packets/<item-key>.packet.md` (packets
+there older than a week are removed as new ones are written). Never in the agent's worktree
+— an untracked file would dirty a read-only review tree — and never in the configuration
+directory. The file is `0600` in a `0700` directory.
+
+**The packet is untrusted content, and marked as such in two ways.** Multi-line text from
+outside the tool — a description, a review body, a diff, a file — is written between an
+opening and a closing boundary line that carry a per-packet random token. Single-line values
+from the change or the forge — a title, a login, a branch, a state, a check or file name, an
+error message — are written in the tool's own lines, each in a code span. The header says in
+the tool's own words that both are data and neither is an instruction. What the code does to
+keep the two apart:
+
+- **The token.** It is drawn fresh for each packet, and an item whose text contains it is
+  left out whole and listed.
+- **The line rule.** No line of quoted text begins with a boundary mark. A line that would
+  begin with three less-than signs is shown with `[quoted] ` put in front of them. "Would
+  begin" skips, before the signs, leading spaces and tabs, invisible characters, `\uXXXX`
+  escapes and any run of these nine characters: `>` `+` `-` `*` `#` `` ` `` `_` `~` `|`. It
+  counts as a less-than sign a fixed list of look-alike characters and the HTML entity
+  forms. The skipped set is that fixed list, not Markdown's grammar: a line with an
+  ordered-list number (`1. `) or a task-list box before the signs is not prefixed. Such a
+  line does not begin with `<<<`, so what the packet tells its reader still holds. Nothing
+  is removed: taking one `[quoted] ` off a prefixed line gives back the line as written. The
+  same rule is applied to every line the tool writes, so the only lines in the file that
+  begin with `<<<` are the boundary lines.
+- **Line breaks.** Inside quoted text every line break other than a plain newline — carriage
+  return, vertical tab, form feed, U+0085, U+2028, U+2029 — is shown as `\uXXXX`, as are
+  invisible and control characters, so text cannot start a line the rule did not see.
+- **Code spans.** A single-line value is flattened to one line with control characters
+  escaped and each backtick shown as `'`, so it cannot end the span it sits in; one longer
+  than 240 characters is shown cut, with the cut stated after the span.
+
+What this does not do: boundary-shaped text in the **middle** of a quoted line is left as
+written, and the look-alike list is a fixed list, not every character a font could draw like
+a less-than sign. The token on the real boundary lines is what a reader checks.
+
+**The packet can never fail a dispatch.** The packet is not one of the numbered dispatch steps. If
+it cannot be built — no credential, a forge that will not answer, a head that moved while it
+was being read, a directory that cannot be written — stderr says why in one line, the
+assignment carries **no** `Packet:` line, and the dispatch carries on exactly as before. A
+single section that fails drops only itself and is named in the packet. Not built on
+`--dry-run`. There is no flag and no configuration: an adopter gets it by upgrading.
+
+**The packet reads; it decides nothing.** Every read goes through the typed forge surface under the
+review dispatcher's credential — the one the stamp step already uses. Which review counts,
+whether a check is required and whether the change may merge stay with the tools that decide
+them; the packet is a snapshot, and the head it was built at is recorded so a reader can tell
+when it is stale.
+
+**Adding a packet to another kit** is a new file, not an edit: the shared half (header, caps
+and omission list, boundaries, the owner-only writer, the one assignment line) is
+`internal/packet`; a kit registers a provider that returns an ordered list of named sections
+(`registerPacketProvider` in `cmd/deskdispatch/packet.go`; `packet_review.go` is the first).
+A provider writes a single-line value from outside the tool with `packet.Code` and multi-line
+text with `Content.Untrusted`; `Content.Text` keeps the Markdown it is given, so a value put
+into it bare is not marked as data.
+
+**Worker packets (#2439).** A `--kit worker` or `--kit worker-objective` dispatch gets a packet
+too (`packet_worker.go`), and WHICH one follows the kind of run the dispatch already derives:
+`--pr` onto an open change is a run that works that change, every other worker dispatch
+implements a brief or an issue. Measured on one adopter fleet over a day (135 worker runs,
+8,668 model requests), a run made a median of 20 tool calls before its first edit, and
+reading the brief, the files it names, the repository's own instructions, the change, its
+checks and its reviews was 25% of those calls for an implementing run and 45% for a run on an
+open change — almost all of them one read per request. The packet holds what those calls
+fetched:
+
+| Kind of run | Sections, in order |
+|---|---|
+| implementing (no change open) | `Run` — item, repository, worktree, branch, base commit, the claim this dispatch took; `Issue` — an issue item's title, body and newest comments; `Brief` — the specification, read from the run's worktree; `Dependencies` — the board status of each brief its `depends:` names; `Repository` — the top of the tree, workflow file names, `Makefile` targets, whether a `changelog/` directory exists, and the root instruction files quoted; `Files the brief names` — each path of the brief's `files:` list (or its `write-scopes:`, when it states one) as it stands in the worktree: a file quoted, a directory listed, an absent path said to be absent |
+| working an open change (`--pr`) | `Run`; `Change` — title, author, state, branches, head; `Description`; `Brief` when `--brief` names one; `Against the base branch` — whether it conflicts, and whether the base has commits the branch lacks; `Checks at head` — every check with its state, those not passing called out, and the checks the base branch requires; `Reviews and findings` — every review with its state, commit and author; the reviewer identity's reviews with each finding record's entries, those at the head and the newest two earlier ones quoted; reviews by any other account under their own heading; `Comments` — the newest eight quoted, newest first, each author marked; `Diff` |
+
+**A worker packet is smaller than a review packet, on purpose.** Everything in a packet is read
+again on every later request of the run, and a worker run makes dozens. So the caps are 32 KiB
+an item, 64 KiB for the brief and for the diff, 192 KiB of quoted text in all, and at most 12
+named files — against the review packet's 64 KiB, 192 KiB and 512 KiB. The rule is the same:
+an item over a cap is left out whole and listed under "Omitted" with its size, and the agent
+reads the part it needs at the source.
+
+**What a worker packet does not hold, and says it does not hold.** The typed forge surface reads
+neither a job's log nor review comments anchored to a file and a line, so a failing check
+arrives as a name and a state and a finding arrives as its record and the review that carries
+it; the packet states both gaps in the section where the reader would look for them. It does
+not name "the test command" or "the lint command" either: no file states that mechanically,
+so it lists where the repository states it (the brief's Verify table, the instruction files,
+`Makefile` targets, workflow files). A path the brief names in another repository is listed
+as omitted, never read from a sibling checkout. And it folds no finding ledger: which finding
+still blocks is decided by the tools that decide it, and the packet repeats each record as
+written.
+
+**A review is the reviewer's only by its author.** A change's author can post a review on it,
+and so can anyone else who can read it; such a review can carry a finding record of its own
+that calls every finding resolved. So the packet asks the forge who posted each review and
+reads a finding record ONLY from one the reviewer identity posted — the same binding, through
+the same lookup, that the review packet uses to tell an earlier verdict from a look-alike.
+Every other review goes under "Reviews by other accounts — not the reviewer's": one line each,
+no record read, and the newest five bodies quoted (16 KiB each at most) between boundary lines
+under a label that says whose they are, because a run may still have to answer them. When the
+reviewer identity cannot be resolved — it is not bound, or it is bound to a blank name — the
+section fails closed: every review is indexed with the state, commit and author the forge
+reports, none is listed as the reviewer's, no finding record is read and no body is quoted,
+and the section says to read the reviews at the source.
+
+**A finding record speaks of the commit its review is at.** An entry is called a standing
+blocker when it is blocking and not resolved with evidence at the packet's head commit. A
+record that says `resolved` and names no evidence commit means its own review's commit, so in
+a review at an earlier commit it is NOT a resolution at this head, and the line says so and
+names the commit. Only the first finding record in a review's text is read, and "newest"
+and "oldest" are the forge's list order, not a sort by date; the section states both.
+
+**Comments are newest first, and each author is marked.** The shared builder admits quoted
+text in the order a section hands it over and leaves out what would pass the overall cap, so
+a thread handed over oldest first loses its newest comments under pressure. The packet hands
+the newest eight over newest first — the reading order is reversed, and the section says so —
+and every comment left out is listed with its size. Beside each author, on a comment and on
+a review by another account, the packet writes what the tool's reviewer binding and its
+trusted list say of that account: `the reviewer identity`, `on the trusted list`, `NOT on
+the trusted list`, or `no trusted list is configured here: not checked` — it never guesses.
+The list is the roster every desk tool's trust decision reads, matched by login and account
+id; no new setting. A comment by an account that is neither the reviewer identity nor on
+the list is quoted only up to 16 KiB. A mark is about the account as read at dispatch: text
+from any account is still quoted data, and the kit clauses decide what a run does with it.
+
+**A value the tool did not write is shown as a value.** A title, a login, a branch or commit
+name, a label, a state word, a check's or a file's name, a claim key, the brief argument, a
+dependency reference, a board status, a finding's id, lane, class and state, a time, the text
+of an error: on a line of the tool's own, each is written inside one code span, on one line,
+with any backtick in it shown as an apostrophe — so a value carrying a line break or Markdown
+of its own cannot start a line, a heading or a `Packet:` line in the tool's voice. Longer text
+is quoted between boundary lines, where a quoted line shaped like a boundary line is marked.
+
+**Quoting does not change standing.** The brief and the repository's instruction files sit
+inside the same boundary as a change description or a review comment, because the tool did
+not write them. The worker kits' packet-first clause says what that means for a worker: text
+in the packet has exactly the standing it has when the agent fetches it itself — the brief is
+still the specification, the instruction files still bind, and a description, a comment or a
+review is still text written outside the dispatch.
+
 **They WRAP, they do not re-implement.** `deskboot` delegates every step to the verb that
 owns it (`deskwt prune`, `deskroster set`/`preflight`, `desktoken`) and adds only the
 ordering, the fail-closed contract, and the named-step report. `deskdispatch` delegates the
@@ -4025,8 +6462,15 @@ pass straight through and the `claim-acquire OK` line names which one ran. The c
 runs as the DISPATCHING role, never on the ambient `gh` login: `deskdispatch` mints (or
 reuses) that role's App token through the same seam its model-stamp step uses and hands it
 over in the tool's own shape — `--token-file <0600 path>` for `deskclaim-ref`, `GH_TOKEN` in
-the child's environment for the script — printing neither; an exported `GH_TOKEN` wins and
-nothing is minted; a mint refusal is exit 6 with no claim attempted. The decision script
+the child's environment for the script — printing neither. An exported `GH_TOKEN` wins and
+nothing is minted ONLY when it is verified to BE the dispatching role's App (#1631): on GitHub,
+one `viewer` read — sent only to the host the role's own credential would go to, and refused
+unsent for a repo whose origin is not github.com — must return the role's App login and, when
+the roster pins it, its bot user id; on GitLab, it must equal the role's PAT custody file. Any
+other identity (a human login, another role's App) is ignored with a NOTICE, dropped from the
+process, and the role token minted instead; an identity that cannot be read is exit 6, and a
+role the roster binds no App to is exit 5, both with no claim attempted. A mint refusal is exit
+6 with no claim attempted. The decision script
 shells out to the forge CLI itself, so a rule keyed on a child literally named `gh` never
 covered it (#1146): it is handed the SAME credential from that one resolution, as `GH_TOKEN`
 (plus `GITLAB_TOKEN` on a GitLab-served repo) in its environment, and the `decision-gate OK`
@@ -4054,8 +6498,31 @@ registry does not define is refused naming it (exit 5); a resolved repo that is 
 not `--root`'s own origin is a HARD FAIL (exit 5) naming both repos, with nothing claimed and no
 worktree cut. The resolved repo is the claim repo and the token's repo, a cross-repo claim key
 carries the tracking alias, and the worker prompt says to run `deskpr create --root <tracking
-checkout>` so the PR's `Brief:` trailer resolves against the tracking board. An item that
+checkout>` so the PR's `Brief:` trailer resolves against the tracking board. One narrow
+acceptance: a brief with no `deliverable_repo`/`homed-in` may DECLARE a sibling deliverable repo
+with an `[<alias>]` tag on an entry of its body's `files:` list (``- `[<alias>]` `../<sibling>/path` ``);
+a `--repo` equal to a repo so declared — the tag resolved through the same registry, published
+there — is accepted in place of the tracking repo, and `--root` must still be a checkout of it.
+Every other mismatch (an undeclared `--repo`, an unknown or unpublished tag, a tag outside the
+`files:` list or in a fenced example block, no `--repo` at all) keeps the HARD FAIL. An item that
 declares no alias keeps the path above unchanged.
+
+**`--cross-repo`: a brief homed in one repo, its PR opened in another** (medici-finance/assay#2748).
+The flag is opt-in. The brief resolves to its HOME, the tracking alias that its item-key prefix or
+brief-v2 id names. That alias must be registered, but it may be unpublished in this registry copy.
+`--repo` names the repo the PR opens in. `--repo` must be published under an alias in the registry
+and must be `--root`'s origin. The claim key keeps the tracking alias, and the claim, the mint and
+the worktree all land in `--repo`. The prompt tells the worker to carry the exact trailer line
+`Cross-repo-brief: <alias>:<stream>/<NN>` and no `Brief:` line (see `docs/desk-tools/deskpr.md`).
+The flag is refused (exit 5, before anything durable) in each of these cases:
+- `--repo` is missing;
+- no tracking alias is named;
+- the brief declares `deliverable_repo`/`homed-in`, since an explicit deliverable is never
+  overridden;
+- `--repo` is unregistered;
+- `--repo` is the tracking repo itself.
+
+A `--root` that is not a checkout of `--repo` is still the HARD FAIL.
 
 **The phantom check is a dispatcher precondition.** A fresh worker dispatch is reconciled against
 the deliverable repo's open and merged PRs by `Brief:` trailer before admission, the mint and the
@@ -4105,6 +6572,18 @@ cannot be read, or whose length does not match the forge's own changed-file coun
 dispatch as could-not-check (exit 6); it is never read as "authoring". A set-aside PR is named
 in a `NOTICE` line on stderr.
 
+**Worker resume (`--pr N`).** The forge's open change supplies the source branch
+and head, including in a dry-run plan. An explicit `--branch` must match it.
+A real dispatch refreshes that branch on `origin`, verifies the tip equals the
+reported head, and passes that immutable commit as the allocator’s `--base` with
+the source remote ref as `--upstream`. The allocator rechecks the pair, creates
+the branch at the commit with `--no-track`, and then sets its upstream separately;
+a tracking failure rolls back the new worktree.
+An unreadable or missing source/head, a failed refresh, a differing tip, or a
+fork/unknown source repository refuses before the claim; none falls back to main.
+Fresh dispatch still derives `feat/<item>` and starts at main; review and verifier
+worktrees keep their detached mainline start. Dry runs read the forge but do not fetch.
+
 **`--dry-run --worktree PATH` renders against an operator-stated home, verified — never
 predicted.** A dry run normally shows the agent's home worktree as a not-yet-known
 placeholder, on purpose: the worktree verb owns where a worktree lands, and a predicted path
@@ -4128,7 +6607,7 @@ review event posted at the *same* head — so a head-only re-read reports "still
 flips over a live withdrawal. Both gates re-run against a freshly read review list
 immediately before the mutation.
 
-**A standing `CHANGES_REQUESTED` at head blocks — with ONE exemption, the check-only CR.**
+**A standing `CHANGES_REQUESTED` at head blocks — with TWO exemptions: the check-only CR, and the documented body-edit re-verification (below).**
 An APPROVE posted at an *unchanged* head cannot be a re-verification: there is nothing new to
 verify, and the forge's self-approval block only keys on the PR *author*, so it has nothing to
 say about a third-party App re-posting at the same head. That default stands. It had no path,
@@ -4159,6 +6638,36 @@ refuses. Both marker lines are read by the canonical verdict-marker reduction (w
 emphasis-tolerant, and skipped inside a fenced code block, since both reads grant); a body
 carrying two lines that disagree has established nothing and reads as no claim.
 
+**The second exemption: documented body-edit re-verification.** A CR whose *only* blocker is the
+PR body (the description asserts something false or stale) is answered by a body edit, which
+never moves the head. The class admits a same-head APPROVE over such a CR only when it is
+documented in a fixed, machine-checkable shape and every fact it rests on is established from
+the forge, not from the reviewer's own lines (`internal/deskkit/bodyeditcr.go`, shared by
+`deskflip` and `deskboard` so they cannot disagree):
+
+- the CR declares `Blocked-On-Body: <finding-id> <body-digest>` — the finding id and the digest
+  of the body it blocked on. A CR also declaring `Blocked-On-Check:` / `External-Prereq-Only:`, or
+  whose typed finding block names any other blocking finding, never qualifies (a code finding
+  needs a code change);
+- a later correctness APPROVE by the same reviewer at the same head carries
+  `Resolved-Body-Finding: <finding-id>` (the id the CR declared), `Body-Reread-Digest: <digest>`
+  and `CI-Green-At: <full head sha>`;
+- the re-read digest **equals** the digest of the live body the gate itself reads (re-read again
+  immediately before the mutation);
+- the forge's own record of the body's last edit (GitHub's `lastEditedAt`, read by the gate) is
+  **later** than the CR — this, not the digests, is what establishes that the body was edited
+  after the block. An absent edit time (never edited; GitLab reports none) refuses, and one that
+  cannot be read is could-not-check;
+- the re-read digest also **differs** from the CR's recorded digest. That is a second, narrowing
+  condition only: the CR's digest is the reviewer's own value and nothing checks it against the
+  body as it stood at the CR.
+
+The digest is lowercase SHA-256 over the body with carriage returns removed and trailing newlines
+trimmed — `printf '%s' "$(gh api repos/<owner>/<repo>/pulls/<N> --jq .body | tr -d '\r')" | shasum -a 256`.
+Whether CI is green stays `checks-green`'s decision; the citation never substitutes for it. On
+the board, an admitted row reads approved at head (with the class named in its note) instead of
+`SUSPECT-APPROVAL`; every near-miss keeps the `SUSPECT-APPROVAL` suppression.
+
 **An already-ready PR gets a pure no-op, or a full re-gate — never an ungated relabel.**
 Writing `approval-needed` is not bookkeeping: it asserts to everyone reading the queue that
 the review lane is finished and only a merge is outstanding. On a PR that is no longer a
@@ -4184,12 +6693,331 @@ isolation floor, the no-evasion rule, the offline envelope and the three-state i
 rule in the common kit; the security-gate refusal, the per-invocation body-file rule, the
 fail-first review discipline and the Evidence format in the class kits. Splitting the shared
 half out is the point — three copies of one clause in three kits is three clauses that
-drift. They are **embedded**
+drift. The review kit is emitted per lane, read off the claim key: the security key of the
+PR under review (`<label>--pr-<N>--security`) gets the security cut, in which a
+correctness-only procedure is replaced by a note naming its owner; the bare PR key and its
+`--correctness` form get the correctness cut; any other key — another lane's suffix, a
+`--security` key whose PR is not the one dispatched — gets the whole kit, which carries every
+procedure and none of those notes. The kits are **embedded**
 in the binary, so `deskdispatch --version` and the clause text move together and a fleet on
 one pinned release is a fleet on one set of clauses. Every clause is written GENERIC — no
 private repository name, issue reference, internal document path, item identifier, or named
 incident — and `kittext_test.go` enforces that mechanically, with a positive control so a
-matcher that stopped matching fails rather than reporting the kits clean forever.
+matcher that stopped matching fails rather than reporting the kits clean forever. The lane
+cut's fail-first evidence is `cmd/deskdispatch/reviewlane-mutations.json`, run with
+`go run ./cmd/muhar -j 0 -spec cmd/deskdispatch/reviewlane-mutations.json`.
+
+**A worker kit is cut for the kind of run (#2439).** The two worker kits are dispatched for two
+jobs: implementing a brief or an issue with no change open, and working a change that is
+already open (`--pr`). The kind is derived from the dispatch, never stated by a flag, and
+three things follow it (`workerkind.go`):
+
+- **The assignment's action half.** An implementing run is told to open the draft PR; a run on
+  an open change is told the change, its source branch and the head read at dispatch, to push
+  to it, and never to open a second one.
+- **Kit text inside a marked stretch.** A stretch between whole-line markers
+  `<!-- kind:implementing:begin -->` … `<!-- kind:implementing:end -->` (or `shepherding`)
+  reaches only that kind. Clause headings stay outside a stretch, so clause numbers are the
+  same for both kinds.
+- **The objective kit's copy of the common clauses** is not quoted a second time: every prompt
+  already carries the common clauses ahead of the class kit.
+
+Everything unmarked reaches both kinds, and that is nearly all of it: a resumed change may be
+half-implemented, and an implementing run may see a review land before it hands back.
+**Marking a stretch is a claim that the other kind is never bound by it — when in doubt,
+leave it unmarked.** `workerkind_test.go` holds the cut to that: a cut never loses a line that
+is not inside a stretch marked for the other kind, the stretches in the shipped kits are a
+declared list a new one must be added to on purpose, no marker reaches a prompt, and a kit
+whose markers are unbalanced or nested is refused rather than guessed at.
+
+The same change gives both worker kits three clauses about HOW a run gathers and waits, none
+of which changes what it must do: gather in few requests (read a file whole, send independent
+reads together), read the packet first when the assignment names one, and wait on a check or
+a review in one bounded command instead of a look per request. On the same fleet 93% of
+worker requests carried a single tool call, 62% of file reads were ranged and a third were
+re-reads, and runs on an open change spent a quarter of their wall-clock in separate
+sleep-then-look requests.
+
+**A review dispatch states its round and can be held (#2444).** A `--kit review --pr <N>`
+dispatch reads the forge after every caller precondition and before the claim
+(`reviewroundread.go`); `--dry-run` skips the read. Three things come of it.
+
+- **The round's scope, per lane** (`reviewround.go`). The assignment's "This round" block says
+  `Scope: DELTA` or `Scope: FULL PASS` and why. A lane's own verdicts are the submitted
+  reviews by the reviewer identity whose body carries that lane's verdict line and no other
+  lane's. The scope is a full pass on any of these, each named in the assignment:
+
+  | reason | when |
+  |---|---|
+  | `no-verdict-of-its-own` | the lane has no verdict of its own on the change |
+  | `verdict-already-at-this-head` | the lane's latest verdict is at the dispatched head |
+  | `inter-head-diff-not-computable` | the forge cannot compare the two heads, the interval's commit list is incomplete or empty, the dispatched head's first-parent chain does not reach the previously reviewed head, a commit carries no parent list, or a commit on the chain has no complete file list |
+  | `large-delta` | the first-parent chain between the heads holds more than 20 commits, or touches more than 10 of the change's own paths (its file list at either head) |
+  | `merge-in-files-the-change-touches` | a commit on that chain with two or more parents changed a file the change touches, or whose merged-in side changed one, whichever way a conflict was resolved: the forge's file list for the commit, and its comparison of the commit's first parent with each other parent, are both read |
+  | `path-not-reviewed-before` | the change's file list at the dispatched head holds a path its file list at the previously reviewed head did not |
+  | `could-not-determine` | the change, its reviews, the reviewer identity, the lane, a head, the base branch, either file list or what a merge brought in could not be read in full; or one of the lane's verdicts names, in its own text or typed block, a different head than the forge records for it |
+
+  The merge test does not tell a merge that resolved conflicts from one that did not: a
+  merge whose own file list, or whose merged-in side, names a file the change touches is a
+  full pass either way. A conflict needs both sides to have changed the file, so the
+  merged-in side names it even when the conflict was resolved to the branch's side and the
+  merge commit's own list, which is relative to its first parent, does not. A merged-in side
+  that cannot be compared, or whose file list may be cut short (300 files or more), is
+  `could-not-determine`. A reviewer that finds the stated scope wrong does the full pass
+  (kit clause 19).
+
+  **A verdict's head is checked against the verdict's own record.** The round count, the
+  first-review head and the delta base are read from the commit the forge records each
+  review against, and that field has been seen to disagree with the head a review's own
+  text names. So for every one of the lane's verdicts the dispatcher also reads the head the
+  verdict itself names. In its text that is a full commit id (40 or 64 hex digits, with or
+  without one opening backtick) directly after `Head reviewed:` anywhere, after `Head:`
+  opening a line, or after `at head` on the body's opening line (its first non-empty line
+  that is not a verdict line). In its typed finding block it is each finding's
+  `evidenceHead` and `originHead`. A head named in the text, and an `evidenceHead`, must be
+  the commit the forge records for that verdict; an `originHead` must be the commit the
+  forge records for that verdict or for an earlier one of the lane's. When any of the
+  lane's verdicts names a different head than the forge records for it, or carries a typed
+  finding block that cannot be read, the scope is `could-not-determine`, the round is not
+  determined, and the gate's `lane-awaits-ruling` condition is not evaluated. A verdict that
+  names no full commit id in those places changes nothing: an abbreviated id, and an id
+  anywhere else in the body, are not read.
+- **The lane's round** — the number of distinct heads among the lane's own verdicts and the
+  dispatched head — and the head of the lane's first review. Kit clause 20 reads both: from a
+  lane's fourth round, a finding first raised then in code unchanged since that head is
+  advisory or an arbiter hand-off, unless it is safety-relevant. A round that cannot be
+  counted is stated as not determined, and the clause is then inert.
+- **The pre-dispatch gate** (`reviewgate.go`). The dispatch is refused, exit 5, with a first
+  line `review dispatch HELD — <owner/repo>#<N> at head <sha>: <reasons>`, when:
+
+  | reason | when |
+  |---|---|
+  | `required-check-red` | the forge served every check at the head, a check the base branch requires has reports there, and every latest report under its name is a failure: a check run that completed with `failure`, `timed_out` or `startup_failure`, or a commit status of `failure` or `error` |
+  | `description-stale` | the description's `## Weight` section has a line whose first word, after list, quote and table markers, is `head`, followed by a commit id of 7 to 40 hex digits with at least one digit, and the head on the forge begins with none of the ids so declared |
+  | `decision-not-ruled` | the change carries `needs-decision`, its comment and review history was read in full, and it holds nothing by the roster's blessing authority created after that label's latest application |
+  | `lane-awaits-ruling` | the lane's latest own verdict is at the dispatched head, blocks, and declares only external prerequisites; each is an open item of the same repository carrying `needs-decision`; and at least one of them has no ruling recorded, by the same test |
+
+  A hold claims nothing, cuts no worktree and writes nothing to the forge; its first line is
+  the `Detail` of the dispatch audit row. The round and gate reads are read-only requests
+  (GETs, and the GraphQL queries of the two trust-event reads) made under the dispatcher
+  role's existing credential, the one the review packet already resolves, which the first
+  read in a process may mint; there is no new credential path. The gate's forge surface
+  has no write method, so a hold cannot post a verdict, mark a head reviewed or flip a change
+  ready. A gate read that fails is a note on stderr and the reviewer is dispatched.
+
+The fail-first evidence is `cmd/deskdispatch/reviewround-mutations.json` and
+`cmd/deskdispatch/reviewgate-mutations.json`, run like the lane cut's spec above.
+
+**The verifier packet — a reading aid, never evidence (#2439).** `deskdispatch --kit verifier`
+writes one owner-only Markdown file and adds one line, `Packet: <absolute path>`, to the
+assignment. It hands the verifier the reads it would otherwise make before running its first
+row — measured on one adopter fleet at about four tool calls a run, 7 to 16 percent of a
+run's requests. It does not shorten the rest, and is built so that it cannot: **a row's result
+comes only from running the row at the verified commit, and nothing in a packet is
+evidence.**
+
+| Section | What it holds | What it never holds |
+|---|---|---|
+| Gate and risk | the brief's `gate:`, `gate-why:` and `risk:` frontmatter lines, as written | a reading of them — an absent field is shown as absent |
+| Brief text | the brief from its first line up to its first Evidence heading, Verify table included; the whole brief when the tool finds no such heading, and the packet says so | the Evidence section, or any section after it |
+| Verify rows | each row's `#` and Command cells, character for character | an Expect cell, a result, a prediction, output from any run |
+| Earlier Evidence | the section's line count and how many sections follow it | its rows, its dates, its verdicts |
+| Commits | at most 6 commits, newest first, that changed the brief file or whose message has a `Brief: <id>` line, by full id, each with the paths it changed against its first parent (at most 60) | a subject, message or date — an evidence-landing commit's subject states an earlier verdict |
+
+The dispatcher does **not** know which commit delivered an item's work, and the packet says
+so: it lists candidates and leaves the choice, and the diff, to the verifier. The history
+search goes no further back than the commit that added the brief file, and never more than
+2,000 commits; when it stops short of the brief's first commit the packet says so. **The
+list is the newest six, and the packet says how many it left out:** on a brief verified
+more than once the newest are the Evidence landings and the delivering change is older, so
+the search carries on past the sixth to count the rest, and an omission line gives the
+count (`at least` that many when the search itself stopped early). When the item key gives
+no brief id, no commit message is searched, and the packet says that too.
+
+It **declines** rather than guess. A table with a result-like column (`observed`, `exit`,
+`status`, …) anywhere in the text the packet would carry — in the Verify section or outside
+it — is not a table this tool quotes: no packet is written. A Verify section
+with no table carrying both a `#` and a Command column, or with a row whose cell count
+differs from its header's (an unescaped pipe in a command), gets no command list — the brief
+text still carries the table as written.
+
+**What the packet claims is what was cut, never what the rest holds.** The tool finds
+headings and table headers; it does not read prose for meaning. A heading is found the way
+this repository's own readers of a brief find one — the white space around the line comes
+off first — so an indented `## Evidence` or `## Verify` is that heading here as it is to
+them, and the one recogniser serves the Evidence cut, the Verify heading and the heading
+that ends the Verify section. The cut is the first Evidence heading at any level (a numbered
+or emphasised title included) and ignores code fences, which errs toward carrying less. A
+brief can still record a result under a heading the tool does not take for Evidence, so the
+packet never says it holds no result: it says the dispatcher ran no row, lists what it left
+out, and, where it found no Evidence heading, says it **could not determine** whether the
+text it carries records an earlier result.
+
+Nothing read from the repository is written at the tool's own level except as a value in a
+code span: the brief's path, a commit id, the brief id in the `Brief:` line searched for.
+Each is written with the shared builder's `packet.Code`, so a path chosen by a brief's author
+cannot close the span or start a line of its own, and a note that a long value was cut
+stands outside the span. Everything copied whole — the gate and risk lines, the brief text,
+the row commands, a commit's changed paths — is between a boundary pair, where the builder
+puts `[quoted] ` in front of any line that would begin like a boundary line. The packet
+lists no review and counts no earlier verdict, so no author identity is involved.
+
+Caps are the shared builder's — 64 KiB for one item, 512 KiB overall — plus the limits
+above, all stated in the file; an item over a cap is listed by name and size, never cut short. The file is written
+beside `--prompt-file`, else under the user cache directory, and **never inside the verifier
+home**: an additional file there refuses `--check-verifier`, so a prompt file that sits in
+the home gets no packet. The packet records the deliverable home's commit and reads the brief from its
+attested tracking commit (the same commit for same-repository work). It is discarded if
+either home moved while it was being built. It starts no process — every read is in-process through `internal/gitcore` —
+and stops reading history after ten seconds. A read that fails inside a section is stated
+as an omission in one of two fixed sentences; the reader's own error text is never written
+into the file, and a test fails each read in turn to hold that. **Building it can never fail a dispatch:** on
+any failure the dispatch prints one `packet: NOT built` line to stderr, the assignment
+carries no `Packet:` line, and the verifier gathers for itself exactly as before. `--dry-run`
+writes no packet. Nothing about `verifyrun`, the witness, the Evidence format, a gate, a
+budget or a claim changes.
+
+## The dispatch record — `dispatch-records.jsonl`
+
+Every real dispatch writes one structured line saying which brief, pull request, session and
+tier it was. `deskdispatch` writes a `dispatched` line after the model-stamp step (step 5).
+`deskclaim-ref release` writes a `released` line after a release that removed an existing
+claim. Both go to `<StateDir>/dispatch-records.jsonl` (`~/.config/assay/`, beside
+`audit.jsonl`). The tool creates the file mode 0600 (the mode is set on creation only, as
+for the audit log), appends to it and never commits it to git. It is not rotated, since it
+gets one line per dispatch. The type, validator and writer live in
+`internal/deskkit/dispatchrecord.go` (`DispatchRecord`, `ValidateDispatchRecord`,
+`AppendDispatchRecord`, `MintDispatchRef`).
+
+The keys are `schema` (`dispatch-record-v1`), `event` (`dispatched` | `released`), `ts`
+(RFC3339; the time the line was appended, not the claim's acquire time, which is the instant
+inside `dispatch_ref`), `dispatch_ref` (string or null), `claim_key`, `repo`, `item`, `brief` (the
+brief's frontmatter `brief:` id), `kit`, `branch` (null for a detached review or verifier
+dispatch), `pr`, `session_tag`, `tier` (`--tier`, recorded as its canonical lower-case token:
+`any` | `strong`), `brief_exec_tier` and
+`brief_effort` (the brief's frontmatter values), `model_stamp` (`applied` | `pending` |
+`skipped`) and `attempt_local`.
+
+- A frontmatter value that is absent, unreadable or outside its grammar or vocabulary is
+  null, never guessed and never recorded as the text it was.
+- A `released` line carries null in every dispatch-only field.
+- `attempt_local` is 1 plus the number of earlier `dispatched` lines with the same
+  `claim_key` in THIS file. It is a local ordinal: another machine dispatching the same item
+  keeps its own count. It is never a global attempt number.
+
+**`dispatch_ref` is the join key** every other pipeline record uses to point at one dispatch:
+
+```
+dispatch_ref = <claim_key> "@" <acquired_at> "." <nonce>
+```
+
+- `claim_key` is exactly `claimKeyFor(item, repo)`, the `<id>` of `refs/dispatch/<id>`.
+- `acquired_at` is the UTC time `deskdispatch` read right after claim-acquire returned 0, in
+  ISO-8601 basic form `YYYYMMDDTHHMMSSZ`.
+- `nonce` is 12 lowercase hex characters (48 bits) from `crypto/rand`.
+
+Example: `assay--example-stream--28@20261006T141502Z.3fa9c01b7d2e`.
+
+The full grammar is `^<claim_key>@[0-9]{8}T[0-9]{6}Z\.[0-9a-f]{12}$` for the record's OWN
+`claim_key`. The validator also bounds the claim key to 1–226 printable ASCII bytes with no
+`@`, space or control byte, so a whole ref never exceeds 256 bytes. As a single pattern:
+`^[\x21-\x3F\x41-\x7E]{1,226}@[0-9]{8}T[0-9]{6}Z\.[0-9a-f]{12}$`.
+
+Neither the claim id nor the timestamp is enough on its own:
+
+- The claim id names the ITEM. Every re-dispatch, re-review and stale reclaim reuses it.
+- The timestamp has one-second resolution, so two runs of one item can share it.
+
+The nonce is what makes the ref per-run. If the secure source fails, the dispatch goes ahead
+with `dispatch_ref` null and prints a WARNING. It never falls back to a weaker source.
+`deskdispatch` also records the ref in the agent worktree as
+`git config --worktree assay.dispatchRef <ref>`, next to `assay.runKey`, which is unchanged.
+The prepared-dispatch audit line carries it too, as `dispatch_ref=<ref>`. `--dry-run` mints
+nothing and writes nothing.
+
+**Visibility rule.** `dispatch_ref` embeds the claim key, which contains a repo label and an
+item key. `claim_key`, `repo`, `item`, `branch` and `brief` carry the same information
+directly, so for a dispatch into a private repo every one of them is as unfit for a public
+surface as the ref. The rule below is stated for `dispatch_ref`; it binds those fields too.
+`dispatch_ref` is local state, so it appears in clear only in:
+
+- the desk's state directory (this file and the audit log);
+- the agent worktree's config.
+
+It NEVER appears in clear on a non-private surface: a forge comment, label or review body, a
+public register, or a file committed to git. A consumer that must express the join there
+writes at most a sha256 of the FULL ref. That digest is a stable identifier, not a secret.
+
+**Pairing.** A `released` line carries the `assay.dispatchRef` of the worktree it ran in, but
+only when that ref is well formed and was minted for the same claim key. Otherwise its
+`dispatch_ref` is null, for example when the release ran from another checkout. A `released` line with a null
+`dispatch_ref` pairs with the latest earlier `dispatched` line for the same `claim_key`, as
+long as no other `released` line for that key lies between them; exclusivity makes that pairing
+unique. A `released` line with no such `dispatched` line is the release of a dispatch that wrote
+none, for example one that aborted before model-stamp, or one claimed by hand. A null-ref
+pairing is best-effort, not proof: a release that wrote no line (a stale-claim takeover, the
+legacy script, another machine) can leave an earlier `dispatched` line unpaired, so a later
+null-ref `released` line pairs with it instead of with the dispatch it really ended. Only a
+non-null `dispatch_ref` is an exact join. A record that
+must point at every dispatch of one item uses `claim_key`. A record that cannot know
+`dispatch_ref` joins by PR (`repo` + `pr` + head SHA). For a fresh worker dispatch whose PR does
+not exist yet, it joins by `repo` + `branch`.
+
+**Failure is never fatal.** If a record cannot be written, the tool prints
+`deskdispatch: WARNING: could not write dispatch record: …`, or `deskclaim-ref` prints its
+own WARNING. It never fails or aborts a dispatch whose claim and worktree stand, and it never
+changes a release's exit code.
+
+**Known gap.** The legacy `tools/dispatch-claim.sh` writes no `released` line. It remains a
+fallback for trees without the Go binary, and record writing is not ported into shell.
+
+**Never recorded:** prompt text, the brief body, PR or issue text, tool output, transcripts,
+vendor model names, or any per-person metric. No field is free text, and the validator is what
+enforces it: a line whose field is outside its grammar is never written.
+
+| Field | What the validator accepts |
+|---|---|
+| `claim_key` | 1–226 printable ASCII bytes with no space and no `@` (the grammar above) |
+| `dispatch_ref` | `<claim_key>@YYYYMMDDTHHMMSSZ.<12 lowercase hex>`, for the line's own `claim_key` |
+| `repo` | `owner/name`: exactly one `/`; each side 1–254 letters, digits, `.`, `_`, `-`, with any of them first; at most 256 bytes in all |
+| `item` | an item key (letters, digits, `.`, `_`, `/`, `-`), optionally prefixed `alias:` |
+| `brief` | `<stream>/<NN>` or `<cell>:<alias>:<stream>:<NN>`; each segment letters, digits, `.`, `_`, `-` |
+| `kit` | `worker` \| `worker-objective` \| `review` \| `verifier` |
+| `branch` | starts with a letter or digit, then letters, digits, `.`, `_`, `/`, `-`; no `..`; at most 256 bytes |
+| `session_tag` | one token of letters, digits, `.`, `_`, `:`, `-` |
+| `tier`, `brief_exec_tier` | `any` \| `strong` |
+| `brief_effort` | `S` \| `M` \| `L` |
+| `model_stamp` | `applied` \| `pending` \| `skipped` |
+
+No space, control character or invisible format character fits any row. No markdown link, URL
+with a scheme, mention or markup fits any row except `claim_key` and `dispatch_ref`: the
+claim-key grammar admits every printable ASCII byte but space and `@`, because
+`deskclaim-ref` accepts such ids, so a quote, angle bracket, ampersand or backtick can land in
+either, and a consumer encodes both on output. A bare dotted name such as `www.example.com/28`
+fits the identifier rows; some renderers auto-link it. The check fails closed: a string field
+with no grammar in the validator is refused, so a field added later cannot be recorded as free
+text by omission.
+
+The writer drops a value it cannot record rather than lose the line. `brief`,
+`brief_exec_tier` and `brief_effort` (copied from the brief file's front matter) and `branch`
+(a `--branch`, derived or resumed branch over 256 bytes) are recorded as null; `session_tag`
+(from `DESK_SESSION`, or the session id) is recorded as `unknown`. `repo` and `claim_key` are
+not nullable. `repo` admits every forge-name slug up to 256 bytes in all. Two kinds of
+rostered or `owner/*`-admitted slug still lose their line with a WARNING: one outside that
+alphabet, which no forge hosts, and one longer than 256 bytes, which a forge that allows long
+project paths can host (the 256-byte cap refuses the whole slug even when each side fits). A
+claim key over 226 bytes (on either side) or a released id carrying `@` does the same. A grammar fixes a field's
+shape, not its meaning: a one-word `DESK_SESSION` is still whatever word the operator chose. The
+tier fields accept only `any` and `strong`, so a model slug cannot land in one; the slug stays
+on the PR's `dispatched-model:` label, which joins via `pr`.
+
+The record is the dispatcher's own account. `tier` is the `--tier` flag, `session_tag` is an
+environment value, a `released` line's `dispatch_ref` is read from worktree config, and
+`attempt_local` counts lines already in this file. Only `model_stamp: applied` reports an act,
+the stamp step's own OK. The record is analysis data: never an authenticated log, and never an input to a
+control. A missing line is not evidence that no dispatch ran, since a failed write is
+non-fatal. These records support aggregate analysis per brief, tier and kit. They are never
+used to rank people or agents.
 
 ## The dispatch-claim store — `ResolveClaimStore`
 
@@ -4215,16 +7043,30 @@ ones. Resolution order:
 
 1. A claim-store key that cannot be read (an unusable roster file) or does not parse →
    refused. An unreadable key is never treated as unset.
-2. `ASSAY_CLAIM_STORE` set → that store, or a refusal when its preconditions do not hold. It
-   never moves on to another store. In this release `file` and `service` parse as valid but
-   are not shipped yet, so setting either is refused naming the release that ships it (the
-   file store, the served store) — a key set early fails loudly.
-3. `ASSAY_CLAIM_STORE` unset → the legacy forge-ref store (claims as refs on the forge,
+2. `ASSAY_CLAIM_STORE` set to a store this build ships → that store, or a refusal when its
+   preconditions do not hold. It never moves on to another store.
+3. `ASSAY_CLAIM_STORE` set to a valid store this build does not ship → the legacy forge-ref
+   store, exactly as for an unset key, under a NOTICE naming the configured store and the
+   release that ships it (amended 2026-10-13, medici-finance/assay#2753). In this release
+   `file` and `service` both parse as valid and are not shipped yet, so an operator can set
+   the key before upgrading and it takes effect on the upgrade. A build that does not ship a
+   store cannot write a claim to it, so this never splits one repo's claims inside one
+   build; across builds during an upgrade, the mixed-store refusal that ships with the
+   `file` store is the guard. `ASSAY_CLAIM_SINGLE_HOST=yes` is accepted and has no effect
+   while the store is unset or unshipped. A malformed value is still refused, never treated
+   as unshipped.
+4. `ASSAY_CLAIM_STORE` unset → the legacy forge-ref store (claims as refs on the forge,
    written under the dispatching role's credential), exactly as before, for one release
    window. Every run of `deskclaim-ref` and `deskdispatch` then prints the removal NOTICE:
 
 ```
-NOTICE: ASSAY_CLAIM_STORE is unset, so dispatch claims use the legacy forge-ref store, which needs repository write; an unset ASSAY_CLAIM_STORE stops resolving in release N+1 — set ASSAY_CLAIM_STORE=file or ASSAY_CLAIM_STORE=service in the roster.
+NOTICE: ASSAY_CLAIM_STORE is unset, so dispatch claims use the legacy forge-ref store, which needs repository write; an unset ASSAY_CLAIM_STORE stops resolving in release N+1. ASSAY_CLAIM_STORE=file or ASSAY_CLAIM_STORE=service (with ASSAY_CLAIM_SINGLE_HOST=yes for file) may be set in the roster now: a build that does not ship the named store keeps using forge-ref, and the setting takes effect on upgrade to the release that ships it.
+```
+
+For a set but unshipped value the NOTICE instead reads, for `file`:
+
+```
+NOTICE: ASSAY_CLAIM_STORE=file is set, but this build does not ship the file store, so dispatch claims stay in the legacy forge-ref store, which needs repository write; ASSAY_CLAIM_STORE=file takes effect in the release that ships the file store.
 ```
 
 The release it names is one constant, `deskkit.ClaimStoreLegacyRemovalRelease`; it reads
@@ -4320,7 +7162,9 @@ human's merge of the checkpoint PR is the flip.
 
 **`plan` does not re-run an unchanged failure — wake receipts** (`verify-wake-v1`;
 `docs/streams/example-stream/verify-wake-v1.md`). A `verify-fail`/`blocked` verifier run lands a
-WAKE RECEIPT on the append-only verify-outcomes sidecar row: the inputs it observed, the blocker
+WAKE RECEIPT on the verify-outcome record: since #882, one NEW file per outcome under
+`docs/streams/verify-outcomes/<stream>/` (`deskevidence --outcome-record`), unioned with any
+legacy appended line still present from before the migration — the inputs it observed, the blocker
 class, and the checkable condition that must change before re-running is worth a slot. On the next
 `plan`, `classifyItem` reads the evaluated state (`deskkit.WakeReceipt.EvaluateWake`, computed at
 scan time in `briefscan.go` against an already-authorized, offline, probe-free reader): a complete
@@ -4475,7 +7319,7 @@ single point of failure:
 | **Sentinel + fragment sweep** | A sentinel planted in a fixture transcript, and every ≥12-character substring of every fixture message, is absent from the artifact — and a **control** test plants a leak to prove the scanner still detects one. | `TestLeakNoTranscriptContentReachesTheArtifact`, `TestLeakScannerSeesPlantedLeak` |
 
 A `reason` is a machine CODE, never a sentence — sentences are where paths leak
-(`cannot read /Users/<name>/.claude/…` is a home-directory disclosure committed to a
+(`cannot read <home>/.claude/…` is a home-directory disclosure committed to a
 repo). Human-readable detail goes to stderr, which nobody commits.
 
 **Read-only against its inputs**, measured rather than promised:
@@ -4689,11 +7533,14 @@ Two durable, stateful pollers ship in the plugin tree for a desk window to arm b
 harness `Monitor` tool: `inbound-monitor.sh` watches every repo's open issues and
 `pr-monitor.sh` watches every repo's open PRs (head sha, draft state, state, merge state).
 Both resolve the same repo set (args, `./.assay/repos.txt`, or the origin remote), keep a
-per-repo baseline so a repo's first sight SEEDS silently, poll as the keyring account (never an
-inherited App token that cannot see the private set), and RETAIN a repo's baseline on any read
+per-repo baseline so a repo's first sight SEEDS silently, read each repo under its own per-repo
+role token minted inside the poll (`desktoken <role> --repo <slug>`, the role resolved from
+`$DESK_LOOP`; `inbound-monitor.sh --token-file OWNER=PATH` outranks the mint for that owner) —
+never the ambient `gh` login and never an inherited `GH_TOKEN`; a repo whose mint fails is
+`MONITOR-DEGRADED` (could-not-check, exit 2), not an empty result — and RETAIN a repo's baseline on any read
 they cannot trust rather than go silently blind — a failed read, or a page that comes back at
 the explicit `--limit` (truncated: `gh` gives no truncation signal, so an at-limit read is a
-moving window, not ground truth). Neither script writes to the forge or holds a credential.
+moving window, not ground truth). Neither script writes to the forge or stores a credential (a minted token file is read in place).
 
 **The pacing contract** is the same for both scripts, so a wide repo set cannot become the
 tight-loop poll that trips the forge's secondary rate limit:
@@ -4736,3 +7583,205 @@ closes #146 end to end: the primitive alone did not help until the skill docs ac
 it instead of the shell idiom the writeguard hook blocks. **Routing, filing, and closing**
 (rows 4, 5, 9) remain the next adopters: closing waits on `deskclose` (#282), and filing
 composes with `deskfile` (#283).
+
+### Local audit receipts and write accounting
+
+Successful scan overrides emit `result: local`, from both writers (the standalone
+override and the outbound-write seam). They retain their surface digest,
+reason and identity, but consume no outward-write capacity and cannot reset a
+failure breaker. Readers treat `scan_override` / `ok` receipts written before this change
+(by either writer) the same way without rewriting the ledger. Unknown event/results still charge.
+
+`deskpr` records failures before a potentially mutating remote call as `unwritten`.
+Once a push, edit or label write has been attempted, an uncertain failure remains
+`unverifiable` and consumes capacity because the write may have reached the remote.
+
+### PR creation budget
+
+`deskpr create` admits at most 20 new-PR attempts that succeeded or may have
+reached the remote per repository per rolling hour. `update` and `edit` do not
+consume that counter. All three still share the aggregate 100-write/hour limit,
+and updates/edits retain their per-PR budgets. Existing-PR no-ops do not consume
+creation capacity. Missing or unknown legacy audit verbs count conservatively.
+
+## Activation discovery snapshots
+
+`DiscoverManifests` remains the reference full enumerator and YAML parser;
+`ComputeActivation` remains the activation evaluator. `VerbActivationRefusal` uses
+one process-local discovery slot in `internal/deskkit/activationindex.go`. Every
+`CheckVerbActivation` consumer inherits that owner. Configuration, trust and provider
+requirements are evaluated again on every call, including direct lower API calls.
+The slot contains no activation decision and grants no permission.
+
+Reuse validates the root spelling and filesystem identity, derivation revision,
+complete current membership and every readable manifest byte, plus the stored
+payload checksum/revision. Reference enumeration and validation share the same
+membership traversal: `.git` is excluded, nested checkouts carrying a `.git` file
+or directory are excluded and diagnosed, and ignored/untracked paths are included.
+A hit still traverses the entire tree and reads/hashes every manifest. It saves
+YAML parsing, sorting and duplicate derivation only. HEAD, directory mtimes, TTLs
+and the previously read file list are insufficient evidence of membership.
+
+The slot is serialized under a mutex and limited to one root and 1 MiB of
+payload/source input. A cold call returns the canonical reference observation and
+may retain a complete immutable **candidate** captured from the exact bytes it parsed.
+Retaining a candidate is not accepting a hit. The independent full membership/byte
+validation is mandatory immediately before **every** reused return, including the
+candidate's first attempted reuse. A miss does not pay a second traversal merely
+to retain a candidate; no production entrypoint currently reaches a second call.
+There is no cross-process startup saving claim.
+
+A reference read failure marks the capture nonreusable, even though the reference
+still returns its existing unreadable diagnostic. Thus deleting an unreadable path
+cannot turn its incomplete digest into a hit carrying an obsolete diagnostic.
+An edit during capture or before first reuse must pass the independent validation;
+otherwise the candidate is evicted and new reference discovery supplies the result.
+This moves validation to the single choke point before reused output, preserving
+its safety property rather than accepting unvalidated captured data.
+
+Readers decode fresh values so callers cannot mutate the slot. Candidate retention
+additionally compares the complete round-tripped parsed value with the reference
+value. JSON cannot preserve arbitrary bytes in YAML `!!binary` strings or filesystem
+names: any lossy round trip declines reuse and retains exact reference behavior,
+including inactive refusals and diagnostics. Missing, unreadable, oversized,
+corrupt, unsupported or changed inputs fall back to the reference; they never accept
+a partial cached list. The original
+reference's error/skip policy remains authoritative. No persistent file, watcher,
+service, CLI flag or new dependency is added. This deliberately does **not** offer
+a cross-process startup cache: portable filesystem metadata cannot qualify such a
+shortcut for arbitrary dirty/ignored inputs. Concurrent source edits have the
+same non-atomic observation limitation as fresh reference enumeration.
+
+`TestCompiledStartupDiscoveryWorkload` builds the actual `deskboard`,
+`deskdispatch` and `desktoken` packages. An observer-only build counts reference
+traversal, validation traversal, reads and parses, including pre-recorder startup;
+separate ordinary builds measure external elapsed time. Fixtures use isolated
+homes, 4/256 ordinary directories and one manifest; the execution ends at a
+synthetic missing-provider refusal without reaching credentials or the forge.
+Each telemetry setting has six samples with fresh homes and six with a reused
+home; OS/filesystem caches are uncontrolled. Reported p50 is the lower median
+and p95 the maximum of six samples. These are startup/refusal switch costs, not
+recorder-write overhead or a successful operation benchmark. The matched successful
+hotpath and v3 attribution belong to desktools-v2/62.
+
+Board and dispatch help/version keep their execution-only activation ownership.
+Token still checks activation before parsing; its help/version migration belongs
+to desktools-v2/33. The compiled test asserts these current boundaries and catches
+a planted scan before the parser/recorder. Run the reproducible production-owner
+negative controls from `tools/desk` with
+`python3 internal/deskkit/testdata/activation_mutations.py`. Each mutant must fail
+its named behavior test, not merely fail to compile; the script restores source.
+
+Observed 20 October 2026 at source `30197bda7` (before the lossless-admission
+correction), with Go 1.27.2, darwin/arm64, six ordinary-build
+samples per cell (milliseconds, p50/p95). “Fresh” and “reused” refer to isolated
+home state, **not** a cold disk or a reusable snapshot across processes:
+
+| Command | Ordinary dirs | Fresh home, telemetry off | Reused home, off | Fresh home, on | Reused home, on |
+|---|---:|---:|---:|---:|---:|
+| deskboard | 4 | 14.71 / 259.22 | 14.07 / 15.54 | 14.30 / 14.78 | 13.30 / 14.30 |
+| deskboard | 256 | 49.92 / 83.25 | 84.64 / 150.88 | 39.99 / 63.19 | 37.94 / 38.43 |
+| deskdispatch | 4 | 14.37 / 287.87 | 13.82 / 20.61 | 14.10 / 14.88 | 14.02 / 15.00 |
+| deskdispatch | 256 | 41.42 / 47.61 | 41.52 / 42.92 | 40.97 / 42.30 | 40.77 / 43.76 |
+| desktoken | 4 | 11.73 / 157.97 | 12.43 / 12.66 | 12.93 / 13.14 | 12.55 / 13.42 |
+| desktoken | 256 | 39.23 / 42.60 | 38.31 / 40.15 | 37.46 / 40.49 | 39.86 / 40.89 |
+
+Those historical observer runs counted 7/259 visited directories per reference pass and the
+same 7/259 per admission-validation pass (root, `.git`, manifest directory and
+ordinary directories), one parsed manifest, one validation read, and zero reuse
+per invocation. The unchanged in-process fixture separately proves the second
+call performs zero additional reference parses/enumerations and one complete
+validation traversal/read; it is **not** scan-free. Fresh-home outliers and the
+large board variance show why these small samples cannot establish causal
+telemetry overhead or a general latency target. This is an implementation
+measurement, not independently recorded verification Evidence.
+
+Pickup census at the implementation base: 41 command `main.go` files call
+`CheckVerbActivation`: `issueboard`, `writeguard`, `deskclaim`, `fanoutloop`,
+`deskpost`, `deskreconcile`, `deskmonitor`, `deskroster`, `desksupervise`,
+`deskreply`, `deskgit`, `deskboard`, `deskdispatch`, `deskpathguard`,
+`untrustcorpus`, `deskrun`, `deskrelease`, `deskadvisory`, `scanloop`,
+`deskdisposition`, `deskdigest`, `reviewloop`, `deskflip`, `deskevidence`,
+`deskinbox`, `deskrestamp`, `desktoken`, `verifyloop`, `deskboot`, `deskautolane`,
+`deskread`, `deskfile`, `deskmerge`, `deskmigrate`, `deskversion`, `deskpr`,
+`deskcomms`, `desklabel`, `deskwt`, `deskclose` and `deskcalibrate`. They inherit
+the single owner; their custody/stop/command adapters are unchanged. Only the
+three specified commands receive the compiled workload qualification here.
+
+Security follow-up for the snapshot representation: the byte-parity regression
+exercises different invalid-UTF-8 required/provided keys through the production
+owner and separately plants raw filesystem names/diagnostics. The same-length dirty
+edit pins content hashing independently of path/length. Additional owner mutations
+pin root spelling, same-content filesystem identity replacement and validation
+immediately before the first reused return, with edits during capture and before
+reuse. Read-failure candidate exclusion and unreadable-then-deleted diagnostic
+parity also have a production-owner mutation. The validation error predicate is
+independently necessary: a trailing empty manifest-free directory can become
+unreadable after capture, making fresh discovery fail while leaving the content
+digest unchanged. A real permission-change regression first requires both the walk
+error and identical digest, then checks that the owner returns the fresh error
+instead of reusing. Removing only `err == nil` is killed by that regression.
+The production predicate is unchanged. A host running as root, or a filesystem that
+ignores the mode change, reports could-not-check/SKIP rather than a permission-test
+pass; the mutation runner reports that case as unqualified, never killed.
+
+The compiled-workload test resolves the existing Go module/build caches before
+TestMain redirects HOME to its isolated roster fixture. Only the build child
+receives those absolute cache locations; its proxy is off, its go-env file is
+disabled, and runtime command children retain their private HOME and minimal
+environment. An offline CI-like reproduction supplies caches only through the
+original HOME's go-env file with GOMODCACHE/GOPATH/GOENV/GOFLAGS unset; the old
+child build fails there and the corrected workload passes there. Full ordinary
+package coverage also passes with explicit existing caches. The mutation runner first requires an unmodified passing
+baseline for every selected discriminator and rejects nested build/tool failures
+as unqualified (exit 6) rather than behavioral kills. A real undefined-symbol
+child build after a passing baseline was rejected, as was an unmodified baseline
+with an intentionally empty offline module cache; neither was counted as killed.
+
+The raw-filename subcase could not run on the measured darwin filesystem, which
+rejects invalid UTF-8 path bytes; it reports SKIP rather than pass. A separate
+YAML binary component-id/optional-key fixture proves lossless handling at a second
+parsed site on this platform. Linux raw-path execution is unobserved here; no Linux pass or CI execution is claimed.
+
+The cold-path correctness follow-up removes the historical second traversal while
+retaining complete independent validation before each reused return. Its workload
+test compares the unchanged reference owner with a cold candidate capture on the
+same physical 4/256-directory fixtures, one manifest, nine interleaved samples.
+These are in-process owner timings with the same test observer, not compiled Git-base
+binaries. OS caches are uncontrolled; the reference runs first in each pair. Both
+paths must count one reference enumeration/read/parse, 7/259 reference directories,
+zero validation reads/directories and zero reuse on every cold sample. Compiled
+startup work is tested separately with the three actual command packages.
+
+Candidate-lifecycle observations on 20 October 2026, Go 1.27.2 darwin/arm64,
+non-race owner test, nine interleaved samples (milliseconds, p50/p95):
+
+| Identical fixture | Reference owner | Cold candidate capture |
+|---|---:|---:|
+| 4 ordinary dirs, one manifest | 0.600 / 1.820 | 0.643 / 0.994 |
+| 256 ordinary dirs, one manifest | 13.750 / 15.219 | 12.865 / 15.301 |
+
+Each side counted one reference traversal/read/parse and zero validation work;
+7/259 directories were visited. Timing variance and the fixed pairing order prevent
+a causal speedup conclusion. The candidate still adds hashing, serialization and
+lossless comparison cost; the structural improvement is removing the second cold
+traversal, not eliminating all capture overhead or establishing a deployed win.
+
+The actual compiled candidate-lifecycle workload separately observed these external
+startup/refusal times, six samples per cell, with the same telemetry/home-state
+limits as above (milliseconds, p50/p95):
+
+| Command | Ordinary dirs | Fresh home, telemetry off | Reused home, off | Fresh home, on | Reused home, on |
+|---|---:|---:|---:|---:|---:|
+| deskboard | 4 | 12.30 / 244.06 | 11.99 / 12.44 | 11.82 / 12.76 | 12.21 / 12.60 |
+| deskboard | 256 | 26.05 / 31.69 | 24.13 / 28.40 | 24.72 / 24.92 | 24.60 / 25.17 |
+| deskdispatch | 4 | 14.95 / 268.21 | 14.68 / 15.07 | 15.28 / 16.21 | 12.66 / 13.21 |
+| deskdispatch | 256 | 25.36 / 27.55 | 24.94 / 26.27 | 25.82 / 27.21 | 30.35 / 31.45 |
+| desktoken | 4 | 11.42 / 171.96 | 10.96 / 11.44 | 10.72 / 11.08 | 10.62 / 11.07 |
+| desktoken | 256 | 22.57 / 33.64 | 25.15 / 28.87 | 22.45 / 22.92 | 22.33 / 23.05 |
+
+All three observer builds counted reference=1, parse=1, validation directories=0,
+validation reads=0, reuse=0 on cold startup. The production candidate is available
+only within that process. No current shipped entrypoint repeats activation, and
+no cross-process reuse or speedup is claimed. The mandatory fresh validation before
+any future reused return remains exercised by the in-package owner tests.

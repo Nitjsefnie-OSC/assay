@@ -92,14 +92,12 @@ func loadSigner() (comms.Signer, error) {
 			"could-not-mint: no signing key configured — set %s to this desk-role's "+
 				"custody-managed ed25519 key (mode 0600)", envKey), nil)
 	}
-	fi, err := os.Stat(path)
+	_, fi, err := deskkit.LstatCustody(path, deskkit.CustodyNoLinks)
 	if err != nil {
 		return nil, deskkit.Unverifiable("could-not-mint: signing key is not readable", err)
 	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		return nil, deskkit.Refused(fmt.Sprintf(
-			"refused: signing key %s is mode %o — a comms signing key must be 0600 "+
-				"(custody rule), never group- or world-readable", path, fi.Mode().Perm()))
+	if err := deskkit.VerifyCustodyOwnerOnly(path, fi); err != nil {
+		return nil, deskkit.Refused("refused: comms signing key custody: " + err.Error())
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -130,8 +128,8 @@ func parseEd25519Key(s string) (ed25519.PrivateKey, error) {
 	}
 }
 
-// randHex mints a random lowercase-hex token of n bytes, for message ids and
-// nonces. crypto/rand so a nonce is unguessable and a collision is negligible.
+// randHex mints a random lowercase-hex token of n bytes for nonces.
+// crypto/rand keeps nonce collisions negligible during normal operation.
 func randHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -141,6 +139,21 @@ func randHex(n int) string {
 		return fmt.Sprintf("t%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)
+}
+
+// newMessageID uses UUID v4 formatting so a message ID can also be quoted as a
+// correlation reference in a payload. A bare 32-character hex ID is credential-
+// shaped to BodyCheck; the UUID separators avoid that ambiguity without granting
+// any scanner exemption. Existing opaque IDs remain valid for poll and ack.
+func newMessageID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Preserve the existing timestamp fallback for non-secret message IDs.
+		return fmt.Sprintf("t%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // buildDeps assembles the real dependencies from the environment: session
@@ -158,12 +171,12 @@ func buildDeps(stdin io.Reader, stdout io.Writer) (*deps, error) {
 		cell:    cell,
 		self:    self,
 		signer:  nil, // loaded lazily by runSend (send.go step 7) via loadSigner(), after every refusal check
-		gateway: socketGateway{network: "unix", addr: strings.TrimSpace(os.Getenv(envGateway))},
+		gateway: socketGateway{addr: strings.TrimSpace(os.Getenv(envGateway))},
 		rateCheck: func(bucket string) error {
 			// pr==0: a cell message carries no PR; the destination lane is the bucket.
 			return deskkit.AllowWrite("deskcomms", bucket, 0)
 		},
-		newID:    func() string { return randHex(16) },
+		newID:    newMessageID,
 		newNonce: func() string { return randHex(16) },
 	}, nil
 }

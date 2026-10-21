@@ -56,13 +56,13 @@ package deskkit
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The configured control surfaces. These names are FIXED: external checks set
@@ -92,6 +92,26 @@ const (
 	// EnvHumanLoginMap carries the human-name→login map, comma-separated
 	// `name:login`.
 	EnvHumanLoginMap = "ASSAY_HUMAN_LOGIN_MAP"
+	// EnvOSUserLoginMap carries the OS-ACCOUNT→login map, comma-separated
+	// `osuser:login`. Its ONLY consumer is the scan-override audit identity
+	// (scanoverride.go's OverrideIdentity): the override row exists to name the
+	// accountable ROSTER identity, and the OS account name a process runs under is
+	// not a key in ASSAY_HUMAN_LOGIN_MAP (which maps the human's NAME), so a machine
+	// account like a per-laptop login rendered as itself instead of the login the
+	// house answers for. This key closes that gap explicitly.
+	//
+	// The login half must name a trusted HUMAN of the same roster (in
+	// ASSAY_TRUSTED_LOGINS, never a configured App slug) — an off-roster value
+	// printed unmarked would read as resolved when nothing resolved it. An OS
+	// account name containing a LIST SEPARATOR (space, comma, semicolon) cannot be
+	// expressed here at all and always lands on the marked fallback.
+	//
+	// It is an EXTENSION key, never a trust one: it labels a forensic audit row and
+	// authorises nothing, so a malformed value is recorded against this one key
+	// (Config.Ext) and the map reads as EMPTY — the identity falls back to a
+	// clearly-marked OS-username form — rather than refusing the whole roster.
+	// Unset is a complete configuration: every OS account resolves by the fallback.
+	EnvOSUserLoginMap = "ASSAY_OS_USER_LOGIN_MAP"
 	// EnvRiskPathTriggersExtra carries ADDITIONAL risk-path triggers,
 	// comma-separated. It is ADDITIVE-ONLY: it unions onto the compiled sets and
 	// there is no value syntax that drops a compiled entry. The name is
@@ -198,6 +218,23 @@ const (
 	// directory the hook happened to be spawned in, which is caller-influenced — the
 	// one input a guard's own policy source must not depend on.
 	EnvWriteguardCallout = "ASSAY_WRITEGUARD_CALLOUT"
+	// EnvOutboundCallout is the DEPLOYMENT-SUPPLIED house callout of the outbound-write check
+	// (outboundcallout.go, desktools-v2/11): an ABSOLUTE path to an executable that
+	// OutboundCheck asks, after its compiled layers have passed a write, whether the write may
+	// leave. The deployment's vocabulary lives in that executable and never in these tools.
+	//
+	// Unlike ASSAY_WRITEGUARD_CALLOUT, a SET key that is wrong in ANY way is not "unconfigured":
+	// a malformed shape here (a relative path, a list) is carried on Config.OutboundCalloutProblem
+	// and every outward write refuses, naming it. Only an UNSET key means compiled checks alone.
+	EnvOutboundCallout = "ASSAY_OUTBOUND_CALLOUT"
+	// EnvOutboundCalloutRequired is `public` or unset. With `public`, a write to a public or
+	// unknown-visibility target REFUSES when no callout is configured. It is ALSO read straight
+	// from the process environment (tightening only), because a roster that fails validation
+	// collapses to unconfigured and would take this key with it.
+	EnvOutboundCalloutRequired = "ASSAY_OUTBOUND_CALLOUT_REQUIRED"
+	// EnvOutboundCalloutTimeout bounds one outbound-callout invocation: a Go duration from 1s to
+	// 60s. Unset means DefaultCalloutTimeout (5s).
+	EnvOutboundCalloutTimeout = "ASSAY_OUTBOUND_CALLOUT_TIMEOUT"
 	// EnvContributorLedger names the path of the contributor-trust LEDGER: the
 	// operator-side record of which external identity holds which trust tier
 	// against which repository. It is read exactly like every other roster key —
@@ -299,7 +336,7 @@ const (
 	// EnvGitLabSessionEmails is the SESSION / implementer commit-author allowlist for
 	// a GitLab worktree, comma-separated EXACT emails (#643). It exists because on
 	// GitLab the desk runs TWO distinct identities: the SESSION / implementer identity
-	// (a real GitLab user, e.g. `ih-bot`) authors the worktree's commits under its own
+	// (a real GitLab user, e.g. `qa-bot`) authors the worktree's commits under its own
 	// user.name / user.email, while the role SERVICE ACCOUNT (e.g. `assay-worker-bot`)
 	// is the analog of the GitHub role App and is used only for minted API writes.
 	// The commit-identity preflight (preflight.go) was written for the GitHub model,
@@ -354,6 +391,15 @@ const (
 	// not applied. KEEP IN SYNC with statusgen/rosterconfig.go's scanEnvStreamCap.
 	EnvStreamCap = "ASSAY_STREAM_CAP"
 
+	// EnvCriticalStampAuthorities (ASSAY_CRITICAL_STAMP_AUTHORITIES) is the
+	// STATUSGEN-only ratified authority set for the drives critical tier's
+	// stamped-security arm. statusgen consumes it; deskkit does not — but it lives
+	// in the SAME shared roster.env, so it must be RECOGNISED here or a roster that
+	// configures the authority set collapses the whole desk-tools configuration on
+	// the unknown-ASSAY_-key refusal. Recognised, not applied. KEEP IN SYNC with
+	// statusgen/rosterconfig.go's scanEnvCriticalStampAuthorities.
+	EnvCriticalStampAuthorities = "ASSAY_CRITICAL_STAMP_AUTHORITIES"
+
 	// EnvReviewerVendor (ASSAY_REVIEWER_VENDOR) records the model VENDOR the
 	// reviewer role's App runs on (verify-integrity/10). It is the reference the
 	// reviewer-calibration SPOF is measured against: deskcalibrate refuses a
@@ -389,11 +435,12 @@ const (
 	//	                                     token on GitLab); <shape> is the gate shape
 	//	                                     (environment | manual-job) GitLab needs
 	//
-	// This key chooses WHICH credential starts a release, so it takes ASSAY_REPO_FORGES'
-	// strict grammar: a bare basename, an unknown value, or a repo bound twice is
-	// ExtInvalid and the whole binding set resets to empty — every repo then reads as
-	// UNBOUND, which deskrun refuses as a configuration gap. Never a partial binding.
-	// Unset is complete: no repo is bound and deskrun dispatches nothing.
+	// This key chooses WHICH credential starts a release, so it is a TRUST key, not an
+	// extension key (a driver ruling): a bare basename, an unknown value, or a repo bound
+	// twice lands in Config.Problems and refuses the WHOLE roster, exactly as a malformed
+	// ASSAY_TRUSTED_LOGINS does — no binding survives and every desk tool refuses until it
+	// is fixed. Never a partial binding. Unset is complete: no repo is bound and deskrun
+	// dispatches nothing.
 	EnvRunCredentials = "ASSAY_RUN_CREDENTIALS"
 	// EnvClaimStore (ASSAY_CLAIM_STORE) names where this cell keeps its DISPATCH CLAIMS:
 	// `file` or `service` — one value for the cell, or comma-separated
@@ -402,7 +449,9 @@ const (
 	// directly rather than through parseConfig, and is strictly parsed by
 	// parseClaimStoreKeys below: an unknown value — `forge-ref` included — is a refusal
 	// that prints the two valid values. UNSET is the one-window legacy resolution to the
-	// forge-ref store, under a NOTICE naming the release in which it stops resolving.
+	// forge-ref store, under a NOTICE naming the release in which it stops resolving; a VALID
+	// value naming a store this build does not ship is the same legacy resolution, under a
+	// NOTICE naming that store and the release that ships it (medici-finance/assay#2753).
 	// Decides which store holds the fleet's mutual exclusion, so a malformed value is a
 	// refusal of the resolution, never a silent default. KEEP IN SYNC with
 	// statusgen/rosterconfig.go's scanEnvClaimStore and the coupling vector.
@@ -416,7 +465,89 @@ const (
 	// anything else set is a refusal. Declared, not verified. Consumed by the claim-store
 	// resolver only. KEEP IN SYNC with statusgen's scanEnvClaimSingleHost.
 	EnvClaimSingleHost = "ASSAY_CLAIM_SINGLE_HOST"
+
+	// The AUTO-APPROVE LANE keys (autolane.go). CONSUMED here: parseConfig lands their raw
+	// values on cfg.AutoLaneRaw and ParseAutoLaneConfig validates them fail-closed. They are
+	// the operator's opt-in for a narrow lane in which the reviewer App may merge a class of
+	// PRs with no per-merge human act, so the loader holds them to the strictest reading this
+	// file has:
+	//
+	//	ABSENT IS CLOSED  all four unset is the shipped state and means the lane is CLOSED —
+	//	                  there is no default value for any of them that opens it. Any
+	//	                  subset set without the rest is a refusal, never a partial lane.
+	//	FAIL-CLOSED       a malformed value refuses the LANE (never the roster: the trust
+	//	                  surface is untouched by a bad lane key), and a refused lane
+	//	                  admits nothing, ejects nothing and merges nothing.
+	//	FILE-ONLY         the lane acts, so its keys are read from the config-home file and
+	//	                  never from the environment (they are deliberately absent from
+	//	                  readRawConfig's environment key list).
+	//
+	// EnvAutoApproveAreas is comma-separated `<owner>/<repo>:<glob>:<login>` entries — one
+	// glob per entry, the login naming the human who opted that area in.
+	// EnvAutoApproveEjectLine is the integer score line (a score ABOVE it ejects).
+	// EnvAutoApproveFPYFloor is the decimal first-pass-yield floor for the kill signal.
+	// EnvAutoApproveDailyCap is the integer per-repo, per-UTC-day lane merge cap.
+	// statusgen recognises all four and consumes none. KEEP IN SYNC with
+	// statusgen/rosterconfig.go's scanEnvAutoApprove* and the coupling vector.
+	EnvAutoApproveAreas     = "ASSAY_AUTOAPPROVE_AREAS"
+	EnvAutoApproveEjectLine = "ASSAY_AUTOAPPROVE_EJECT_LINE"
+	EnvAutoApproveFPYFloor  = "ASSAY_AUTOAPPROVE_FPY_FLOOR"
+	EnvAutoApproveDailyCap  = "ASSAY_AUTOAPPROVE_DAILY_CAP"
+
+	// EnvAutoApproveSignOffThread names the ONE thread (an issue or PR number in the rulings
+	// register's repo) the lane's acceptance comment must sit on. It is OPTIONAL in the loader's
+	// sense only: it is not one of the four keys whose partial presence refuses the lane, and
+	// absent it leaves the lane loaded — but the enactment gate then reads could-not-check, so
+	// an unset thread can never enact anything. A value that is set but is not a positive
+	// integer refuses the lane. Same FILE-ONLY reading as the four. statusgen recognises it and
+	// consumes nothing. KEEP IN SYNC with statusgen's scanEnvAutoApproveSignOffThread and the
+	// coupling vector.
+	EnvAutoApproveSignOffThread = "ASSAY_AUTOAPPROVE_SIGNOFF_THREAD"
+
+	// EnvStampTrustedLogins (ASSAY_STAMP_TRUSTED_LOGINS) is the STAMP-AUTHORITY ALLOWANCE
+	// (#336): the trusted HUMAN logins whose standing application of a dispatched-*
+	// label the model-floor's actor check honours IN ADDITION TO the bound dispatcher
+	// slugs. Comma-separated `login[:id]`, the same grammar as ASSAY_TRUSTED_LOGINS. It exists because a legitimately dispatched PR whose stamp was
+	// applied by a trusted human (an attended, hand-run dispatch) read Indeterminate and was
+	// refused a verdict; the human ruling on #336 widened the actor check to those logins —
+	// gated behind THIS explicit roster key, never a silent default over the whole
+	// trusted-login set.
+	//
+	// Three rules, all load-bearing:
+	//
+	//	EXPLICIT ONLY    UNSET is a complete configuration and means the allowance is EMPTY:
+	//	                 only the dispatcher slugs vouch. Membership in ASSAY_TRUSTED_LOGINS
+	//	                 alone confers NO stamp authority — the widening is always a separate,
+	//	                 deliberate roster act.
+	//	NEVER CREATES    every entry must ALSO appear in ASSAY_TRUSTED_LOGINS (the allowance
+	//	TRUST            widens stamp authority for an already-trusted login; it never makes
+	//	                 an untrusted login trusted). An entry that names a login the
+	//	                 trusted-human set does not carry — or one that renders as a
+	//	                 bot/App account (App identities get authority through a role=
+	//	                 binding in ASSAY_TRUSTED_BOT_SLUGS, never here) — refuses the WHOLE
+	//	                 configuration like any other roster error.
+	//	FAIL-CLOSED      an unconfigured roster vouches for nobody, exactly as before; the
+	//	                 reader (IsStampAuthorityLogin) derives the set from the parsed
+	//	                 config, and write-class tools read it from the config-home FILE only
+	//	                 (the same ClassWrite rule as the rest of the trust surface).
+	//
+	// CONSUMED here: parseConfig lands it on cfg.StampLogins. statusgen recognises it and
+	// consumes nothing. KEEP IN SYNC with statusgen/rosterconfig.go's
+	// scanEnvStampTrustedLogins and the coupling vector.
+	EnvStampTrustedLogins = "ASSAY_STAMP_TRUSTED_LOGINS"
 )
+
+// autoLaneKeys is the four auto-approve lane keys, in one place, so parseConfig's
+// pass-through and the lane's own parser cannot disagree about which keys are the lane's.
+func autoLaneKeys() []string {
+	return []string{EnvAutoApproveAreas, EnvAutoApproveEjectLine, EnvAutoApproveFPYFloor, EnvAutoApproveDailyCap}
+}
+
+// autoLaneRawKeys is every key parseConfig passes through to the lane parser raw: the four
+// required keys plus the sign-off thread.
+func autoLaneRawKeys() []string {
+	return append(autoLaneKeys(), EnvAutoApproveSignOffThread)
+}
 
 // knownRosterKeys is the ASSAY_-namespace roster SCHEMA these tools speak: every
 // key parseConfig recognises. It is a function rather than a literal inside
@@ -445,8 +576,17 @@ func knownRosterKeys() []string {
 	return []string{
 		EnvBlessLogin, EnvTrustedLogins, EnvTrustedBotSlugs,
 		EnvAllowedRepos, EnvHumanLoginMap, EnvRiskPathTriggersExtra,
+		// EnvOSUserLoginMap (ASSAY_OS_USER_LOGIN_MAP) is CONSUMED here, by
+		// scanoverride.go's OverrideIdentity alone; statusgen recognises it only.
+		// Bound to statusgen's scanKnownRosterKeys by the shared key list.
+		EnvOSUserLoginMap,
 		EnvRiskCallout, EnvRepoAliases, EnvRepoForges, EnvReleaseRepo,
 		EnvWriteguardCallout, EnvContributorLedger, EnvRosterSchema,
+		EnvStampTrustedLogins,
+		// The outbound-write check's house callout (desktools-v2/11). Consumed by
+		// outboundcallout.go; recognised here in the SAME change so a roster carrying them
+		// is not refused whole. KEEP IN SYNC with statusgen's scanKnownRosterKeys.
+		EnvOutboundCallout, EnvOutboundCalloutRequired, EnvOutboundCalloutTimeout,
 		// STATUSGEN-only keys: recognised so a shared roster.env that configures
 		// statusgen does not collapse deskkit's configuration; not consumed here.
 		EnvHomeRepo, EnvScanRepos, EnvAuthorizedAuthors,
@@ -494,6 +634,10 @@ func knownRosterKeys() []string {
 		// collapse the desk tools' configuration. Bound to statusgen's
 		// scanEnvStreamCap by the shared key list.
 		EnvStreamCap,
+		// EnvCriticalStampAuthorities (ASSAY_CRITICAL_STAMP_AUTHORITIES) is
+		// STATUSGEN-only (the drives critical tier's stamped-security authority set):
+		// recognised and ignored here, bound to statusgen's key by the shared list.
+		EnvCriticalStampAuthorities,
 		// EnvReviewerVendor (ASSAY_REVIEWER_VENDOR) is CONSUMED by cmd/deskcalibrate
 		// (the reviewer-calibration SPOF vendor check) via a direct os.Getenv, and
 		// EnvVerifierVendor (ASSAY_VERIFIER_VENDOR) is a documented policy key no tool
@@ -512,6 +656,10 @@ func knownRosterKeys() []string {
 		// claim store does not collapse the whole configuration on the unknown-ASSAY_-key
 		// refusal. statusgen recognises them too (the coupling vector binds the two).
 		EnvClaimStore, EnvClaimDir, EnvClaimSingleHost,
+		// The auto-approve lane keys are CONSUMED here (autolane.go, through cfg.AutoLaneRaw).
+		// statusgen recognises them only.
+		EnvAutoApproveAreas, EnvAutoApproveEjectLine, EnvAutoApproveFPYFloor, EnvAutoApproveDailyCap,
+		EnvAutoApproveSignOffThread,
 	}
 }
 
@@ -583,6 +731,14 @@ type Config struct {
 	Bless Identity
 	// Humans maps a lowercased human login to its pinned id (0 = unpinned).
 	Humans map[string]int64
+	// StampLogins is the STAMP-AUTHORITY ALLOWANCE parsed from
+	// ASSAY_STAMP_TRUSTED_LOGINS (#336): the lowercased trusted-human logins whose
+	// standing application of a dispatched-* label the model-floor's actor check honours
+	// in addition to the bound dispatcher slugs. Every entry is also in Humans — the
+	// allowance never creates trust, it widens stamp authority for logins already
+	// trusted. Empty when unset, and that is a complete configuration: only the
+	// dispatcher slugs vouch. Read through IsStampAuthorityLogin, never directly.
+	StampLogins map[string]int64
 	// Bots maps a lowercased GitHub App slug to its BOT USER id (0 = unpinned). It
 	// carries GITHUB entries only — the github-slug-keyed shape trust.go's GitHub
 	// paths read. A GitLab identity lives in BotIdents (and its username in Logins),
@@ -605,7 +761,14 @@ type Config struct {
 
 	Repos       map[string]repoPolicy
 	HumanLogins map[string]string
-	RiskExtra   []string
+	// OSUserLogins maps a LOWERCASED OS account name to the roster login the
+	// scan-override audit identity resolves to (ASSAY_OS_USER_LOGIN_MAP). Empty
+	// when unset OR when the value was malformed — an audit-identity label
+	// degrades to its clearly-marked fallback, it never refuses the roster and
+	// never blocks the audit write. Read through resolveOverrideWho
+	// (scanoverride.go), never directly.
+	OSUserLogins map[string]string
+	RiskExtra    []string
 
 	// RiskCallout is the configured risk-classification callout path
 	// (EnvRiskCallout), empty when unset. Empty means pattern classification only
@@ -641,6 +804,24 @@ type Config struct {
 	// (EnvWriteguardCallout), empty when unset. Empty means the compiled generic
 	// indicators alone — see the const's ONLY-WIDENS note.
 	WriteguardCallout string
+
+	// OutboundCallout is the absolute path of the deployment's outbound-write callout
+	// (EnvOutboundCallout), empty when unset OR when the value's shape was wrong (then
+	// OutboundCalloutProblem says so and writes REFUSE rather than skip).
+	OutboundCallout string
+	// OutboundCalloutRequired is true when the roster states REQUIRED=public
+	// (EnvOutboundCalloutRequired). The process environment can additionally require it.
+	OutboundCalloutRequired bool
+	// OutboundCalloutRequiredInvalid is true when the roster's REQUIRED value was set to
+	// something other than `public`: it still requires (the strictest reading), and the echo
+	// says it is invalid rather than presenting it as `public`.
+	OutboundCalloutRequiredInvalid bool
+	// OutboundCalloutTimeout is the configured bound, zero when unset (the default applies).
+	OutboundCalloutTimeout time.Duration
+	// OutboundCalloutProblem is non-empty when one of the three keys was SET and malformed.
+	// It never refuses the roster; it makes the outbound check refuse, because a configured
+	// callout is never skipped (outboundcallout.go).
+	OutboundCalloutProblem string
 
 	// ContributorLedgerPath is the absolute path of the operator-configured
 	// contributor-trust ledger (EnvContributorLedger), empty when unset. Empty is
@@ -688,6 +869,13 @@ type Config struct {
 	// (ownedrepos_coupling_test.go) — one roster value, not two hand-synced lists.
 	ScanRepos []string
 
+	// AutoLaneRaw carries the RAW values of the auto-approve lane keys that were set
+	// (EnvAutoApprove*: the four required keys and the sign-off thread), exactly as the source gave them. parseConfig does not validate
+	// them — a malformed lane key must close the LANE, not the whole trust roster — and
+	// ParseAutoLaneConfig (autolane.go) is the one place they are read and judged. Nil or
+	// empty means every lane key is absent: the lane is CLOSED.
+	AutoLaneRaw map[string]string
+
 	// UnknownKeys are keys present in the source that this version does not
 	// recognise, sorted. They are ECHOED, never applied — but only for a key
 	// OUTSIDE the ASSAY_ namespace (a legitimate co-tenant in the same file, per
@@ -717,8 +905,8 @@ type Config struct {
 	// Problems are the loud, human-readable reasons the TRUST surface refused
 	// (ASSAY_BLESS_LOGIN, ASSAY_TRUSTED_LOGINS, ASSAY_TRUSTED_BOT_SLUGS,
 	// ASSAY_ALLOWED_REPOS, ASSAY_HUMAN_LOGIN_MAP — the component-manifest spec §6.2's
-	// "trust surface does not change"). Extension-key problems never land
-	// here as of this brief: see Ext.
+	// "trust surface does not change" — and ASSAY_RUN_CREDENTIALS, which chooses the
+	// credential a desk write runs as). Extension-key problems never land here: see Ext.
 	Problems []string
 }
 
@@ -758,7 +946,10 @@ type ExtKeyResult struct {
 // ASSAY_HOME_REPO are STATUSGEN-only (recognised, never parsed, here — see
 // their own const comments): this loader has no shape to validate for either,
 // so their status can only ever be ExtOK (present) or ExtUnset (absent),
-// never ExtInvalid.
+// never ExtInvalid. ASSAY_RUN_CREDENTIALS is deliberately ABSENT: it chooses
+// which credential a desk write runs as, so it is a trust key whose problems
+// refuse the whole roster (a driver ruling). extcatalogue_test.go pins this
+// catalogue to a committed allow-list and fails on any trust key reaching it.
 var extKeyNames = map[string]string{
 	EnvRiskCallout:        "risk-callout",
 	EnvWriteguardCallout:  "writeguard-callout",
@@ -766,9 +957,13 @@ var extKeyNames = map[string]string{
 	EnvReleaseRepo:        "release-repo",
 	EnvScanRepos:          "scan-repos",
 	EnvRepoForges:         "repo-forges",
-	EnvRunCredentials:     "run-credentials",
 	EnvChannelDriftTarget: "channel-drift-target",
 	EnvHomeRepo:           "home-repo",
+	// ASSAY_OS_USER_LOGIN_MAP labels a forensic audit row and authorises nothing,
+	// so it is an extension key: a malformed value empties the map (the identity
+	// falls back to its clearly-marked OS-username form) and is recorded here,
+	// never a whole-roster refusal.
+	EnvOSUserLoginMap: "os-user-login-map",
 }
 
 // ExtKeyName resolves an ASSAY_-namespace extension variable to the canonical
@@ -944,9 +1139,10 @@ func LoadConfig(class ToolClass) Config {
 func readRawConfig(class ToolClass) (map[string]string, string, []string) {
 	keys := []string{
 		EnvBlessLogin, EnvTrustedLogins, EnvTrustedBotSlugs,
-		EnvAllowedRepos, EnvHumanLoginMap, EnvRiskPathTriggersExtra,
+		EnvAllowedRepos, EnvHumanLoginMap, EnvOSUserLoginMap, EnvRiskPathTriggersExtra,
 		EnvRiskCallout, EnvRepoAliases, EnvRepoForges, EnvReleaseRepo, EnvWriteguardCallout,
-		EnvContributorLedger, EnvRosterSchema,
+		EnvOutboundCallout, EnvOutboundCalloutRequired, EnvOutboundCalloutTimeout,
+		EnvContributorLedger, EnvRosterSchema, EnvStampTrustedLogins,
 		EnvClaimStore, EnvClaimDir, EnvClaimSingleHost,
 	}
 	fromEnv := func() map[string]string {
@@ -1127,6 +1323,7 @@ func parseConfig(class ToolClass, source string, vals map[string]string) Config 
 		Class:       class,
 		Source:      source,
 		Humans:      map[string]int64{},
+		StampLogins: map[string]int64{},
 		Bots:        map[string]int64{},
 		BotIdents:   map[string]BotIdentity{},
 		RoleBots:    map[string]string{},
@@ -1250,6 +1447,34 @@ func parseConfig(class ToolClass, source string, vals map[string]string) Config 
 		}
 		cfg.Humans[login] = id
 		cfg.Logins[login] = true
+	}
+
+	// --- the stamp-authority allowance (parsed AFTER the trusted humans: membership in
+	// that set is a precondition, so the check needs it complete) ---
+	// Every entry must be an ALREADY-trusted human login — the allowance widens stamp
+	// authority for logins the roster already trusts and never creates trust. A bot-shaped
+	// entry is refused for the same reason as in the human roster: an App identity's stamp
+	// authority flows through a role= binding (the dispatcher slugs), never through here.
+	for _, entry := range splitList(vals[EnvStampTrustedLogins]) {
+		login, id, ok := splitIdentity(entry)
+		if !ok {
+			bad("%s: cannot parse entry %q — expected login[:id] with a positive numeric id, "+
+				"the same grammar as %s", EnvStampTrustedLogins, entry, EnvTrustedLogins)
+			continue
+		}
+		if looksLikeBot(login) {
+			bad("%s lists %q, which renders as a bot/App account. An App identity's stamp "+
+				"authority comes from a dispatcher role= binding in %s, never from this key",
+				EnvStampTrustedLogins, login, EnvTrustedBotSlugs)
+			continue
+		}
+		if _, trusted := cfg.Humans[login]; !trusted {
+			bad("%s lists %q, which %s does not carry — the allowance widens stamp authority "+
+				"for an ALREADY-trusted login and never creates trust. Add the login to %s first, "+
+				"or strike it here", EnvStampTrustedLogins, login, EnvTrustedLogins, EnvTrustedLogins)
+			continue
+		}
+		cfg.StampLogins[login] = id
 	}
 
 	// --- the single blessing authority ---
@@ -1399,6 +1624,56 @@ func parseConfig(class ToolClass, source string, vals map[string]string) Config 
 		cfg.HumanLogins[name] = login
 	}
 
+	// --- OS-account → login map (ASSAY_OS_USER_LOGIN_MAP), an EXTENSION key ---
+	// Feeds ONLY the scan-override audit identity. A MALFORMED entry does not refuse
+	// the configuration: it is recorded on cfg.Ext as ExtInvalid and the whole map
+	// resets to empty — never a PARTIAL map of only the entries that happened to
+	// parse — because a half-applied attribution table is worse than none: the rows
+	// it did resolve would read as authoritative while the dropped ones silently
+	// fell back. Empty is exactly the unset behaviour (resolveOverrideWho's
+	// clearly-marked OS-username fallback), and the audit write is never blocked
+	// either way.
+	//
+	// The login half must name a TRUSTED HUMAN of this same roster — in cfg.Humans
+	// and not in cfg.Bots, both of which parseConfig has already filled above. That
+	// single membership rule subsumes every shape check: a bot/App login (affixed
+	// or not — looksLikeBot cannot see an affix-less configured App slug), a typo'd
+	// or off-roster login, and a value carrying ':' or '/' (which could imitate the
+	// marked fallback or forge the session half of the row) are all refused by it.
+	// The audit row exists to name the accountable roster identity; printing an
+	// UNVALIDATED value as if it were resolved is the failure this rule closes.
+	cfg.OSUserLogins = map[string]string{}
+	var osUserMapIssue extAccumulator
+	for _, entry := range splitList(vals[EnvOSUserLoginMap]) {
+		osuser, login, found := strings.Cut(entry, ":")
+		osuser = strings.ToLower(strings.TrimSpace(osuser))
+		login = strings.ToLower(strings.TrimSpace(login))
+		if !found || osuser == "" || login == "" {
+			osUserMapIssue.bad("%s: cannot parse entry %q — expected osuser:login", EnvOSUserLoginMap, entry)
+			continue
+		}
+		if _, dup := cfg.OSUserLogins[osuser]; dup {
+			osUserMapIssue.bad("%s: OS account %q is mapped more than once — an ambiguous attribution "+
+				"must not resolve by parse order", EnvOSUserLoginMap, osuser)
+			continue
+		}
+		_, inHumans := cfg.Humans[login]
+		_, inBots := cfg.Bots[login]
+		if !inHumans || inBots {
+			osUserMapIssue.bad("%s: entry %q maps to %q, which is not a trusted-human login in this "+
+				"roster (%s) or is a configured App slug (%s). The override audit row names the "+
+				"accountable HUMAN roster identity — an off-roster value printed unmarked would read "+
+				"as resolved when nothing resolved it. Refusing the entry",
+				EnvOSUserLoginMap, entry, login, EnvTrustedLogins, EnvTrustedBotSlugs)
+			continue
+		}
+		cfg.OSUserLogins[osuser] = login
+	}
+	if osUserMapIssue.invalid {
+		cfg.OSUserLogins = map[string]string{}
+	}
+	recordExt(&cfg, EnvOSUserLoginMap, vals[EnvOSUserLoginMap], osUserMapIssue)
+
 	// --- risk-path triggers, ADDITIVE ONLY ---
 	// Unset is NOT an error and NOT a refusal: the compiled set is a complete
 	// configuration on its own, and there is no value syntax that drops a
@@ -1526,11 +1801,25 @@ func parseConfig(class ToolClass, source string, vals map[string]string) Config 
 	}
 	recordExt(&cfg, EnvRepoForges, vals[EnvRepoForges], repoForgesIssue)
 
-	// --- run-credential binding (ASSAY_RUN_CREDENTIALS), an EXTENSION key
-	// (forge-neutral brief 14) — parsed by parseRunCredentials (runcredential.go). ---
-	var runCredsIssue extAccumulator
-	cfg.RunCredentials = parseRunCredentials(vals[EnvRunCredentials], &runCredsIssue)
-	recordExt(&cfg, EnvRunCredentials, vals[EnvRunCredentials], runCredsIssue)
+	// --- run-credential binding (ASSAY_RUN_CREDENTIALS), a TRUST key — parsed by
+	// parseRunCredentials (runcredential.go). It decides which credential a desk write runs as,
+	// so a malformed value refuses the whole roster via bad, never just this one feature (a
+	// driver ruling reclassified it from the extension catalogue). ---
+	cfg.RunCredentials = parseRunCredentials(vals[EnvRunCredentials], bad)
+
+	// --- auto-approve lane keys (ASSAY_AUTOAPPROVE_*) — passed through RAW. ---
+	// Deliberately NOT validated here: a malformed lane key must close the lane and nothing
+	// else, so it is ParseAutoLaneConfig (autolane.go) that judges these values, and every
+	// judgement it can reach fails closed. Copying only the keys that were SET keeps "absent"
+	// distinguishable from "set to an empty string" for that parser.
+	for _, k := range autoLaneRawKeys() {
+		if v, ok := vals[k]; ok {
+			if cfg.AutoLaneRaw == nil {
+				cfg.AutoLaneRaw = map[string]string{}
+			}
+			cfg.AutoLaneRaw[k] = v
+		}
+	}
 
 	// --- release home (ASSAY_RELEASE_REPO), an EXTENSION key (this brief) ---
 	// A SINGLE slug, never a list: a release tool that took the first entry of a
@@ -1591,6 +1880,13 @@ func parseConfig(class ToolClass, source string, vals map[string]string) Config 
 		}
 	}
 	recordExt(&cfg, EnvWriteguardCallout, vals[EnvWriteguardCallout], writeguardCalloutIssue)
+
+	// --- outbound-write house callout (ASSAY_OUTBOUND_CALLOUT[_REQUIRED|_TIMEOUT]) ---
+	// (desktools-v2/11). Unlike the writeguard callout above, a malformed SET value is NOT
+	// reduced to "unconfigured": the outbound check's rule is that a configured callout is
+	// never skipped, so the first problem is carried on cfg.OutboundCalloutProblem and the
+	// outbound check refuses on it. The roster itself still loads.
+	parseOutboundCalloutKeys(&cfg, vals)
 
 	// --- contributor-trust ledger path (ASSAY_CONTRIBUTOR_LEDGER) ---
 	// An ABSOLUTE path to ONE file, validated exactly like ASSAY_WRITEGUARD_CALLOUT
@@ -1761,7 +2057,9 @@ func (k claimStoreKeys) storeFor(repo string) (value string, set bool, err error
 // because the value lives in repository settings (or a config-home file) rather
 // than in a diff, the RUN is where a change becomes visible — in BOTH directions.
 // A widened roster and a NARROWED trigger list must be equally apparent, so every
-// line renders its full sorted set rather than a count or a digest.
+// line renders its full sorted set rather than a count or a digest. (The default
+// one-line echo is a digest OF this block — configecho.go — and the block itself
+// prints whenever that digest differs from the last recorded one.)
 //
 // Logins and paths only — never a token, never a PEM path, never a secret-shaped
 // value (deskpost's bodycheck continues to assert that separately).
@@ -1804,6 +2102,14 @@ func (c Config) EffectiveConfigLines() []string {
 		humanMap = append(humanMap, n+"="+l)
 	}
 	sort.Strings(humanMap)
+	// The OS-account→login map renders the same way. It decides WHO an override
+	// audit row names, so a misattributing edit must be visible in the run echo,
+	// not only in the rows it already mislabelled.
+	osUserMap := make([]string, 0, len(c.OSUserLogins))
+	for u, l := range c.OSUserLogins {
+		osUserMap = append(osUserMap, u+"="+l)
+	}
+	sort.Strings(osUserMap)
 	// REPO ALIASES render one `repo=short:product` token per configured repo,
 	// sorted. Like every other line here the FULL set is shown, not a count: a
 	// grouping override lives in repository settings, so the run is the only place
@@ -1886,17 +2192,25 @@ func (c Config) EffectiveConfigLines() []string {
 		fmt.Sprintf("assay-config: class=%s source=%s configured=%t", c.Class, c.Source, c.Configured()),
 		fmt.Sprintf("assay-config: %s=%s", EnvBlessLogin, blessStr),
 		fmt.Sprintf("assay-config: %s=%s", EnvTrustedLogins, sortedIdents(c.Humans)),
+		// The stamp-authority allowance WIDENS the model-floor's actor check, so it
+		// renders its full sorted set here (never a count) — a widening on an identity
+		// gate must be as visible in the run as the role bindings below (#336).
+		fmt.Sprintf("assay-config: %s=%s", EnvStampTrustedLogins, sortedIdents(c.StampLogins)),
 		fmt.Sprintf("assay-config: %s=%s", EnvTrustedBotSlugs, c.sortedBotIdents()),
 		fmt.Sprintf("assay-config: role-bindings=%s", rolesStr),
 		fmt.Sprintf("assay-config: %s=%s", EnvAllowedRepos, reposStr),
 		fmt.Sprintf("assay-config: %s=%s", EnvScanRepos, strings.Join(c.ScanRepos, ",")),
 		fmt.Sprintf("assay-config: %s=%s", EnvHumanLoginMap, strings.Join(humanMap, ",")),
+		fmt.Sprintf("assay-config: %s=%s", EnvOSUserLoginMap, strings.Join(osUserMap, ",")),
 		fmt.Sprintf("assay-config: %s=%s", EnvRiskPathTriggersExtra, strings.Join(c.RiskExtra, ",")),
 		fmt.Sprintf("assay-config: %s=%s", EnvRiskCallout, riskCalloutStr),
 		fmt.Sprintf("assay-config: %s=%s", EnvRepoAliases, strings.Join(aliases, ",")),
 		fmt.Sprintf("assay-config: %s=%s", EnvRepoForges, strings.Join(forges, ",")),
 		fmt.Sprintf("assay-config: %s=%s", EnvReleaseRepo, releaseStr),
 		fmt.Sprintf("assay-config: %s=%s", EnvWriteguardCallout, calloutStr),
+		fmt.Sprintf("assay-config: %s=%s", EnvOutboundCallout, outboundCalloutEcho(c)),
+		fmt.Sprintf("assay-config: %s=%s", EnvOutboundCalloutRequired, outboundRequiredEcho(c)),
+		fmt.Sprintf("assay-config: %s=%s", EnvOutboundCalloutTimeout, outboundTimeoutEcho(c)),
 		fmt.Sprintf("assay-config: %s=%s", EnvContributorLedger, ledgerStr),
 		// The GitLab session / implementer commit-author allowlist WIDENS the
 		// commit-identity check, so it renders its full sorted set here (never a
@@ -1923,14 +2237,9 @@ func (c Config) EffectiveConfigLines() []string {
 // configured means classed=true — see riskcallout.go.
 func RiskCalloutPath() string { return EffectiveConfig().RiskCallout }
 
-// EchoEffectiveConfig writes the P3 echo. Every tool that makes a trust decision
-// calls this once per run, so a settings change appears in run output and in CI
-// history whether it widened or narrowed the set.
-func EchoEffectiveConfig(w io.Writer) {
-	for _, l := range EffectiveConfig().EffectiveConfigLines() {
-		fmt.Fprintln(w, l)
-	}
-}
+// EchoEffectiveConfig (configecho.go) writes the P3 echo: a one-line digest of the
+// block above by default, the full block in CI, on a change, on a refusal or an
+// unrecognised key, and on ASSAY_CONFIG_ECHO=full.
 
 // ---- the configured knobs, as consumers read them ----------------------------
 

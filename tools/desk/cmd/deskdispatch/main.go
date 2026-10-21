@@ -39,7 +39,9 @@
 // desk window (no ambient `gh` login) failed closed on every fresh claim while its other
 // steps minted their own role token and succeeded. Now the claim step mints (or reuses)
 // the dispatching role's token through the same seam the model stamp uses and passes it in
-// the tool's own shape; an explicit GH_TOKEN already in the environment wins; a mint
+// the tool's own shape; an explicit GH_TOKEN already in the environment wins only once it is
+// verified to BE the dispatching role's App (issue 1631 — otherwise it is ignored with a NOTICE,
+// and one whose identity cannot be read refuses); a mint
 // failure is the refusal, never a fall-back to whatever `gh` is logged in as. The decision
 // gate's script shells out to the forge CLI too, so it is handed the SAME credential in
 // environment shape from that one resolution (issue 1146) — keyed on what the child does, not
@@ -60,145 +62,19 @@
 package main
 
 import (
-	"fmt"
+	"github.com/medici-finance/assay/perfrec"
 	"os"
 
+	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
-const usage = `deskdispatch — the per-item dispatch ceremony (engine seam: DISPATCH).
-
-USAGE:
-  deskdispatch <item-key> [--tier strong|any] [--kit worker|worker-objective|review|verifier]
-               [--repo OWNER/NAME] [--root DIR] [--claim-root DIR] [--model SLUG]
-               [--branch NAME] [--brief PATH] [--gate-human] [--pr N] [--rework]
-               [--prompt-file FILE] [--quiet] [--dry-run] [--worktree PATH]
-  deskdispatch --kits
-  deskdispatch --version
-
-<item-key> names the item in the drain planner's own form. A key already carrying "--" is
-a claim key (<repo>--<stream>--<NN>, <repo>--issue-<NN>) and reaches the repo's claim tool
-byte-for-byte. A plan item key (verifyloop plan's <stream>/<NN>) is TRANSLATED for the
-claim calls only — the repo's short label (configured alias, else the repo basename) is
-prefixed and "/" becomes "--" — by a fixed rule, so every desk derives the SAME claim key
-for the same item and the claims collide. The worktree name, branch, brief path, and the
-prompt's item key stay on the ORIGINAL key.
-
-STEPS, in order. Each prints one line; the first red one stops the dispatch and NAMES itself.
-
-  1 claim-acquire     runs the claim tool's acquire <claim-key>. The tool is the pure-Go
-                      deskclaim-ref binary when it is on PATH (installed with desk-tools;
-                      no shebang .sh, no --claim-root, so a green-field or Windows adopter
-                      dispatches), ELSE the legacy tools/dispatch-claim.sh when the resolved
-                      root (--claim-root when given, else --root) carries it. The OK line
-                      names which one ran. The claim itself is a ref in the TARGET repo
-                      (--repo) either way — the flag names where the TOOL lives, never where
-                      the claim lands. The child runs as the DISPATCHING role: this step
-                      mints (or reuses) that role's App token exactly as the model-stamp step
-                      does and hands it over as --token-file <0600 path> (deskclaim-ref) or
-                      GH_TOKEN in the child's environment (the script); a GH_TOKEN already
-                      exported wins and nothing is minted; a mint failure is exit 6 with NO
-                      claim attempted — the tool is never run on the ambient gh login. Exit 5
-                      there with a READABLE holder = a LIVE holder owns it: this verb prints
-                      the holder and exits 5; it never steals. Exit 5 with no readable holder
-                      is the claim tool refusing the invocation itself and is reported as
-                      that error, never as a collision.
-  2 worktree-create   ` + "`deskwt add`" + ` in the item's OWN repo root, off
-                      refs/remotes/origin/main. Cross-repo is the default case, not the
-                      exception: an item belongs to a repo, and a worker handed the wrong
-                      one recreates the work where nobody asked for it. The new worktree is
-                      then STAMPED with the DISPATCHED agent's own role commit identity
-                      (worker/reviewer/verifier, per --kit) worktree-scoped, so it never
-                      inherits the dispatching desk's identity and misattributes Evidence
-                      Runner cells; a --kit whose role has no roster identity is refused
-                      pre-claim (exit 5). The OK line prints identity=<slug> <bot-user-id>.
-  3 roster-register   ` + "`deskroster set`" + ` for the work entry when --pr is known; without
-                      it the registration is the AGENT's first act after its PR opens, and
-                      the exact command is emitted into the prompt.
-  4 decision-gate     with --gate-human (or a --brief whose own metadata gates on a
-                      human), runs the repo's tools/decision-issue.sh ensure so the human
-                      has something concrete to decide. Idempotent by the script's own
-                      marker dedupe. The script runs under the dispatching role's
-                      credential (GH_TOKEN in its environment, from the same resolution
-                      the claim uses), never the ambient login; with none it refuses.
-  5 model-stamp       computes and validates the dispatcher's attestation labels
-                      (dispatched-model:<slug>, dispatched-tier:<tier>) and applies them
-                      when --pr is known. The stamp attests what the DISPATCHER launched;
-                      a self-applied stamp is worthless by design.
-  6 queue-label       on a --kit review dispatch with --pr known, applies the review-lane
-                      queue label authorization-needed to the change through the resolved
-                      forge (idempotent create+apply under the reviewer role's own
-                      credential — GitHub App token or GitLab PAT), so a GitLab MR carries
-                      the same queue signal a GitHub PR does. Non-fatal: a label the forge
-                      would not accept is a provisioning gap to file, not a failed dispatch.
-                      SKIPPED for a worker/verifier dispatch; DEFERRED when no --pr is known.
-  7 prompt-emit       writes the assembled agent prompt to stdout, or to --prompt-file.
-
---claim-root separates "where the consumer scripts live" from "which repo the worker's
-worktree branches from". The scripts (tools/dispatch-claim.sh, tools/decision-issue.sh)
-were centralized out of the consumer repos, so a cross-repo dispatch points --claim-root
-at the checkout that carries them while --root stays the ITEM's own repo — the worktree
-is always cut from --root. An explicit --claim-root is authoritative: there is no silent
-fall-back to --root.
-
-Before the claim, deskdispatch echoes any ADVISORY write-scope overlap
-between the item's write scopes (derived from --brief's Context 'files:' list) and any item
-holding an in-flight dispatch claim for the same root, as 'WRITE-OVERLAP: <item> ~ <in-flight> on
-<prefix>' lines on stderr. These are COORDINATION HINTS, NOT LOCKS: the dispatch always proceeds,
-the echo has no exit code, and overlap never blocks or delays the claim.
-
-CROSS-REPO (alias registry). An item may name the repo its deliverable lands in by ALIAS: the
-brief's ` + "`deliverable_repo: <alias>`" + ` or ` + "`homed-in: <owner>/<name>`" + ` frontmatter, or an
-` + "`<alias>:<stream>/<NN>`" + ` item-key prefix or the alias segment of the brief's own brief-v2 id (the
-alias the brief is TRACKED under). --brief is resolved ONCE (absolute, else under --root, else
-under --claim-root) and every reader uses that file; a --brief that resolves nowhere is refused.
-Every registry alias key, ` + "`repo:`" + ` value and ` + "`self:`" + ` is grammar-checked before use; a bad one
-is refused (exit 5). The alias resolves
-through the alias registry (graph-repos.yaml, schema graph-repos-v1) of the stream root at
---claim-root (else --root), and nothing else. Before
-anything durable: no registry, or an alias reserved but unpublished there = exit 6; an alias the
-registry does not define = exit 5 naming it; a resolved repo that is not --repo or not --root's own
-origin = HARD FAIL exit 5 naming both repos — no claim, no worktree. The resolved repo is the claim
-repo and the token's repo; a cross-repo claim key carries the TRACKING alias; the prompt tells the
-worker to run ` + "`deskpr create --root <tracking checkout>`" + ` so its Brief: trailer resolves there.
-
-PHANTOM PRECONDITION. A fresh worker dispatch is reconciled against the deliverable repo's open and
-merged PRs by ` + "`Brief:`" + ` trailer BEFORE admission, the token mint and the claim. An OPEN PR refuses
-(resume it with --pr). A MERGED PR refuses as DELIVERED — unless --rework says the row awaits
-implementer rework, in which case the dispatch becomes a FOLLOW-UP on a new branch
-(feat/<item>-followup-<N>), never a resume of the merged branch.
-
---kits lists the prompt kits this binary carries and exits 0.
---dry-run runs no step: it prints the plan and the prompt that WOULD be emitted. The prompt
-shows the agent's home worktree as a not-yet-known placeholder, because a real dispatch names
-the path deskwt printed and this verb never predicts one.
---worktree PATH (with --dry-run ONLY) renders the prompt against an operator-STATED home that
-already exists, instead of that placeholder — for previewing a batch whose worktrees are
-already cut. The path is validated first, all three checks fail-closed (exit 5): it resolves
-under a sanctioned worktree prefix, it IS a registered git worktree of the item's own repo,
-and it is not the shared checkout. A verified path also appears on the PLAN banner as
-"worktree=<path> (operator-supplied, verified)" so a transcript shows it was checked, not
-guessed. On a real dispatch --worktree is refused (exit 5): the home is deskwt's to name.
---quiet suppresses the per-step OK lines; failures and the prompt always print.
-
-Exit: 0 dispatch prepared · 3 disabled · 5 refused (live claim holder / caller
-precondition) · 6 unverifiable (a claim or gate whose state could not be established).
-
-DIAGNOSTICS: DESK_TRACE=1 (or a global --trace, any position) prints the full cause
-chain, every child process with its command line, exit status and elapsed time, and the
-failing child's stderr in full. Credentials are redacted. With it off, output is
-unchanged. Reach for it when a step reports an exit code and you cannot tell which of
-deskwt, the claim tool or the forge backend produced it. See tools/desk/README.md, "Diagnostics —
-DESK_TRACE".`
+// perfVerbs is deskdispatch's registered first-argument set for the opt-in local perf record
+// (deskkit.PerfRun): args[0] is recorded only when it is one of these, and as
+// "other" otherwise, so no argv text can reach the record.
+var perfVerbs = []string{"--stamp-only", "--check-verifier", "--attest-verifier", "--kits", "--version", "--help", "-h", "help", "-version", "dispatch:worker", "dispatch:worker-objective", "dispatch:review", "dispatch:verifier", "stamp-only:worker", "stamp-only:worker-objective", "stamp-only:review", "stamp-only:verifier"}
 
 func main() {
-	// Explicit roster class: deskdispatch ACTS (it claims, it stamps, it registers), so
-	// ciEligible=false — it reads the config-home file and never the environment.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
 	// Wire the phantom check's PR-list transport LIVE for the shipped binary (represented_live.go).
 	// Assigned here, in main(), not at package init: tests call run()/cmdDispatch directly and keep
 	// the nil default (the check stays inert unless a test wires its own recorded transport), while
@@ -207,49 +83,57 @@ func main() {
 	// ...and the per-PR file read that keeps a briefs-AUTHORING PR from counting as the brief's
 	// delivery (authoring.go).
 	listPRFiles = livePRFiles
-	os.Exit(run(os.Args[1:]))
+	// ...and the review round's reads: the pre-dispatch gate and the lane's scope and round
+	// number (reviewroundread.go). Unwired, a review dispatch holds nothing and states a full pass.
+	reviewRoundForgeFn = liveReviewRoundForge
+	// ...and the brief-admission decision hold's read (briefadmission.go). Unwired, a
+	// human-gated brief is never held on its decision issue.
+	decisionWaitForgeFn = liveDecisionWaitForge
+	args := os.Args[1:]
+	selected := perfrec.ResolveContext(perfrec.ContextInput{})
+	// main owns the declared class, echo and activation discovery. Cobra invokes
+	// these callbacks only for execution, after help/version/kits and parsing.
+	env := dispatchCLI{
+		performance: func(c perfrec.Context) { selected = c },
+		before: func() error {
+			deskkit.SetToolClass(deskkit.ClassForTool(false))
+			deskkit.EchoEffectiveConfig(os.Stderr)
+			if !deskkit.CheckVerbActivation(os.Stderr) {
+				return deskkit.Unverifiable("deskdispatch activation could not be established", nil)
+			}
+			return nil
+		},
+		handle: func(mode string, o dispatchOpts, override string) error {
+			if err := dispatchGuard(); err != nil {
+				return err
+			}
+			return executeMode(mode, o, override)
+		},
+	}
+	// The one measurement finalizer wraps the whole command, parsing included, so
+	// the timer never restarts after Cobra. Consent is the environment opt-in only;
+	// help/version/kits classify themselves without reading operational config.
+	os.Exit(deskkit.PerfRunMeasured("deskdispatch", perfVerbs, args, func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		env.performance = func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		env.measurement = measurement
+		code := parseDispatchCLI(a, env, cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
+		return code, selected
+	}))
+}
+
+func dispatchGuard() error {
+	if err := deskkit.Guard(); err != nil {
+		return err
+	}
+	deskkit.WarnIfUnpinned(os.Stderr)
+	return nil
 }
 
 func run(args []string) int {
-	// The global diagnostic switch, taken BEFORE any flag parsing or subcommand dispatch so
-	// `--trace` works on every verb spelling and is invisible to every FlagSet below. The
-	// env form (DESK_TRACE=1) needs no help: deskkit reads it on first use, which is what
-	// makes it survive across the desk verbs this one shells out to.
-	args = deskkit.TakeTraceFlag(args)
-
-	if len(args) == 1 && (args[0] == "--version" || args[0] == "-version") {
-		sha, built := deskkit.Version()
-		fmt.Printf("deskdispatch sourceSHA=%s builtAt=%s releaseTag=%s\n", sha, built, deskkit.ReleaseTagOrDev())
-		return deskkit.ExitOK
-	}
-	if len(args) == 1 && args[0] == "--kits" {
-		for _, k := range kitNames() {
-			fmt.Println(k)
-		}
-		return deskkit.ExitOK
-	}
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		fmt.Fprintln(os.Stderr, usage)
-		fmt.Fprintln(os.Stderr, "\nPROMPT KITS (references/, embedded in this binary): "+
-			joinKits())
-		if len(args) == 0 {
-			return deskkit.ExitRefused
-		}
-		return deskkit.ExitOK
-	}
-
-	// The kill-switch check is the FIRST gated action.
-	if err := deskkit.Guard(); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		return deskkit.ExitCodeOf(err)
-	}
-	deskkit.WarnIfUnpinned(os.Stderr)
-
-	err := cmdDispatch(args)
-	// The shared exit path. With DESK_TRACE off this is byte-identical to the
-	// fmt.Fprintln(os.Stderr, err.Error()) it replaces; with it on, the same first line is
-	// followed by the cause chain, every child process with its exit status and timing, and
-	// the failing child's stderr in full — all scrubbed of credentials.
-	deskkit.ReportError(os.Stderr, err)
-	return deskkit.ExitCodeOf(err)
+	return parseDispatchCLI(args, dispatchCLI{before: dispatchGuard, handle: executeMode}, cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 }

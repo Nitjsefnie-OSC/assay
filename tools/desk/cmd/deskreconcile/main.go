@@ -1,15 +1,17 @@
 // Command deskreconcile is the desk-side board-reconcile writer.
 //
-// It runs `statusgen reconcile --backfill --apply` — the ONLY writer of a stream README's
-// Status cell — from a verb the desk/worker App can run, and carries the result as exactly
-// ONE draft PR on the fixed branch board/reconcile. That removes the workflow dependency
+// It runs `statusgen reconcile --backfill --apply` — the command that flips a stream README's
+// Status cell to implemented — from a verb the desk/worker App can run, and carries the
+// result as exactly ONE draft PR on the fixed branch board/reconcile. That removes the workflow dependency
 // the scheduled-reconcile job #1175 is blocked on: no App may push
 // the `.github/workflows/assay-statusgen.yml` change that would schedule the reconcile, so
 // this does the same job outside CI.
 //
 // It writes ONLY stream README Status cells (todo|in-progress -> implemented, real
 // merged-PR witness only — the narrow, safe transition statusgen enforces), always in an
-// isolated worktree cut from the fetched remote head, and never opens a second PR.
+// isolated worktree cut from the fetched remote head, and never opens a second PR. It never
+// passes statusgen's `--regenerate` opt-in (under which `--apply` also re-renders a drive
+// plan page's snapshot region), so a row whose move would re-render one is held, not written.
 //
 // Exit codes (deskkit contract): 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused ·
 // 6 unverifiable.
@@ -35,8 +37,8 @@ USAGE:
   deskreconcile --version
 
 It fetches origin/main of the target checkout into an ISOLATED worktree, runs
-` + "`statusgen reconcile --backfill --apply`" + ` (the only writer of a stream README Status cell:
-todo|in-progress -> implemented, real merged-PR witness only), and — when a stream README
+` + "`statusgen reconcile --backfill --apply`" + ` (the command that flips a stream README Status
+cell todo|in-progress -> implemented, real merged-PR witness only), and — when a stream README
 changed — commits ONLY those README files as ONE commit (chore(board): reconcile <date>)
 on the fixed branch board/reconcile, then opens or UPDATES exactly one draft PR titled
 "chore(board): reconcile". It never opens a second PR, and it changes nothing when there is
@@ -55,14 +57,16 @@ nothing to flip.
 Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
 
 func main() {
-	// This tool ACTS on the roster (it writes through deskpr): ciEligible=false — the
-	// config-home file only, never the environment, in CI as well as locally.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
-	os.Exit(run(os.Args[1:], os.Stdout))
+	os.Exit(deskkit.PerfRun("deskreconcile", nil, os.Args[1:], func([]string) int {
+		// This tool ACTS on the roster (it writes through deskpr): ciEligible=false — the
+		// config-home file only, never the environment, in CI as well as locally.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		deskkit.EchoEffectiveConfig(os.Stderr)
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:], os.Stdout)
+	}))
 }
 
 func run(args []string, stdout *os.File) int {

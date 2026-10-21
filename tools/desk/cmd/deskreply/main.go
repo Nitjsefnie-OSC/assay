@@ -51,23 +51,77 @@ too — rehearse the shape, not the reachability.
 The body is read from --body-file only (no stdin / inline body), is capped at 16 KiB, and
 is secret-scanned; there is no override flag.
 
-Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
+Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.` + workpadGuide
+
+const workpadGuide = `
+
+WORKPAD BODY — supported with installed binaries (no source checkout needed).
+Exactly one <!-- assay:workpad --> marker must be on its own line, outside a code
+fence. Use the four sections below in order. The optional stamp must be safe for
+the PR's audience; omit machine paths, session identifiers and scratch names.
+Set REPO and PR to your own open PR, then replace the example section content:
+
+WORKPAD=$(mktemp "${TMPDIR:-/tmp}/workpad.XXXXXX")
+cat > "$WORKPAD" <<'WORKPAD_BODY'
+<!-- assay:workpad -->
+example@abc1234
+
+## Plan
+- Describe the next step.
+
+## Acceptance criteria
+- Copy the item's acceptance criteria.
+
+## Validation
+_none yet_
+
+## Notes
+_none yet_
+WORKPAD_BODY
+export DESK_LOOP=worker-desk
+deskreply "$REPO" "$PR" --workpad --body-file "$WORKPAD" --dry-run
+
+Only after the rehearsal succeeds, run the same command without --dry-run to
+upsert your one workpad. Dry-run performs forge reads but posts nothing; it is
+not an offline command. A template is body data, never posting authorization.
+
+OPTIONAL Go renderer — requires a source checkout of medici-finance/assay and Go.
+It calls the real internal deskkit.Render library; it is not an installed command
+or an API import available to consumer modules. From that checkout's root:
+
+go -C tools/desk run ./examples/workpad-render > "$WORKPAD" <<'WORKPAD_JSON'
+{"Stamp":"example@abc1234","Plan":"- Describe the next step.","Acceptance":"- Copy the item's acceptance criteria.","Validation":"_none yet_","Notes":"_none yet_"}
+WORKPAD_JSON
+
+The source renderer only formats stdin JSON. Its output still goes through the
+same deskreply --workpad --body-file and --dry-run checks above; neither example
+changes exact-marker validation, PR ownership, identity, scanning or budgets.`
 
 func main() {
-	// The roster class is an EXPLICIT declaration, never the zero value by accident
-	// (an earlier correctness review found SetToolClass had no caller anywhere,
-	// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
-	// the roster, so it is ciEligible=false: it reads the config-home file and never
-	// the environment, in CI as well as locally.
-	deskkit.SetToolClass(deskkit.ClassForTool(false))
-	// Echo the effective roster once per run. Every tool that reads a configured
-	// control surface echoes it — a value that lives in settings rather than in a diff
-	// is only visible at RUN time, and a NARROWING must be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
-	if !deskkit.CheckVerbActivation(os.Stderr) {
-		os.Exit(deskkit.ExitUnverifiable)
-	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("deskreply", nil, os.Args[1:], func([]string) int {
+		// The roster class is an EXPLICIT declaration, never the zero value by accident
+		// (an earlier correctness review found SetToolClass had no caller anywhere,
+		// so "ClassWrite is the safe default" was true only by luck). This tool ACTS on
+		// the roster, so it is ciEligible=false: it reads the config-home file and never
+		// the environment, in CI as well as locally.
+		deskkit.SetToolClass(deskkit.ClassForTool(false))
+		// Echo the effective roster once per run. Every tool that reads a configured
+		// control surface echoes it — a value that lives in settings rather than in a diff
+		// is only visible at RUN time, and a NARROWING must be as visible as a widening.
+		//
+		// A help screen is not a run: it prints no configured value (medici-finance/assay#3754).
+		// deskreply OPTS IN with deskkit.UsageHelp, the SAME predicate run() answers with its usage
+		// screen before Guard, so the two cannot disagree about which invocation is help.
+		if deskkit.UsageHelp(os.Args[1:]) {
+			deskkit.EchoConfigHelpNotice(os.Stderr)
+		} else {
+			deskkit.EchoEffectiveConfig(os.Stderr)
+		}
+		if !deskkit.CheckVerbActivation(os.Stderr) {
+			return deskkit.ExitUnverifiable
+		}
+		return run(os.Args[1:])
+	}))
 }
 
 func run(args []string) int {
@@ -77,12 +131,9 @@ func run(args []string) int {
 		fmt.Printf("deskreply sourceSHA=%s builtAt=%s releaseTag=%s\n", sha, built, deskkit.ReleaseTagOrDev())
 		return deskkit.ExitOK
 	}
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, usage)
-		if len(args) == 0 {
-			return deskkit.ExitRefused
-		}
-		return deskkit.ExitOK
+		return deskkit.ExitRefused
 	}
 
 	// TIER ONE of the help retrofit (deskkit/helprequest.go). A SUBCOMMAND help request —
@@ -92,8 +143,13 @@ func run(args []string) int {
 	// measured on one operating desk host over 32 days). It returns HERE, before Guard, and
 	// writes nothing. HelpOnly matches only the unambiguous single-token shape, so a `--help`
 	// that is another flag's VALUE cannot be mistaken for one; every wider spelling falls
-	// through to the subcommand's own parse, where flag.ErrHelp is recognised instead.
-	if deskkit.HelpOnly(args) {
+	// through to cmdReply's own parse, which hands flag.ErrHelp to deskkit.IsHelpRequest
+	// (tier two): it prints usage, exits 0, and the finalizer writes no row.
+	//
+	// deskkit.UsageHelp is that form plus a leading `help`, `-h` or `--help` (any arguments after
+	// it). It is the predicate main() picks the echo with, so the echo and this answer cannot
+	// drift apart (medici-finance/assay#3754).
+	if deskkit.UsageHelp(args) {
 		fmt.Fprintln(os.Stderr, usage)
 		return deskkit.ExitOK
 	}
@@ -119,6 +175,11 @@ func run(args []string) int {
 	deskkit.WarnIfUnpinned(os.Stderr)
 
 	err := cmdReply(args)
+	if deskkit.IsHelpRequest(err) {
+		// TIER TWO terminus: print the help screen the operator asked for, exit 0.
+		fmt.Fprintln(os.Stderr, usage)
+		return deskkit.ExitOK
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 	}

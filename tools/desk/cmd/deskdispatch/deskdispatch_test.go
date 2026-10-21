@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,10 @@ type reply struct {
 // precondition the verb checks on disk.
 func (s *stub) install(t *testing.T) (home, root string) {
 	t.Helper()
+	oldAttest := attestVerifierDispatchFn
+	attestVerifierDispatchFn = func(dispatchOpts, string, string) (string, error) { return "OK: fixture pre-work attestation", nil }
+	t.Cleanup(func() { attestVerifierDispatchFn = oldAttest })
+	t.Setenv("DESK_LOOP", "the-desk")
 	home = t.TempDir()
 	root = t.TempDir()
 	// A real --brief must resolve now (resolveBrief refuses one that names no file), so the item
@@ -74,6 +79,9 @@ func (s *stub) install(t *testing.T) (home, root string) {
 				return exec.Command("/bin/sh", "-c", "cat <<'STUBEOF'\n"+r.stdout+"\nSTUBEOF")
 			}
 		}
+		if strings.Contains(joined, "rev-parse --verify --quiet refs/remotes/origin/") {
+			return exec.Command("/bin/sh", "-c", "echo "+resumeSHA)
+		}
 		return exec.Command("/bin/sh", "-c", "exit 0")
 	}
 	t.Cleanup(func() { execCommand = old })
@@ -91,6 +99,9 @@ func (s *stub) install(t *testing.T) (home, root string) {
 //     minter (stubMint overrides it);
 //   - GH_TOKEN is cleared, so the explicit-export precedence is never inherited from the
 //     developer's shell (a test that wants it sets it).
+//   - the inherited-GH_TOKEN identity probe (issue 1631) is bound to a stub that FAILS, so no
+//     test reaches a forge and a test that exports GH_TOKEN without saying whose it is fails
+//     closed (stubTokenIdentity binds the identity a test means).
 //
 // Every harness that runs a real dispatch — install, and the hand-rolled ones — calls this.
 func isolateClaimTool(t *testing.T, home string) {
@@ -99,12 +110,39 @@ func isolateClaimTool(t *testing.T, home string) {
 	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	t.Cleanup(func() { lookPath = oldLook })
 
+	oldRefresh := refreshResume
+	refreshResume = func(o dispatchOpts, branch string) error {
+		r := runCmd(o.root, "fixture-fetch", "--quiet", branch)
+		return r.err
+	}
+	t.Cleanup(func() { refreshResume = oldRefresh })
+	oldResume := readResumeChange
+	readResumeChange = func(o dispatchOpts, _ string) (deskkit.PullRequest, error) {
+		branch := o.branch
+		if branch == "" {
+			branch = "feat/" + sanitizeSegment(o.item)
+		}
+		return deskkit.PullRequest{State: "open", HeadRef: branch, HeadSHA: resumeSHA, CrossRepo: deskkit.CrossRepoSame}, nil
+	}
+	t.Cleanup(func() { readResumeChange = oldResume })
 	t.Setenv("GH_TOKEN", "")
 	oldMint := mintTokenFn
 	mintTokenFn = func(role, repo string) (string, string, error) {
 		return stubMintedToken, stubMintedTokenPath(t, home), nil
 	}
 	t.Cleanup(func() { mintTokenFn = oldMint })
+
+	// No packet unless a test asks for one (usePacketBuilder): the fake forges these tests
+	// stand up answer only the routes each test exercises.
+	oldPacket := buildPacketFn
+	buildPacketFn = func(dispatchOpts, dispatchPlan, string, string) string { return "" }
+	t.Cleanup(func() { buildPacketFn = oldPacket })
+
+	oldProbe := tokenIdentityFn
+	tokenIdentityFn = func(deskkit.ForgeRepo, string, string) (deskkit.TokenIdentity, error) {
+		return deskkit.TokenIdentity{}, errors.New("example: no forge in tests — bind stubTokenIdentity")
+	}
+	t.Cleanup(func() { tokenIdentityFn = oldProbe })
 }
 
 // stubMintedToken is the token value the harness's default mint hands the claim step. It is
@@ -206,7 +244,7 @@ func TestDispatchClaimsFirstThenBuildsTheWorktreeAndEmitsThePrompt(t *testing.T)
 		t.Errorf("claim at %d, worktree at %d — the claim must come first", claimIdx, wtIdx)
 	}
 
-	body, err := os.ReadFile(promptFile)
+	body, err := os.ReadFile(emittedPathFor(promptFile))
 	if err != nil {
 		t.Fatalf("prompt file: %v", err)
 	}
@@ -244,7 +282,7 @@ func TestTierStopIsStrongTierOnly(t *testing.T) {
 	if rc := run([]string{"item-1", "--root", root, "--tier", "any", "--prompt-file", promptFile}); rc != deskkit.ExitOK {
 		t.Fatalf("rc = %d", rc)
 	}
-	body, _ := os.ReadFile(promptFile)
+	body, _ := os.ReadFile(emittedPathFor(promptFile))
 	if strings.Contains(string(body), "requires a strong implementer") {
 		t.Error("an `any`-tier dispatch carried the strong-tier pickup STOP")
 	}
@@ -276,7 +314,7 @@ func TestClaimContentionNamesTheHolderAndNeverSteals(t *testing.T) {
 	if s.ran("deskwt add") {
 		t.Error("a worktree was created despite the refused claim")
 	}
-	if _, err := os.Stat(promptFile); err == nil {
+	if _, err := os.Stat(emittedPathFor(promptFile)); err == nil {
 		t.Error("a prompt was emitted despite the refused claim — the agent would have been launched")
 	}
 }
@@ -434,7 +472,7 @@ func TestClaimRootDecouplesTheClaimToolFromTheWorktreeSource(t *testing.T) {
 		t.Fatal("no worktree was created for the agent")
 	}
 
-	body, err := os.ReadFile(promptFile)
+	body, err := os.ReadFile(emittedPathFor(promptFile))
 	if err != nil {
 		t.Fatalf("prompt file: %v", err)
 	}
@@ -531,7 +569,8 @@ func TestBriefMetadataGateHumanFiresTheDecisionGate(t *testing.T) {
 		reply{match: "decision-issue.sh ensure", stdout: "created: decision issue #7"})
 
 	promptFile := filepath.Join(t.TempDir(), "p.md")
-	rc := run([]string{"item-1", "--root", root, "--brief", "brief.md", "--prompt-file", promptFile})
+	// --tier strong: the fixture brief is `exec-tier: strong`, which a --tier any dispatch refuses.
+	rc := run([]string{"item-1", "--root", root, "--brief", "brief.md", "--tier", "strong", "--prompt-file", promptFile})
 	if rc != deskkit.ExitOK {
 		t.Fatalf("rc = %d, want 0", rc)
 	}
@@ -539,7 +578,7 @@ func TestBriefMetadataGateHumanFiresTheDecisionGate(t *testing.T) {
 		t.Error("a gate:human brief passed via --brief did NOT fire the decision gate — the empty " +
 			"decision surface (irreversible:no defeated the old irreversible-keyed detection)")
 	}
-	body, _ := os.ReadFile(promptFile)
+	body, _ := os.ReadFile(emittedPathFor(promptFile))
 	if !strings.Contains(string(body), "Human-gated item") {
 		t.Error("the prompt for a gate:human brief omits the human-gated clause")
 	}
@@ -568,7 +607,7 @@ func TestBriefMetadataNonHumanGateStillSkips(t *testing.T) {
 	if s.ran("decision-issue.sh ensure") {
 		t.Error("a non-human-gated brief fired the decision gate — detection must key on `gate: human` alone")
 	}
-	body, _ := os.ReadFile(promptFile)
+	body, _ := os.ReadFile(emittedPathFor(promptFile))
 	if strings.Contains(string(body), "Human-gated item") {
 		t.Error("the prompt for a non-human-gated brief carries the human-gated clause")
 	}
@@ -681,6 +720,7 @@ func TestNoCallerPreconditionIsCheckedAfterTheClaim(t *testing.T) {
 		{"a branch name the worktree verb would refuse", []string{"item-1", "--branch", "-dash-leading"}},
 		{"a branch name containing a parent-directory segment", []string{"item-1", "--branch", "feat/../x"}},
 		{"--prompt-file under a directory that does not exist", []string{"item-1", "--prompt-file", "/nonexistent-dir-for-test/p.md"}},
+		{"--prompt-file naming an existing directory", []string{"item-1", "--prompt-file", os.TempDir()}},
 		{"--claim-root naming a directory that does not exist", []string{"item-1", "--claim-root", "/nonexistent-claim-root-for-test"}},
 	}
 	for _, c := range cases {
@@ -827,10 +867,10 @@ func TestEveryClassPromptCarriesTheCommonClauses(t *testing.T) {
 		s.replies = happyReplies("/private/tmp/agent-home")
 
 		promptFile := filepath.Join(t.TempDir(), kit+".md")
-		if rc := run([]string{"item-1", "--root", root, "--kit", kit, "--prompt-file", promptFile}); rc != deskkit.ExitOK {
+		if rc := run([]string{"item-1", "--root", root, "--kit", kit, "--model", "gpt-6-astra", "--brief", "spec.md", "--prompt-file", promptFile}); rc != deskkit.ExitOK {
 			t.Fatalf("kit %q rc = %d, want 0", kit, rc)
 		}
-		body, err := os.ReadFile(promptFile)
+		body, err := os.ReadFile(emittedPathFor(promptFile))
 		if err != nil {
 			t.Fatalf("kit %q prompt: %v", kit, err)
 		}
@@ -896,7 +936,7 @@ func TestVerifierPlanItemKeyIsTranslatedForTheClaimTool(t *testing.T) {
 	s.replies = happyReplies("/private/tmp/verifier-home")
 
 	promptFile := filepath.Join(t.TempDir(), "p.md")
-	rc := run([]string{"verdict-lane/05", "--root", root, "--kit", "verifier",
+	rc := run([]string{"verdict-lane/05", "--root", root, "--kit", "verifier", "--model", "gpt-6-astra", "--brief", "spec.md",
 		"--prompt-file", promptFile})
 	if rc != deskkit.ExitOK {
 		t.Fatalf("verifier dispatch rc = %d, want 0", rc)
@@ -929,7 +969,7 @@ func TestVerifierPlanItemKeyIsTranslatedForTheClaimTool(t *testing.T) {
 		t.Error("the verifier worktree was not derived from the ORIGINAL item key as a detached, verify-named worktree")
 	}
 
-	body, err := os.ReadFile(promptFile)
+	body, err := os.ReadFile(emittedPathFor(promptFile))
 	if err != nil {
 		t.Fatalf("prompt file: %v", err)
 	}
@@ -1000,9 +1040,12 @@ func TestPlanItemKeyTranslationIsKitIndependent(t *testing.T) {
 			if !acquired {
 				t.Fatal("the claim tool was never invoked")
 			}
-			// Worktree DIR is session-scoped (install sets DESK_SESSION=deskdispatch-test); the
-			// branch stays bare on the ORIGINAL item key, not the translated claim key.
-			if !s.ran("deskwt add education-10-deskdispatch-test --branch feat/education-10") {
+			// Allocation names retain the ORIGINAL item key, not the translated claim key.
+			if c.kit == "review" {
+				if !s.ran("deskwt add review-education-10-") || !s.ran("--detach --base refs/remotes/origin/main --role reviewer") {
+					t.Error("review allocation did not retain the original key in a fresh detached home")
+				}
+			} else if !s.ran("deskwt add education-10-deskdispatch-test --branch feat/education-10") {
 				t.Error("the worktree/branch were not derived from the ORIGINAL item key")
 			}
 		})
@@ -1022,11 +1065,11 @@ func TestClaimRefusalWithNoHolderIsNotReportedAsACollision(t *testing.T) {
 		show reply
 	}{
 		{"verifier: show reports the key FREE",
-			[]string{"verdict-lane/05", "--kit", "verifier"},
+			[]string{"verdict-lane/05", "--kit", "verifier", "--model", "gpt-6-astra", "--brief", "spec.md"},
 			reply{match: "dispatch-claim.sh show",
 				stdout: "dispatch-claim: FREE assay--verdict-lane--05 (no refs/heads/dispatch/... in the repo)"}},
 		{"verifier: show itself is refused (same malformed key)",
-			[]string{"verdict-lane/05", "--kit", "verifier"},
+			[]string{"verdict-lane/05", "--kit", "verifier", "--model", "gpt-6-astra", "--brief", "spec.md"},
 			reply{match: "dispatch-claim.sh show", code: deskkit.ExitRefused}},
 		{"worker: show reads nothing at all (an unreadable or orphaned ref is never a live holder)",
 			[]string{"education/10"},
@@ -1065,14 +1108,19 @@ func TestClaimRefusalWithNoHolderIsNotReportedAsACollision(t *testing.T) {
 
 // A key that would be read as a flag, or that carries a parent-directory segment, is
 // refused before it reaches any child process.
+// regression: #2111
 func TestHostileItemKeysRefused(t *testing.T) {
 	for _, key := range []string{"--force", "../escape", "a b", ""} {
 		s := &stub{}
 		_, root := s.install(t)
 		plantScripts(t, root)
 		rc := run([]string{key, "--root", root})
-		if rc != deskkit.ExitRefused {
-			t.Errorf("key %q rc = %d, want %d (refused)", key, rc, deskkit.ExitRefused)
+		want := deskkit.ExitRefused
+		if key == "--force" {
+			want = 2
+		} // CLI syntax, before domain admission.
+		if rc != want {
+			t.Errorf("key %q rc = %d, want %d (refused)", key, rc, want)
 		}
 		if len(s.calls) != 0 {
 			t.Errorf("key %q reached a child process: %v", key, s.calls)
@@ -1094,7 +1142,7 @@ func TestWorktreeWithNoReportedPathIsUnverifiable(t *testing.T) {
 	if rc := run([]string{"item-1", "--root", root, "--prompt-file", promptFile}); rc != deskkit.ExitUnverifiable {
 		t.Fatalf("pathless worktree rc = %d, want %d", rc, deskkit.ExitUnverifiable)
 	}
-	if _, err := os.Stat(promptFile); err == nil {
+	if _, err := os.Stat(emittedPathFor(promptFile)); err == nil {
 		t.Error("a prompt naming no home worktree was emitted")
 	}
 }
@@ -1111,7 +1159,7 @@ func TestDryRunTouchesNothingButStillEmitsThePrompt(t *testing.T) {
 	if len(s.calls) != 0 {
 		t.Fatalf("--dry-run ran %d child processes: %v", len(s.calls), s.calls)
 	}
-	body, err := os.ReadFile(promptFile)
+	body, err := os.ReadFile(emittedPathFor(promptFile))
 	if err != nil {
 		t.Fatalf("prompt: %v", err)
 	}
@@ -1147,7 +1195,7 @@ func TestDryRunEmitsThePromptForEveryTier(t *testing.T) {
 		if len(s.calls) != 0 {
 			t.Fatalf("--tier %s --dry-run ran %d child processes: %v", tier, len(s.calls), s.calls)
 		}
-		body, err := os.ReadFile(promptFile)
+		body, err := os.ReadFile(emittedPathFor(promptFile))
 		if err != nil {
 			t.Fatalf("--tier %s --dry-run emitted no prompt: %v", tier, err)
 		}
@@ -1175,6 +1223,7 @@ func TestDryRunEmitsThePromptForEveryTier(t *testing.T) {
 	}
 }
 
+// regression: #2111
 func TestStepListIsTheDocumentedContract(t *testing.T) {
 	want := []string{"claim-acquire", "worktree-create", "roster-register", "decision-gate",
 		"model-stamp", "queue-label", "prompt-emit"}
@@ -1185,14 +1234,15 @@ func TestStepListIsTheDocumentedContract(t *testing.T) {
 		if dispatchSteps[i] != want[i] {
 			t.Errorf("dispatchSteps[%d] = %q, want %q", i, dispatchSteps[i], want[i])
 		}
-		if !strings.Contains(usage, want[i]) {
+		if !strings.Contains(dispatchHelp(), want[i]) {
 			t.Errorf("step %q is not documented in --help", want[i])
 		}
 	}
 }
 
+// regression: #2111
 func TestHelpNamesTheEngineSeam(t *testing.T) {
-	if !strings.Contains(usage, "engine seam: DISPATCH") {
+	if !strings.Contains(dispatchHelp(), "engine seam: DISPATCH") {
 		t.Error("deskdispatch --help does not name its engine seam")
 	}
 }

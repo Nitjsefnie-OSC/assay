@@ -26,16 +26,46 @@ var version string
 const usage = `deskpr — push a feature branch and open (or update) its pull request.
 
 USAGE:
-  deskpr create --title T (--body-file F | --body-min B) [--base main] [--check]
-  deskpr update [--check]
-  deskpr edit --body-file F [--title T] [--check]
+  deskpr create --title T (--body-file F | --body-min B) [--base main] [--decided F]
+      [--root DIR] [--explain] [--force-scan-override REASON] [--check | --check-remote]
+  deskpr update [--pr N | --branch B]
+      [--root DIR] [--explain] [--force-scan-override REASON] [--check]
+  deskpr edit --body-file F [--title T] [--pr N] [--decided F]
+      [--root DIR] [--explain] [--force-scan-override REASON] [--check]
   deskpr --version
 
+Each verb's USAGE line above lists every flag that verb accepts, and no other. The three
+shared by all three verbs: --root DIR is the repo root the Brief: trailer resolves against;
+--force-scan-override REASON is the audited secret-scan bypass (it demands a reason and
+writes an audit row); --explain adds a scan-explain line to a secret-scan refusal.
+
+--decided F (create and edit only) declares a desk-taken REVERSIBLE default (the driver
+holds merge, so such a choice needs no ruling first — it needs the PR to say so). A one-way
+or human-gated call (merge, weakening a security control, identity/auth, money movement,
+durable-data deletion, a release, anything leaving the repo) is never eligible: that stops
+for the driver instead. F is a file of numbered items, each carrying all three fields, one
+per line:
+  1. decision: <what was chosen>
+     alternative: <the option not taken>
+     cost: <what reversing it costs the driver>
+The tool writes (or, on edit, replaces in place) a "## Desk-decided" section in the PR
+body and applies the "desk-decided" label together; never write either by hand. An empty
+file, an unparsable one, or an item missing a field refuses (exit 5) before any PR call.
+With --decided, create also refuses a body that already carries a hand-written
+"## Desk-decided" heading (without --decided it does not look). A PR that only transcribes
+rulings already recorded elsewhere passes no --decided and carries neither the section nor
+the label. deskflip refuses the ready-flip (condition desk-decided) when the section does
+not parse, when the label and the section disagree, or while the reviewer's latest verdict
+in either lane at the current head carries an "Undeclared-desk-decision:" line. The remedy
+for each is "deskpr edit --body-file <the PR's current body> --decided F" on the PR's own
+branch (an unchanged body still applies a missing label); the last also needs a fresh
+verdict at that head without the line.
+
 --check runs every LOCAL gate the write path runs — flag validity, branch state, the
-Brief:/Issue: trailer, the secret scan, the public-repo self-containment scan, the
+Brief:/Authors:/Issue: trailer, the secret scan, the public-repo self-containment scan, the
 push-transport gate — and stops BEFORE minting a token or opening any connection: exit 0
 only when every local gate passed, a failing gate returns its own refusal with its own
-exit code, so --check is a gate run early, never a preview that can disagree with the real
+exit code, so --check proves local gates only; remote-dependent checks still run on the real
 write path. It mints no token and opens no connection. A category it cannot decide
 offline (chiefly a bare #N reference, which needs a number from the forge to compare
 against) is reported as NOT CHECKED, by name, rather than passing silently — update's
@@ -43,18 +73,72 @@ against) is reported as NOT CHECKED, by name, rather than passing silently — u
 edit's cannot check trailer-immutability or the self-containment scan's bare-#N hint (both
 need the existing PR's body/number); each names what it skipped.
 
+A live create confirms the destination branch through its credentialed push endpoint,
+checks only commits beyond its confirmed tip, and pins that tip during the plain push.
+create --check cannot confirm it: it judges the whole range and reports that limit.
+For already-published Evidence, use create --check-remote as the read-only preflight:
+it explicitly contacts the session App's forge and push destination, reuses the live
+source/destination proof, and stops before write budget, push or PR creation. It does
+not weaken --check or exempt provider-authored commits. --check and --check-remote
+are mutually exclusive. Success is an observation, not a reusable authorization:
+a later create repeats every gate and requires the remote tip unchanged during push.
+An existing open PR remains create's ordinary no-op (no commits would be pushed).
+
 deskpr create is draft-only by construction: it can only open a DRAFT PR on a
 non-default branch. deskpr update pushes a follow-up to an EXISTING open PR on the
 branch — draft or ready-flipped. deskpr edit replaces that same open PR's body, and
 optionally its title, and pushes nothing: it refuses when the branch has no OPEN PR
 (which is also how a merged or closed one is refused), and it runs the trailer,
-secret-scan, self-containment, rate-limit and public-repo gates create runs. There is
+secret-scan, self-containment, rate-limit and public-repo gates create runs. edit --pr N
+names the PR instead of finding it by branch (#1901, #2085). It runs from a different
+feature branch, a detached HEAD, or a checkout with no commits ahead of the default branch,
+because it pushes nothing; a checkout ON the default branch, or one with staged changes, is
+still refused. The PR must be OPEN, and then either this checkout is the PR's own (its
+branch is the PR's head branch, or its HEAD is exactly the PR's head commit), or the PR's
+head branch is in this repository and its current body already carries a link trailer —
+which the edit then cannot change. A fork PR or a trailer-less PR is edited only from its
+own checkout.
+
+deskpr update pushes the worktree's branch to its PR by default. update --pr N (or --branch B,
+the PR's head branch name on the remote) names the PR instead, for a worktree whose local
+branch name differs from the PR's head branch (git allows one worktree per branch): HEAD is
+pushed to the head branch the forge reports for that PR (git push origin HEAD:<head-branch>),
+and that head branch name is secret-scanned before the push. The PR must be OPEN, its head
+branch must be in this repository (a fork PR, or one whose head repository the forge does
+not report, is refused), and the push destination must already hold that branch at the
+head commit the forge reports. The checkout is admitted by lineage: HEAD must be the PR's
+current head commit or a descendant of it (a pure fast-forward; merge, never rebase), and a
+PR head already contained in the default branch is refused. The default branch is never a
+destination. With --pr N the publish-identity gate judges only the commits the push adds
+beyond the head the forge reports, once that head is shown to be an ancestor of HEAD and
+what the destination holds; --pr N --check cannot read that head, so it judges the whole
+range from the default branch (--branch <head-branch> --check narrows it offline). deskreply keeps its own
+checkout-must-be-the-PR's rule. There is
 no ready/close/merge verb, and no verb can pass --force to git. Preconditions are
 re-verified in-tool; on any state it cannot positively verify it refuses.
 
-deskpr edit cannot change the body's link trailer. "Brief: <stream>/<NN>" / "Issue: #<N>"
-is the derived board's edge from the PR to its work item: the replacement body must carry
-exactly one, and when the PR's current body already has one, the replacement's must match
+LINK TRAILER. Every PR body carries exactly ONE link line, and which one says what the
+PR does to its work item:
+  Brief: <stream>/<NN>             the PR DELIVERS that brief (implements it). Also accepted:
+                                   <stream>:<NN>, <repo>:<stream>:<NN>, <cell>:<repo>:<stream>:<NN>.
+  Authors: <stream>/<NN>[, ...]    the PR only AUTHORS (writes the files of) the listed briefs
+                                   and delivers none of them — a briefs-authoring PR (#1339).
+  Issue: #<N>                      issue-only work with no brief.
+Every brief named by Brief: or Authors: must resolve to docs/streams/<stream>/brief-<NN>-*.md
+under --root. Brief: is read as DELIVERY by the dispatcher's phantom check, the planner and
+the derived board, so an authoring PR must not carry it: create REFUSES a Brief: line when
+the branch only authors that brief (it adds the brief's file and touches nothing but stream
+board READMEs, brief files and changelog fragments) and names the Authors: line to use.
+The mirror refusal: create REFUSES an Authors: line unless the branch diff is authoring-only
+for EVERY listed id, which includes ADDING each listed brief's file. A diff with a rename is
+refused under Authors: (its authoring shape cannot be proven from this local read), while
+Brief: leaves such a diff alone. deskflip re-checks the same claim against the PR's
+forge-served diff at flip time: an Authors: PR whose complete diff is not authoring-only for
+every listed id needs a security review before it can flip.
+
+deskpr edit cannot change the body's link trailer. "Brief: <stream>/<NN>" /
+"Authors: <stream>/<NN>[, ...]" / "Issue: #<N>" is the derived board's edge from the PR
+to its work item: the replacement body must carry exactly one, and when the PR's current body already has one, the replacement's must match
 it. A PR whose current body has NO trailer may gain one — that is the pre-trailer
 migration deskpr update tells you to perform. Because a body edit moves no head SHA,
 edit also posts one short comment naming what changed, so a head-keyed review monitor
@@ -76,8 +160,11 @@ This is the ONE place the categories are enumerated; the skill text points here 
 than restating them.
 
   REFUSED (exit 5) — the span is unambiguous:
-    * an absolute machine path (/Users/…, /home/…, /private/tmp/…, /tmp/tracker-…)
-    * a scratch worktree name (tracker-…)
+    * an absolute machine path under a machine-local root (/Users/, /home/, /private/tmp/,
+      /tmp/tracker-; on Windows a drive-letter path under the Users root, or a UNC path
+      naming a host and a share)
+    * a scratch worktree name (tracker-…) at the start of a token or a path segment;
+      the same word inside a hyphenated compound is not one
     * a session id (a hex UUID) or an agent id (agent-…)
     * an owner/name slug, with or without #N, naming a repo the roster marks PRIVATE
     * alias#N where the alias resolves to such a repo
@@ -101,13 +188,20 @@ an ssh:// or git@host:path one AND this session presents a bot identity ($DESK_L
 resolving to a role App). An SSH push authenticates with whatever key this machine's agent
 holds — a human's — so the forge records the HUMAN as the branch author and the App's
 permission envelope is bypassed, however the commits are authored. The refusal names the
-config key, the url, the acting App and the one-line remedy. Fetch over SSH stays allowed:
-remote.origin.pushurl is what is read whenever it is set, so an SSH fetch url with an https
-push override passes. edit is NOT gated — it pushes nothing. With $DESK_LOOP unset the gate
+config key, the url, the acting App and the remedy. The url judged is the one git
+will push to — "git remote get-url --push --all origin", a local read with url.<base>.insteadOf
+and pushInsteadOf applied — so an https remote a rewrite rule turns into SSH is refused, and
+the refusal names the rule. Fetch over SSH stays allowed: an SSH fetch url with an https push
+override passes. edit is NOT gated — it pushes nothing. With $DESK_LOOP unset the gate
 is inert (a human pushes under their own key). An https push url with no App credential
 helper configured is a stderr NOTICE, never a refusal.
 
 Exit: 0 ok/noop · 3 disabled · 4 rate-limited · 5 refused · 6 unverifiable.`
+
+// perfVerbs is deskpr's registered first-argument set for the opt-in local perf record
+// (deskkit.PerfRun): args[0] is recorded only when it is one of these, and as
+// "other" otherwise, so no argv text can reach the record.
+var perfVerbs = []string{"create", "update", "edit", "--version", "--help"}
 
 func main() {
 	// The roster class is an EXPLICIT declaration, never the zero value by accident
@@ -119,11 +213,19 @@ func main() {
 	// Echo the effective roster once per run. Every tool that reads a configured
 	// control surface echoes it — a value that lives in settings rather than in a diff
 	// is only visible at RUN time, and a NARROWING must be as visible as a widening.
-	deskkit.EchoEffectiveConfig(os.Stderr)
+	//
+	// A help screen is not a run: it prints no configured value (medici-finance/assay#3754).
+	// deskpr OPTS IN with deskkit.UsageHelp, the SAME predicate run() answers with its usage
+	// screen before Guard, so the two cannot disagree about which invocation is help.
+	if deskkit.UsageHelp(os.Args[1:]) {
+		deskkit.EchoConfigHelpNotice(os.Stderr)
+	} else {
+		deskkit.EchoEffectiveConfig(os.Stderr)
+	}
 	if !deskkit.CheckVerbActivation(os.Stderr) {
 		os.Exit(deskkit.ExitUnverifiable)
 	}
-	os.Exit(run(os.Args[1:]))
+	os.Exit(deskkit.PerfRun("deskpr", perfVerbs, os.Args[1:], run))
 }
 
 func run(args []string) int {
@@ -133,12 +235,9 @@ func run(args []string) int {
 		fmt.Printf("deskpr sourceSHA=%s builtAt=%s releaseTag=%s\n", sha, built, deskkit.ReleaseTagOrDev())
 		return deskkit.ExitOK
 	}
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, usage)
-		if len(args) == 0 {
-			return deskkit.ExitRefused
-		}
-		return deskkit.ExitOK
+		return deskkit.ExitRefused
 	}
 
 	// TIER ONE of the help retrofit (deskkit/helprequest.go). A SUBCOMMAND help request —
@@ -149,7 +248,11 @@ func run(args []string) int {
 	// writes nothing. HelpOnly matches only the unambiguous single-token shape, so a `--help`
 	// that is another flag's VALUE cannot be mistaken for one; every wider spelling falls
 	// through to the subcommand's own parse, where flag.ErrHelp is recognised instead.
-	if deskkit.HelpOnly(args) {
+	//
+	// deskkit.UsageHelp is that form plus a leading `help`, `-h` or `--help` (any arguments after
+	// it). It is the predicate main() picks the echo with, so the echo and this answer cannot
+	// drift apart (medici-finance/assay#3754).
+	if deskkit.UsageHelp(args) {
 		fmt.Fprintln(os.Stderr, usage)
 		return deskkit.ExitOK
 	}
@@ -199,7 +302,9 @@ func run(args []string) int {
 		return deskkit.ExitOK
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		// Through the seam (os.Stderr in production) so a test can read the verb's own
+		// terminal error — the text a house.callout refusal must keep the callout's words out of.
+		fmt.Fprintln(deskprStderr, err.Error())
 	}
 	return deskkit.ExitCodeOf(err)
 }

@@ -42,6 +42,18 @@
 //
 //   - could-not-determine → REFUSE (exit 6). Never "assume latest": a migration
 //     run against a guessed from-version corrupts state rather than failing.
+//     ONE cause has an opt-in way through: a pin file that carries no `assay`
+//     umbrella line (what a stock install writes). Under
+//     `--adopt-umbrella-from-pins` the verb asks deskkit.InferUmbrellaFromPins
+//     for the umbrella. That reader requires every eligible per-artifact line to
+//     pin ONE bare tag T and every pinned sha256 to equal the digest T's
+//     checksums.txt publishes for that asset. Only then is from = T: the
+//     evidence ("N pins verified against <source>") is printed, and the run
+//     continues in dry-run and apply alike, with the re-pin writing the missing
+//     `assay <target>` line. A digest mismatch refuses with exit 5, and every
+//     other failure of that proof refuses with exit 6. Every other
+//     could-not-determine cause refuses with the flag too. Without the flag
+//     nothing changes, except that the no-umbrella-line refusal names the flag.
 //   - known-inconsistent  → REFUSE (exit 5), naming the records that disagree.
 //   - known               → proceed.
 //
@@ -62,24 +74,32 @@
 //
 //	upgrade-assay --root <adopter-repo> [--to vX.Y.Z] [--dry-run] [--releases <dir>]
 //	              [--fetch] [--release-home <owner/repo>]
+//	              [--adopt-umbrella-from-pins]
 //	upgrade-assay --version
 //
 // EXIT CODES — each refusal is a first-class outcome with a distinct code, never
 // generic error text:
 //
 //	0  applied, previewed (dry-run), or an idempotent "already at" no-op
-//	5  refused: the marker's records are known-inconsistent (they disagree)
-//	6  refused: the current umbrella version could not be determined
+//	5  refused: the marker's records are known-inconsistent (they disagree), or
+//	            under --adopt-umbrella-from-pins a pinned sha256 differs from the
+//	            digest the inferred release publishes
+//	6  refused: the current umbrella version could not be determined (under
+//	            --adopt-umbrella-from-pins: the per-artifact pins do not prove one
+//	            umbrella — mixed or legacy tags, an unlisted asset, no eligible
+//	            line, or no loadable checksums.txt for their tag)
 //	7  refused: the target is not a bare umbrella version (a per-artifact tag,
 //	            or a malformed version) — the verb moves the whole umbrella
 //	8  refused: the target names no published umbrella release (unsupported /
 //	            could-not — never a nearest-match guess)
 //	9  refused: the target resolves but its artifacts are unavailable (an older
-//	            release pruned from the cache and no longer fetchable)
+//	            release pruned from the cache and no longer fetchable), or its
+//	            checksums.txt lists no <artifact>-linux-amd64 asset for a bare pin
+//	            line the pin file carries (errBarePinAssetMissing)
 //	10 refused: a local write to .assay-versions failed (a filesystem refusal in
 //	            the adopter's own repo — not an artifacts-availability problem)
 //
-// APPLY ORDER — migrations first, re-pin last. apply() runs the in-span migrations
+// APPLY ORDER — migrations first, optional Cursor placement next, re-pin last. apply() runs the in-span migrations
 // BEFORE advancing the version marker in .assay-versions, and re-pins only once they
 // all succeed. This keeps a mid-migration failure recoverable: the marker stays at
 // `from`, so a re-run re-selects and retries the outstanding migrations (they are
@@ -90,6 +110,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -100,6 +121,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/medici-finance/assay/tools/desk/internal/cursorbundle"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"gopkg.in/yaml.v3"
 )
@@ -124,6 +146,8 @@ const usage = `upgrade-assay — move an adopter to latest-stable or a named umb
 usage:
   upgrade-assay --root <adopter-repo> [--to vX.Y.Z] [--dry-run] [--releases <dir>]
                 [--fetch] [--release-home <owner/repo>]
+                [--harness cursor] [--forge github|gitlab] [--check]
+                [--adopt-umbrella-from-pins]
   upgrade-assay --version
 
 verbs:
@@ -140,6 +164,24 @@ compositions:      <releases>/<vX.Y.Z>.yaml when authored; else DERIVED from the
   A per-artifact tag (e.g. statusgen/v0.13.0) is NOT a target: the verb moves the
   whole umbrella, never one artifact. Bare umbrella versions only.
 
+no umbrella line: .assay-versions with per-artifact lines but no "assay vX.Y.Z"
+                   line (a stock install) is could-not-determine (exit 6).
+  --adopt-umbrella-from-pins  opt in to infer the current umbrella from those
+                   lines: every eligible line (not -source, not "same-tag:
+                   exempt") must pin ONE bare tag T, and every sha256 must equal
+                   the digest T's checksums.txt publishes for that asset (a bare
+                   line: <artifact>-linux-amd64). The evidence is printed; the
+                   re-pin writes the missing "assay <target>" line. A digest
+                   mismatch refuses (5); any other gap refuses (6). Never a guess.
+
+Cursor:           --harness cursor verifies the selected release's bundle digest,
+                   internal version and closed manifest, then previews/applies
+                   managed files. Unrelated Cursor files and AGENTS.md outside
+                   Assay bindings are preserved. Local modifications refuse.
+                   --check is read-only and exits 1 for placement/marker drift.
+                   Legacy releases without a bundle refuse; no floating source
+                   is substituted. Integrity is checked, not build provenance.
+
 exit: 0 ok/dry-run/already-at · 5 inconsistent · 6 undetermined ·
       7 not-a-bare-umbrella · 8 no-such-release · 9 artifacts-unavailable ·
       10 local-write-failed
@@ -154,7 +196,11 @@ unavailable.`
 // per-artifact tag (refused) from an umbrella version (resolvable).
 var bareUmbrella = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	os.Exit(deskkit.PerfRun("upgrade-assay", nil, os.Args[1:], func([]string) int {
+		return run(os.Args[1:], os.Stdout, os.Stderr)
+	}))
+}
 
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("upgrade-assay", flag.ContinueOnError)
@@ -167,6 +213,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		home     = fs.String("release-home", deskkit.DefaultReleaseHome, "release home <owner>/<repo> whose checksums.txt derives a composition")
 		fetch    = fs.Bool("fetch", false, "allow fetching checksums.txt / latest from the release home (default: local files only)")
 		version  = fs.Bool("version", false, "print version and exit")
+		harness  = fs.String("harness", "", "cursor to upgrade generated Cursor placement alongside the selected umbrella")
+		forge    = fs.String("forge", "github", "Cursor bindings transport: github or gitlab")
+		check    = fs.Bool("check", false, "read-only selected-version Cursor placement check; requires --harness cursor")
+		adopt    = fs.Bool("adopt-umbrella-from-pins", false, "when .assay-versions has no `assay` umbrella line, infer it from the per-artifact pins after verifying every digest against that release's checksums.txt")
 	)
 	fs.Usage = func() { fmt.Fprintln(stderr, usage) }
 	if err := fs.Parse(args); err != nil {
@@ -180,6 +230,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 
+	if (*harness != "" && *harness != "cursor") || (*check && *harness != "cursor") || (*check && *dryRun) || (*harness == "cursor" && *forge != "github" && *forge != "gitlab") {
+		fmt.Fprintln(stderr, "upgrade-assay: choose --harness cursor with --forge github|gitlab and at most one of --dry-run or --check")
+		return exitWrongVersionKind
+	}
+
 	relDir := *releases
 	if relDir == "" {
 		relDir = filepath.Join(*root, deskkit.ReleasesDir)
@@ -187,6 +242,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	src := deskkit.CompositionSource{ReleasesDir: relDir, ReleaseHome: *home, Announce: stderr}
 	if *fetch {
 		src.Fetch = fetchFunc
+		src.CursorFetch = cursorFetchFunc
 	}
 
 	// ── 1. Target KIND — checked BEFORE the marker, so a per-artifact tag or a
@@ -260,20 +316,45 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// IS the version marker (the code half of `deskversion`); this drives it,
 	// never a second resolver.
 	marker := deskkit.ReadMarkerFrom(*root, src)
+	from := marker.Umbrella
+	// adopted is true when FROM came from the verified per-artifact pins rather
+	// than an umbrella line, so the re-pin writes the line even when from == target.
+	adopted := false
+	var adoptedComp deskkit.Composition
 	switch marker.State {
 	case deskkit.MarkerCouldNotDetermine:
-		fmt.Fprint(stdout, marker.Report())
-		fmt.Fprintln(stderr, "upgrade-assay: refusing — the current umbrella version could not be determined; not moving anything (no version is guessed).")
-		return exitUndetermined
+		if !*adopt || !marker.NoUmbrellaLine {
+			fmt.Fprint(stdout, marker.Report())
+			fmt.Fprintln(stderr, "upgrade-assay: refusing — the current umbrella version could not be determined; not moving anything (no version is guessed).")
+			switch {
+			case marker.NoUmbrellaLine:
+				fmt.Fprintf(stderr, "upgrade-assay: %s carries no `assay` umbrella line. If its per-artifact lines all pin one bare release, re-run with --adopt-umbrella-from-pins: it adopts that release only after every pinned sha256 matches the release's published checksums.txt, and refuses otherwise.\n", deskkit.AssayVersionsFile)
+			case *adopt:
+				fmt.Fprintln(stderr, "upgrade-assay: --adopt-umbrella-from-pins applies only when the pin file is readable and carries no `assay` umbrella line; this cause is not that one.")
+			}
+			return exitUndetermined
+		}
+		inf, ierr := deskkit.InferUmbrellaFromPins(*root, src)
+		if ierr != nil {
+			fmt.Fprint(stdout, marker.Report())
+			fmt.Fprintf(stderr, "upgrade-assay: refusing — --adopt-umbrella-from-pins could not prove one umbrella from the pins: %v; not moving anything (no version is guessed).\n", ierr)
+			return deskkit.ExitCodeOf(ierr) // 5 on a digest mismatch, 6 otherwise
+		}
+		fmt.Fprint(stdout, inf.Evidence())
+		from, adopted, adoptedComp = inf.Umbrella, true, inf.Composition
 	case deskkit.MarkerInconsistent:
 		fmt.Fprint(stdout, marker.Report())
 		fmt.Fprintln(stderr, "upgrade-assay: refusing — the adopter's records are inconsistent (named above); resolve the disagreement before upgrading.")
 		return exitInconsistent
+	default:
+		if *adopt {
+			fmt.Fprintf(stderr, "upgrade-assay: note — --adopt-umbrella-from-pins has no effect: %s already carries the umbrella line (%s).\n", deskkit.AssayVersionsFile, from)
+		}
 	}
-	from := marker.Umbrella
 
-	// ── 5. Idempotent no-op: already at the target.
-	if from == target {
+	// ── 5. Idempotent no-op: already at the target. An adopted umbrella is never a
+	// no-op: the umbrella line is still missing, and the re-pin writes it.
+	if from == target && *harness != "cursor" && !adopted {
 		fmt.Fprintf(stdout, "upgrade-assay: already at %s — nothing to do (no migrations re-run, nothing re-pinned).\n", target)
 		return exitOK
 	}
@@ -281,7 +362,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Load the two compositions (both are published; the marker already proved the
 	// `from` composition readable). deskkit.CompositionSource is the shared reader —
 	// the authoritative artifact/tag list, not a reimplementation.
-	fromComp, found, err := src.Load(from)
+	fromComp, found, err := adoptedComp, true, error(nil)
+	if !adopted { // an adopted umbrella's composition is already loaded (and verified)
+		fromComp, found, err = src.Load(from)
+	}
 	if err != nil || !found {
 		fmt.Fprintf(stderr, "upgrade-assay: refusing — cannot read the current composition for %s: %v\n", from, err)
 		return exitUndetermined
@@ -293,6 +377,45 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if toComp.Origin != "" {
 		fmt.Fprintf(stdout, "target composition derived from %s\n", toComp.Origin)
+	}
+
+	var cursorPlan *cursorbundle.Plan
+	if *harness == "cursor" {
+		if toComp.Umbrella != target {
+			fmt.Fprintln(stderr, "upgrade-assay: selected Cursor composition version mismatch")
+			return exitArtifactsGone
+		}
+		bundle, cleanup, err := cursorbundle.Acquire(src, toComp)
+		if err != nil {
+			fmt.Fprintln(stderr, "upgrade-assay: refusing Cursor upgrade:", err)
+			return exitArtifactsGone
+		}
+		defer cleanup()
+		opts := cursorbundle.Options{BundleDir: bundle, RepoRoot: *root, Forge: *forge}
+		if *check {
+			findings, err := cursorbundle.Check(opts)
+			if err != nil {
+				fmt.Fprintln(stderr, "upgrade-assay: could-not-check Cursor placement:", err)
+				return exitArtifactsGone
+			}
+			for _, finding := range findings {
+				fmt.Fprintln(stdout, finding)
+			}
+			if from != target {
+				fmt.Fprintf(stdout, "umbrella marker differs: %s, selected %s\n", from, target)
+			}
+			if len(findings) > 0 || from != target {
+				return 1
+			}
+			fmt.Fprintf(stdout, "Cursor placement and umbrella marker match %s (integrity verified; provenance not asserted)\n", target)
+			return exitOK
+		}
+		cursorPlan, err = cursorbundle.Prepare(opts)
+		if err != nil {
+			fmt.Fprintln(stderr, "upgrade-assay: refusing Cursor update before migration:", err)
+			return exitArtifactsGone
+		}
+		fmt.Fprintf(stdout, "Cursor bundle %s: published SHA-256, internal version and closed manifest verified (integrity, not provenance)\n", target)
 	}
 
 	// Direction: forward (from < target) runs migrations; a move to an OLDER umbrella
@@ -316,18 +439,35 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if *dryRun {
-		return dryRunReport(stdout, *root, from, target, forward, deltas, selected)
+	// Compute the re-pin up front (writing nothing) so a target whose checksums.txt
+	// cannot digest a bare CI-facing line refuses BEFORE any migration runs — in a
+	// dry-run and an apply alike — rather than after the migrations have committed.
+	// The probe passes io.Discard: apply's real re-pin prints the carry-forward warnings
+	// once, and a dry-run (which writes nothing) prints none.
+	if _, _, err := repinContent(*root, relDir, target, toComp, io.Discard); errors.Is(err, errBarePinAssetMissing) {
+		fmt.Fprintf(stderr, "upgrade-assay: refusing — %v; nothing was migrated or re-pinned.\n", err)
+		return exitArtifactsGone
 	}
-	return apply(stdout, stderr, *root, relDir, from, target, forward, deltas, selected, toComp)
+
+	if *dryRun {
+		if cursorPlan != nil {
+			cursorPlan.Report(stdout)
+		}
+		code := dryRunReport(stdout, *root, from, target, forward, deltas, selected, cursorPlan != nil)
+		if adopted && code == exitOK {
+			fmt.Fprintf(stdout, "would add the umbrella line `%s %s` to %s (it has none today).\n", deskkit.UmbrellaArtifact, target, deskkit.AssayVersionsFile)
+		}
+		return code
+	}
+	return apply(stdout, stderr, *root, relDir, from, target, forward, deltas, selected, toComp, cursorPlan)
 }
 
 // dryRunReport prints exactly what an apply would do and writes NOTHING. The literal
 // tokens "would run" and "release note" appear here so an adopter previews both the
 // migrations and the notes for the span before consenting.
-func dryRunReport(stdout io.Writer, root, from, target string, forward bool, deltas []delta, selected []deskkit.Migration) int {
+func dryRunReport(stdout io.Writer, root, from, target string, forward bool, deltas []delta, selected []deskkit.Migration, cursor bool) int {
 	fmt.Fprintf(stdout, "upgrade-assay: DRY-RUN — would move umbrella %s -> %s (writing nothing).\n", from, target)
-	if !forward {
+	if !forward && from != target {
 		fmt.Fprintf(stdout, "note: %s is BELOW the current %s — this would re-point and re-resolve, which is NOT a rollback; forward migrations are not reversed.\n", target, from)
 	}
 	printDeltas(stdout, deltas)
@@ -346,7 +486,9 @@ func dryRunReport(stdout io.Writer, root, from, target string, forward bool, del
 	}
 
 	printReleaseNotes(stdout, from, target, selected)
-	printReresolve(stdout, target)
+	if !cursor {
+		printReresolve(stdout, target)
+	}
 	return exitOK
 }
 
@@ -362,9 +504,9 @@ func dryRunReport(stdout io.Writer, root, from, target string, forward bool, del
 // read `from == target` and take the "already at … nothing to do" no-op, stranding
 // the half-done migration permanently. That is the "corrupts state rather than
 // failing" outcome this command exists to avoid.
-func apply(stdout, stderr io.Writer, root, relDir, from, target string, forward bool, deltas []delta, selected []deskkit.Migration, toComp deskkit.Composition) int {
+func apply(stdout, stderr io.Writer, root, relDir, from, target string, forward bool, deltas []delta, selected []deskkit.Migration, toComp deskkit.Composition, cursorPlan *cursorbundle.Plan) int {
 	fmt.Fprintf(stdout, "upgrade-assay: moving umbrella %s -> %s.\n", from, target)
-	if !forward {
+	if !forward && from != target {
 		fmt.Fprintf(stdout, "note: %s is BELOW the current %s — re-pointing and re-resolving, which is NOT a rollback; forward migrations are not reversed.\n", target, from)
 	}
 	printDeltas(stdout, deltas)
@@ -386,16 +528,25 @@ func apply(stdout, stderr io.Writer, root, relDir, from, target string, forward 
 		}
 	}
 
+	if cursorPlan != nil {
+		if err := cursorPlan.Apply(stdout); err != nil {
+			fmt.Fprintf(stderr, "upgrade-assay: Cursor placement failed; umbrella marker remains %s: %v\n", from, err)
+			return exitLocalWriteFailed
+		}
+	}
+
 	// ── Re-pin LAST — advance the version marker only now that the migrations have
 	// all committed.
-	if err := repin(root, relDir, target, toComp); err != nil {
+	if err := repin(root, relDir, target, toComp, stderr); err != nil {
 		fmt.Fprintf(stderr, "upgrade-assay: refusing — the migrations applied but the local write to %s failed: %v\n", deskkit.AssayVersionsFile, err)
 		return exitLocalWriteFailed
 	}
 	fmt.Fprintf(stdout, "re-pinned %s to umbrella %s and its artifact tags.\n", deskkit.AssayVersionsFile, target)
 
 	printReleaseNotes(stdout, from, target, selected)
-	printReresolve(stdout, target)
+	if cursorPlan == nil {
+		printReresolve(stdout, target)
+	}
 	return exitOK
 }
 
@@ -490,6 +641,7 @@ func discoverPublished(src deskkit.CompositionSource) (map[string]bool, error) {
 // fetchFunc is the release-home fetcher; a package variable so tests swap in an
 // offline fake and the binary never needs the network under test.
 var fetchFunc deskkit.Fetcher = deskkit.HTTPFetch
+var cursorFetchFunc deskkit.Fetcher = deskkit.HTTPFetchCursorBundle
 
 func latestOf(published map[string]bool) (string, bool) {
 	var best string
@@ -545,6 +697,20 @@ func cmpSemver(a, b [3]int) int {
 
 // ── re-pin ──────────────────────────────────────────────────────────────────────
 
+// ciPinPlatform is the platform a BARE pin line (`statusgen <tag> <sha256>`, no
+// platform suffix) is the digest of. The bare line is the CI-facing pin: CI's
+// download-and-verify step checks it against the linux-amd64 asset (the adopter
+// scaffold marks it `# linux-amd64 (CI-built)`), so its digest is always that asset's,
+// whatever host the verb happens to run on.
+const ciPinPlatform = "linux-amd64"
+
+// errBarePinAssetMissing is the named refusal for a derived composition whose
+// checksums.txt lists no `<component>-linux-amd64` asset for a component the pin
+// file carries a bare line for. The bare line is never filled from another
+// platform's digest — a wrong digest there turns CI red (or, worse, verifies the
+// wrong binary), so the verb refuses before it writes anything.
+var errBarePinAssetMissing = errors.New("checksums.txt lists no linux-amd64 asset for a bare (CI-facing) pin line")
+
 // repin rewrites <root>/.assay-versions so the umbrella line names target and each
 // artifact line the target composition names carries the target's tag. A line is
 // matched to a composition component through deskkit.ComponentOf, so a per-platform
@@ -554,16 +720,34 @@ func cmpSemver(a, b [3]int) int {
 // The digest (field 3) is sourced, in order: a DERIVED composition's per-asset
 // sha256 for that exact pin-line name (the value checksums.txt publishes for that
 // asset — the only correct digest for a platform line, since each platform's asset
-// hashes differently); for a bare line, a hand-authored manifest's per-component
-// `sha256:` field, else the derived digest of THIS host's platform asset; and when
-// none of those names a digest, the adopter's existing digest is carried forward
-// with a warning (the tool never fabricates a digest silently). Comments, blank
-// lines and lines the composition does not name are preserved verbatim.
-func repin(root, relDir, target string, toComp deskkit.Composition) error {
+// hashes differently). A BARE line is the CI-facing pin, so under a derived
+// composition it takes the `<component>-linux-amd64` asset's digest, selected by
+// NAME — never by position in checksums.txt and never by this host's platform — and
+// a checksums.txt without that asset is the errBarePinAssetMissing refusal. Under a
+// hand-authored manifest a bare line takes the manifest's per-component `sha256:`.
+// When none of those names a digest, the adopter's existing digest is carried
+// forward with a warning (the tool never fabricates a digest silently). Comments,
+// blank lines and lines the composition does not name are preserved verbatim, and a
+// rewritten line keeps its trailing `# …` comment. A file with no umbrella line (an
+// adopted umbrella, --adopt-umbrella-from-pins) gains `assay <target>` before its
+// first data line.
+func repin(root, relDir, target string, toComp deskkit.Composition, warn io.Writer) error {
+	path, out, err := repinContent(root, relDir, target, toComp, warn)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0o644)
+}
+
+// repinContent computes the re-pinned .assay-versions WITHOUT writing it, so the
+// caller can surface a refusal (errBarePinAssetMissing) before any migration runs.
+// Carry-forward warnings go to warn; the up-front probe passes io.Discard so each
+// warning is printed once, by the real re-pin.
+func repinContent(root, relDir, target string, toComp deskkit.Composition, warn io.Writer) (string, []byte, error) {
 	path := filepath.Join(root, deskkit.AssayVersionsFile)
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return path, nil, err
 	}
 	shas, _ := readShas(relDir, target) // best-effort; empty on any read/parse miss
 
@@ -576,18 +760,25 @@ func repin(root, relDir, target string, toComp deskkit.Composition) error {
 	}
 
 	lines := strings.Split(string(raw), "\n")
+	umbrellaSeen := false
+	firstData := -1 // index of the first data line: where a missing umbrella line goes
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		fields := strings.Fields(trimmed)
+		data, comment := splitTrailingComment(trimmed)
+		fields := strings.Fields(data)
 		if len(fields) == 0 {
 			continue
 		}
+		if firstData < 0 {
+			firstData = i
+		}
 		name := fields[0]
 		if name == deskkit.UmbrellaArtifact {
-			lines[i] = deskkit.UmbrellaArtifact + " " + target
+			lines[i] = deskkit.UmbrellaArtifact + " " + target + comment
+			umbrellaSeen = true
 			continue
 		}
 		if strings.HasSuffix(name, "-source") {
@@ -602,37 +793,71 @@ func repin(root, relDir, target string, toComp deskkit.Composition) error {
 		if len(fields) >= 3 {
 			sha = fields[2]
 		}
-		if s := digestFor(name, component, toComp, shas); s != "" {
+		s, derr := digestFor(name, component, toComp, shas)
+		if derr != nil {
+			return path, nil, derr
+		}
+		if s != "" {
 			sha = s
 		} else {
-			fmt.Fprintf(os.Stderr, "upgrade-assay: warning — target composition names no sha256 for %s; carrying the existing digest forward (refresh it from the release home's published sha256).\n", name)
+			fmt.Fprintf(warn, "upgrade-assay: warning — target composition names no sha256 for %s; carrying the existing digest forward (refresh it from the release home's published sha256).\n", name)
 		}
-		lines[i] = fmt.Sprintf("%s %s %s", name, newTag, sha)
+		lines[i] = fmt.Sprintf("%s %s %s", name, newTag, sha) + comment
 	}
-	out := strings.Join(lines, "\n")
-	return os.WriteFile(path, []byte(out), 0o644)
+	if !umbrellaSeen {
+		// No umbrella line (the --adopt-umbrella-from-pins path): write one, in the
+		// conventional place — after the header comments, before the first artifact
+		// line — or at the end of a file with no data line.
+		umbrella := deskkit.UmbrellaArtifact + " " + target
+		at := firstData
+		if at < 0 {
+			at = len(lines)
+			if at > 0 && lines[at-1] == "" {
+				at-- // keep the file's trailing newline last
+			}
+		}
+		lines = append(lines[:at], append([]string{umbrella}, lines[at:]...)...)
+	}
+	return path, []byte(strings.Join(lines, "\n")), nil
+}
+
+// splitTrailingComment splits a pin line into its data part and its trailing
+// `# …` comment. The comment is returned WITH the whitespace that separated it
+// from the data, so a rewritten line keeps the adopter's spacing; a line with no
+// comment returns ("line", ""). A `#` counts only at the start of a whitespace-
+// separated field — a `#` inside a field is data, not a comment.
+func splitTrailingComment(line string) (data, comment string) {
+	for i := 0; i < len(line); i++ {
+		if line[i] != '#' || (i > 0 && line[i-1] != ' ' && line[i-1] != '\t') {
+			continue
+		}
+		j := i
+		for j > 0 && (line[j-1] == ' ' || line[j-1] == '\t') {
+			j--
+		}
+		return line[:j], line[j:]
+	}
+	return line, ""
 }
 
 // digestFor picks the digest a re-pinned line carries (see repin for the order).
 // A per-platform line takes ONLY its own asset's derived digest — a component-level
 // `sha256:` from a hand-authored manifest is some one platform's digest and would be
-// wrong for every other platform's line.
-func digestFor(name, component string, toComp deskkit.Composition, manifestShas map[string]string) string {
-	if s := toComp.AssetSHA256[name]; s != "" {
-		return s
-	}
+// wrong for every other platform's line. A bare line under a derived composition
+// takes ONLY the `<component>-linux-amd64` asset's digest, by name; its absence is
+// errBarePinAssetMissing, never a fall-back to another platform's digest.
+func digestFor(name, component string, toComp deskkit.Composition, manifestShas map[string]string) (string, error) {
 	if name != component {
-		return "" // a platform line with no per-asset digest: carry forward
+		return toComp.AssetSHA256[name], nil // a platform line: its own asset, or carry forward
 	}
-	if s := manifestShas[component]; s != "" {
-		return s
-	}
-	for _, host := range deskkit.HostPlatformAssets(component) {
-		if s := toComp.AssetSHA256[host]; s != "" {
-			return s
+	if toComp.Derived {
+		ciAsset := component + "-" + ciPinPlatform
+		if s := toComp.AssetSHA256[ciAsset]; s != "" {
+			return s, nil
 		}
+		return "", fmt.Errorf("%w: the bare `%s` line needs %s, which the %s checksums.txt does not list", errBarePinAssetMissing, component, ciAsset, toComp.Umbrella)
 	}
-	return ""
+	return manifestShas[component], nil
 }
 
 // compForShas is a supplementary read of the composition manifest for its per-artifact

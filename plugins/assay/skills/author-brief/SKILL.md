@@ -42,6 +42,16 @@ the repo — don't invent a new format.** If a project-level `author-brief` skil
 repo (`.claude/skills/author-brief/SKILL.md`), read it after this skill and apply its specifics —
 paths, docs-regen commands, and local examples layer on top of this methodology.
 
+## Bind implementation pickup to current context
+
+Read the [implementation pickup procedure](../../references/implementation-pickup.md).
+Specs and briefs identify the selected target/transition, semantic contracts and
+applicable project engineering guidelines by canonical pointer. Include their
+pickup/resume assessment in the implementation handoff; record revisions, coverage
+and continue/adapt/hold rather than assume the authoring snapshot is still current.
+Use the explicit manual bootstrap until the shared operation is shipped and supported.
+Do not rewrite completed Evidence or let a draft proposal veto approved work.
+
 ## The most important judgment call: find the REAL head of the critical path
 
 The critical path is the chain that, if it slips, slips everything. The recurring failure is putting
@@ -51,6 +61,24 @@ upstream bug — tracked elsewhere — was fixed; that bug was the true head and
 Before you finalize the order: for each "smallest unblocking move," **verify it actually works** —
 check the code/config/bug tracker, don't assume. If a proposed first step depends on something
 unproven, that something is the real head. Say so explicitly.
+
+## Carry quality obligations into execution
+
+Carry applicable quality attributes and cost-model obligations from the controlling spec
+into the brief's existing Context, Task, DoD and Verify fields. Name the affected path or
+quality scenario, operating conditions, acceptance target or unresolved decision, behaviour
+to preserve, and evidence owner and method. For performance, retain workload and budget. Cite the source; do not silently invent or relax
+budgets. If the source omits a consequential constraint, surface the gap before committing
+work that depends on it. Keep unrelated briefs free of boilerplate quality checklists.
+
+Where algorithm or data structure choice is consequential, state what needs comparison and
+why. An unresolved choice that could invalidate downstream work needs a bounded spike ahead
+of that work, with a decision criterion and explicit dependencies. Verification should cover
+applicable resource budgets and scaling as well as functional equivalence; a faster result
+that skips required behaviour does not pass. Reuse the spec's workload and measurement
+conditions so that the evidence answers the original requirement. Keep cross-cutting
+obligations traceable to the briefs that implement them and the brief that verifies the
+end-to-end result; passing isolated component checks is insufficient for a system target.
 
 ## Brief structure (one file per unit of work)
 
@@ -99,6 +127,11 @@ effort: S | M | L                   # closed scale — L is the CEILING (rule 12
 gate: model | human                # from the four risk questions below
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []                         # GH issue numbers this brief closes
+regression-of: <issue ref or sha>  # OPTIONAL — fix/bug briefs only (rule 14): the PRIOR fix this
+                                    # defect re-opens — its issue reference or its commit sha.
+                                    # Omit when no earlier fix exists (a first occurrence); never
+                                    # invent one to fill the field. No lint reads it yet: the key
+                                    # is tolerated as an unrecognised frontmatter key, not validated.
 schema: brief-v2                    # required in a v2 tree;
                                     # --lint PROBLEMs a tree of v2 briefs missing it. Reserved,
                                     # OPTIONAL keys parsed under brief-v2 (shape-validated only,
@@ -127,7 +160,7 @@ decision-trigger: creation | start | spec   # OPTIONAL, gate: human only (absent
                                     # well-formed after the pickup-time design/plan step — the executor
                                     # authors `## Human decision` from that step, and THAT files it.
 exec-tier: any | strong             # OPTIONAL (absent = any) — minimum execution-model tier.
-                                    # DERIVED from three complexity questions (see rule 9); any yes → strong.
+                                    # DERIVED from four complexity questions (see rule 9); any yes → strong.
 exec-tier-why: <one line>           # Recommended when exec-tier: strong — which question(s) it answered yes.
 domain: clear | complicated | complex | chaotic   # OPTIONAL (absent = complicated) — the work's Cynefin
                                     # domain. Governs which diagnostic to reach for: Ordered
@@ -168,14 +201,15 @@ layering: <REQUIRED for a new component/service/tool or a substantial boundary c
 (domain extraction/dissolution, added adapter/entrypoint, logic crossing a process or
 trust boundary); omit otherwise. One or two lines: simplest justified structure +
 meaningful rules vs external effects (or why no extraction is warranted) + current
-reason + Task/Verify references. Defaults: domain-core for independently meaningful
-rules, flat tool for bounded orchestration; justified alternatives allowed. Adapter
-count triggers reconsideration, not mandatory extraction. Interfaces need a current
-purpose, not a second implementation. Dependency provenance does not establish purity:
-keep infrastructure and implicit effects outside a pure core. In Task/Verify, name and
-check the actual boundary and the checks' limits; test core rules without external
-services. A flat tool verifies behavior/failure paths without inventing a boundary.
-See brief-v1 §4.1; do not justify abstractions only by hypothetical future needs.>
+reason + Task/Verify references. Defaults (domain-core / flat tool), contract placement,
+interface/purity rules, boundary checks and existing-brief amendment policy: brief-v1 §4.1.>
+design-fit:                  # REQUIRED on every NEW brief; its two rules: brief-v1 §4.1
+  owner: <the one module that owns the meaning this brief touches, or n/a>
+  contract: <S-<slug> row id of the semantic-owner index, or none — <why>>
+  retires: [<mechanism/refusal/flag/test this brief removes>, ...]   # [] is an answer
+  weight: <signed delta per dimension: verbs, flags, refusals, rule-text lines>
+  why-add: <required when any delta > 0: why it cannot live in the owner, and what
+           removal was considered instead; n/a otherwise>
 
 ## Human decision
 <!-- gate: human only — omit the section entirely otherwise. Lifted VERBATIM into the
@@ -258,7 +292,7 @@ questions is `yes`, `gate` must be `human`; only when all four are `no` may `gat
    title, `needs-decision` label, composed body, and a hidden `<!-- needs-decision: <stream>/<NN> -->`
    marker that dedupes, so a brief that ever had one never gets a second — and the
    `<decision-issue filer>` your repo's instructions file names is what actually files it. (Same shape
-   as `human:<name>`: a capability the adopting repo binds, because filing is tracker-specific.)
+   as `human:<name>`: a capability the adopting repo binds, because filing depends on the tracker.)
    Record the resulting number back in the brief's `decision-issue:` frontmatter field; `statusgen
    --lint` NOTICEs a gate:human brief in flight without one. WHEN it files is a per-brief judgement
    you record as `decision-trigger:` (see the template): ask *"could the reader pick an option from
@@ -352,13 +386,15 @@ questions is `yes`, `gate` must be `human`; only when all four are `no` may `gat
    check is light; the waste it prevents (re-writing a fix that already landed, claiming a vuln
    closed that was never open) is heavy.
 9. **exec-tier: complexity signals a minimum execution-model tier.** `exec-tier` is DERIVED,
-   not chosen (mirror of the gate/risk rule). The author answers three complexity questions;
+   not chosen (mirror of the gate/risk rule). The author answers four complexity questions;
    any yes → `exec-tier: strong` (absent/any-no → `any`, the default):
    (a) Does the Task require design decisions the facts do not fully pre-specify?
    (b) Does correctness depend on cross-component/cross-artifact reasoning (shared values,
        end-to-end flows, sweeping a pattern across sites)?
    (c) Is it code where a subtle implementation error survives the brief's own tests (auth,
        funds, concurrency, safety plumbing)?
+   (d) Is this a design brief raised by an error-class trigger? (A recurring defect class, not
+       one symptom, has accrued enough counted instances or merged fixes to be owed a design.)
    `strong` SHOULD carry a one-line `exec-tier-why` naming which question(s). `statusgen --lint`
    PROBLEMs an unrecognized value, NOTICEs a missing `exec-tier-why`. **Honest limitation:**
    statusgen never verifies which model actually ran — pickup-side compliance is honor-system
@@ -409,14 +445,9 @@ questions is `yes`, `gate` must be `human`; only when all four are `no` may `gat
     command TEXT and are enforced by `statusgen --lint`; this one needs to know what the deliverable
     claims, so no lint enforces it. A row can pass every one of them and still measure only presence.
 
-    Triggering evidence (anonymized): a brief delivering a third-party-app setup guide shipped an
-    8-row Verify table, every row a grep-presence count — all 8 passed, and the guide was factually
-    wrong in four places, one load-bearing (it asserted a platform enforcement property that does not
-    exist). The sibling failure mode: a market-analysis brief whose citation links were present but
-    never resolved, carrying an invented competitor name. A proposed link-resolution lint would be a
-    partial, automated instance of *this* rule — it covers link-shaped dereferencing only; a
-    command-output check or a live-ID check dereferences just as validly and isn't a link at all.
-    Don't wait for such a lint to exist before writing the row this rule asks for.
+    The triggering evidence (an all-presence table that passed 8/8 on a factually wrong guide) and
+    why a link-resolution lint would cover only link-shaped dereferencing are in the brief-rules
+    reference, rule 43. Don't wait for such a lint to exist before writing the row this rule asks for.
 12. **Sizing limits — L is the hard ceiling; prefer M for strong-tier / risk-gated work.** The
     `effort:` scale is closed at S | M | L, and the top of it is a rule, not a convention: **no
     brief may be larger than L. A unit of work that would be XL (or bigger) MUST be split into
@@ -456,6 +487,51 @@ questions is `yes`, `gate` must be `human`; only when all four are `no` may `gat
     is deliberately minimal — the authoritative per-obligation enforcement state is generated, not
     hand-copied here (a hand-written status becomes the next stale second copy).
 
+14. **A fix/bug brief closes the defect CLASS, not the one instance.** A defect repaired at one
+    site comes back at another when the fix closed the instance and left the class open: a second
+    caller reaches the same hazardous primitive by a different path, a test stub hides it, and the
+    regression reads as a new bug. So a brief whose Task fixes a defect carries two things beyond
+    the ordinary template:
+    - **`regression-of:`** in the frontmatter, when an earlier fix for the same defect exists —
+      that fix's issue reference or commit sha. It records that the class has escaped once
+      already, and it points the reviewer at the guard that failed to hold. Omit it for a first
+      occurrence; never invent a value to fill it. Run the freshness check (rule 8) over the
+      earlier fix's site as well as the new one.
+    - **A MANDATORY class-guard Verify row.** Name the class in `## Context` `facts:` — the shape
+      every instance shares, not the one line that failed — and add a row whose check covers EVERY
+      site the defect can recur at, not only the reported one. The model is an allow-list
+      structural test: enumerate every caller of the hazardous primitive (`exampleRawToken()`) and
+      fail on any caller outside a short committed allow-list (`exampleSafeToken()`). A lint rule, a
+      type that makes the hazardous call unrepresentable, or a single choke point serves equally. A
+      test of the reported instance may sit beside it; it never replaces it.
+    - **The class-guard row is FAIL-FIRST.** Before the fix lands, the implementer plants a
+      deliberate SECOND instance of the defect at a site the fix does not touch and shows the row
+      RED on it; the Evidence records that red run, naming the planted site, beside the green one.
+      A guard shown red only against the reported instance proves it sees that instance, which the
+      instance test already did. Where the guard's matcher could silently stop matching, keep the
+      plant as a committed positive-control fixture the guard must flag, so the red stays
+      re-runnable after merge. Tag the row `+mutation` in its `Class` cell (rule 13) — breaking
+      the guarded property and proving the guard reddens is exactly that obligation.
+
+    Worked example (neutral names) — the frontmatter line and the two class-guard rows:
+
+    ```markdown
+    regression-of: <the earlier fix's issue reference or commit sha>
+
+    | # | Command | Expect | Class |
+    |---|---------|--------|-------|
+    | 2 | `go test ./examplepkg/ -run 'TestExampleRawTokenAllowList$' -count=1` | exit 0 — every caller of `exampleRawToken()` in the tree is on the allow-list | check:ci +mutation |
+    | 3 | `go test ./examplepkg/ -run 'TestExampleRawTokenAllowListFlagsPlant$' -count=1` | exit 0 — the guard, run over `testdata/example-plant/` (one planted caller outside the allow-list), reports that caller | check:ci +mutation |
+    ```
+
+    Row 3 is the positive control that keeps the fail-first re-runnable; the pre-fix red run with a
+    planted second caller in the real tree goes in the Evidence. **Enforcement status:** no lint
+    enforces this rule yet — `regression-of:` is tolerated as an unrecognised frontmatter key rather
+    than validated, and whether a class-guard row is present and truly covers the class is the
+    reviewer's call. A defect with no mechanically checkable shape (a one-off logic error nothing
+    else can repeat) states that in `## Context`, with the reason, in place of the row; the reviewer
+    weighs it, and it is not available for a defect that has already reached a second site.
+
 Keep a brief self-contained: if executing it requires knowledge from another brief, either link it
 under "Read first" / `facts:` or state the dependency in `depends:` — never assume the reader has the
 whole plan in context.
@@ -475,7 +551,11 @@ it is an authoring convention only.
 
 | rule | what it checks | status |
 | --- | --- | --- |
-| `bre-alternation` | a pipe in a basic-regex grep pattern (no `-E`/`-P`) is an ordinary character, so the pattern matches the Verify row itself | advisory |
+| `bre-alternation` | a pipe in a basic-regex grep pattern (no `-E`/`-P`) is an ordinary character, so the pattern matches the Verify row itself — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `cmd-marker-ambiguous` | a Command cell carrying more than one `cmd:`-marked code span, so which command the row names is ambiguous | advisory |
+| `cmd-marker-not-honoured` | a `cmd:` span verifyrun ignores because the rendered cell may not show it as code (backslash-escaped backticks; raw HTML, a link, an image, a dollar in any spelling or a character reference in the cell's prose; a span fused to the text before it; or a marker not set apart by whitespace), so the row runs its first span | advisory |
+| `cmd-marker-overrides-command` | a `cmd:` marker that replaces a first code span which reads as a command itself (multi-word), so the row runs something other than the span a reader sees first | advisory |
+| `cmd-marker-vacuous` | a `cmd:`-marked command that cannot fail (`true`, `:`, `exit 0`, a lone `echo`), so the row passes whatever the tree holds | advisory |
 | `consumers-flow-verify-row` | that a shared-value brief's Verify table carries at least one row exercising the cross-component flow end-to-end — a judgement call no lint decides | not enforced |
 | `consumers-followup-missing-brief` | a `consumers: follow-up <stream>/<NN>` whose target is not a brief in any stream README — the routing claim is false | fatal |
 | `consumers-followup-no-target` | a `follow-up` routing that names no `<stream>/<NN>` target — a deferral with no holder | advisory |
@@ -486,22 +566,42 @@ it is an authoring convention only.
 | `consumers-prose` | a `consumers:` written as a prose paragraph rather than a routed list, so nothing can corroborate it | advisory |
 | `consumers-unrouted` | a `consumers:` entry that names no routing token (`fixed-here` / `follow-up` / `out-of-scope`) | advisory |
 | `eligibility-could-not-check` | a gates: edge (or unsatisfied depends:) the eligibility evaluator could not resolve offline — an unregistered/unpublished alias, an absent sibling checkout, or a forge-backed target — which HOLDS the brief out of Next-up | advisory |
-| `ere-literal-pipe` | a `\|` inside a `grep -E` pattern is a literal pipe, not alternation, so the row matches almost nothing and passes blind | advisory |
-| `gnu-only` | a GNU-only shell construct that fails on the BSD/macOS userland a reviewer may run the row on | advisory |
-| `gorun-exit` | a `go run` in the Command cell flattens the program's exit code, so a non-zero result reads as success | advisory |
-| `grep-zero-count` | a `grep -c` whose pass bar is satisfied by a zero count measures nothing | advisory |
-| `moving-ref` | a diff base pinned to a moving ref (a branch name, not a SHA) makes the row's result drift under it | advisory |
+| `ere-literal-pipe` | a `\|` inside a `grep -E` pattern is a literal pipe, not alternation, so the row matches almost nothing and passes blind — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `fail-first-closure` | a risk-bearing Verify row of a closure this branch makes (verified/done, and not so at the merge-base) has no current fail-first witness, is unproven or non-discriminating, was run for an earlier command, or names a base that is not the merge-base or an ancestor of it that already holds the brief at its current path (only the merge-base itself when the brief was created or renamed on the branch) (docs/verify-row-strength.md) | fatal |
+| `gnu-only` | a GNU-only shell construct that fails on the BSD/macOS userland a reviewer may run the row on — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `gorun-exit` | a `go run` in the Command cell flattens the program's exit code, so a non-zero result reads as success — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `gotest-run-vacuous` | a `go test -run` selector with no `--- PASS` assertion in the same command, so the row passes whether or not the named test exists, is built, or was ever renamed away (open briefs only; a closed brief's rows are summarised, not individually flagged) | advisory |
+| `grep-pipe-zero-count` | a grep feeding a later pipeline stage under a zero-count Expect fails on its own success path under pipefail (grep exits 1 on no match), and passes on exit status alone when a match is present | advisory |
+| `grep-zero-count` | a `grep -c` whose pass bar is satisfied by a zero count measures nothing — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `moving-ref` | a diff base pinned to a moving ref (a branch name, not a SHA) makes the row's result drift under it — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `no-output-assertion` | an Expect of exactly `exit 0` on a command whose output nobody asserts on (use `exit 0; output contains "<literal>"` or `exit 0; <N> lines`) | advisory |
 | `pattern-effect-exceeds-role` | a pattern node whose declared effect kind is not permitted for its role, per the role-to-effect-kind table in spec/workflow-pattern-v1.md §7 — a generated instance would carry a permission its role does not hold | fatal |
 | `pattern-effect-target-not-owned` | a non-effect-kind pattern node declares an effect whose target is not among its own outputs — a node claiming a consequence outside its own declared output boundary | fatal |
 | `pattern-join-not-check` | a pattern's `join` names a node whose kind is not `check` — the pattern has no independent integration check | fatal |
 | `pattern-review-same-role` | a pattern node whose evidence includes a review claim but shares its role with the node that produced its input — the implementer<->reviewer separation is not machine-checked | fatal |
 | `pattern-risk-input-missing-verdict` | a pattern's `risk-input` omits one of the four risk-class verdicts (low/standard/elevated/human) — an instance of that risk class has no declared mandatory gates | fatal |
-| `pipeline-exit-sunk` | a shell pipeline whose real exit status is sunk by a later stage, so the row cannot fail | advisory |
-| `rE2-literal-pipe` | a `\|` inside a `go test -run`/`-bench` selector is a literal pipe in RE2, not alternation | advisory |
-| `shredded-cell` | a raw `|` in the Command cell is read as a table delimiter, truncating the command and shifting every later column | advisory |
+| `pipeline-exit-sunk` | a shell pipeline whose real exit status is sunk by a later stage, so the row cannot fail — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `prose-led-command` | a prose Command cell whose first code span — the text the lift returns — is a mention (a file, a path, an `owner/repo`, a code identifier, a word ahead of the real command), not a command; verifyrun records the row could-not-run until the command is marked with a `cmd:` code span | advisory |
+| `rE2-literal-pipe` | a `\|` inside a `go test -run`/`-bench` selector is a literal pipe in RE2, not alternation — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `runtime-resource-claim-without-principal` | a runtime resource claim (or a release of a claimed resource) not authorized by a human or organization principal, or ownership no succeeded claim backs | fatal |
+| `runtime-resource-credential-not-rotated` | a runtime resource claim with no recorded rotation of the agent credential, or a release with no recorded revocation | fatal |
+| `runtime-resource-credential-outlives-ttl` | a runtime resource whose agent credential lifetime exceeds the resource's ttl | fatal |
+| `runtime-resource-expired` | an unclaimed runtime resource past its ttl, or a claimed one past its retention, still recorded as live | fatal |
+| `runtime-resource-receipt-missing` | a runtime resource effect recorded succeeded with no adapter receipt | fatal |
+| `runtime-resource-schema-violation` | a runtime resource record that breaks runtime-resource-v1's shape, repeats an effect id, or carries a ttl, lifetime or timestamp the rules cannot evaluate | fatal |
+| `runtime-resource-state-unsupported` | a runtime resource record whose state is not the one its receipts support, read in order (the latest authoritative observation wins), or whose receipt time is outside its effect's window | fatal |
+| `runtime-resource-ttl-exceeds-bound` | a runtime resource requested for longer than its adapter's registered max-ttl | fatal |
+| `runtime-resource-unknown-adapter` | a runtime resource record whose adapter is not in the adapter registry, is not registered for the record's class, or does not implement a verb the record uses | fatal |
+| `runtime-resource-unreconciled-effect` | a runtime resource effect with outcome unknown left unreconciled, or another effect issued while one is pending | fatal |
+| `runtime-resource-unreconciled-release` | a runtime resource release counted done with no later reconcile receipt observing the resource absent | fatal |
+| `shredded-cell` | a raw `|` in the Command cell is read as a table delimiter, truncating the command and shifting every later column — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
 | `stream-cap` | a change that adds an active stream past the per-root active-stream cap (ASSAY_STREAM_CAP) with no offsetting park — no net new streams past the cap | fatal |
 | `stream-source` | a change that adds an active stream README citing no `spec:`, or a `spec:` whose header is not `**Status:** approved` — a stream is scaffolded only from an approved spec | fatal |
-| `unsubstituted-metavar` | an unsubstituted `<metavar>` placeholder left in the Command cell, so the row cannot be run as written | advisory |
+| `table-touches-no-files` | no Verify command references any path the brief's `files:` declares, so the table may prove nothing about the change (an unparseable `files:` is COULD-NOT-CHECK) | advisory |
+| `trivially-green` | a command that exits 0 whatever the tree holds — `true`, `echo ok`, a trailing `|| true`, a `git log --grep` with no count, or an existence test on a path the brief itself declares | advisory |
+| `unsubstituted-metavar` | an unsubstituted `<metavar>` placeholder left in the Command cell, so the row cannot be run as written — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
+| `verify-row-portability` | a Verify row hardcodes /tmp, sh/bash -c or findstr without an explicit OS marker (TMPDIR fallback is exempt) | advisory |
+| `verify-unplaced-rows` | a closure this branch makes whose `## Verify` section holds text `statusgen verifyrun` cannot place and that looks like Verify rows: a numbered row that lost its table header (a prose paragraph split the table), a table headed `Expect` with no `Command` column, or a row too short to reach `Command`. A `Failure mode | Caught by` map, a mutation map or a legend is not Verify-shaped and is not reported | fatal |
 
 ## Before dispatch — mistake-proofing the brief itself
 
@@ -550,8 +650,10 @@ DISPATCH CHECKLIST — brief authored, before dispatch
 [ ] 5. `gate-why` is substantive — names what about THIS brief trips the wire.
 [ ] 6. Effort and exec-tier honest. Not an L wearing an M; not `any` on work that needs `strong`.
 [ ] 7. Shared value → a FLOW row, not only a site row, and `consumers:` enumerated (rule 6).
-[ ] 8. New or re-layered component → `layering:` records structure, boundary and current
-       reason; Task/Verify check the claimed separation (or flat-tool behavior), not its label.
+[ ] 8. Every new brief → `design-fit:` answered; any weight delta > 0 → `why-add` names what
+       removal was considered. New component or substantial boundary change → `layering:`
+       records justified structure; contract placement and verification follow brief-v1 §4.1
+       for any claimed boundary, new or changed (or check flat-tool behavior).
 [ ] 9. Pre-mortem run; every failure mode has a row or a recorded review-only reason.
 ```
 
@@ -638,11 +740,28 @@ could-not-check runs serial.
    cells from PR trailers, `verifyrun` witnesses and App approvals — a hand edit inside the markers
    is a lint PROBLEM, the same as hand-editing `STATUS.md`. Columns:
    `| # | Brief | Wave | Effort | Status | Verified | Reviewed |`, Status a bare lifecycle token
-   (`todo` / `in-progress` / `implemented` / `verified` / `done`, or the hold token `blocked`). A
+   (`todo` / `in-progress` / `implemented` / `verified` / `done`, the hold token `blocked`, or the
+   off-path `withdrawn` — see "Withdrawing a brief" below). A
    project not yet wired to `statusgen` hand-maintains the older
    `| # | Brief | Wave | Status | What's deployed/landed |` shape as a stopgap — ✅ / ⚠ / ❌ with a
    terse, honest "what's actually true" note (not aspirational) — but the moment generation is
    live, the table is derived, never hand-edited.
+   **Withdrawing a brief.** A brief retired by a later decision, or merged into another brief,
+   is never parked as `blocked` with prose in its title. Set its Status cell to `withdrawn` (the
+   link text keeps the original title; preserve existing Verified/Reviewed stamps), switch its frontmatter to
+   `schema: brief-v3` (the withdrawal keys remain unknown on brief-v1/v2), and add:
+   `withdrawn-date: "YYYY-MM-DD"`, `superseded-by: ["<stream>/<NN>" | "<cell>:<alias>:<stream>:<NN>"]`
+   (`[]` = won't-fix) and a one-sentence `withdrawn-reason:`. Put the banner
+   `> **Withdrawn YYYY-MM-DD — superseded by <successor>.** <reason>. Not executable.` under the H1.
+   Never delete the file or erase partial implementation, Evidence, stamps or receipts.
+   Keep the existing human decision gate: withdrawal is not permission to bypass it.
+   A withdrawn brief leaves the done ratio, Next-up and the bottleneck views; dependencies
+   remain unsatisfied until explicitly amended. Validate successor chains and review each
+   dependent's scope before re-pointing it. Use a shared, revision-bound `withdrawal-context`
+   handoff where the amendment has one; preserve observed claims with acknowledged treatment.
+   Run `statusgen withdrawal-audit` over the candidate board and an open-PR snapshot before
+   rollout, then reconcile affected implementation and evidence PRs with their owners.
+   Do not auto-close them. Upgrade readers before authoring v3; see `docs/withdrawal-rollout.md`.
 2. **Critical path** — an ASCII chain showing the blocking order, with a one-line "smallest unblocking
    move" and a warning if any tempting-but-wrong first step is a dead end.
 3. **Dependency waves** — `Wave 0: [..]  Wave 1: [..]←0  …`, plus the one-line critical path
@@ -685,6 +804,16 @@ layer; the floor does not wait on one.)
    `superpowers:writing-plans` against that brief's Deliverables/DoD to produce a bite-sized TDD plan
    before touching code. That's a separate step, done at pickup time by whoever executes it — not
    part of authoring the brief.
+8. **Link the authoring PR with `Authors:`, never `Brief:`.** The PR that writes brief files
+   carries exactly one link line `Authors: <stream>/<NN>[, <stream>/<NN> …]` naming every brief it
+   adds (or `Issue: #<N>` when the authoring answers an issue). `Brief: <stream>/<NN>` means the
+   PR DELIVERS that brief: the dispatcher's phantom check, the planner and the derived board all
+   read it that way, so an authoring PR carrying it makes the brief it just wrote look delivered
+   the moment it merges, and the brief is never dispatched. `deskpr create` refuses a `Brief:`
+   line on a branch that only authors that brief and names the `Authors:` line to use, and refuses
+   an `Authors:` line unless the branch adds every listed brief's file and touches nothing but
+   board READMEs, brief files and changelog fragments. A PR that authors a brief AND delivers
+   work in the same change keeps `Brief:`.
 
 ## Conventions to inherit
 
@@ -704,5 +833,8 @@ layer; the floor does not wait on one.)
   human-legible highlight bullets, not a restatement of the Task; a genuinely non-notable brief says so
   in its `why:` and leaves the `changelog:skip` waiver to the desk or a human. Do NOT add a Verify row
   for it — the repo's CI changelog check IS that row.
+- **Short identifiers**: keep identifiers a brief asks for (test function names especially) under
+  32 characters, and in a PR body describe a long identifier rather than quote it: the desk secret
+  scan reads any 32+ character alphanumeric run as a possible secret.
 - If executing a brief surfaces a NEW non-obvious gotcha, fold it into the repo's instructions file
   (CLAUDE.md / AGENTS.md / etc.) so the next person doesn't rediscover it.

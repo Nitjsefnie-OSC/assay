@@ -1,0 +1,309 @@
+package regression
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/medici-finance/assay/tools/desk/internal/gitquiet"
+)
+
+// shellBudget is the one finite deadline every wrapped shell suite runs under. It is a
+// hang net, never a measurement: the fleet suite takes about 23s on an idle host and
+// about 90s at load average 34 on 16 cores, so a budget sized to idle speed (the old
+// 60s) failed a passing suite under load. A real hang still fails, at this deadline.
+// The runners above it (check-floor.sh, the brief's Verify rows) bound each go test
+// run longer than this, so the budget's own failure is the one a hang reports.
+const shellBudget = 4 * time.Minute
+
+// maxShellBudget caps shellBudget well inside go test's default 10m binary timeout,
+// so the budget can grow with observed load but never become unbounded.
+const maxShellBudget = 5 * time.Minute
+
+func shellFloor(t *testing.T, relative string) {
+	t.Helper()
+	skipWindowsShellFixture(t)
+	shellFloorWithBash(t, relative, requireBash(t))
+}
+
+func shellFloorBash4(t *testing.T, relative string) {
+	t.Helper()
+	skipWindowsShellFixture(t)
+	shellFloorWithBash(t, relative, requireBash4(t))
+}
+
+func skipWindowsShellFixture(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fixture: exercised on Linux/macOS; native Windows behavior has its own suite")
+	}
+}
+
+func shellFloorWithBash(t *testing.T, relative, bash string) {
+	t.Helper()
+	root, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := runShellFixtureWithBash(t, bash, filepath.Join(root, filepath.FromSlash(relative)), t.TempDir(), shellBudget)
+	if err != nil {
+		t.Fatalf("fixture suite %s: %v\n%s", relative, err, out)
+	}
+	t.Log(string(out))
+}
+
+// TestReg786FleetHardening pins #786, fixed by 643637114: the
+// existing fixture suite checks argv redaction AND transport-error retention.
+func TestReg786FleetHardening(t *testing.T) { shellFloor(t, "tools/create-fleet-gitlab_test.sh") }
+
+// TestReg1145ShimCredential pins #1145, fixed by f84dde307. The
+// shell oracle is the preserved implementation; its fixtures include the
+// later role-token isolation correction, so this never grants ambient auth.
+func TestReg1145ShimCredential(t *testing.T) {
+	shellFloor(t, "tools/cellctl/tests/gen-shims-gh-token.test.sh")
+}
+
+// runShellFixture runs one shell suite under a finite budget. The underlying shell
+// assertions are unchanged. The wrapped suites run git, so the child never inherits
+// the caller's GIT_* variables, and null global and system config keep a caller's
+// hooks out of their repositories. A run the budget cut short reports the deadline.
+// Dropping the inherited GIT_* variables also drops the GIT_TEMPLATE_DIR gitquiet.Run
+// set, so the child gets the fixture's OWN quiet template explicitly: every repository
+// the suite creates under TMPDIR then forks no background maintenance to race the
+// t.TempDir cleanup.
+func runShellFixture(t testing.TB, path, tmp string, budget time.Duration) ([]byte, error) {
+	t.Helper()
+	bash := requireBash(t)
+	return runShellFixtureWithBash(t, bash, path, tmp, budget)
+}
+
+func runShellFixtureWithBash(t testing.TB, bash, path, tmp string, budget time.Duration) ([]byte, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bash, path)
+	cmd.Env = FixtureEnv("KUBECONFIG=/dev/null", "TMPDIR="+tmp,
+		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_TEMPLATE_DIR="+gitquiet.TemplateDir(t))
+	cmd.WaitDelay = time.Second
+	out, err := cmd.CombinedOutput()
+	if err != nil && ctx.Err() != nil {
+		return out, fmt.Errorf("fixture exceeded its %s deadline: %w (%v)", budget, ctx.Err(), err)
+	}
+	return out, err
+}
+
+func requireBash(t testing.TB) string {
+	t.Helper()
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("prerequisite: bash is required for POSIX regression fixtures; bash was not found on PATH")
+	}
+	return bash
+}
+
+var bashVersionRE = regexp.MustCompile(`version ([0-9]+)\.([0-9]+)`)
+
+func requireBash4(t testing.TB) string {
+	t.Helper()
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("prerequisite: Bash 4 or newer is required for the evidence-automerge fixtures; bash was not found on PATH")
+	}
+	cmd := exec.Command(bash, "--version")
+	cmd.Env = FixtureEnv("KUBECONFIG=/dev/null")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Skipf("prerequisite: Bash 4 or newer is required for the evidence-automerge fixtures; could not read bash version: %v", err)
+	}
+	match := bashVersionRE.FindSubmatch(out)
+	if len(match) != 3 {
+		t.Skip("prerequisite: Bash 4 or newer is required for the evidence-automerge fixtures; could not parse bash --version")
+	}
+	major, err := strconv.Atoi(string(match[1]))
+	if err != nil || major < 4 {
+		t.Skipf("prerequisite: Bash 4 or newer is required for the evidence-automerge fixtures; found Bash %s.%s", match[1], match[2])
+	}
+	return bash
+}
+
+// TestShellDeadline proves the wrapper's deadline is real and finite: a fixture that
+// outlives its budget is cut off and reported as a deadline failure, and the budget
+// the wrapped suites run under is bounded.
+func TestShellDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fixture")
+	}
+	if shellBudget <= 0 || shellBudget > maxShellBudget {
+		t.Fatalf("shellBudget = %s, want a finite deadline in (0, %s]", shellBudget, maxShellBudget)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "deadline.sh")
+	if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\nexec sleep 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runShellFixture(t, path, dir, 20*time.Millisecond)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deadline fixture completed without cancellation: err=%v", err)
+	}
+}
+
+// shellBudgetFaults returns every runShellFixture call in src whose budget argument
+// is not the named shellBudget, outside TestShellDeadline (which must pass a tiny
+// budget to prove cancellation).
+func shellBudgetFaults(name string, src []byte) (int, []string) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, name, src, 0)
+	if err != nil {
+		return 0, []string{fmt.Sprintf("%s: %v", name, err)}
+	}
+	sites, faults := 0, []string(nil)
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil || fn.Name.Name == "TestShellDeadline" {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			id, ok := call.Fun.(*ast.Ident)
+			if !ok || (id.Name != "runShellFixture" && id.Name != "runShellFixtureWithBash") {
+				return true
+			}
+			if fn.Name.Name == "runShellFixture" && id.Name == "runShellFixtureWithBash" {
+				return true // The wrapper forwards a caller's budget; it is not a fixture site.
+			}
+			sites++
+			wantArgs := 4
+			if id.Name == "runShellFixtureWithBash" {
+				wantArgs = 5
+			}
+			if len(call.Args) != wantArgs {
+				faults = append(faults, fmt.Sprintf("%s: %s with %d arguments", fset.Position(call.Pos()), id.Name, len(call.Args)))
+				return true
+			}
+			if budget, ok := call.Args[wantArgs-1].(*ast.Ident); !ok || budget.Name != "shellBudget" {
+				faults = append(faults, fmt.Sprintf("%s: %s budget is not shellBudget", fset.Position(call.Pos()), id.Name))
+			}
+			return true
+		})
+	}
+	return sites, faults
+}
+
+// TestShellBudgetNamed is the class guard for regression-shell-idle-deadline: a shell
+// fixture run under a literal deadline sized to idle speed instead of the one named,
+// load-tolerant shellBudget. A planted control keeps the matcher honest.
+func TestShellBudgetNamed(t *testing.T) {
+	files, err := filepath.Glob("*_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites := 0
+	for _, file := range files {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, faults := shellBudgetFaults(file, src)
+		sites += n
+		if len(faults) > 0 {
+			t.Errorf("%s", strings.Join(faults, "\n"))
+		}
+	}
+	if sites < 3 {
+		t.Errorf("examined %d runShellFixture sites, want at least 3 (shellFloor, the git-isolation test and the quiet-repositories test)", sites)
+	}
+	planted := `package p
+func literal() { _, _ = runShellFixture(t, p, d, 60*time.Second) }
+func other() { _, _ = runShellFixture(t, p, d, budget) }
+func healthy() { _, _ = runShellFixture(t, p, d, shellBudget) }
+func TestShellDeadline() { _, _ = runShellFixture(t, p, d, time.Millisecond) }
+`
+	n, faults := shellBudgetFaults("plant.go", []byte(planted))
+	got := strings.Join(faults, "\n")
+	if n != 3 || len(faults) != 2 || !strings.Contains(got, "plant.go:2:") || !strings.Contains(got, "plant.go:3:") {
+		t.Errorf("planted controls: sites=%d faults=%d, want 3 and 2 (lines 2 and 3):\n%s", n, len(faults), got)
+	}
+}
+
+// TestShellGitIsolation runs a planted shell fixture that creates and commits to its
+// own repository under TMPDIR while GIT_DIR names a second repository. The wrapper
+// must keep that repository byte-unchanged, as it must for the wrapped suites, which
+// also run git.
+func TestShellGitIsolation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fixture")
+	}
+	victim := HostileGitDir(t)
+	before := SnapshotTree(t, victim)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plant.sh")
+	script := "#!/usr/bin/env bash\nset -eu\nexport GIT_CONFIG_NOSYSTEM=1\n" +
+		"git init -q \"$TMPDIR/plant\"\n" +
+		"git -C \"$TMPDIR/plant\" -c user.name=Plant -c user.email=plant@example.invalid " +
+		"-c commit.gpgsign=false commit -q --allow-empty -m plant\n"
+	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runShellFixture(t, path, dir, shellBudget)
+	if changes := before.Changes(SnapshotTree(t, victim)); changes != "" {
+		t.Fatalf("shell fixture wrote to the GIT_DIR-named repository\n%s\n%s", changes, out)
+	}
+	if err != nil {
+		t.Fatalf("planted fixture failed in its own repository: %v\n%s", err, out)
+	}
+}
+
+// TestShellFixtureReposQuiet — every repository a wrapped suite creates under TMPDIR
+// (init, init --bare, and a clone of the bare one) carries gitquiet's settings in its
+// own config, although the child's environment drops every inherited GIT_* variable.
+// Without them each commit or push in the suite forks a detached `git maintenance run
+// --auto` that races the t.TempDir cleanup.
+func TestShellFixtureReposQuiet(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fixture")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "quiet.sh")
+	script := "#!/usr/bin/env bash\nset -u\n" +
+		"git init -q \"$TMPDIR/work\" && git init -q --bare \"$TMPDIR/origin.git\" &&\n" +
+		"git clone -q \"$TMPDIR/origin.git\" \"$TMPDIR/clone\" 2>/dev/null || exit 1\n" +
+		"for r in work origin.git clone; do\n" +
+		"  for k in maintenance.auto gc.auto; do\n" +
+		"    printf '%s %s=%s\\n' \"$r\" \"$k\" \"$(git -C \"$TMPDIR/$r\" config --local --get \"$k\")\"\n" +
+		"  done\ndone\n"
+	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runShellFixture(t, path, dir, shellBudget)
+	if err != nil {
+		t.Fatalf("planted fixture: %v\n%s", err, out)
+	}
+	var missing []string
+	for _, r := range []string{"work", "origin.git", "clone"} {
+		for _, kv := range gitquiet.Settings {
+			if want := r + " " + kv[0] + "=" + kv[1]; !strings.Contains(string(out), want+"\n") {
+				missing = append(missing, want)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("repositories the shell fixture created lack, in their own config: %s\n%s",
+			strings.Join(missing, ", "), out)
+	}
+}
