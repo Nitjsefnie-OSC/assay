@@ -210,8 +210,8 @@ design-fit:                  # REQUIRED on every NEW brief; its two rules: brief
   weight: <signed delta per dimension: verbs, flags, refusals, rule-text lines>
   why-add: <required when any delta > 0: why it cannot live in the owner, and what
            removal was considered instead; n/a otherwise>
-oracle: docs/investigations/<file>  # ONLY a design brief a brittle `redesign` raised: its refactor
-                                    # oracle; Verify copies its five §5 rows. None → not authored
+oracle: docs/investigations/<file>  # ONLY on a design brief a brittle `redesign` raised: its refactor
+                                    # oracle, whose five §5 rows Verify copies. Such a brief without it is not authored
 
 ## Human decision
 <!-- gate: human only — omit the section entirely otherwise. Lifted VERBATIM into the
@@ -395,7 +395,7 @@ questions is `yes`, `gate` must be `human`; only when all four are `no` may `gat
        end-to-end flows, sweeping a pattern across sites)?
    (c) Is it code where a subtle implementation error survives the brief's own tests (auth,
        funds, concurrency, safety plumbing)?
-   (d) Is this a design brief raised by an error-class trigger (a recurring defect class owed a design)?
+   (d) Is this a design brief raised by an error-class trigger? (A recurring defect class, not one symptom, has accrued enough counted instances or merged fixes to be owed a design.)
    `strong` SHOULD carry a one-line `exec-tier-why` naming the question(s) (lint: PROBLEM if unknown, NOTICE if missing).
    **Honest limitation:** statusgen never verifies which model actually ran — pickup-side
    compliance is honor-system self-report; the enforced surface is desk dispatch + the review gate.

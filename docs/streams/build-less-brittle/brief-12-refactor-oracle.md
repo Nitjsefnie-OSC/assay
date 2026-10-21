@@ -202,7 +202,7 @@ wiring and net ≤ 0 rows.
 | 5 | `cmd=$(sed -n '/^## 2\. Failure modes/,/^## 3\./p' docs/refactor-oracle-template.md \| grep -oE "git grep -n 'regression: [^']*' -- '\*_test.go'" \| head -1); n=$(git grep -h '^// regression: #' -- '*_test.go' \| grep -oE '#[0-9]+' \| head -1); test -n "$cmd" && eval "${cmd/<N>/${n#\#}}" \| grep -c 'regression:'` | ≥ `1` (the failure-mode read the template gives finds a real tagged test from 11's seeds) | check +dereference |
 | 6 | `sed -n '/^## 4\. Invariants/,/^## 5\./p' docs/refactor-oracle-template.md \| grep -c 'go test ./internal/arch/' && cd tools/desk && go test ./internal/arch/ -count=1` | ≥ `1`, then `ok` (the invariants command the template names exists and is green) | check +dereference |
 | 7 | `sed -n '/^## 1\. Intent/,/^## 2\./p' docs/refactor-oracle-template.md \| grep -c -e 'brittle-investigation-template' -e 'divergence:' && test -f docs/brittle-investigation-template.md && echo INVESTIGATION-EXISTS` | ≥ `1`, then `INVESTIGATION-EXISTS` (the intent part reads 09's file, which exists) | check +dereference |
-| 8 | `cd tools/desk && go test ./internal/testledger/ -run TestLedgerFixture -count=1 -v \| grep -c 'characterization-untriaged: .*TestFixtureUntriaged'` | `1` (a tagged characterization test the fixture oracle does not list is reported; the listed one is not) | check +mutation |
+| 8 | `cd tools/desk && go test ./internal/testledger/ -run TestLedgerFixture -count=1 -v \| grep -cE -e '^--- PASS: TestLedgerFixture ' -e '^ +ledger_test\.go:[0-9]+: characterization-untriaged: pkg/charz\.TestFixtureUntriaged '` | `2` (the fixture test passes, and its own logged report line names the tagged characterization test the fixture oracle does not list; the listed one is not reported. The line is anchored on the `ledger_test.go:N:` log prefix, so the expected line echoed inside a failure message does not count: with the report line suppressed the row prints `0`). Row anchored 2026-10-21 (#3916): the earlier unanchored form printed `1` on that mutant | check +mutation |
 | 9 | `grep -c 'oracle' docs/brittle-investigation-template.md && grep -c 'oracle.md' docs/investigations/README.md` | two counts, each ≥ `1` | check |
 | 10 | `impl=$(git log --first-parent --format=%H --grep='^Brief: build-less-brittle/12$' refs/remotes/origin/main -- . ':!docs/streams' ':!changelog' \| tail -1); base=${impl:+$impl~1}; base=${base:-$(git merge-base refs/remotes/origin/main HEAD)}; tip=${impl:-HEAD}; test "$(git rev-parse "$base")" != "$(git rev-parse "$tip")" && grep -c 'oracle:' plugins/assay/skills/author-brief/SKILL.md && test "$(git show "$tip:plugins/assay/skills/author-brief/SKILL.md" \| wc -l)" -le "$(git show "$base:plugins/assay/skills/author-brief/SKILL.md" \| wc -l)" && echo NET-OK` | ≥ `1`, then `NET-OK` | check |
 | 11 | `impl=$(git log --first-parent --format=%H --grep='^Brief: build-less-brittle/12$' refs/remotes/origin/main -- . ':!docs/streams' ':!changelog' \| tail -1); base=${impl:+$impl~1}; base=${base:-$(git merge-base refs/remotes/origin/main HEAD)}; tip=${impl:-HEAD}; test "$(git rev-parse "$base")" != "$(git rev-parse "$tip")" && s=$(sed -n '/^## [0-9]*\. Design fit first/,/^## [0-9]*\. /p' tools/desk/cmd/deskdispatch/references/review-prompt.md); echo "$s" \| grep -c 'oracle' && test "$(git show "$tip:tools/desk/cmd/deskdispatch/references/review-prompt.md" \| wc -l)" -le "$(git show "$base:tools/desk/cmd/deskdispatch/references/review-prompt.md" \| wc -l)" && echo NET-OK` | ≥ `1`, then `NET-OK` | check |
@@ -218,9 +218,12 @@ wiring and net ≤ 0 rows.
 
 ## Review
 Gate: model (from frontmatter). The reviewer assembles §2 and §3 of the template by hand
-for one real module from 08's sample (`tools/desk/internal/deskkit/forge_gitlab.go` at
-f7bde6bfa): do the read commands find the class instances and the exported surface, and does
-the triage grammar let a real behaviour be recorded as `unknown` without inventing a source?
+for one real markable module from 08's sample: `tools/desk/cmd/deskflip` (it holds the sample's
+`flip.go`; a `cmd/<verb>` directory is a module, and `S-review-verdict` names it), at the PR's
+merge-base. Not `forge_gitlab.go`, the sample's top file: a bare file is never marked and no
+`S-` row names it (docs/contracts.md §Brittle marks). Do the read commands find the class
+instances and the exported surface, and does the triage grammar let a real behaviour be
+recorded as `unknown` without inventing a source?
 A template that only works on the worked example is a finding. The reviewer also confirms
 the acceptance rows refuse on an `unknown` and on a failure mode with an empty test cell:
 an oracle that can land with a hole in it is the drift this brief exists to stop.

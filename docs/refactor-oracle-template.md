@@ -81,12 +81,13 @@ it when rotation is signalled (A3: the signal precedes revocation, rests on
 Two commits land between assembly and the candidate: r11, an API change in
 `internal/credhelper/rotate.go` (`OnRotate` now fires after the old token is revoked, not
 before); r12, an edit to `cmd/example/help.go` that rewords the help text. Acceptance row 1
-printed nothing at r10. At `candidate-source` r13 its diff names both paths, and before any
-revalidation is recorded it prints:
+printed only `SOURCES-READ` at r10. At `candidate-source` r13 its diff names both paths, and
+before any revalidation is recorded it prints:
 
 ```
 UNREVALIDATED internal/credhelper/rotate.go
 UNREVALIDATED cmd/example/help.go
+SOURCES-READ
 ```
 
 Nothing that ran at r10 is carried forward: evidence names r13 and is re-run there. r11 is
@@ -181,15 +182,15 @@ merge-base and `<N>` its number.
 
 | # | Command | Expect |
 |---|---------|--------|
-| 1 | `test "$(grep -h '^divergence:' <investigation> <oracle-file> \| sort -u \| wc -l)" -eq 1 && git diff --name-only <pinned-source> <candidate-source> -- <module> <dependency-references> \| while read -r p; do grep -qF "revalidated: $p @ <candidate-source>" <oracle-file> \|\| echo "UNREVALIDATED $p"; done` | exit 0 and no `UNREVALIDATED` line: every path changed between the pinned and candidate sources has a `revalidated:` line in §1 at `<candidate-source>`; one without refuses (the intent is not current) |
+| 1 | `a=$(grep -m1 '^divergence:' <investigation>) && b=$(grep -m1 '^divergence:' <oracle-file>) && test "$a" = "$b" && d=$(git diff --name-only <pinned-source> <candidate-source> -- <module> <dependency-references>) && printf '%s\n' "$d" \| while read -r p; do test -z "$p" \|\| grep -qF "revalidated: $p @ <candidate-source>" <oracle-file> \|\| echo "UNREVALIDATED $p"; done && echo SOURCES-READ` | exactly one line, `SOURCES-READ`: both files carry the same `divergence:` line, both sources resolve, and every path changed between them has a `revalidated:` line in §1 at `<candidate-source>`. An `UNREVALIDATED` line refuses (the intent is not current); so does a missing `SOURCES-READ` (a `divergence:` line missing or differing, or a source that does not resolve) |
 | 2 | `sed -n '/^## 2\. Failure modes/,/^## 3\./p' <oracle-file> \| grep -E '^[\|] *(#\|F-\|class #)' \| awk -F'\|' '{t=$4; gsub(/[ ]/,"",t); print (t == "" ? "EMPTY-TEST " $2 : t)}'` | no `EMPTY-TEST` line; each printed test is tagged and passes in row 4 |
-| 3 | `sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test' \| awk -F'\|' '{gsub(/ /,"",$3); print $3}' \| sort \| uniq -c && gh pr view <N> --json body --jq .body \| grep -c '^## Oracle$'` | only `keep` and `drop` counted, then `1` (the PR body carries `## Oracle` with the table verbatim); any `unknown`, or any other word, refuses |
-| 4 | `go test ./<module>/... -count=1 -v 2>&1 \| grep -cE '^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'; cd tools/desk && go test ./internal/testledger/ -run TestReportTestLedger -count=1 -v -args -base=<merge-base> -head=<candidate-source> \| grep -E 'untrailed\|characterization-untriaged'` | `0`, then no line: every `keep` and failure-mode test passes, and each `drop` test is reported `retired-trailed` with `Retires-test: <name> — accident per oracle §3` |
+| 3 | `sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test' \| awk -F'\|' '{gsub(/ /,"",$3); print $3}' \| sort \| uniq -c && o=$(sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test') && p=$(gh pr view <N> --json body --jq .body \| tr -d '\r' \| sed -n '/^## Oracle$/,/^## /p' \| grep -E '^[\|] *Test') && test "$o" = "$p" && echo ORACLE-VERBATIM` | only `keep` and `drop` counted, then `ORACLE-VERBATIM` (the PR body's `## Oracle` section carries the §3 triage rows byte for byte); any `unknown`, any other word, or a missing or differing table refuses |
+| 4 | `go test ./<module>/... -count=1 -v 2>&1 \| grep -cE '^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'; cd tools/desk && go test ./internal/testledger/ -run TestReportTestLedger -count=1 -v -args -base=<merge-base> -head=<candidate-source> 2>&1 \| grep -E 'untrailed\|characterization-untriaged\|could-not-check\|retired-trailed\|^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'` | `0`, then only `retired-trailed` lines, each `drop` test named in one whose quoted reason is `accident per oracle §3`: every `keep` and failure-mode test passes, and every `drop` left with the trailer. An `untrailed`, `characterization-untriaged`, `could-not-check`, `SKIP` or `FAIL` line refuses (a skipped or unreadable report is never clean) |
 | 5 | `cd tools/desk && go test ./internal/arch/ -count=1 && cd - >/dev/null && git grep -c '// semantic: <s-row>' <candidate-source> -- <owner path>` | `ok`, then ≥ `1` (the invariants hold and the owner is still declared) |
 
 **Worked example.** At r10, before the intervening change:
 
-- Row 1: exit 0, nothing printed.
+- Row 1: `SOURCES-READ` only.
 - Row 2: `TestPostAfterRotation`, `TestStaleCacheRefusal`; no `EMPTY-TEST`.
 - Row 3: `2 keep`, `1 drop`, `1 unknown`: **refused** on the `unknown` row
   (`TestCharNoCacheFlagBypasses`). `example/03` goes to review as `NEEDS_CONTEXT`, naming the
