@@ -410,6 +410,14 @@ func ciCrossModuleRegistry() []ciEntry {
 			why:        "every staged workflow and live base must trigger the undeclared drift guard",
 		},
 		{
+			test:   "tools/desk/internal/deskkit/ciscope_test.go",
+			module: "tools/desk", workflow: ".github/workflows/ci.yml",
+			prJob: deskFloorJob, pushJob: deskFloorJob,
+			reads:      []string{".github/workflows/ci.yml"},
+			runInvokes: deskShardInvokes,
+			why:        "the scope-skip and matrix-leg guards read ci.yml, so every ci.yml change must run them",
+		},
+		{
 			test:   "tools/desk/internal/regression/manifest_test.go",
 			module: "tools/desk", workflow: ".github/workflows/ci.yml",
 			prJob: deskFloorJob, pushJob: deskFloorJob,
