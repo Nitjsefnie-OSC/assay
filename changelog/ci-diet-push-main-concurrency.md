@@ -1,0 +1,3 @@
+### Changed
+- CI load on the shared self-hosted runner pool is cut without changing any required check: `ci` and `winparity` now run on push to `main` only (pull requests keep their `pull_request` run), superseded `ci` runs on a pull request are cancelled (main runs never are), `winparity` runs only when the Makefile, `scripts/build-windows.ps1`, its own source or its workflow changes, and `desk-platform-compile` skips its compile on pull requests that touch neither `tools/desk` nor a module it replaces, `go.work` or `ci.yml`.
+- The native Windows leg (`windows-ci-leg`) now also runs nightly on GitHub-hosted runners, not only on release tags and manual dispatch.
