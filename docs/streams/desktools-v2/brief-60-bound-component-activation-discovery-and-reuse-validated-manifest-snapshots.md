@@ -25,7 +25,9 @@ exec-tier: strong
 exec-tier-why: Cross-consumer compatibility, concurrency and unavailable-state behavior require negative-path and flow proofs.
 domain: complicated
 consumers:
-  - "tools/desk/internal/deskkit/activation*.go: fixed-here"
+  - "tools/desk/internal/deskkit/activation.go: fixed-here (reference owner and shared routing)"
+  - "tools/desk/internal/deskkit/activationindex.go: fixed-here (bounded validated slot)"
+  - "tools/desk/internal/deskkit/activationindex_test.go: fixed-here (fresh reference and lower-boundary negative controls)"
   - "all tools/desk/cmd entrypoints calling CheckVerbActivation: follow-up desktools-v2/60 (inherit the one discovery implementation; enumerate at pickup)"
   - "tools/desk/internal/deskkit/activationstartup_test.go: fixed-here (actual compiled board/dispatch/token startup workloads)"
   - "tools/desk/cmd/deskboard help/version entrypoints: follow-up desktools-v2/20"
