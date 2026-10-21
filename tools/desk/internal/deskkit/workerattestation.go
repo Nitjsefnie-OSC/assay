@@ -273,7 +273,11 @@ func attestationTarget(issue *Issue, title, body string, authority func(string) 
 	return nil
 }
 
-func attestationRecordObserved(f Forge, repo ForgeRepo, n int, issue *Issue, title, body string, authority func(string) bool, what string) (*Issue, error) {
+type attestationRecordReader interface {
+	IssueTrustEvents(ForgeRepo, int) (*TrustPayload, error)
+}
+
+func attestationRecordObserved(f attestationRecordReader, repo ForgeRepo, n int, issue *Issue, title, body string, authority func(string) bool, what string) (*Issue, error) {
 	if err := attestationTarget(issue, title, body, authority, what); err != nil {
 		return nil, err
 	}

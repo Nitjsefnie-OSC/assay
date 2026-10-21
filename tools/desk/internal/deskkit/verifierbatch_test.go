@@ -264,6 +264,11 @@ func TestVerifierBatchScopeFencesAndBounds(t *testing.T) {
 	if r := batch(ForgeRepo{"example-org", "two"}, []int{41}); r[41].Err == nil || calls != 0 {
 		t.Fatal("scope mismatch reached provider")
 	}
+	// Check slug validation independently of the credential's repository fence.
+	unscoped := &GitHubForge{Token: "fixture", BaseURL: server.URL, Client: server.Client()}
+	if r := VerifierAttestationBatchReader(unscoped)(ForgeRepo{"bad owner", "one"}, []int{41}); !IsRefused(r[41].Err) || calls != 0 {
+		t.Fatal("invalid repository slug reached provider")
+	}
 	var ns []int
 	for n := 1; n <= 65; n++ {
 		ns = append(ns, n)
@@ -441,5 +446,25 @@ func TestVerifierBatchPerfV3CountsAttemptsAndPoints(t *testing.T) {
 	}
 	if attempts != 4 || points != 4 {
 		t.Fatalf("batch attempts/points %d/%d", attempts, points)
+	}
+}
+
+// A prepared reader has no full Forge to promote an unexpected method from.
+// New validator dependencies must compile against this explicit read contract.
+var _ verifierAttestationReader = (*verifierBatchForge)(nil)
+
+func TestVerifierBatchAdapterReadBoundary(t *testing.T) {
+	repo := ForgeRepo{"example-org", "one"}
+	reader := &verifierBatchForge{repo: repo, number: 41, observation: &verifierBatchObservation{first: &Issue{Number: 41}, current: &Issue{Number: 41}}}
+	if _, ok := any(reader).(Forge); ok {
+		t.Fatal("prepared adapter exposed a full Forge")
+	}
+	for range 2 {
+		if _, err := reader.GetIssueTyped(repo, 41, TargetIssue); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if issue, err := reader.GetIssueTyped(repo, 41, TargetIssue); issue != nil || !IsUnverifiable(err) {
+		t.Fatalf("third observation must be unavailable: %+v %v", issue, err)
 	}
 }

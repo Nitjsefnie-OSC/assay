@@ -11,6 +11,10 @@
   {"name":"credential-repository-scope","file":"internal/deskkit/verifierbatch.go","old":"g.onlyRepo != \"\" && !strings.EqualFold(repo.Slug(), g.onlyRepo)","new":"false"},
   {"name":"prepared-error-cache","file":"cmd/verifyloop/pending.go","old":"pendingAttestation{receipt: result.Receipt, err: result.Err}","new":"pendingAttestation{receipt: result.Receipt}"},
   {"name":"planning-pass-refresh","file":"cmd/verifyloop/blockerread.go","old":"s.blockers, s.pending = nil, nil","new":"s.blockers = nil"},
-  {"name":"immutable-regular-file","file":"cmd/verifyloop/pending.go","old":"!got.Exists || got.Kind != deskkit.FileKindRegular","new":"!got.Exists"}
+  {"name":"immutable-regular-file","file":"cmd/verifyloop/pending.go","old":"!got.Exists || got.Kind != deskkit.FileKindRegular","new":"!got.Exists"},
+  {"name":"adapter-third-read","file":"internal/deskkit/verifierbatch.go","old":" || f.reads >= 2","new":""},
+  {"name":"invalid-repository-slug","file":"internal/deskkit/verifierbatch.go","old":"!ValidRepoSlug(repo.Slug())","new":"false"},
+  {"name":"candidate-receipt-repository","file":"cmd/verifyloop/pending.go","old":"ref.Repo() != repo || ","new":""},
+  {"name":"candidate-receipt-kind","file":"cmd/verifyloop/pending.go","old":"ref.Kind == \"change\" || ","new":""}
  ]
 }

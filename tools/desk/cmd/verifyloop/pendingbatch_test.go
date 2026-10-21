@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -80,6 +81,16 @@ func TestPendingBatchPreparationScopesCandidates(t *testing.T) {
 		name   string
 		change func(*pendingForge)
 	}{
+		{"foreign-receipt-repo", func(f *pendingForge) {
+			for key, blob := range f.blobs {
+				f.blobs[key] = bytes.ReplaceAll(blob, []byte("example-org/tracker#41"), []byte("example-org/other#41"))
+			}
+		}},
+		{"change-kind-receipt", func(f *pendingForge) {
+			for key, blob := range f.blobs {
+				f.blobs[key] = bytes.ReplaceAll(blob, []byte("example-org/tracker#41"), []byte("example-org/tracker!41"))
+			}
+		}},
 		{"irrelevant", func(f *pendingForge) { f.files[0].Filename = "elsewhere.md" }},
 		{"removed", func(f *pendingForge) { f.files[0].Status = "removed" }},
 		{"foreign-author", func(f *pendingForge) { f.change.Author.Login = "stranger" }},

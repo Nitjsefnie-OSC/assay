@@ -499,6 +499,19 @@ func IsVerifierAttestation(title, author string) bool {
 // and dispatcher stamp gates as execution and Evidence admission; this is never
 // authority to execute rows, land Evidence, or advance lifecycle.
 func ReadVerifierAttestation(f Forge, repo ForgeRepo, n int) (VerifierReceipt, error) {
+	return readVerifierAttestation(f, repo, n)
+}
+
+// The shared validator can consume only these read capabilities. Extending it
+// requires an explicit adapter change at compile time, rather than a nil-Forge
+// panic or an accidental live request from a prepared observation.
+type verifierAttestationReader interface {
+	attestationRecordReader
+	issueLabelEventReader
+	GetIssueTyped(ForgeRepo, int, TargetKind) (*Issue, error)
+}
+
+func readVerifierAttestation(f verifierAttestationReader, repo ForgeRepo, n int) (VerifierReceipt, error) {
 	r := VerifierReceipt{Issue: n}
 	if n <= 0 {
 		return r, Refused("verifier attestation number must be positive")

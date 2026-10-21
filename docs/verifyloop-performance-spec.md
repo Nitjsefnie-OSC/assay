@@ -8,6 +8,11 @@ for roots rejected by preflight. Its merge is the acceptance point for that loca
 The next bounded slice, pending-Evidence joins and scheduling attestation reuse, is
 qualified in [verifyloop-pending-performance.md](verifyloop-pending-performance.md).
 Its acceptance remains normal code review and human merge.
+The subsequent GitHub batching slice is qualified in
+[verifyloop-attestation-batching.md](verifyloop-attestation-batching.md) and proposed in
+[medici-finance/assay#3808](https://github.com/medici-finance/assay/pull/3808).
+Its acceptance point is independent review, required checks and human merge of that PR;
+the PR records the reversible GitHub-first scope decision. GitLab batching remains proposed.
 The broader extension to [desk-workflow-efficiency-spec.md](desk-workflow-efficiency-spec.md)
 remains proposed; its source's approval does not approve this extension. No runtime,
 cache service, collection, credentials, release or consumer cutover is activated.

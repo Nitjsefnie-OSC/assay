@@ -31,10 +31,12 @@ GraphQL operations, in order:
 3. New issue observations after body history, including current body, closed state and labels.
 4. Label application/removal history after current labels, including actor identity.
 
-An invocation-local adapter supplies these values to the **unchanged
-`ReadVerifierAttestation` validator**. Exact target/title/body/run/source/brief/model/tier,
+An invocation-local adapter supplies these values to the shared
+`ReadVerifierAttestation` validator, whose admission predicates are unchanged. Exact target/title/body/run/source/brief/model/tier,
 unedited-body provenance, closed state and dispatcher stamp checks retain their shared
-owners. The adapter cannot send an unexpected extra request. Errors and missing aliases
+owners. The adapter implements only the three read capabilities consumed by the validator,
+with no embedded Forge. A new validator dependency requires an explicit adapter change
+at compile time. The adapter cannot send an unexpected extra request. Errors and missing aliases
 are target-specific uncertainty; unattributable GraphQL or transport errors stop further
 batch requests. Provider error messages are not echoed. An overflowing label connection
 uses the existing complete native reader; its errors never become empty labels/history.
@@ -61,8 +63,9 @@ custom/enterprise-schema cost behavior are unchanged.
 The measured parent is `fb7d8bb04ba46eddf8e75867e61620c19a4f74fe`; the measured
 subject code is `0758413cfc581ba96ee83421ebd21bdf69d813c6`. Both used native default
 HTTP settings, matching standard-library counters/runtime profiling and normal verifier
-custody. CPU-heavy tests were stopped during measurement. Subsequent qualification edits
-change only documentation.
+custody. CPU-heavy tests were stopped during measurement. The following table measures that subject revision. A subsequent review follow-up
+narrows the validator adapter to an explicit read interface and adds boundary coverage;
+it does not alter request construction, observation order or admission predicates.
 
 Measured parent/subject/subject/parent on the same four frozen roots, with normal preflight and custody:
 

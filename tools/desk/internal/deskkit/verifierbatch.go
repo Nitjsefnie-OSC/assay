@@ -72,7 +72,6 @@ type verifierBatchObservation struct {
 // validator. It owns no live Forge: an unexpected read cannot escape to a fresh
 // request or accidentally reuse an observation from another admission.
 type verifierBatchForge struct {
-	Forge
 	repo          ForgeRepo
 	number, reads int
 	observation   *verifierBatchObservation
@@ -201,7 +200,7 @@ func (g *GitHubForge) verifierAttestations(f Forge, repo ForgeRepo, numbers []in
 		}
 		for _, n := range chunk {
 			reader := &verifierBatchForge{repo: repo, number: n, observation: observations[n]}
-			receipt, err := ReadVerifierAttestation(reader, repo, n)
+			receipt, err := readVerifierAttestation(reader, repo, n)
 			out[n] = VerifierAttestationResult{Receipt: receipt, Err: err}
 		}
 	}
