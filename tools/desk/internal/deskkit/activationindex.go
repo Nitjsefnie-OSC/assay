@@ -154,12 +154,11 @@ func activationManifests(root string) ([]componentManifest, []string, error) {
 	if err != nil || !source.valid {
 		return manifests, skipped, err
 	}
-	// A failed read cannot become a reusable partial list. Also reject a tree that
-	// changed between enumeration and this independent observation.
-	checked, checkErr := validateManifests(root)
-	if checkErr != nil || !checked.valid || checked.digest() != source.digest() {
-		return manifests, skipped, err
-	}
+	// Reference discovery returns its own observation unchanged. Retain only a
+	// candidate captured from those exact parsed bytes. The ONE independent full
+	// validation above must succeed immediately before any later reused return.
+	// Read failures mark source invalid in the reference reader, so a partial
+	// unreadable diagnostic can never be retained and survive a later deletion.
 	data := manifestPayload{Revision: manifestRevision, Skipped: skipped}
 	for _, m := range manifests {
 		data.Manifests = append(data.Manifests, manifestWire{m.path, m})

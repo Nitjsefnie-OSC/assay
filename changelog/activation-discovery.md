@@ -1,3 +1,4 @@
 - Reuse parsed activation manifests within one process only after complete membership and content validation, with bounded storage and current configuration/provider evaluation.
 - Add offline compiled startup workloads and production-owner negative controls; filesystem validation remains visible and no persistent startup speedup is claimed.
 - Decline snapshot reuse when serialization changes parsed bytes, preserving binary YAML keys and raw path diagnostics; pin same-length content edits and source-binding checks with owner mutations.
+- Keep cold activation at one reference traversal by retaining only candidates; every reused return still requires full independent validation, and failed reference reads prevent retention.

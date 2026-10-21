@@ -105,8 +105,12 @@ func discoverManifests(root string, source *manifestSource) (manifests []compone
 			}
 			return nil
 		}
+		activationWork("reference-read")
 		data, rerr := os.ReadFile(path)
 		if rerr != nil {
+			if source != nil {
+				source.valid = false
+			} // partial reads cannot become candidates
 			skipped = append(skipped, path+": unreadable: "+rerr.Error())
 			return nil
 		}

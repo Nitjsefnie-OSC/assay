@@ -31,11 +31,17 @@ func snapshotObserver(t *testing.T) func(string) int {
 }
 func snapshotParity(t *testing.T, root string) {
 	t.Helper()
+	if err := snapshotCompare(root); err != nil {
+		t.Fatal(err)
+	}
+}
+func snapshotCompare(root string) error {
 	got, skips, err := activationManifests(root)
 	want, wantSkips, wantErr := DiscoverManifests(root)
 	if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(skips, wantSkips) || fmt.Sprint(err) != fmt.Sprint(wantErr) {
-		t.Fatalf("snapshot differs from reference: got=%+v %v %v want=%+v %v %v", got, skips, err, want, wantSkips, wantErr)
+		return fmt.Errorf("snapshot differs from reference: got=%+v %v %v want=%+v %v %v", got, skips, err, want, wantSkips, wantErr)
 	}
+	return nil
 }
 func snapshotFile(t *testing.T, path, body string) {
 	t.Helper()
@@ -170,15 +176,27 @@ func TestActivationSnapshotCorruptionAndBounds(t *testing.T) {
 		})
 	}
 	var wg sync.WaitGroup
+	errors := make(chan error, 24)
 	for i := 0; i < 12; i++ {
 		// Distinct roots force publication as well as concurrent reads. One slot
 		// must not mix source identity, diagnostics or manifests between writers.
 		writerRoot := t.TempDir()
 		writeManifest(t, writerRoot, fmt.Sprintf("test/concurrent-%d", i), nil, nil, nil)
 		wg.Add(1)
-		go func() { defer wg.Done(); snapshotParity(t, writerRoot); snapshotParity(t, writerRoot) }()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 2; j++ {
+				if err := snapshotCompare(writerRoot); err != nil {
+					errors <- err
+				}
+			}
+		}()
 	}
 	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
+	}
 	nested := filepath.Join(root, "nested")
 	snapshotFile(t, filepath.Join(nested, "component.yaml"), "component: test/nested\n")
 	snapshotParity(t, root)
@@ -285,26 +303,65 @@ func TestSnapshotSourceBinding(t *testing.T) {
 
 // regression: F-snapshot-admission-recheck
 func TestSnapshotAdmissionRecheck(t *testing.T) {
+	for _, phase := range []string{"during capture", "before first reuse"} {
+		t.Run(phase, func(t *testing.T) {
+			count := snapshotObserver(t)
+			root := t.TempDir()
+			path := filepath.Join(root, "component.yaml")
+			snapshotFile(t, path, "component: test/before\n")
+			observer := activationWork
+			changed := false
+			if phase == "during capture" {
+				activationWork = func(event string) {
+					observer(event)
+					if event == "parse" && !changed {
+						changed = true
+						if err := os.WriteFile(path, []byte("component: test/afterx\n"), 0600); err != nil {
+							t.Error(err)
+						}
+					}
+				}
+			}
+			first, _, err := activationManifests(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(first) != 1 || first[0].Component != "test/before" {
+				t.Fatal("cold reference result was not the exact parsed observation")
+			}
+			if phase == "before first reuse" {
+				snapshotFile(t, path, "component: test/afterx\n")
+			}
+			second, _, err := activationManifests(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(second) != 1 || second[0].Component != "test/afterx" || count("reuse") != 0 {
+				t.Fatal("candidate returned stale bytes without successful independent validation")
+			}
+			snapshotParity(t, root)
+		})
+	}
+}
+
+// regression: F-snapshot-partial-candidate
+func TestSnapshotUnreadableCapture(t *testing.T) {
 	snapshotObserver(t)
 	root := t.TempDir()
 	path := filepath.Join(root, "component.yaml")
-	snapshotFile(t, path, "component: test/before\n")
-	observer := activationWork
-	changed := false
-	activationWork = func(event string) {
-		observer(event)
-		if event == "validation-directory" && !changed {
-			changed = true
-			if err := os.WriteFile(path, []byte("component: test/afterx\n"), 0600); err != nil {
-				t.Error(err)
-			}
-		}
+	// A dangling symlink deterministically fails the reference read even as root.
+	if err := os.Symlink(filepath.Join(root, "missing"), path); err != nil {
+		t.Skipf("symlink fixture unavailable: %v", err)
 	}
-	if _, _, err := activationManifests(root); err != nil {
+	_, skipped, err := activationManifests(root)
+	if err != nil || len(skipped) != 1 || !strings.Contains(skipped[0], "unreadable") {
+		t.Fatalf("reference read failure missing: %v %v", skipped, err)
+	}
+	if activationIndex.slot != nil {
+		t.Error("partial reference read retained as a candidate")
+	}
+	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
-	}
-	if !changed || activationIndex.slot != nil {
-		t.Fatal("changed-during-discovery snapshot was admitted")
 	}
 	snapshotParity(t, root)
 }

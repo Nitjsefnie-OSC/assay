@@ -28,7 +28,7 @@ consumers:
   - "tools/desk/internal/deskkit/activation.go: fixed-here (reference owner and shared routing)"
   - "tools/desk/internal/deskkit/activationindex.go: fixed-here (bounded validated slot)"
   - "tools/desk/internal/deskkit/activationindex_test.go: fixed-here (fresh reference and lower-boundary negative controls)"
-  - "all tools/desk/cmd entrypoints calling CheckVerbActivation: follow-up desktools-v2/60 (inherit the one discovery implementation; enumerate at pickup)"
+  - "tools/desk/cmd/: out-of-scope (unchanged authority adapters inherit the shared runtime owner; README enumerates all 41 callers and the three named commands have compiled qualification)"
   - "tools/desk/internal/deskkit/activationstartup_test.go: fixed-here (actual compiled board/dispatch/token startup workloads)"
   - "tools/desk/cmd/deskboard help/version entrypoints: follow-up desktools-v2/20"
   - "tools/desk/cmd/deskdispatch help/version entrypoints: follow-up desktools-v2/21"
@@ -146,8 +146,10 @@ cache/discovery and CLI work remains independently deliverable and is not held f
 
 ## Implementation choice within the declared fallback
 
-The bounded fallback is process-local reuse of parsed discovery, with one slot and
-1 MiB source/payload limits. Every reuse still performs a complete membership and
+The bounded fallback is process-local reuse of parsed discovery candidates, with one slot and
+1 MiB source/payload limits. Cold discovery retains only the exact parsed observation,
+with no second traversal; any failed read prevents candidate retention. Every reused
+return, including the first attempted reuse, still requires complete membership and
 content-validation traversal; the warm benefit is avoiding YAML parsing and derived
 sorting/deduplication, not eliminating filesystem scans. Persistent startup reuse is
 not qualified. The three compiled synthetic workloads measure external elapsed

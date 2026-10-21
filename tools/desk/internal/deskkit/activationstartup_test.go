@@ -114,10 +114,10 @@ func TestCompiledStartupDiscoveryWorkload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Count(string(work), "enumeration\n") != 1 || strings.Count(string(work), "parse\n") != 1 || strings.Count(string(work), "reference-directory\n") != size+3 {
+			if strings.Count(string(work), "enumeration\n") != 1 || strings.Count(string(work), "parse\n") != 1 || strings.Count(string(work), "reference-directory\n") != size+3 || strings.Count(string(work), "validation-directory\n") != 0 || strings.Count(string(work), "validation-read\n") != 0 {
 				t.Fatalf("%s unaccounted startup work: %s", tool.name, work)
 			}
-			t.Logf("work %s dirs=%d reference=1 parse=1 validation-dirs=%d validation-read=1 reuse=0", tool.name, size+3, strings.Count(string(work), "validation-directory\n"))
+			t.Logf("work %s dirs=%d reference=1 parse=1 validation-dirs=%d validation-read=0 reuse=0", tool.name, size+3, strings.Count(string(work), "validation-directory\n"))
 			helpTrace := trace + "-help"
 			_, helpCode, _ := run(observed, root, home, "0", helpTrace, "--help")
 			if tool.name != "desktoken" {
