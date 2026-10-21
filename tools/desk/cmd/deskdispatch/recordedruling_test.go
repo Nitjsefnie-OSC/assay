@@ -134,7 +134,7 @@ func rrDispatch(t *testing.T, statusgenOnPath bool, code int, out string) (int, 
 	plantScripts(t, root)
 	rrTree(t, root, rrBrief(rrGoodLine))
 	s.replies = append([]reply{{match: "--ruling-record", stdout: out, stderr: out, code: code}},
-		happyReplies("/private/tmp/worker-home")...)
+		happyReplies(filepath.Join(t.TempDir(), "worker-home"))...)
 	lookPath = func(name string) (string, error) {
 		if statusgenOnPath && name == statusgenBinary {
 			return "/example/bin/statusgen", nil
@@ -198,7 +198,7 @@ func TestRecordedRulingRefusesPreClaim(t *testing.T) {
 	_, root := s.install(t)
 	plantScripts(t, root)
 	rrTree(t, root, rrBrief("**Ruling (2026-09-30) option 1** as [DR](../decisions/DR-example-rec.md)."))
-	s.replies = happyReplies("/private/tmp/worker-home")
+	s.replies = happyReplies(filepath.Join(t.TempDir(), "worker-home"))
 	err := cmdDispatch([]string{"item-1", "--root", root, "--repo", allowedRepo, "--gate-human", "--brief", rrBriefRel,
 		"--prompt-file", filepath.Join(t.TempDir(), "p.md")})
 	if deskkit.ExitCodeOf(err) != deskkit.ExitRefused {
