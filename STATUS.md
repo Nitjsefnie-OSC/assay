@@ -13,25 +13,26 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 |---|---|---|---|---|---|
 | [apps-installer](docs/streams/apps-installer/README.md) | P1 | active | 2/10 | 2026-10-20 |  |
 | [build-less-brittle](docs/streams/build-less-brittle/README.md) | P0 | active | 4/13 | 2026-10-20 |  |
+| [cell-api](docs/streams/cell-api/README.md) | P2 | active | 0/7 | 2026-10-21 |  |
 | [cellctl-windows](docs/streams/cellctl-windows/README.md) | P1 | active | 0/8 | 2026-10-16 |  |
 | [comms-core](docs/streams/comms-core/README.md) | P1 | active | 0/4 | 2026-10-21 |  |
-| [composability](docs/streams/composability/README.md) | P2 | active | 2/6 | 2026-10-20 |  |
+| [composability](docs/streams/composability/README.md) | P2 | active | 2/6 | 2026-10-21 |  |
 | [contributor-trust](docs/streams/contributor-trust/README.md) | P1 | active | 0/9 | 2026-10-20 |  |
 | [derived-board](docs/streams/derived-board/README.md) | P1 | active | 3/11 | 2026-10-21 |  |
-| [desk-containers](docs/streams/desk-containers/README.md) | P2 | active | 2/29 | 2026-10-20 |  |
+| [desk-containers](docs/streams/desk-containers/README.md) | P2 | active | 2/29 | 2026-10-21 |  |
 | [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 8/35 | 2026-10-21 |  |
 | [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/52 | 2026-10-20 |  |
 | [desktools-go-git](docs/streams/desktools-go-git/README.md) | P2 | active | 5/8 | 2026-10-20 |  |
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/53 | 2026-10-21 | 15 withdrawn |
-| [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-20 |  |
+| [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-21 |  |
 | [forge-neutral](docs/streams/forge-neutral/README.md) | P1 | active | 5/43 | 2026-10-20 |  |
 | [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-21 |  |
-| [harness-portability](docs/streams/harness-portability/README.md) | P2 | active | 5/17 | 2026-10-20 |  |
+| [harness-portability](docs/streams/harness-portability/README.md) | P2 | active | 5/17 | 2026-10-21 |  |
 | [iso-9001](docs/streams/iso-9001/README.md) | P2 | active | 4/11 | 2026-10-20 |  |
-| [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-20 |  |
+| [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-21 |  |
 | [quality](docs/streams/quality/README.md) | P2 | active | 16/19 | 2026-10-20 |  |
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/38 | 2026-10-21 |  |
-| [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-20 |  |
+| [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-21 |  |
 
 ### Stuck auto-flips (30)
 
@@ -80,7 +81,6 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 | [audit-pack-example](docs/streams/audit-pack-example/README.md) | P2 | 0/1 | 2026-09-20 |
 | [auto-triage](docs/streams/auto-triage/README.md) | P2 | 0/4 | 2026-10-20 |
 | [brief-quality](docs/streams/brief-quality/README.md) | P1 | 0/9 | 2026-10-20 |
-| [cell-api](docs/streams/cell-api/README.md) | P2 | 0/7 | 2026-10-20 |
 | [ci-tooling](docs/streams/ci-tooling/README.md) | P2 | 0/7 | 2026-10-20 |
 | [continuing-operations](docs/streams/continuing-operations/README.md) | P2 | 0/2 | 2026-10-20 |
 | [desk-improvement](docs/streams/desk-improvement/README.md) | P2 | 0/10 | 2026-10-20 |
@@ -126,7 +126,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 112dde4c 2026-10-21T14:44:11Z_
+_last regen: 29b33908 2026-10-21T16:42:04Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +147,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 112dde4c 2026-10-21T14:44:11Z_
+_last regen: 29b33908 2026-10-21T16:42:04Z_
 
 **Progress:** 34/86 brief items done.
 
@@ -227,21 +227,18 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | harness-portability | 03 | implemented | 4500 | 7 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | harness-portability | 04 [exec:strong] | implemented | 4000 | 6 | — | driver | human action, cite medici-finance/assay#1834 | — | — |
 | forge-neutral | 34 [exec:strong] | implemented | 3500 | 3 | — | driver | resolve the recorded blocker before sign-off: hold (check-definition), cite medici-finance/assay#2475 | — | — |
-| windows-port | 03 [exec:strong] | implemented | 3010 | 4 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | derived-board | 04 | implemented | 3000 | 2 | — | driver | human action, cite #1175 | — | — |
+| windows-port | 03 [exec:strong] | implemented | 3000 | 4 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | forge-neutral | 09 [exec:strong] | implemented | 2500 | 1 | — | driver | resolve the recorded blocker before sign-off: hold (check-definition), cite medici-finance/assay#1281 | — | — |
 | forge-neutral | 13 [exec:strong] | implemented | 2500 | 1 | — | driver | resolve the recorded blocker before sign-off: hold (environment), cite medici-finance/assay#1800 | — | — |
-| windows-port | 08 [exec:strong] | implemented | 2010 | 2 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#1795 — rows 3-14, 16, 17 mis-specified for the execution witness; row 18 vacuous on merged main; row 17 live human run and the NAMED, NOT DERIVED 365-day --pat-expiry-days ceiling (provision.go:88) await the human gate | — | — |
 | apps-installer | 08 [exec:strong] | implemented | 2000 | 0 | — | driver | close the sign-off card | — | — |
 | forge-neutral | 11 [exec:strong] | implemented | 2000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#1554 | — | — |
 | forge-neutral | 19 [exec:strong] | implemented | 2000 | 0 | — | driver | human action, cite medici-finance/assay#997 | — | — |
-| forge-gitlab | 11 [exec:strong] | implemented | 1510 | 1 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
-| desktools-go-git | 05 | implemented | 1500 | 1 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#2371 | — | — |
+| windows-port | 08 [exec:strong] | implemented | 2000 | 2 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#1795 — rows 3-14, 16, 17 mis-specified for the execution witness; row 18 vacuous on merged main; row 17 live human run and the NAMED, NOT DERIVED 365-day --pat-expiry-days ceiling (provision.go:88) await the human gate | — | — |
+| desktools-go-git | 05 | implemented | 1510 | 1 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#2371 | — | — |
 | desktools-v2 | 03 [exec:strong] | implemented | 1500 | 1 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | desktools-v2 | 10 [exec:strong] | implemented | 1500 | 1 | — | driver | close the sign-off card | — | — |
-| forge-gitlab | 05 [exec:strong] | implemented | 1010 | 0 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
-| forge-gitlab | 12 [exec:strong] | implemented | 1010 | 0 | — | driver | human action, cite #1794 | — | — |
-| windows-port | 10 [exec:strong] | implemented | 1010 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
+| forge-gitlab | 11 [exec:strong] | implemented | 1500 | 1 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
 | desk-supervision | 09 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1185 | — | — |
 | desk-supervision | 20 [exec:strong] | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#3765 | — | — |
 | desk-supervision | 21 [exec:strong] | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#3764 | — | — |
@@ -249,11 +246,14 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-tools | 18 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | desk-tools | 29 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | desktools-v2 | 11 [exec:strong] | implemented | 1000 | 0 | — | driver | close the sign-off card | — | — |
+| forge-gitlab | 05 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1794 | — | — |
+| forge-gitlab | 12 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite #1794 | — | — |
 | harness-portability | 09 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1834 | — | — |
 | harness-portability | 10 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1834 | — | — |
 | statusgen | 05 [exec:strong] | implemented | 1000 | 0 | — | driver | human action, cite medici-finance/assay#1785 | — | — |
 | statusgen | 09 | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (no recognised kind), no blocker ref recorded | — | — |
 | statusgen | 16 [exec:strong] | implemented | 1000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#3398 | — | — |
+| windows-port | 10 [exec:strong] | implemented | 1000 | 0 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 
 ### Awaiting implementer rework (32)
 
@@ -275,12 +275,12 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | forge-neutral | 16 [exec:strong] | implemented | 2000 | 0 | — | worker | fix, cite #1281 | — | — |
 | measured-status | 02 [exec:strong] | implemented | 2000 | 0 | — | worker | fix, cite medici-finance/assay#1915 | — | — |
 | measured-status | 04 [exec:strong] | implemented | 2000 | 0 | — | worker | fix, cite medici-finance/assay#2241 | — | — |
-| forge-gitlab | 13 [exec:strong] | implemented | 1510 | 1 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
+| desktools-go-git | 06 | implemented | 1510 | 1 | — | worker | fix, cite #2337 | — | — |
 | composability | 01 | implemented | 1500 | 1 | — | worker | fix, cite #1843 | — | — |
 | desk-supervision | 32 [exec:strong] | implemented | 1500 | 1 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
-| desktools-go-git | 06 | implemented | 1500 | 1 | — | worker | fix, cite #2337 | — | — |
 | desktools-v2 | 20 [exec:strong] | implemented | 1500 | 1 | — | worker | fix, cite medici-finance/assay#2111 | — | — |
 | desktools-v2 | 21 [exec:strong] | implemented | 1500 | 1 | — | worker | fix, cite medici-finance/assay#1915 | — | — |
+| forge-gitlab | 13 [exec:strong] | implemented | 1500 | 1 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | desk-supervision | 08 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1363 | — | — |
 | desk-tools | 02 | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1792 — row 5 is a prose PR-body check the witness cannot execute (check-definition); row 1 environment flake #612/#1232; row 4 vacuous post-merge self-diff (#1657 class) | — | — |
 | desk-tools | 03 [exec:strong] | implemented | 1000 | 0 | — | worker | fix, cite medici-finance/assay#1784 | — | — |
@@ -307,13 +307,13 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | forge-neutral | 14 [exec:strong] | implemented | 2000 | 0 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | forge-neutral | 15 [exec:strong] | implemented | 2000 | 0 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | measured-status | 01 | implemented | 2000 | 0 | — | operator | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/mutations.json` | — | — |
-| windows-port | 12 | implemented | 1510 | 1 | — | operator | environment blocker, cite #1942 | — | — |
-| windows-port | 15 [exec:strong] | implemented | 1510 | 1 | — | operator | environment blocker, cite #1800 | — | — |
 | desk-supervision | 31 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite medici-finance/assay#2665 | — | — |
 | desk-supervision | 33 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite medici-finance/assay#2665 | — | — |
 | desk-tools | 21 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | desktools-v2 | 19 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite medici-finance/assay#1800 | — | — |
 | harness-portability | 17 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite #1800 | — | — |
+| windows-port | 12 | implemented | 1500 | 1 | — | operator | environment blocker, cite #1942 | — | — |
+| windows-port | 15 [exec:strong] | implemented | 1500 | 1 | — | operator | environment blocker, cite #1800 | — | — |
 | desk-tools | 19 [exec:strong] | implemented | 1000 | 0 | — | operator | `cd tools/desk && go build ./... && go vet ./...` | — | — |
 | desktools-v2 | 13 [exec:strong] | implemented | 1000 | 0 | — | operator | environment blocker, cite #1631 | — | — |
 
@@ -332,7 +332,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-containers | 06 [exec:strong] | implemented | 6000 | 10 | — | verify runner | none | — | — |
 | build-less-brittle | 04 [exec:strong] | verified | 5510 | 5 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-04 assay-verifier-app[bot] @ d6662bbc6b4f (claude-opus-5-5) | — |
 | desktools-v2 | 65 [exec:strong] | implemented | 5500 | 9 | — | verify runner | none | — | — |
-| windows-port | 00 | verified | 5010 | 8 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 8bc28e8edf84 (claude-opus-5-5) | — |
+| windows-port | 00 | verified | 5000 | 8 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 8bc28e8edf84 (claude-opus-5-5) | — |
 | build-less-brittle | 05 [exec:strong] | verified | 4510 | 3 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-07 assay-verifier-app[bot] @ fe2217521989 (claude-opus-5-5) | — |
 | build-less-brittle | 06 [exec:strong] | verified | 4510 | 3 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-04 assay-verifier-app[bot] @ d6662bbc6b4f (claude-opus-5-5) | — |
 | build-less-brittle | 09 [exec:strong] | verified | 4010 | 2 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-07 assay-verifier-app[bot] @ fe2217521989 (claude-opus-5-5) | — |
@@ -1113,4 +1113,4 @@ _Terminal: retired by a later decision or merged into a successor. Not counted i
 
 ## Totals
 
-**33** streams (**21** active, **0** paused, **12** parked) · **107/515** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
+**33** streams (**22** active, **0** paused, **11** parked) · **107/515** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
