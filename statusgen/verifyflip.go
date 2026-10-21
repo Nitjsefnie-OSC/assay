@@ -142,6 +142,7 @@ var (
 // runVerifyflip is the `statusgen verifyflip` entry point.
 func runVerifyflip(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("verifyflip", flag.ContinueOnError)
+	defer transitionFlags(fs)()
 	fs.SetOutput(stderr)
 	fs.Usage = func() {}
 	briefKey := fs.String("brief", "", "")
@@ -295,7 +296,7 @@ func planVerifyFlip(root, key, wantSHA, wantRunner string) (verifyFlipPlan, erro
 			return verifyFlipPlan{}, refuseFlip("gate-class: Verify row %s has unknown class %q — the verb cannot tell who decides it", r.ID, r.Class)
 		}
 	}
-	findings, refusal := closureWitnesses(verify, run)
+	findings, refusal := closureRunWitnesses(verify, bf.Evidence, run, path)
 	if refusal != "" {
 		return verifyFlipPlan{}, refuseFlip("%s", refusal)
 	}
@@ -305,7 +306,7 @@ func planVerifyFlip(root, key, wantSHA, wantRunner string) (verifyFlipPlan, erro
 	if checkExitCode(findings) != verifyrunExitPass {
 		var bad []string
 		for _, f := range findings {
-			if f.State != statePass {
+			if !closureSatisfied(f) {
 				bad = append(bad, "row "+f.ID+": "+f.State)
 			}
 		}
@@ -419,7 +420,7 @@ type flipPass struct {
 	StampErr error
 	Runner   string
 	SHA      string
-	Run      string
+	Run      string // comment-removed selected text; closureRunWitnesses preserves full-record classification
 	Marks    []int
 	RunStart int
 }
@@ -465,6 +466,17 @@ func flipLatestPass(evidence string) (flipPass, error) {
 	// PASS mean the convention does not hold here: refuse, never guess.
 	if after, _ := flipDateRunnerRows(lines[last.line+1:]); len(after) > 0 {
 		return flipPass{}, refuseFlip("runner mismatch: %d Date/Runner row(s) follow the latest PASS — record each run's rows after the previous verdict and before its own", len(after))
+	}
+	if len(protectedMarkers(normalizedProtectedEvidence(stripped))) > 0 {
+		// A newer unfinished protected record must not borrow this PASS.
+		// Keep this in the shared selector so callers passing p.Run cannot
+		// discard a live tail before closure, audit or coverage sees it.
+		for _, line := range strings.Split(stripCode(stripped), "\n")[last.line+1:] {
+			line = strings.TrimSpace(strikethroughRe.ReplaceAllString(line, ""))
+			if line != "" && !strings.HasPrefix(line, ">") {
+				return flipPass{}, refuseFlip("protected table: live content follows the latest PASS; complete the current run before closing")
+			}
+		}
 	}
 	rows, at := flipDateRunnerRows(lines[start:last.line])
 	if len(rows) == 0 {
@@ -732,7 +744,7 @@ func flipProvenance(path, evidence string, marks []int, runStart int) error {
 	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 	ev := strings.Split(evidence, "\n")
-	start, _, ok := evidenceLineRange(content)
+	start, end, ok := evidenceLineRange(content)
 	if !ok || start-1+len(ev) > len(lines) || strings.Join(lines[start-1:start-1+len(ev)], "\n") != evidence {
 		return fmt.Errorf("provenance: the Evidence section of %s cannot be mapped to file lines", base)
 	}
@@ -778,7 +790,7 @@ func flipProvenance(path, evidence string, marks []int, runStart int) error {
 	if runStart < 0 || runStart >= len(spans) {
 		return fmt.Errorf("provenance: the PASS run starts outside the Evidence of %s", base)
 	}
-	first, last := start+spans[runStart][0], start+len(ev)-1
+	first, last := start+spans[runStart][0], end
 	out, err = historyGit(dir, "blame", "--line-porcelain",
 		"-L", fmt.Sprintf("%d,%d", first, last), "--", base).Output()
 	if err != nil {

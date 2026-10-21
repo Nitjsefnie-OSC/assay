@@ -153,7 +153,7 @@ at that main revision. Existing evaluation APIs and runner protocol remain reusa
 | Admission, controller and complete verifier proof | graph-execution/14, /21, /18; R5 proof remains required |
 | Retained records and truthful audit exports | graph-execution/15 and existing records policy; no new audit store |
 | Source queries, immutable cache, incremental indexes and Git reuse | merged forge-neutral/39–45 beside /37–38; preserve their existing owners |
-| Local-first opt-in performance collection | performance-collection/01–06; separate database and required audit unaffected |
+| Local-first opt-in performance collection | performance-collection/01–09; collection first, offline/daily reports, bounded issue/draft-repair proposals; separate database and required audit unaffected |
 | Complete derived-evaluation context and time-bounded applicability | **new graph-execution/30**; existing /03 coverage handles source/policy/build/environment reuse, while this adds explicit validity/context records for runtime consumers |
 | Accountable principals and evidence assurance provenance | **new graph-execution/31**; existing attribution/role checks do not supply principal/delegation independence or proof-class qualification |
 
@@ -164,3 +164,45 @@ qualification. The real R1 head remains independent verification of /02 before /
 R7 owner selection and R3–R8 follow-up amendments remain with their existing package owners,
 not silently completed by this document. Threshold signing, federation, native SCM, cold-log
 storage and multi-host overlapping writers remain separately scoped later work.
+
+## Operating reporting amendment — 15 October 2026
+
+Reuse performance-collection/01–09: local producer capture/coverage → saved snapshots →
+one deterministic on-demand command/thin skill → daily report generation → separately
+qualified issue/draft-repair proposal mode. All three views (brief completion history,
+stream movement/stall evidence, tool run/total/Avg/P95 wall-child-CPU-forge trends) use the
+same typed results for CLI, daily artifacts and R7 clients. Local collection/reporting is
+useful before R2–R8 and before the optional remote store. It has no work admission/effect
+credentials; optional data loss cannot reset required accounting.
+
+R2 owns managed occurrences, schedules, leases and cumulative budgets; R3 owns execution;
+R4 reconciles stable issue/PR effects; R6 supplies authorized source snapshots. The optional
+performance database holds observations/distributions, not current work/acceptance truth.
+Continuing-operations owns assessment meaning; existing desks own investigation, candidate,
+review and verification. A merged repair remains awaiting measured outcome, and missing
+coverage cannot justify a repair. No second scheduler, runtime DB, forge writer or policy
+self-modification is introduced. Existing default gates and qualified legacy paths remain.
+
+## Portable execution follow-through — 16 October 2026
+
+The [execution-environment amendment](27-agent-execution-environments.md) extends this same
+public runtime. Agent-execution/01–02 supply capability/profile and preparation contracts;
+/03 consumes the existing local supervisor/adapter; /04 tests the existing controller/effect
+path under restore; /05 supplies a truthful lifecycle snapshot to current status clients;
+/06 independently investigates AX offline. R2 PostgreSQL and R4 effect identity/reconciliation
+remain authoritative. No AX task state, runner receipt or filesystem restoration grants
+work acceptance or renews authority. Existing R3/R4, celld and R7 activation obligations remain.
+
+Harness² follow-through adds agent-execution/07, an independent offline refinement-protocol experiment. Proposed harness bundles stay untrusted, immutable per invocation and subject to existing review/adoption; operator policy, enforced controls and acceptance cannot be optimized by the candidate. This changes no runtime owner.
+
+## Attributed performance adapter obligation — requested amendment, 19 October 2026
+
+Future runner/supervisor/forge-service adapters preserve the
+[perf-v3 lifecycle and request contract](../../performance-attribution-spec.md): the launcher
+owns logical session/agent identity and assigned role; each process owns fresh invocation
+identity, own CPU and actual requests. Parent links do not authorize work and inclusive
+parent timings never add to child/provider time as elapsed time. Preserve unknown coverage
+at unmanaged boundaries. Use explicit profiles and typed context; optional sink failure
+cannot change required process receipts, custody, budget accounting or recovery. Collection
+import aliases local qualified work before its separate storage/export. The /63–65 library
+and adapters precede optional remote collection, not operational runtime availability.

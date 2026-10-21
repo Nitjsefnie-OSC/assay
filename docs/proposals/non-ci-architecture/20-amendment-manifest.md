@@ -177,6 +177,16 @@ Historical Evidence is byte-preserved. /28 receives reciprocal unblocks only, no
 changes. The merged forge-neutral/39–45 and performance-collection/01–06 are reused unchanged.
 R3/R4 custody and R5/R7/R8 integration/migration remain their existing proof obligations.
 
+### Operating-report owner routing — 15 October 2026
+
+| Slice | Owner and delivery | Runtime boundary |
+|---|---|---|
+| Capture and retained coverage/distributions | performance-collection/01–02; preserve /03–06 separate database/transport qualification | Local-first optional observations, no operational authority |
+| On-demand command/skill and daily three-report bundle | performance-collection/07–08; existing flow/lifecycle meanings retained | R7 consumes the same projection; local report-pack host can precede R2–R8 |
+| Later issue/draft-repair proposal loop | performance-collection/09; continuing-operations assessment and existing desk consumers | Managed activation depends on R2/R3/R4 and the brief's typed graph prerequisites; no new scheduler or autonomous merge |
+
+This is a requested specification/brief amendment, not implementation or activation evidence. It supersedes the "reused unchanged" record above for performance-collection/01, 02 and 06 only: the 15 October operating-report amendment extends those briefs and adds 07–09, with their collection/storage boundaries and runtime authority unchanged.
+
 ## Operation-count brakes and pacing — 15 October 2026
 
 Controlling delta: [brake and pacing contract](11-target-architecture.md#pacing-counts-are-best-effort-brakes-fail-closed).
@@ -199,3 +209,98 @@ relaxing one is a separate human decision.
 Existing Task/Verify rows and historical Evidence remain intact; each brief adds rows and
 bumps `version:`. No installed limiter, default, credential, executor activation or hard
 resource limit changes in this documentation PR.
+
+## Portable execution environments — 16 October 2026
+
+Controlling delta: [agent execution environments](27-agent-execution-environments.md).
+The new agent-execution stream, parked until that amendment is approved, authors seven
+bounded extensions of existing owners:
+
+| Gap | Owning brief | Existing prerequisite/consumer | Change made in this authoring PR |
+|---|---|---|---|
+| Qualified harness/model/backend and explicit preservation | agent-execution/01 | implemented graph-execution/20 | New extension obligation; reciprocal edge only on /20, existing Evidence untouched |
+| Prepared-environment receipt and workspace port | agent-execution/02 | /01; existing candidate and retirement owners retained | New pure port; no second Git, resource store or pruner |
+| Local enforcement | agent-execution/03 | /02, graph-execution/22 and /26 | Follow-on to their existing implementation; reciprocal edges, no reassignment |
+| Integrated restore/effect proof | agent-execution/04 | /03, graph-execution/21 and /25 | Production-owner integration tests; no alternative scheduler or effect ledger |
+| Lifecycle projection | agent-execution/05 | /03–04, graph-execution/27 | Existing cellop/cellctl consumers; R7 retains API/cockpit ingress |
+| AX source/fixture qualification | agent-execution/06 | /01–02, independent of managed integration | Offline go/no-go/unknown report; no production adapter or cluster activation |
+| Governed harness refinement | agent-execution/07 | /01–02; existing improvement/promotion owners retained | Offline protocol experiment with independent holdouts, protected controls and complete cost; no live optimizer |
+
+Source: main ec8d77e56627a7c2269f3d143ef6a31f3e41bd02, open-PR inventory refreshed
+16 October. No listed implementation PR targets the new extension/receipt paths. The open
+/20 Evidence PR is preserved. Refresh claims and PRs again at pickup; this bounded observation
+is not an ownership transfer. Existing Task/Verify text, gates, versions and Evidence are
+unchanged; only reciprocal unblocks and dated routing notes are added. /03's concrete profile
+adoption decision ripens after its implementation design. Full live qualification retains
+existing R1–R8 and operator decisions. No existing platform/profile is silently replaced.
+
+## Desk-process improvement — proposed owner set, 17 October 2026
+
+[Amendment 22](22-desk-improvement.md) extends continuing operations/quality. It does not
+replace R1–R8 or their activation sequence. Source state: public main 2f56cf289; current
+open claims/PRs were not enumerated in this offline audit and must be reconciled at pickup.
+
+| Work | Owner briefs | Source owners / treatment |
+|---|---|---|
+| Definition and pure calculation | desk-improvement/01–02 | Extend qualgen assessment/projection, semantic-owner index; no new miner |
+| Diagnosis/experiment/follow-up validation and role procedure | desk-improvement/03–04 | Continuing-operations lineage; shared skill reference; concrete procedure activation remains reviewed |
+| Native source bindings | desk-improvement/05 | Consume graph-execution/06 + brief-quality/05, compatible associations only |
+| Runtime evidence | desk-improvement/06–08 | After graph-execution/26 + /22, /21, /27 respectively; /08 also consumes brief-quality/07; foundations receive consumer notes, no reverse dependency |
+| Read-only proposal context | desk-improvement/09 | Existing Improve human/cadence and internal-module boundary |
+| End-to-end native qualification | desk-improvement/10 | Actual producer→mapping→cards→assessment→view, recovery and unknown/private cases |
+
+The new stream is parked and proposal-scoped. Every new brief is M/strong and carries
+executable discriminating checks. Existing completed Evidence/approval is preserved.
+Offline assistance can precede native emission, while measured native-mode benefit requires
+its real producer closure. Public implementation has no private adopter dependency.
+
+Semantic prerequisites: desk-improvement/01 consumes continuing-operations/01 (after
+statusgen/22); /03 consumes continuing-operations/02. These are explicit build gates,
+so generic source contracts are implemented once, before their assessment consumers.
+
+## Perf-v3 attribution and forge cost — requested amendment, 19 October 2026
+
+[Contract](../../performance-attribution-spec.md): new desktools-v2/63–65 own versioned local
+schema/readers, desk/agent/CLI propagation and own-request timing/points. Unfinished /62,
+statusgen/26 and performance-collection/01–09 are amended; completed /61 stays intact.
+The target, future-state bindings, storage/recovery and runtime handoff carry the same
+context/consent/coverage contract. This supersedes earlier v2-only future measurement intent,
+not historical v1/v2 facts, Evidence or the collection stream's parked state.
+
+## Write-policy and pickup amendment — 18 October 2026
+
+| Obligation | Owning plan / candidate change | Proof and limits |
+|---|---|---|
+| One reusable local write evaluator and command adapter | New desktools-v2/66 (writeguard keeps its current parser; the /31 port is withdrawn) | Library/built-hook parity, effect boundary, source-bound consumers and external-module builds; other guards keep independent owners |
+| Future/guideline recheck at implementation pickup | statusgen/20–21 amended; current spec and worker-kit instructions use the manual procedure | /20 scoped guideline/target discovery; /21 actual dispatch hold/continue behavior and shipped-version citation; no resolver/activation claimed |
+| Managed workspace consumers | Consumer plans must bind allocation observations, hook profile and sandbox roots; qualification consumes exact producer versions | Public contracts stand alone; adopter tracking/rollout and active-worker acknowledgments remain in their own venue |
+
+Inspected base: `c3d073572f41e09bedcac05944f9a202c3267353`. Historical accounts and
+completed Evidence remain unchanged. Live claims/PRs were not read in this local
+authoring pass: these candidate amendments require the existing affected-work
+checkpoint/reconciliation before dispatch and never silently rebind a running worker.
+
+Active-plan inspection, 18 October 2026: 52 open public PRs were enumerated through
+the worker identity. medici-finance/assay#3409 (since merged) withdrew /31; medici-finance/assay#3429 (since
+merged) also changed the brief specification.
+This amendment keeps /66 independent and adds graph-execution/22 as its target
+consumer. Reconcile source revisions at merge/pickup; no running worker is rebound
+and no competing proposal is treated as approved. Dispatch refs were not read.
+
+## Interactive Kubernetes owner routing — 20 October 2026
+
+[Controlling amendment](28-interactive-kubernetes-desks.md). No new stream or runtime owner.
+
+| Obligation | Applied authoring change | Acceptance |
+|---|---|---|
+| Separately interactive role Pods | desk-containers/06 version 5 | Five workloads/PVCs; structured offline negative controls; compatibility custody disclosed |
+| Shared Kubernetes transport and managed standing profile | New agent-execution/09; /08 follows /09 | Current identity/stop/readiness checks, no workflow-store prerequisite; verifier privileges remain distinct |
+| In-cluster operator | New desk-containers/28 | Compiled cellctl through existing clients; scoped operator capability, reconnect never launches |
+| Whole-cell and optimization proof | New desk-containers/29 | Five-role flow, custody/recovery boundaries, bounded startup and zero idle model calls; separate real-profile witness |
+| Optional fleet presentation | desk-containers/07 version 4 after /28 | Linux attachment layout; no native Windows gate or parallel launcher |
+| Storage and scheduled compatibility | /27 and /12 dated routing | CNPG profile consumes base directly; CronJobs cannot co-own interactive roles |
+| Shared runtime, roles and public migration | graph-execution/26–27 consumption; amendment 28 migration table | Existing R1–R8 semantics, exact-subject observations and perf-v3 counts retained; source handoff preserves history |
+
+New tests are future implementation obligations. Existing completed Evidence is unchanged.
+Active PostgreSQL/image-scan/performance PRs are recorded in amendment 28 and reconciled at
+pickup. The parked execution stream is not silently admitted by this routing note.

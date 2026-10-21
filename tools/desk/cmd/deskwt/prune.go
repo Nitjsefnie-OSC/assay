@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -96,6 +97,8 @@ type pruneOpts struct {
 	// half of the cadence split. The opt-in worktree arms (--reclaim-stale-locks,
 	// --reap-dead-sessions) are REFUSED with it, because they would be silently inert.
 	branchesOnly bool
+	// noMaintenance skips the independently coalesced, offline object-store pass.
+	noMaintenance bool
 	// noCache skips the cell-cache pressure pass (Step D, cachepressure.go) for this
 	// sweep. Default OFF: every sweep pressure-checks the marked cell Go-cache roots.
 	noCache bool
@@ -254,11 +257,12 @@ func cmdPrune(args []string) (err error) {
 		"skip the local-branch GC (run the worktree arms only)")
 	branchesOnly := fs.Bool("branches-only", false,
 		"run ONLY the local-branch GC (skip every worktree arm)")
+	noMaintenance := fs.Bool("no-maintenance", false, "skip the daily offline object-store maintenance pass")
 	// --no-cache / --cells-root are the cache pressure pass's (Step D,
 	// cachepressure.go) cadence and scope knobs: the pass runs at the same moments as
 	// prune by default, against $CELLS_ROOT unless told otherwise.
 	noCache := fs.Bool("no-cache", false,
-		"skip the cell-cache pressure pass (run the worktree arms and branch GC only)")
+		"skip the cell-cache pressure pass")
 	cellsRootFlag := fs.String("cells-root", "",
 		"cells root the cache pressure pass sweeps for marked cell Go-cache roots (default: $CELLS_ROOT, then the per-user data-directory default)")
 	// --min-idle is the activity gate's window (activity.go). It can be tuned, never
@@ -273,7 +277,7 @@ func cmdPrune(args []string) (err error) {
 		}
 		return deskkit.Refused("refused: prune takes no flags but --repo, --interval, " +
 			"--reclaim-stale-locks, --reap-dead-sessions, --lock-ttl, --dry-run, --singleton-ttl, " +
-			"--no-singleton, --no-branches, --branches-only, --no-cache, --cells-root and --min-idle " +
+			"--no-singleton, --no-branches, --branches-only, --no-cache, --cells-root, --min-idle and --no-maintenance " +
 			"(there is no --force): " + perr.Error())
 	}
 	if len(positionals) != 0 {
@@ -287,6 +291,7 @@ func cmdPrune(args []string) (err error) {
 		singletonTTL:      defaultSingletonTTL,
 		noBranches:        *noBranches,
 		branchesOnly:      *branchesOnly,
+		noMaintenance:     *noMaintenance,
 		noCache:           *noCache,
 		cellsRoot:         cellsRootForSweep(*cellsRootFlag),
 		minIdle:           defaultMinIdle,
@@ -413,6 +418,8 @@ func cmdPrune(args []string) (err error) {
 
 	// One-shot mode: single sweep, detailed per-worktree summary to stderr.
 	if interval == 0 {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
 		res, swept, why, serr := sweepWithSingleton(guard, dir, cwd, opts)
 		if serr != nil {
 			return serr
@@ -424,6 +431,7 @@ func cmdPrune(args []string) (err error) {
 			fmt.Fprintf(os.Stderr, "deskwt prune: %s — skipping this sweep\n", why)
 			ac.detail = "singleton: " + why
 			ac.successResult = deskkit.ResultNoop
+			pruneMaintenance(ctx, dir, opts, os.Stderr)
 			return nil
 		}
 		fmt.Fprintln(os.Stderr, pruneSummaryLine(res))
@@ -431,6 +439,7 @@ func cmdPrune(args []string) (err error) {
 		for _, s := range res.skips {
 			fmt.Fprintf(os.Stderr, "  skipped %s — %s\n", s.path, s.reason)
 		}
+		pruneMaintenance(ctx, dir, opts, os.Stderr)
 		ac.detail = pruneAuditDetail(res)
 		if res.bookkept == 0 && res.removed == 0 && res.reaped == 0 && len(res.reclaimed) == 0 &&
 			len(res.staleRegs) == 0 && res.branchGC.collected() == 0 && res.cache.reclaimed == 0 && len(res.cache.reaped) == 0 {
@@ -552,6 +561,15 @@ func renderSweepDetail(w io.Writer, res pruneResult) {
 // sleeps a partial tick past a stop — the select blocks on both channels. Each tick emits
 // one stdout summary line; a sweep error aborts the loop (fail closed).
 func runPruneLoop(guard *pathGuard, dir, cwd string, interval time.Duration, opts pruneOpts, stop <-chan struct{}, ac *auditCtx) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -606,6 +624,7 @@ func runPruneLoop(guard *pathGuard, dir, cwd string, interval time.Duration, opt
 			renderSweepDetail(os.Stdout, res)
 		}
 
+		pruneMaintenance(ctx, dir, opts, os.Stdout)
 		select {
 		case <-stop:
 			fmt.Fprintf(os.Stdout, "%s deskwt prune: shutdown signal — exiting after %d tick(s)\n", nowStamp(), ticks)
@@ -663,8 +682,7 @@ func singletonKey(guard *pathGuard, cwd string) string {
 	return cwd
 }
 
-// sweepCtx is the per-sweep state that used to be rebuilt per candidate. Three things live
-// here, and each replaces N copies of itself:
+// sweepCtx owns reads shared across candidates and discarded after each sweep:
 //
 //   - objects: ONE go-git object cache for the whole sweep. gitcore.Open builds a fresh
 //     one per call and prune called it 3-4 times per worktree, so one 5,779-commit history
@@ -677,9 +695,15 @@ func singletonKey(guard *pathGuard, cwd string) string {
 //
 // This is the same fix internal/gitcore/contains.go documents at length for a different
 // caller: one shared walk instead of N.
+// sweepread.go extends that reuse to the reap arm and admin registration discovery.
 type sweepCtx struct {
-	objects gitcore.ObjectCache
-	repos   map[string]*gitcore.Repo
+	objects    gitcore.ObjectCache
+	repos      map[string]*gitcore.Repo
+	commonDir  string
+	historyDir string
+	mainTip    string
+	ancestry   map[ancestryQuery]bool
+	admins     *worktreeAdminIndex
 
 	// mainAncestors is nil when the set could not be built; ancestorErr then says why.
 	mainAncestors map[string]struct{}
@@ -702,9 +726,17 @@ type sweepCtx struct {
 // establish the mainline holds everything and removes nothing.
 func newSweepCtx(dir string) *sweepCtx {
 	sc := &sweepCtx{
-		objects: gitcore.NewObjectCache(),
-		repos:   map[string]*gitcore.Repo{},
+		objects:    gitcore.NewObjectCache(),
+		repos:      map[string]*gitcore.Repo{},
+		historyDir: dir,
+		ancestry:   map[ancestryQuery]bool{},
 	}
+	common, err := gitcore.CommonDir(dir)
+	if err != nil {
+		sc.ancestorErr = err
+		return sc
+	}
+	sc.commonDir = resolvePath(common)
 	hashes, lerr := logOriginMain(sc, dir)
 	if lerr != nil {
 		sc.ancestorErr = lerr
@@ -730,12 +762,24 @@ var logOriginMain = func(sc *sweepCtx, dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return repo.Log("refs/remotes/origin/main")
+	tip, err := repo.Resolve("refs/remotes/origin/main")
+	if err != nil {
+		return nil, err
+	}
+	sc.mainTip = tip.String()
+	return repo.Log(sc.mainTip)
 }
 
 // open returns the sweep's handle on the worktree rooted at rt, opening it at most once
 // and routing every object read through the sweep's single shared cache.
 func (sc *sweepCtx) open(rt string) (*gitcore.Repo, error) {
+	common, err := gitcore.CommonDir(rt)
+	if err != nil {
+		return nil, err
+	}
+	if resolvePath(common) != sc.commonDir {
+		return nil, deskkit.Unverifiable("worktree no longer belongs to this sweep's common Git store", nil)
+	}
 	if r, ok := sc.repos[rt]; ok {
 		return r, nil
 	}
@@ -1131,7 +1175,7 @@ func pruneSweep(guard *pathGuard, dir, cwd string, opts pruneOpts) (pruneResult,
 			continue
 		}
 		if atTip {
-			age, ageErr := guard.adminEntryAge(rt, sweepNow)
+			age, ageErr := sc.adminEntryAge(guard, rt, sweepNow)
 			if ageErr != nil {
 				res.skips = append(res.skips, skipEntry{rt, "unverifiable worktree age: " + errText(ageErr)})
 				continue

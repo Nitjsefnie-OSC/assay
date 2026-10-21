@@ -2,6 +2,7 @@ package deskkit
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +32,8 @@ import (
 
 // ToolCall describes one child process to run.
 type ToolCall struct {
+	// Context optionally carries the caller's immutable performance context.
+	Context context.Context
 	// Name and Args are the argv, ALWAYS as an explicit slice of literal verbs plus
 	// already-validated values — never a shell string. The runner never interposes a shell,
 	// so no value in Args can be re-read as an option by anything but the child itself.
@@ -89,12 +92,22 @@ func Run(c ToolCall) ToolRun {
 	if env == nil {
 		env = os.Environ()
 	}
+	resolvedContext := false
+	if c.Context != nil {
+		if pc, ok := PerfContext(c.Context); ok {
+			env = PerfContextEnv(env, pc, true)
+			resolvedContext = true
+		}
+	}
+	if !resolvedContext {
+		env = unknownPerfParentEnv(env)
+	}
 	cmd.Env = UnsurfacedEchoEnv(env)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	began := time.Now()
-	err := cmd.Run()
+	err := RunProcess(cmd)
 	r := ToolRun{
 		Name:     c.Name,
 		Args:     append([]string(nil), c.Args...),
@@ -106,9 +119,23 @@ func Run(c ToolCall) ToolRun {
 		Err:      err,
 	}
 	traceRecord(r)
-	// perf.go: one child and its wall time, for the opt-in local perf record.
-	perfCountChild(r.Elapsed)
 	return r
+}
+
+// RunProcess observes a child without changing os/exec stream, environment,
+// cancellation or error semantics. Callers needing raw streams use this instead
+// of Run; Run itself delegates here, so each attempt is counted exactly once.
+func RunProcess(cmd *exec.Cmd) error {
+	began := time.Now()
+	defer func() { perfCountChild(time.Since(began)) }()
+	return cmd.Run()
+}
+
+// OutputProcess preserves Output's bytes and *exec.ExitError (including Stderr).
+func OutputProcess(cmd *exec.Cmd) ([]byte, error) {
+	began := time.Now()
+	defer func() { perfCountChild(time.Since(began)) }()
+	return cmd.Output()
 }
 
 // ExitStatusOf recovers a child process's exit status so a wrapped tool's own deskkit exit

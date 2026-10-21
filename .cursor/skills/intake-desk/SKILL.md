@@ -21,9 +21,11 @@ description: >-
 
 > Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, role/repo coverage, and running a `gh` call as the role App (never a human's CLI login: [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role)) — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
 
+> **Every `gh` call carries this role's `GH_TOKEN`, reads included.** When no desk verb covers a forge call, run it only through the recipe in [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role), never a hand-typed shortcut. That recipe takes the role from `$DESK_LOOP`, mints it with `desktoken`, scopes the token to that one command without exporting it, and stops before `gh` unless the mint exited 0 and the token file holds a non-whitespace token. A bare `gh` call runs as the host's stored login, which is usually a human's, so a desk never runs one, not even for a read.
+
 > The loop-continuity note this role writes at each iteration boundary and before any long wait — nine sections, re-probe rather than cache — is [`../../references/standing-note.md`](../../references/standing-note.md).
 
-> Procedure every desk role shares — the liveness contract, worktree hygiene, the driver-act runsheet entry — is stated once in [`../../references/desk-common.md`](../../references/desk-common.md); read it at boot. Hard gates never move there: they stay resident in this body.
+> Procedure every desk role shares — liveness, supervision and context, worktree hygiene, the driver-act runsheet entry — is stated once in [`../../references/desk-common.md`](../../references/desk-common.md); read it at boot. Hard gates never move there: they stay resident in this body.
 
 The **intake-desk** is the generic front door of the process-desk pipeline — the first of the four
 desks (`intake-desk → worker-desk → pr-review-desk → verify-desk`). Where pr-review-desk watches
@@ -86,11 +88,12 @@ whose errors compound downstream. `scanloop` EMITS this half for a model tier, n
 ## Boot sequence
 
 `deskboot intake-desk` — loop identity, `deskwt prune`, worktree lock, roster self-declare, the
-five-check `deskroster preflight --role issue-loop`, the issue-loop token mint, and a read-only
-board fetch. Each step prints one line; the first red one stops the boot and names itself. **A red
-preflight is `could-not-run` for the WHOLE pass:** report the ONE summary line and STOP — do not
-claim work, and do not file an issue about the desk's own envelope (each failing check names the
-issue that owns it). Two intake-specific residues after boot:
+five-check `deskroster preflight --role issue-loop`, the issue-loop token mint, a read-only board
+fetch, worktree currency, and first-sweep prerequisites (forge mapping, desk-tools pin). Each step
+prints one line; the first red one stops the boot and names itself. **A red preflight is
+`could-not-run` for the WHOLE pass:** report the ONE summary line and STOP — do not claim work, and
+do not file an issue about the desk's own envelope (each failing check names the issue that owns
+it). Two intake-specific residues after boot:
 
 - **The scan scope comes from the tool; this skill carries no repo list.** `deskroster repos
   --scope scan` prints the front door this desk owns — the same roster value the scanner and
@@ -161,7 +164,7 @@ not own.
 ## The board
 
 `issueboard` — read-only, one ACTION per open issue plus the intake lane's untriaged entries,
-age-flagged (`issueboard issues` / `issueboard intake` narrow to one lane). Its scan scope is the
+age-flagged (`issueboard issues --projection intake` / `issueboard intake` narrow to one lane). Its scan scope is the
 roster's, resolved at runtime; an unset/empty scan-repo roster value or a repo the token cannot read
 fails the WHOLE board with exit 6, so the board is never silently partial and an empty sweep is never
 reported as a clean board. A `needs-decision` or `question` issue ages against `--sla-days` (default
@@ -172,8 +175,16 @@ never be able to sink an ESCALATE row beneath a fresher high-impact one. An open
 `to:<role>` (filed by `deskfile new --to <role>`) is a desk-inbox item: it renders `ADDRESSED→<role>`
 in its own priority band, is held OUT of the un-briefed (CREATE-PLACEHOLDER) work — it is that desk's
 item, not free work — and, aged past `--sla-days` with no comment from that role's App, ESCALATES so
-an unread inbox surfaces without the addressee's cooperation. `issueboard issues --to <role>` narrows
+an unread inbox surfaces without the addressee's cooperation. `issueboard issues --projection inbox --to <role>` narrows
 to one desk's inbox.
+
+Use the projected forms only with an `issueboard --version` producer advertising
+`issue-projection-v1`. Older pinned producers retain `issueboard issues` and
+`issueboard issues --to <role>`; select that compatibility path before discovery,
+never as a retry after an incomplete projected read. The intake projection preserves
+the whole issue population, escalation/closure and quarantine; the inbox projection
+covers only the named addressee. Local raw intake remains `issueboard intake`.
+See [producer/plugin compatibility and rollback](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
 
 ## Scored triage — the impact/risk/effort triple at exit
 
@@ -324,7 +335,9 @@ correctness). A **mutating** response does not converge harmlessly: hence §Clos
    reuses the class record, never rediscovers it. A production-down or security symptom stays `todo`;
    the driver's own-login `bleed` reply naming a parked symptom sets it `todo`, `Parked` dropped.
    **Re-park:** a scanner `reactivate` (excluded label removed or reopened) sets a parked row `todo`,
-   body kept, so each pass re-blocks a `todo` row still saying `Parked`. `intended-control` is a
+   body kept, so each pass re-blocks a `todo` row still saying `Parked`; when the excluded label was
+   removed by anything other than a rostered human, the scanner holds the item until the
+   ratifying identity has commented on the issue since the label was applied. `intended-control` is a
    wording fix for its refusal-text owner, never design work.
 2. **`close-candidate` — the brief-write for a no-merge close.** When an issue must close with NO
    merged fix (`FIXED-NOT-CLOSED | WONTFIX | DUPLICATE | STALE`), mark the placeholder frontmatter
@@ -512,9 +525,11 @@ Stated once for every desk; this skill adds only what is its own above.
   precise, *wrong* line numbers. State the SHA a sibling-repo detail was cross-checked against, or
   don't cite it; cannot reach the remote and cannot cross-check → **could-not-check**, never a
   claim badged as re-verified.
-- **Identity.** Post and file as this desk's own App via the desk verbs (`deskfile`, `deskpost`,
-  `deskreply`, `deskpr`), minting with `desktoken <role>` — never a hand-rolled mint script; a `gh`
-  call no verb covers runs as the role App per desk-shell.md §Forge CLI as the role. A shared
+- **Identity.** Post and file as this desk's own App via the desk verbs (`deskfile`, `deskreply`,
+  `deskpr`), minting with `desktoken <role>` — never a hand-rolled mint script; a `gh`
+  call no verb covers runs as the role App per desk-shell.md §Forge CLI as the role. For comments,
+  use `deskfile attach` on issues or `deskreply` on this desk's own PRs; `deskpost comment`
+  is reserved for `pr-review-desk`. A shared
   human/operator login makes authorship ambiguous; a token 404-ing on a repo it should cover means
   the wrong installation, never "App not installed". **Fallback:** the App genuinely not installed on
   a target repo (`desktoken coverage <role> --repo <owner>/<repo>` exits 5; a missing human `gh`
@@ -626,3 +641,25 @@ is not enough: an issue with that title from anyone else is ordinary intake. The
 If inspecting raw forge results, keep these records out of intake and work scans; use a
 direct issue read only to audit or recover the exact dispatch. Closing a record attests
 the pre-work stamp, never that the brief was verified or the work was done.
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-loop-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

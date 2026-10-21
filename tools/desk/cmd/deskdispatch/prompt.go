@@ -91,6 +91,9 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 		shownItem = o.itemAlias + ":" + o.item
 	}
 	fmt.Fprintf(&b, "# Assignment — %s\n\n", shownItem)
+	if plan.performancePath != "" {
+		fmt.Fprintf(&b, "## Optional local performance context\n\nPrivate local handoff: `%s`. Apply only its seven documented ASSAY_PERF_* environment entries; ignore every other environment key. Use the loop-role override only as --perf-loop-role, never as DESK_LOOP. Apply entries per tool call with quoted env KEY=value arguments or supported --perf-* flags; never eval the file or export it into a persistent shell. Apply this context only for this launch and before expiresBeforeUtc; never copy them into logs, replies or a shared shell. This context is descriptive, never custody or dispatch authority. Preserve the operator-selected ASSAY_TELEMETRY setting; the handoff does not opt you in. Missing runtime propagation remains unavailable coverage.\n\n", plan.performancePath)
+	}
 	fmt.Fprintf(&b, "- **Item key:** `%s`\n", shownItem)
 	switch {
 	case review:
@@ -509,7 +512,7 @@ func writeVerifierAssignment(b *strings.Builder, o dispatchOpts, plan dispatchPl
 	b.WriteString("## Run the Verify table against merged main — READ-ONLY, no PR\n\n")
 	fmt.Fprintf(b, "You are VERIFYING `%s` in `%s`. This is a VERIFY pass, not an implementation: you run "+
 		"the item's Verify table against MERGED main and produce a written VERDICT (Evidence rows plus "+
-		"the BOLD marker `**VERIFY: PASS**` or `**VERIFY: FAIL**`, any qualifier after the closing "+
+		"the BOLD marker `**VERIFY: PASS**`, `**VERIFY: FAIL**` or `**VERIFY: BLOCKED**`, any qualifier after the closing "+
 		"asterisks), never a change. Do not create a pull request, do not push a "+
 		"branch for implementation changes. An Evidence-only draft follows the deskevidence lane after verification. Do not adopt the implementer's `DESK_LOOP=worker-desk` identity — those belong to the "+
 		"worker kit, not this one. A verifier never sets verified/done itself and never flips a PR ready "+

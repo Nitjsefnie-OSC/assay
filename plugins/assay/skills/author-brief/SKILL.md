@@ -42,6 +42,16 @@ the repo — don't invent a new format.** If a project-level `author-brief` skil
 repo (`.claude/skills/author-brief/SKILL.md`), read it after this skill and apply its specifics —
 paths, docs-regen commands, and local examples layer on top of this methodology.
 
+## Bind implementation pickup to current context
+
+Read the [implementation pickup procedure](../../references/implementation-pickup.md).
+Specs and briefs identify the selected target/transition, semantic contracts and
+applicable project engineering guidelines by canonical pointer. Include their
+pickup/resume assessment in the implementation handoff; record revisions, coverage
+and continue/adapt/hold rather than assume the authoring snapshot is still current.
+Use the explicit manual bootstrap until the shared operation is shipped and supported.
+Do not rewrite completed Evidence or let a draft proposal veto approved work.
+
 ## The most important judgment call: find the REAL head of the critical path
 
 The critical path is the chain that, if it slips, slips everything. The recurring failure is putting
@@ -730,11 +740,28 @@ could-not-check runs serial.
    cells from PR trailers, `verifyrun` witnesses and App approvals — a hand edit inside the markers
    is a lint PROBLEM, the same as hand-editing `STATUS.md`. Columns:
    `| # | Brief | Wave | Effort | Status | Verified | Reviewed |`, Status a bare lifecycle token
-   (`todo` / `in-progress` / `implemented` / `verified` / `done`, or the hold token `blocked`). A
+   (`todo` / `in-progress` / `implemented` / `verified` / `done`, the hold token `blocked`, or the
+   off-path `withdrawn` — see "Withdrawing a brief" below). A
    project not yet wired to `statusgen` hand-maintains the older
    `| # | Brief | Wave | Status | What's deployed/landed |` shape as a stopgap — ✅ / ⚠ / ❌ with a
    terse, honest "what's actually true" note (not aspirational) — but the moment generation is
    live, the table is derived, never hand-edited.
+   **Withdrawing a brief.** A brief retired by a later decision, or merged into another brief,
+   is never parked as `blocked` with prose in its title. Set its Status cell to `withdrawn` (the
+   link text keeps the original title; preserve existing Verified/Reviewed stamps), switch its frontmatter to
+   `schema: brief-v3` (the withdrawal keys remain unknown on brief-v1/v2), and add:
+   `withdrawn-date: "YYYY-MM-DD"`, `superseded-by: ["<stream>/<NN>" | "<cell>:<alias>:<stream>:<NN>"]`
+   (`[]` = won't-fix) and a one-sentence `withdrawn-reason:`. Put the banner
+   `> **Withdrawn YYYY-MM-DD — superseded by <successor>.** <reason>. Not executable.` under the H1.
+   Never delete the file or erase partial implementation, Evidence, stamps or receipts.
+   Keep the existing human decision gate: withdrawal is not permission to bypass it.
+   A withdrawn brief leaves the done ratio, Next-up and the bottleneck views; dependencies
+   remain unsatisfied until explicitly amended. Validate successor chains and review each
+   dependent's scope before re-pointing it. Use a shared, revision-bound `withdrawal-context`
+   handoff where the amendment has one; preserve observed claims with acknowledged treatment.
+   Run `statusgen withdrawal-audit` over the candidate board and an open-PR snapshot before
+   rollout, then reconcile affected implementation and evidence PRs with their owners.
+   Do not auto-close them. Upgrade readers before authoring v3; see `docs/withdrawal-rollout.md`.
 2. **Critical path** — an ASCII chain showing the blocking order, with a one-line "smallest unblocking
    move" and a warning if any tempting-but-wrong first step is a dead end.
 3. **Dependency waves** — `Wave 0: [..]  Wave 1: [..]←0  …`, plus the one-line critical path

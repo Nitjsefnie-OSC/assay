@@ -20,8 +20,9 @@ package main
 //     given, the declared backfill branch/body match (Source "backfill").
 //     Without --backfill the write is trailer-only — the mode the scheduled
 //     reconcile job runs, because a branch/body match also catches PRs that
-//     merely author or mention a brief. A trailer witness the board should
-//     not take is fixed at the trailer (spec §2), not by closing the job's PR.
+//     merely mention a brief. Admission removes authoring/Evidence-only PRs
+//     and reads partial delivery claims from the brief (briefdelivery.go).
+//     Repair unsuitable inputs there; closing the generated PR cannot fix them.
 //     The backfill's OTHER Source=="backfill"
 //     shape — a hand-asserted implemented/verified/done with no PR at all —
 //     derives `unknown`, not `implemented`, so it is already excluded by the
@@ -87,6 +88,23 @@ type appliedRow struct {
 	Witness   string `json:"witness"`
 	RowBefore string `json:"rowBefore"`
 	RowAfter  string `json:"rowAfter"`
+	// Generated lists the generated output this move regenerates alongside
+	// the README edit (#2694): a drive-plan page's snapshot region, whose
+	// render reads the row's Status. The hold judged the README edit and these
+	// regions together, and --apply writes both; empty when the move changes
+	// no generated output.
+	Generated []generatedChange `json:"generated,omitempty"`
+}
+
+// generatedChange is one generated region a row move re-renders: the page it
+// sits in, the drive whose snapshot it is, and the region's text (between its
+// fences) before and after, byte for byte. A reviewer reproduces it with
+// `statusgen --drive-snapshot <drive>` over the board carrying the move.
+type generatedChange struct {
+	Path         string `json:"path"`
+	Drive        string `json:"drive"`
+	RegionBefore string `json:"regionBefore"`
+	RegionAfter  string `json:"regionAfter"`
 }
 
 // witnessedImplemented reports whether c is a real PR-backed `implemented`
@@ -217,6 +235,30 @@ func reconcileWritesWith(root string, cells []BriefCell, write bool, opts holdOp
 		if merr != nil {
 			return rows, held, fmt.Errorf("%s: %w", path, merr)
 		}
+		// The move drifted generated output it changes (a drive-snapshot
+		// region): with the --regenerate opt-in, judge the complete proposed
+		// output instead — the README edit plus each such artifact re-rendered
+		// against the moved board (reconcilegenerated.go, #2694). Every rule
+		// still runs; only what is staged differs. Without it the row is held
+		// on the drift: the landing callers commit stream READMEs only.
+		var regen *regeneratedStage
+		if kinds, paths := driftedOutputs(root, added); opts.regenerate && found && len(kinds) > 0 {
+			added, found, merr = env.tryMove(stream, num, "implemented", func() (func() error, error) {
+				undoReadme := staged.put(path, edit.content)
+				rs, undoRegen := stageRegenerated(root, staged, kinds, paths)
+				regen = rs
+				return func() error {
+					err := undoRegen()
+					if uerr := undoReadme(); err == nil {
+						err = uerr
+					}
+					return err
+				}, nil
+			}, true)
+			if merr != nil {
+				return rows, held, fmt.Errorf("%s: %w", path, merr)
+			}
+		}
 		if !found {
 			added = []string{couldNotCheckRow(c.ID)}
 		}
@@ -228,13 +270,22 @@ func reconcileWritesWith(root string, cells []BriefCell, write bool, opts holdOp
 			if err := os.WriteFile(path, []byte(edit.content), 0o644); err != nil {
 				return rows, held, fmt.Errorf("%s: %w", path, err)
 			}
+			if regen != nil {
+				if err := writeRegenerated(root, regen); err != nil {
+					return rows, held, err
+				}
+			}
 		} else {
 			overlay[path] = edit.content
 		}
-		rows = append(rows, appliedRow{
+		row := appliedRow{
 			ID: c.ID, From: edit.from, To: "implemented", Path: path, Witness: applyWitness(c),
 			RowBefore: edit.rowBefore, RowAfter: edit.rowAfter,
-		})
+		}
+		if regen != nil {
+			row.Generated = regen.changes
+		}
+		rows = append(rows, row)
 	}
 	return rows, held, nil
 }

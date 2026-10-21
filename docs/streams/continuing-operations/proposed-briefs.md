@@ -149,6 +149,7 @@ that named implementation tests or commands already exist.
 - **Deliverables:** Public spec-authoring reference, author-brief/template changes, review and verify guidance. Teach user-journey linkage, portable measures, method-profile selection, uncertainty, measurement gaps and independent assessment. Keep one canonical reference.
 - **Owning surfaces:** `plugins/assay/skills/author-brief/SKILL.md`, its canonical references, public brief template, and applicable review/verify guidance. Teach spec authors through a shared public reference rather than assuming a separate spec-writing skill exists.
 - **Acceptance scenarios:** Author representative predicted, learning, enabling and no-direct-impact briefs. Each is interpretable without organization-specific context; a brief can deliver a valid disconfirming experiment without pretending the hypothesis succeeded.
+- **Review-profile consumer:** Apply [review-profiles](../review-profiles/spec.md): architecture direction at the applicable migration stage and algorithm/resource efficiency at design time, with measured results separate from hypotheses. Preserve correctness/security and existing finding scope.
 - **Review / activation considerations:** Keep delivery Verify obligations distinct from later outcome evaluation. Include a disconfirmed learning hypothesis as successful experimental delivery.
 
 <a id="o09"></a>
@@ -173,6 +174,7 @@ that named implementation tests or commands already exist.
 - **Deliverables:** A neutral outcomes responsibility, hostable by the existing desk or human: due queue, evidence review, independent assessment and no-change/investigate/propose-change/escalate exits. Route new work through intake.
 - **Owning surfaces:** Public outcomes procedure/reference in `plugins/assay/`, with existing intake and verification interfaces; no new standing process required.
 - **Acceptance scenarios:** An evaluator reconstructs a completed intervention, records an adverse or inconclusive result and routes the next decision without editing the aggregate or self-verifying implementation. Missing telemetry has an explicit disposition.
+- **Review-profile consumer:** Host manual daily performance and periodic architecture assessments using shared versioned definitions, exact inputs, coverage and full calibration/cost metrics. Findings route through confirmed, deduplicated intake; assess exposure and adverse outcomes after repair. No new scheduler or automatic approval.
 - **Review / activation considerations:** Name the accountable practice owner and independent evaluator; define delegation, overdue escalation and handoff after stream closure.
 
 <a id="o11"></a>
@@ -182,9 +184,10 @@ that named implementation tests or commands already exist.
 - **Depends on:** O05, O10. **External:** graph-execution/04, graph-execution/09, graph-execution/14, graph-execution/16.
 - **Unblocks:** cadence-enabled adopter/client rollout.
 - **Why:** Automate due assessments without introducing a second scheduler or duplicate interventions.
-- **Deliverables:** Bind practice triggers/windows/deadlines to existing admission, claims, recovery and budget machinery. Define occurrence identity, restart, coalescing, overdue behavior and stale-input handling. No automatic remediation or policy self-modification.
+- **Deliverables:** Bind practice triggers/windows/deadlines to existing admission, claims, recovery and budget machinery. Define occurrence identity, restart, coalescing, overdue behavior and stale-input handling. No automatic remediation or policy self-modification. The bounded issue/draft-repair proposal profile in performance-collection/09, separately activated and routed through existing desks to human-merged draft PRs, is a proposal path and falls outside the automatic-remediation prohibition only; the policy self-modification prohibition, and 09's own refusals of budget raises, gate removal, merge and deployment, apply to it unchanged. Do not duplicate that profile or its effect lineage.
 - **Owning surfaces:** Practice-to-`workflow-instance-v1` adapter at existing graph admission/dispatch boundary; recovery, coalescing and budget conformance fixtures. No second scheduler.
 - **Acceptance scenarios:** Repeated triggers and a crash resume one logical occurrence; cumulative budget survives restart; stale sources cannot initiate an unjustified intervention. Existing permission denial remains binding.
+- **Review-profile consumer:** A later performance/architecture cadence uses this same occurrence/admission/recovery adapter. Confirmed opportunities reach a bounded repair draft PR only through the performance-collection/09 proposal path, whose executor writes the `performance-repair` label and body marker and whose repair PRs are never admitted to an automated merge lane; the review-profile path opens no repair PR of its own, and the cadence reuses existing cumulative budgets, review and independent verification. Stale inputs, duplicate triggers and exhausted budgets cannot initiate new repairs. No autonomous merge/deployment or policy/target rewrite.
 - **Review / activation considerations:** Require prerequisite contract acceptance and an explicit activation decision. Derive risk from actual scheduled effects; no production access is implied by the outline.
 
 <a id="o12"></a>
@@ -249,3 +252,12 @@ also a separate automation branch: O12/O13 deliberately prove manual adoption wi
   verification. Leave Evidence empty until execution; never mark this outline delivered.
 - Generate the README Briefs table from actual authored briefs. Keep proposed scopes out
   of lifecycle rows until then; central boards remain generated.
+
+## Operating-report delivery amendment — 15 October 2026
+
+The three concrete reports and local collection are independently deliverable under
+performance-collection/01, /02, /07 and /08. O02/O04 adopt their source/coverage contracts;
+O07 consumes their typed report result; O10/O11 reuse /09 assessment/proposal lineage and
+retain general subject/practice ownership. These draft outlines do not hold local reporting
+behind the whole framework. Full managed cadence/effects still require their existing
+runtime prerequisites, policy and qualification; the amendment grants no activation.

@@ -36,6 +36,10 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// leak its drive section into the next board).
 	activeDriveStatuses = nil
 	activeDriveHeartbeat = ""
+	// Stage timings for the opt-in perf record (perfrecord.go): no-ops when it is off.
+	var ph perfStage
+	defer ph.done()
+	ph.enter("parse")
 	// One git object reader + read memo for this run, closed when it returns
 	// (gitbatch.go) — so no answer outlives the run that read it.
 	defer beginGitReadSession()()
@@ -105,6 +109,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// affects: known-stream validation resolves against the FULL edge universe
 	// (active + archived) so a single-product PR never falsely flags a finding
 	// referencing another product's — or an archived — stream as "unknown stream".
+	ph.enter("lint")
 	problems, notices := checkScoped(checkStreams, edgeStreams, findings)
 	// Stream WIP cap + parked lane (attention-budget/04). Both run against the FULL
 	// per-root stream set — the active-stream cap is a per-root property, not a
@@ -207,9 +212,11 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// out-of-scope, paused, or archived stream is not falsely reported "unknown
 	// stream". Mirrors the checkScoped(checkStreams, edgeStreams, findings) split
 	// above.
+	ph.enter("briefs")
 	briefProblems, briefNotices := checkBriefFiles(checkStreams, edgeStreams)
 	problems = append(problems, briefProblems...)
 	notices = append(notices, briefNotices...)
+	ph.enter("lint")
 	// Split-flag conservation: a child brief may not carry a weaker gate/risk flag
 	// than the brief it was split from (splitflags.go). checkStreams is the scoped
 	// child set; edgeStreams resolves the parent even when scoping dropped its
@@ -247,7 +254,9 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// unencoded gate surfaces as a worklist NOTICE instead of silently dispatching
 	// a worker past it. NOTICE severity this phase (§6.3 Phase A) — flips to
 	// PROBLEM once `gates:`/`feathers:` exist for authors to reach for.
+	ph.enter("ordering")
 	notices = append(notices, orderingGateNotices(checkStreams)...)
+	ph.enter("lint")
 	// Eligibility evaluator could-not-check surface (graph-execution/01 Task
 	// item 4): a gates:/feathers: edge (or an unsatisfied depends:) the
 	// evaluator cannot resolve offline — an unregistered/unpublished alias, an
@@ -367,9 +376,11 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// with no .git, exactly like the reconciliation above; every other
 	// unreachable input reports could-not-check by name rather than clean.
 	if !hasNoGitDir(root) {
+		ph.enter("evidence")
 		eaProblems, eaNotices := evidenceActorGate(root, checkStreams)
 		problems = append(problems, eaProblems...)
 		notices = append(notices, eaNotices...)
+		ph.enter("lint")
 	}
 	// `repo:` frontmatter validation: form + one-repo-per-
 	// root agreement. Runs on the FULL stream set, not the scoped subset — repo
@@ -460,6 +471,14 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		hp, hn := humanStampProblems(root, streams)
 		problems = append(problems, hp...)
 		notices = append(notices, hn...)
+		// Decision-gate hold, layer one (lifecycle-v1 §4.5): a gate: human brief
+		// moved to implemented/verified/done, relabelled, or dropped against the
+		// merge-base needs a well-formed ruling: link to a comment on its recorded
+		// decision issue. Offline; who wrote the comment is layer two's to check
+		// (--decision-gate, and the same lane in --corroborate / --close-verify).
+		dgp, dgn := decisionGateHoldProblems(root)
+		problems = append(problems, dgp...)
+		notices = append(notices, dgn...)
 		// Stale-issue alarm (methodology-metrics/28): a NOTICE + board line when
 		// an open issue has been sitting past the threshold, mirroring the intake-
 		// debt alarm applied to issues. OPT-IN: it reads through the run's
@@ -594,6 +613,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// cell. Transition-scoped like unrunGateChecks below: only a closure
 	// this branch made is a PROBLEM. See witnessgate.go.
 	wgProblems, wgNotices := witnessGateChecks(root, checkStreams)
+	problems = append(problems, protectedClosureProblems(checkStreams)...)
 	problems = append(problems, wgProblems...)
 	notices = append(notices, wgNotices...)
 	// Missing EXECUTION WITNESS, but only for closures THIS branch makes: a
@@ -604,6 +624,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	waProblems, waNotices := witnessAbsenceGateChecks(root, checkStreams)
 	problems = append(problems, waProblems...)
 	notices = append(notices, waNotices...)
+	ph.enter("links")
 	// Dead-link lint. BLOCKING: docFiles(root) is CLAUDE.md plus every
 	// *.md under docs/**, so its inputs INCLUDE every stream README and brief
 	// file. It is also the only check that catches a README row whose brief file
@@ -659,6 +680,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	rp, rn := registerRefProblems(root, docs)
 	problems = append(problems, rp...)
 	notices = append(notices, rn...)
+	ph.enter("lint")
 	// Point-quality (I-08): unbacked verified/done
 	// rows are a NOTICE, never a hard problem — this is a rendering/
 	// visibility gap-closer, not a new lifecycle gate.
@@ -759,6 +781,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// Build the generated view now — this also exercises applyFindings/nextUp/
 	// emit, so --lint is a true superset of generation minus the STATUS.md byte
 	// compare: a PR that would crash main's post-merge regen fails here instead.
+	ph.enter("view")
 	applyFindings(streams, findings)
 	// The critical tier's reviewer-finding arm reads the same findings (phase 3).
 	// Set explicitly every run so a prior invocation's value can never leak in; nil
@@ -785,7 +808,9 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// claim set is could-not-check, rendered as itself through the same degraded
 	// notice a failed read produces; it never decides the lint verdict (every
 	// PROBLEM is counted above, before this line).
+	ph.enter("claims")
 	claimed, claimSource := lintClaims(root, mode, streams)
+	ph.enter("view")
 	// Per-brief staleness clock: read each brief's own
 	// last recorded transition from the historian so aging measures from the
 	// brief's history, not the stream's git touch. A missing/unreadable log just
@@ -949,7 +974,11 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	activeDriveStatuses = driveStatuses(activeDriveSet, streams, claimed, nowFunc())
 	activeDriveHeartbeat = driveHeartbeatLine(root)
 
+	ph.enter("render")
+	leaveRender := perfEnter("render")
 	out := emit(streams, findings, nu, ages, gateAges, intakeAlarmResult, briefTouch, rootRepoName)
+	leaveRender()
+	ph.done()
 	if mode == "lint" {
 		// The PR-side gate is UNCHANGED: off-board problems still fail --lint,
 		// with the same count and the same exit code as before this split. Lint
@@ -960,6 +989,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		}
 		return 0 // sources valid + view builds; STATUS.md never read or written
 	}
+	ph.enter("write")
 	if mode == "record" {
 		// single-writer append; never reached from --lint. The append happens
 		// (the board sources passed every check that reads them), and the run
@@ -1009,6 +1039,7 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		}
 		return 0
 	}
+	defer perfEnter("write")()
 	if err := os.WriteFile(statusPath, []byte(out), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "statusgen:", err)
 		return 1
@@ -1148,18 +1179,46 @@ func runGateScores(root string) int {
 		Stream       string `json:"stream"`
 		Status       string `json:"status"`
 		Repo         string `json:"repo,omitempty"`
+		// Queue contract (desk-tools/45, awaiting_bucket.go queueFor): the
+		// CURRENT owned-bucket classification, additive after the legacy
+		// fields. queueVersion lets a consumer refuse a shape it does not
+		// know; queueValid=false with queueWhy marks a could-not-check row
+		// (unknown, never zero).
+		QueueVersion      int    `json:"queueVersion"`
+		QueueClass        string `json:"queueClass"`
+		QueueBucket       string `json:"queueBucket,omitempty"`
+		QueueOwner        string `json:"queueOwner,omitempty"`
+		QueueNextAct      string `json:"queueNextAct,omitempty"`
+		QueueGate         string `json:"queueGate,omitempty"`
+		QueueRisk         bool   `json:"queueRisk"`
+		QueueIrreversible bool   `json:"queueIrreversible"`
+		QueueValid        bool   `json:"queueValid"`
+		QueueWhy          string `json:"queueWhy,omitempty"`
 	}
 	rows := make([]row, 0, len(gates))
 	for _, g := range gates {
+		br := g.Brief
+		q := queueFor(g.Stream, &br)
 		rows = append(rows, row{
-			Brief:        g.Stream.Name + "/" + g.Brief.Num,
-			Score:        g.Score,
-			BlockedCount: g.BlockedCount,
-			Stream:       g.Stream.Name,
-			Status:       g.Brief.Status,
-			Repo:         repo,
+			QueueVersion:      q.Version,
+			QueueClass:        q.Class,
+			QueueBucket:       q.Bucket,
+			QueueOwner:        q.Owner,
+			QueueNextAct:      q.NextAct,
+			QueueGate:         q.Gate,
+			QueueRisk:         q.Risk,
+			QueueIrreversible: q.Irreversible,
+			QueueValid:        q.Valid,
+			QueueWhy:          q.Why,
+			Brief:             g.Stream.Name + "/" + g.Brief.Num,
+			Score:             g.Score,
+			BlockedCount:      g.BlockedCount,
+			Stream:            g.Stream.Name,
+			Status:            g.Brief.Status,
+			Repo:              repo,
 		})
 	}
+	defer perfEnter("render")()
 	out, err := json.Marshal(rows)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "statusgen:", err)
@@ -1246,6 +1305,14 @@ func main() {
 		fmt.Println(statusgenVersion)
 		exitProcess(0)
 	}
+	// `statusgen --version --json` — the same introspection, machine-readable:
+	// the version plus the brief schemas this build supports and the first
+	// release of each (briefschemaversions.go). The bare form above stays
+	// exactly one line, because pin checks compare it verbatim.
+	if len(os.Args) == 3 && (os.Args[1] == "--version" || os.Args[1] == "version") && os.Args[2] == "--json" {
+		printVersionJSON()
+		exitProcess(0)
+	}
 
 	// `statusgen verifyrun` — positional subcommand (like `init` below) that
 	// EXECUTES a brief's Verify rows and writes an execution witness into its
@@ -1263,6 +1330,9 @@ func main() {
 	// that executes arbitrary commands lifted out of a markdown table has no
 	// business inside it. `--lint` only NOTICEs the ABSENCE of a witness (see
 	// witnessNotices); producing one is always an explicit invocation.
+	if len(os.Args) > 1 && os.Args[1] == "withdrawal-audit" {
+		exitProcess(runWithdrawalAudit(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "verifyrun" {
 		exitProcess(runVerifyrun(os.Args[2:], os.Stdout, os.Stderr))
 	}
@@ -1565,6 +1635,7 @@ func main() {
 	flag.Var(&roots, "root", `repository root (default "."; repeatable — one STATUS.md per root)`)
 	checkMode := flag.Bool("check", false, "verify STATUS.md is current instead of writing it; with --auto-flip-model, exit 2 when any candidate is REFUSED or COULD-NOT-CHECK (so a stuck row fails the run visibly)")
 	lintMode := flag.Bool("lint", false, "run all checks without reading or writing STATUS.md (defaults --budget to "+defaultBudgetSpec+" unless overridden)")
+	defer transitionFlags(flag.CommandLine)()
 	forgeMode := flag.Bool("forge", false, "opt in to the forge-backed checks. WITHOUT it statusgen is OFFLINE: it starts no forge process and makes no network call, and every forge-backed check reports could-not-check as itself rather than reading green. WITH it those checks read through the desk-tools `deskread` verb on the forge seam. The default is offline because a check that quietly stopped looking is indistinguishable from one that looked and found nothing")
 	lintAuditMode := flag.Bool("lint-audit", false, "30-day check-firing audit (statusgen/01): sample daily commits, tally per-rule PROBLEM/NOTICE firings, flag COLD (0-firing, un-tested) rules as retirement candidates — read-only, advisory, never retires a rule")
 	instrumentAuditMode := flag.Bool("instrument-audit", false, "instrument-liveness audit: for every flag declared in statusgen/main.go, report the consumers found by grepping the roots (default: <root>/{.github/workflows,plugins/assay/skills,plugins/assay/scripts,Makefile,tools/desk/cmd}) — WIRED (>=1), COLD (0), or DARK (0 AND declared >30d ago). Read-only, advisory; --lint NOTICEs each DARK flag, nothing is retired. With --json emits {flags:[...]}. --roots overrides the grep roots")
@@ -1675,6 +1746,7 @@ func main() {
 	span := flag.Int("span", defaultSpanOfControl, "Next-up span-of-control cap: max items shown (default 20 — agent-worked queue, not the human EEMUA-191 7±2)")
 	overflowT := flag.Int("overflow-threshold", -1, "eligible-brief count above which Next-up flags overflow; <0 = same as --span")
 	mainHealthFlag := flag.String("main-health", "", "the INJECTED main-health input for the drives critical tier's main-red arm: `green`, or `red:<owner/repo#N>[,...]` naming the issue(s) tracking the red main. statusgen never reads live CI; omit the flag and the arm reports could-not-check (named on the board while a drive is active), never a silent green")
+	roleClaimsFlag := flag.Bool("role-claims", false, "read claims through deskgit as the bound desk role; never fall back to ambient Git")
 	requireClaimsFlag := flag.Bool("require-claims", false, "fail (exit 1, nothing written) instead of emitting a degraded board when the origin claim read fails")
 	// FINDINGS alarm-KPI knobs (ISA-18.2). Standalone
 	// block so sibling statusgen flag PRs merge trivially.
@@ -1740,14 +1812,16 @@ func main() {
 	// (prior calendar month) — to docs/reports/<cadence>/<window>/. Empty = the
 	// point-in-time --roadmap, unchanged.
 	cadenceMode := flag.String("cadence", "", "with --roadmap: render a closed-window artifact — weekly (prior ISO week) | monthly (prior calendar month) — to docs/reports/<cadence>/<window>/; empty = point-in-time --roadmap")
-	// Corroboration check: self-contained sub-command,
-	// same STATUS.md-free discipline as the verify-gate modes. Network-dependent
-	// by nature — never wired into the offline lint gate.
+	// Consumer corroboration is offline and STATUS.md-free. The separate
+	// human-stamp corroboration mode below is forge-backed.
 	consumersMode := flag.Bool("consumers", false, "corroborate the consumers: routing claims of the briefs this branch touches against its own diff (exit 1 = a claim is DISPROVED, 2 = the diff could not be taken)")
-	consumersBase := flag.String("base", remoteMainRef, "--consumers: base ref for the three-dot diff")
+	consumersDelivery := flag.String("delivery", "", "--consumers: immutable full delivery commit SHA; requires --brief and --base set to its first parent; evaluates delivered claims and tree, never the working tree")
+	consumersBase := flag.String("base", remoteMainRef, "--consumers: base ref for the three-dot diff; with --brief and no --base/--delivery, a brief the diff does not carry is pinned to the delivery its committed Verification-Table marker records (first parent as base), else COULD-NOT-CHECK")
 	consumersBrief := flag.String("brief", "", "--consumers: check only this brief (<stream>/<NN>); default = every brief file in the diff")
 	corroborateMode := flag.Bool("corroborate", false, "check human:<name> stamps against PR reviews/comments for corroboration (requires --pr)")
-	corroboratePRs := flag.String("pr", "", "comma-separated PR numbers (required with --corroborate)")
+	corroboratePRs := flag.String("pr", "", "comma-separated PR numbers (required with --corroborate; with --decision-gate, the PRs to judge)")
+	decisionGateMode := flag.Bool("decision-gate", false, "the decision-gate hold, both layers (lifecycle-v1 §4.5): refuse a gate: human brief moved to implemented/verified/done, relabelled, or dropped without a human ruling on its decision issue. Needs --pr <N> or --decision-gate-base <rev>")
+	decisionGateBase := flag.String("decision-gate-base", "", "with --decision-gate: judge the working tree against this local revision (e.g. HEAD, for an uncommitted landing) instead of a PR's merge-base")
 	// Daily factory-floor bottleneck report: per-stage
 	// WIP + dwell, constraint location, shift detection, prescribed ToC action.
 	// Self-contained diagnostic sub-command — never reads or writes STATUS.md.
@@ -1803,7 +1877,7 @@ func main() {
 	// tree. No new store; never reads or writes STATUS.md or any register view.
 	graphMode := flag.String("graph", "", "export the derived brief/finding/intake/issue graph in \"dot\" (Graphviz) or \"jsonl\" (one node/edge object per line) form; read-only, deterministic, never touches STATUS.md")
 	// Gate-score emitter: JSON for deskboard consumption.
-	gateScoresMode := flag.Bool("gate-scores", false, "emit awaiting-queue gate scores as JSON (brief, score, blockedCount, stream, status)")
+	gateScoresMode := flag.Bool("gate-scores", false, "emit awaiting-queue gate scores as JSON (brief, score, blockedCount, stream, status, repo, plus the versioned queue* classification: queueVersion, queueClass, queueBucket, queueOwner, queueNextAct, queueGate, queueRisk, queueIrreversible, queueValid, queueWhy)")
 	// Next-up (DISPATCH queue) emitter: JSON for deskboard consumption. Distinct
 	// population from --gate-scores — the same claim-filtered, capped nextUp()
 	// selection the STATUS.md board shows (todo/in-progress, unclaimed, eligible),
@@ -1834,6 +1908,10 @@ func main() {
 	changedOnlyFlag := flag.String("changed-only", "", "--lint only: LOCAL pre-push convenience — comma-separated repo-relative paths; scopes the lint to them and prints a loud banner naming what was examined. REFUSES (non-zero, no override) when it detects it is running inside the CI gate (GITHUB_ACTIONS=true) — the CI gate always runs the full unscoped --lint. Mutually exclusive with --changed")
 	scopeFlag := flag.String("scope", "", "restrict per-stream lint to one product (serves:): example-app|example-service|assay|platform; overrides --changed derivation")
 	parseMainFlags()
+	if *consumersDelivery != "" && !*consumersMode {
+		fmt.Fprintln(os.Stderr, "statusgen: --delivery requires --consumers")
+		exitProcess(2)
+	}
 
 	// The roster class is chosen ONCE, from the invoked mode, BEFORE any check can
 	// read the roster — scanEffectiveConfig caches on first use, so a later call
@@ -1852,6 +1930,14 @@ func main() {
 	// a PR that never touched it. Whoever reads that CI log needs the roster in the
 	// same log.
 	scanEchoEffectiveConfig(os.Stderr)
+	// A refused process configuration cannot enter any --lint evaluator. Keep
+	// this ahead of ordinary, multi-root and differential dispatch: none may
+	// turn an unavailable trust axis into PASS (or demote it as a base defect).
+	if *lintMode && len(scanEffectiveConfig().Problems) > 0 {
+		fmt.Fprintln(os.Stderr, "statusgen: configuration REFUSED; trust-dependent checks could-not-check")
+		fmt.Fprintln(os.Stdout, "LINT: REFUSED configuration; trust-dependent checks could-not-check")
+		exitProcess(5)
+	}
 
 	resolvedRoots, rootErr := resolveRoots(roots)
 	if rootErr != nil {
@@ -1879,6 +1965,7 @@ func main() {
 			"--transcribe-scan-delta": *transcribeScanDeltaMode,
 			"--transcribe-verdict":    *transcribeVerdictMode,
 			"--close-verify":          *closeVerifyID != "",
+			"--decision-gate":         *decisionGateMode,
 			"--auto-flip-model":       *autoFlipModelMode,
 			"--alarms":                *alarmsMode,
 			"--verif-backlog":         *verifBacklogMode,
@@ -1958,6 +2045,7 @@ func main() {
 	// the board must still render, wearing its degradation. A caller that
 	// dispatches from the board sets this and gets exit 1 instead.
 	requireClaims = *requireClaimsFlag
+	roleClaimReads = *roleClaimsFlag
 	// The main-red arm's injected input (drives phase 3). A malformed value is a
 	// usage refusal — never a silent fallback to could-not-check or to green.
 	if mh, err := parseMainHealth(*mainHealthFlag); err != nil {
@@ -2040,14 +2128,14 @@ func main() {
 		// the un-block comment read and the trust-gate bless read (defaultScanCommentLister,
 		// defaultScanBlessChecker, #1255). A `gh` read left on this path 401s on every rostered
 		// repo under scanloop's replaced HOME.
-		exitProcess(runScanIssues(*root, *scanDryRun, defaultScanIssueLister, defaultScanCommentLister, defaultScanBlessChecker))
+		exitProcess(runScanIssues(*root, *scanDryRun, defaultScanIssueLister, defaultScanCommentLister, defaultScanBlessChecker, defaultScanLabelHoldChecker))
 	}
 	// Same-repo scan transcriber (scan-lane/01, R-7): self-contained,
 	// STATUS.md-free. The workflow's "run" step. INERT until the R-7 sign-off
 	// resolves; --dry-run is the no-write "--check" surface.
 	if *transcribeScanMode {
 		exitProcess(runTranscribeScan(*root, *scanDryRun,
-			ghIssueLister, issueCommentLister, ghAuthorResolver, ghIssueBlessChecker, ghCommentResolver))
+			ghIssueLister, issueCommentLister, ghAuthorResolver, ghIssueBlessChecker, defaultScanLabelHoldChecker, ghCommentResolver))
 	}
 	// Cross-repo scan-delta transcriber (the house-private brief, R-7 clause 4):
 	// self-contained, STATUS.md-free. INERT until the SAME R-7 sign-off
@@ -2148,6 +2236,9 @@ func main() {
 		}
 		exitProcess(runCynefin(*root, period, *doraJSON))
 	}
+	if *decisionGateMode {
+		exitProcess(runDecisionGate(*root, *corroboratePRs, *decisionGateBase))
+	}
 	if *corroborateMode {
 		exitProcess(runCorroborate(*corroboratePRs))
 	}
@@ -2155,6 +2246,14 @@ func main() {
 	// sub-command; never reads or writes STATUS.md. Exits 1 when the branch diff
 	// DISPROVES a routing claim, 2 when the diff itself could not be taken.
 	if *consumersMode {
+		if *consumersDelivery != "" {
+			exitProcess(runDeliveryConsumers(*root, *consumersBase, *consumersBrief, *consumersDelivery))
+		}
+		baseGiven := false
+		flag.Visit(func(f *flag.Flag) { baseGiven = baseGiven || f.Name == "base" })
+		if !baseGiven && *consumersBrief != "" {
+			exitProcess(runConsumersDerived(*root, *consumersBrief))
+		}
 		exitProcess(runConsumers(*root, *consumersBase, *consumersBrief))
 	}
 	// Bottleneck report: self-contained diagnostic

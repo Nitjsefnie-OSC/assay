@@ -59,12 +59,13 @@ type gitFacts struct {
 // (audit every path). finalize is deferred so exactly one line is written no
 // matter which branch returns.
 type auditCtx struct {
-	verb          string
-	repo          string
-	pr            *int
-	head          string
-	detail        string
-	successResult string // ResultOK unless a noop set it to ResultNoop
+	verb           string
+	repo           string
+	pr             *int
+	head           string
+	detail         string
+	successResult  string // ResultOK unless a noop set it to ResultNoop
+	writeAttempted bool   // set before any potentially mutating remote call
 }
 
 func (a *auditCtx) log(result, detail string) {
@@ -110,7 +111,10 @@ func (a *auditCtx) finalize(err error) {
 	case deskkit.ExitRefused:
 		result = deskkit.ResultRefused
 	default:
-		result = deskkit.ResultUnverifiable
+		result = deskkit.ResultUnwritten
+		if a.writeAttempted {
+			result = deskkit.ResultUnverifiable
+		}
 	}
 	a.log(result, err.Error())
 }
@@ -142,6 +146,7 @@ func cmdCreate(args []string) (err error) {
 	explain := fs.Bool("explain", false, "on a secret-scan refusal, also print a scan-explain line naming the rule id and line number (never the offending span)")
 	decided := fs.String("decided", "", "path to a file declaring desk-taken decisions (decision:/alternative:/cost: triples, one item per numbered line) — writes the `## Desk-decided` block into the body and applies the desk-decided label; a PR that only transcribes recorded rulings passes none of this")
 	check := fs.Bool("check", false, "run every LOCAL gate (flags, branch state, the Brief:/Authors:/Issue: trailer, the secret scan, the public-repo self-containment scan, the push-transport gate, the publish-identity gate) and stop BEFORE minting a token or opening any connection — exit 0 only when every local gate passed; a category this cannot decide offline is reported, by name, as not checked")
+	checkRemote := fs.Bool("check-remote", false, "read-only preflight using the session App and confirmed push destination; no push, PR creation or write budget")
 	if perr := fs.Parse(args); perr != nil {
 		// TIER TWO: `-h`/`--help` in any spelling reaches flag.Parse as flag.ErrHelp.
 		// A help screen is not a refusal and writes no audit row — the finalizer
@@ -150,6 +155,9 @@ func cmdCreate(args []string) (err error) {
 			return deskkit.ErrHelpRequested
 		}
 		return deskkit.Refused("refused: bad flags: " + perr.Error())
+	}
+	if *check && *checkRemote {
+		return deskkit.Refused("refused: --check and --check-remote are mutually exclusive")
 	}
 	defer func() { explainScanRefusal(*explain, err) }()
 	if fs.NArg() != 0 {
@@ -201,6 +209,15 @@ func cmdCreate(args []string) (err error) {
 	trailerIssue, terr := requireTrailer(body, *root, dir)
 	if terr != nil {
 		return terr
+	}
+	// Decision-gate banner (lifecycle-v1 §4.5): a PR delivering a gate: human brief
+	// carries a fixed banner naming its decision issue and whether it is ruled. Inserted
+	// when missing; it informs and never refuses. Its text is fixed apart from the
+	// trailer's own brief id and an issue number, and the public-repo self-containment
+	// scan below reads the body WITH it.
+	if nb, added := withDecisionGateBanner(body, *root, dir); added {
+		body = nb
+		fmt.Fprintln(deskprStderr, "deskpr: added the gate: human decision banner to the PR body (lifecycle-v1 §4.5; informs, blocks nothing)")
 	}
 	facts, perr := preflight(dir, *base)
 	if perr != nil {
@@ -301,6 +318,9 @@ func cmdCreate(args []string) (err error) {
 	// Mint the session-role App installation token and resolve the forge that serves this
 	// repo under that App's custody. Every change read and write below goes through the
 	// resolved backend; there is no ambient-identity fallback (the retired --as-app path).
+	if *checkRemote {
+		fmt.Fprintf(deskprStderr, "check-remote: reading %s branch %s through the session App and push destination; no outward write\n", facts.repo, facts.branch)
+	}
 	if merr := mintWorkerToken(facts.repo); merr != nil {
 		return deskkit.Unverifiable("cannot mint the App token", merr)
 	}
@@ -319,12 +339,6 @@ func cmdCreate(args []string) (err error) {
 		ac.detail = "open PR already exists " + existing.URL
 		fmt.Printf("noop: open PR already exists for %s: %s\n", facts.branch, existing.URL)
 		return nil
-	}
-
-	// New PRs have a repository-wide creation counter independent of updates and
-	// body edits. The aggregate write budget and failure breakers still apply.
-	if werr := deskkit.AllowPRCreate(facts.repo); werr != nil {
-		return werr
 	}
 
 	// Public-repo gate: refuse an outward write unless the repo is authorized.
@@ -354,6 +368,19 @@ func cmdCreate(args []string) (err error) {
 	if prepErr != nil {
 		return prepErr
 	}
+	if *checkRemote {
+		ac.successResult = deskkit.ResultDryRun
+		ac.detail = "check-remote: confirmed destination and immutable source; no write"
+		fmt.Println("check-remote: ok — local gates and credentialed destination/source proof passed; nothing pushed, no PR created, no write budget spent. A later create rechecks all state; this is not a reusable authorization.")
+		return nil
+	}
+	// New PRs have a repository-wide creation counter independent of updates and
+	// body edits. The aggregate write budget and failure breakers still apply.
+	if werr := deskkit.AllowPRCreate(facts.repo); werr != nil {
+		return werr
+	}
+
+	ac.writeAttempted = true
 	if pushErr := pushFn(spec); pushErr != nil {
 		return pushErr
 	}
@@ -750,6 +777,7 @@ func cmdUpdate(args []string) (err error) {
 		// one); the tracking ref for the PR head branch is still recorded (push.go recordPushed).
 		spec.srcRef, spec.dstBranch = "HEAD", pushDest
 	}
+	ac.writeAttempted = true
 	if pushErr := pushFn(spec); pushErr != nil {
 		return pushErr
 	}

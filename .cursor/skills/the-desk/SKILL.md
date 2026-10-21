@@ -66,7 +66,8 @@ the front-door register stays complete). Anything else inbound stays `intake-des
 ## Boot
 
 1. **`deskboot the-desk`** — the whole ceremony in one verb (loop identity, worktree prune, worktree
-   lock, roster registration, the five-check envelope preflight, token mint, read-only board fetch).
+   lock, roster registration, the five-check envelope preflight, token mint, read-only board fetch,
+   worktree currency, and the first sweep's prerequisites: a roster forge mapping and a desk-tools pin).
    It fails closed and names the step that stopped it: 0 complete · 3 disabled · 5 refused (unknown
    role, `$DESK_LOOP` unset/mismatched, shared checkout — isolate first) · 6 unverifiable. **Any
    non-zero exit is a STOP:** report the one summary line, claim nothing, and do NOT file an issue
@@ -265,9 +266,11 @@ not own.
 
 > Shell & transport mechanics every role re-derives — one call/one chain, workspace isolation and content-triggered write-guard refusals, per-commit inline identity, loop/session marker export, authenticated push/fetch transport, role/repo coverage, and running a `gh` call as the role App (never a human's CLI login: [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role)) — are in [`../../references/desk-shell.md`](../../references/desk-shell.md).
 
+> **Every `gh` call carries this role's `GH_TOKEN`, reads included.** When no desk verb covers a forge call, run it only through the recipe in [§Forge CLI as the role](../../references/desk-shell.md#forge-cli-as-the-role), never a hand-typed shortcut. That recipe takes the role from `$DESK_LOOP`, mints it with `desktoken`, scopes the token to that one command without exporting it, and stops before `gh` unless the mint exited 0 and the token file holds a non-whitespace token. A bare `gh` call runs as the host's stored login, which is usually a human's, so a desk never runs one, not even for a read.
+
 > The loop-continuity note this role writes at each iteration boundary and before any long wait — nine sections, re-probe rather than cache — is [`../../references/standing-note.md`](../../references/standing-note.md).
 
-> Procedure every desk role shares — the liveness contract, worktree hygiene, the driver-act runsheet entry — is stated once in [`../../references/desk-common.md`](../../references/desk-common.md); read it at boot. Hard gates never move there: they stay resident in this body.
+> Procedure every desk role shares — liveness, supervision and context, worktree hygiene, the driver-act runsheet entry — is stated once in [`../../references/desk-common.md`](../../references/desk-common.md); read it at boot. Hard gates never move there: they stay resident in this body.
 
 - **Dedupe against the open-issue register BEFORE any fanout:** "is this already filed?" precedes
   "who can investigate this?". On a board PROBLEM: confirm the red is not a stale-oracle artifact
@@ -453,3 +456,25 @@ before the first sweep, the fresh re-sweep every tick, relay acknowledgement, de
 when a window may stand down — is stated once for every desk role in
 [`../../references/desk-common.md`](../../references/desk-common.md) §Liveness contract; read it at
 boot, before the first sweep.
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-loop-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

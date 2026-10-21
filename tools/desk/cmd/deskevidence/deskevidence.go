@@ -386,16 +386,10 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 			" resolves outside docs/streams/ — deskevidence only writes under that tree")
 	}
 
-	// PUBLISH-identity gate (#1490 lane B). deskevidence commits AS the verifier App via the
-	// Contents API, so the Evidence commit itself is correctly attributed — but the witness
-	// Runner attribution is derived from the verifier WORKTREE's identity, which is exactly
-	// the value #1490 saw come out wrong when a dispatch provisioned the worktree with a stale
-	// role. This refuses, before the landing reads the branch, if the worktree it is authored
-	// from carries commits ahead of the target branch that are not the verifier's — a signal
-	// the worktree's identity cannot be trusted to derive attribution from. Local (git +
-	// roster); in the sanctioned post-merge verify flow the worktree sits at the target
-	// branch, so the range is empty and this is a clean no-op.
-	if ierr := publishIdentityGate(*root, branch); ierr != nil {
+	// The source was admitted independently of the conditional-write destination.
+	// Judge its immutable identity boundary against fetched main, never an older
+	// Evidence branch. The actual new write remains under verifier App custody.
+	if ierr := publishEvidenceIdentityGate(*root, receipt); ierr != nil {
 		return ierr
 	}
 
@@ -411,6 +405,12 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// branch is a create (empty remote), not an error, EXCEPT with --brief-path: a brief must
 	// already exist to be merged into, so a not-found is propagated exactly as it was when this
 	// same ReadFile lived inside mergeEvidence.
+	//
+	// The target is read as a record only from a plain file the forge shows to be the entry's
+	// own bytes (S-2266-8): a file the Contents API serves with its content left out (over its
+	// size limit) arrives as an empty body, and taking that as the branch's copy would make an
+	// empty base for the merge, the decision-gate judge and the shrink guards, so a write that
+	// drops a gate: human brief's frontmatter or board row would be judged as adding it.
 	var remoteContent []byte
 	remoteExists := false
 	remoteSHA := ""
@@ -420,6 +420,9 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 			return rerr
 		}
 	} else {
+		if kerr := plainFileRead(cur, fr, targetRepoPath, branch, "the landing's target", false); kerr != nil {
+			return kerr
+		}
 		remoteContent, remoteExists = cur.Content, cur.Exists
 		remoteSHA = cur.SHA
 	}
@@ -615,10 +618,22 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	if lintRoot == "" {
 		lintRoot = "."
 	}
-	if err := outcomeGuardFn(lintRoot, targetRepoPath, remoteContent, commitContent, fg, fr, branch); err != nil {
+	// A verified outcome certifies already committed Evidence. Its attribution and
+	// closure checks must read that exact landed history, never the admitted home's
+	// intentionally older HEAD. Admission above remains against the original home.
+	landedRoot, landedHead, cleanup, err := landedClosureFn(lintRoot, targetRepoPath, remoteContent, commitContent, remoteExists, fg, fr, branch)
+	if err != nil {
 		return err
 	}
-	introduced, lerr := lintDiffFn(lintRoot, targetRepoPath, commitContent)
+	defer cleanup()
+	closureRef := branch
+	if landedHead != "" {
+		closureRef = landedHead
+	}
+	if err := outcomeGuardFn(lintRoot, landedRoot, targetRepoPath, remoteContent, commitContent, fg, fr, closureRef); err != nil {
+		return err
+	}
+	introduced, lerr := lintDiffFn(landedRoot, targetRepoPath, commitContent)
 	if lerr != nil {
 		return lerr
 	}
@@ -626,6 +641,26 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		return deskkit.Refused(fmt.Sprintf(
 			"refused: landing %s would introduce %d new statusgen PROBLEM(s) not present in %s before this change:\n%s",
 			targetRepoPath, len(introduced), lintRoot, strings.Join(introduced, "\n")))
+	}
+	// Decision-gate hold, network layer (lifecycle-v1 §4.5). The lint above carries the
+	// hold's offline layer (a well-formed ruling: link); this landing rides the Contents
+	// API with no pull request, so the check that reads WHO wrote the linked comment runs
+	// here, on the same staged write (decisiongate.go). The landing home is bound to the
+	// commit fixed at dispatch, behind the target branch, so the board files the branch
+	// changed since are read at its tip and judged in place of the home's (S-2266-6);
+	// when that cannot be done the landing is could-not-check.
+	boardEdits, herr := decisionGateBranchBoardFn(fg, fr, landedRoot, closureRef, targetRepoPath)
+	if herr != nil {
+		return herr
+	}
+	gateRefused, gerr := decisionGateDiffFn(landedRoot, targetRepoPath, remoteContent, remoteExists, commitContent, boardEdits)
+	if gerr != nil {
+		return gerr
+	}
+	if len(gateRefused) > 0 {
+		return deskkit.Refused(fmt.Sprintf(
+			"refused: landing %s would move, relabel or drop a gate: human brief with no human ruling on its decision issue (decision-gate hold, lifecycle-v1 §4.5):\n%s",
+			targetRepoPath, strings.Join(gateRefused, "\n")))
 	}
 
 	// verified-sidecar acceptance gate (#1309 stuck-flip). When THIS landing appends one or
@@ -636,7 +671,7 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// verified outcome the tree does not back; review then refuses that mismatch, so this refuses
 	// it at the source instead. Runs on the SAME lintRoot the PROBLEM-diff guard just used, and
 	// like it before the dry-run stop and the write budget. `verify-fail` rows are never gated.
-	if verr := gateVerifiedSidecarLanding(targetRepoPath, lintRoot, remoteContent, commitContent, remoteExists); verr != nil {
+	if verr := gateVerifiedSidecarLanding(targetRepoPath, landedRoot, remoteContent, commitContent, remoteExists); verr != nil {
 		return verr
 	}
 
@@ -690,7 +725,7 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	}
 
 	// Write the Evidence row through the resolved forge, as the verifier App.
-	res, cerr := fg.WriteFile(fr, deskkit.WriteFileInput{
+	writeInput := deskkit.WriteFileInput{
 		File:        targetRepoPath,
 		Branch:      branch,
 		Content:     commitContent,
@@ -698,7 +733,9 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		AppendOnly:  appendOnly,
 		AllowShrink: *allowShrink,
 		ExpectedSHA: rowScopeSHA,
-	})
+	}
+	writeInput.ExpectedHead = landedHead
+	res, cerr := fg.WriteFile(fr, writeInput)
 	if cerr != nil {
 		return cerr
 	}
@@ -708,26 +745,29 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// change instead, and say so on stdout. It never attempts the direct write and reports
 	// success, and it never skips the row.
 	if res.DefaultBranchNotWritable {
+		if landedHead != "" {
+			return deskkit.Unverifiable("pinned verified outcome cannot fall back to a different branch", nil)
+		}
 		return landEvidenceAsChange(fg, fr, repoSlug, branch, targetRepoPath, commitContent, appendOnly, *allowShrink, remoteContent, rowScopeSHA, ac)
 	}
 
-	// Post-condition: the write that landed must carry the verifier App's identity. Checked
-	// against what the forge reported the write recorded, not the token we sent (#228). On a
-	// forge that reports no author (GitLab), checkAttribution resolves the landed commit's
-	// account online via the typed forge (res.SHA); on GitHub the author is populated and no
-	// online read happens.
-	attr, aerr := checkAttribution(fg, fr, res.SHA, res.Author)
+	if reportWriteNoop(res, targetRepoPath, ac) {
+		return nil
+	}
+
+	// Verify the exact write receipt resolves as a commit before accepting its author.
+	attr, aerr := checkWriteAttribution(fg, fr, res)
 	// Name the net row delta so a success line can no longer hide a replace or a deletion
 	// behind a "committed … success" (#1709).
 	added, removed := rowDelta(remoteContent, commitContent)
 	delta := fmt.Sprintf("+%d/-%d rows", added, removed)
-	base := fmt.Sprintf("committed %s to %s on %s (sha %s, %s)", targetRepoPath, repoSlug, branch, shortSHA(res.SHA), delta)
+	base := fmt.Sprintf("committed %s to %s on %s (sha %s, %s)", targetRepoPath, repoSlug, branch, string(res.CommitSHA), delta)
 	ac.detail = base + " — " + attr
 	if aerr != nil {
 		return aerr
 	}
 	fmt.Fprintf(stdout, "committed %s to %s on %s (sha %s, %s) — %s\n",
-		targetRepoPath, repoSlug, branch, shortSHA(res.SHA), delta, attr)
+		targetRepoPath, repoSlug, branch, string(res.CommitSHA), delta, attr)
 	return nil
 }
 
@@ -780,6 +820,10 @@ func landEvidenceAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug, base
 				"row was NOT landed", side), nil)
 	}
 
+	if reportWriteNoop(res, target, ac) {
+		return nil
+	}
+
 	// CreateHeldDraftChange, never the raw CreateDraftChange: the draft must carry the desk's
 	// merge-hold marker thread, or deskflip's reviewer-approved condition has nothing to release
 	// and refuses the Evidence change however it was reviewed (#2254).
@@ -799,31 +843,21 @@ func landEvidenceAsChange(fg deskkit.Forge, fr deskkit.ForgeRepo, repoSlug, base
 		return perr
 	}
 
-	// On a forge that reports no author for the side-branch write (GitLab), resolve the landed
-	// commit's account ONLINE (#1477): fetch the side branch's head sha from the draft change
-	// just opened and hand it to checkAttribution, which maps it to the committing account's
-	// username via the typed forge. Only reached when the write carried no author — a populated
-	// author (GitHub) takes the ordinary path and issues no extra read.
-	headSHA := ""
-	if res.Author == "" && pr != nil {
-		if got, gerr := fg.GetPullRequest(fr, pr.Number); gerr == nil && got != nil {
-			headSHA = got.HeadSHA
-		}
-	}
-	attr, aerr := checkAttribution(fg, fr, headSHA, res.Author)
+	// Attribute the exact write receipt, never the draft change's mutable head.
+	attr, aerr := checkWriteAttribution(fg, fr, res)
 	added, removed := rowDelta(remoteContent, content)
 	delta := fmt.Sprintf("+%d/-%d rows", added, removed)
 	loc := fmt.Sprintf("change #%d", pr.Number)
 	if pr.URL != "" {
 		loc = pr.URL
 	}
-	ac.detail = fmt.Sprintf("landed %s on %s in %s via draft %s (%s) — default branch not directly writable — %s",
-		target, repoSlug, side, loc, delta, attr)
+	ac.detail = fmt.Sprintf("landed %s on %s in %s via draft %s (commit %s, %s) — default branch not directly writable — %s",
+		target, repoSlug, side, loc, res.CommitSHA, delta, attr)
 	if aerr != nil {
 		return aerr
 	}
-	fmt.Fprintf(stdout, "landed %s on %s: %s takes no direct write, so wrote branch %s and opened draft %s (%s) — %s\n",
-		target, repoSlug, base, side, loc, delta, attr)
+	fmt.Fprintf(stdout, "landed %s on %s: %s takes no direct write, so wrote branch %s and opened draft %s (commit %s, %s) — %s\n",
+		target, repoSlug, base, side, loc, res.CommitSHA, delta, attr)
 	return nil
 }
 
@@ -908,25 +942,24 @@ func rowDelta(older, newer []byte) (added, removed int) {
 // already say, whichever line of the file it lands on (#1161). Order follows newer's own
 // line order, which keeps the result readable; reBase64ish (the scanner's high-entropy run
 // detector) never matches across a newline, so nothing a line-oriented diff could split a
-// run across is lost by joining the added lines back with "\n".
+// run across is lost by blanking unchanged lines in place. Keeping those blanks is what makes
+// the scanner's line number the destination file's line number (#3283).
 //
-// Unlike rowDelta this does NOT trim or drop blank lines: a blank line carries no secret, so
-// including it costs the scanner nothing, and dropping it would risk gluing two unrelated lines'
-// characters together across what was a line boundary in the original file.
+// Unlike rowDelta this does NOT trim or drop lines: unchanged lines become blank placeholders
+// rather than disappearing, and a blank line carries no secret. Keeping every destination
+// line also avoids gluing unrelated characters together across an original line boundary.
 func addedLines(older, newer []byte) []byte {
 	present := map[string]bool{}
 	for _, ln := range strings.Split(string(older), "\n") {
 		present[ln] = true
 	}
-	var out strings.Builder
-	for _, ln := range strings.Split(string(newer), "\n") {
+	lines := strings.Split(string(newer), "\n")
+	for i, ln := range lines {
 		if present[ln] {
-			continue
+			lines[i] = ""
 		}
-		out.WriteString(ln)
-		out.WriteByte('\n')
 	}
-	return []byte(out.String())
+	return []byte(strings.Join(lines, "\n"))
 }
 
 // auditCtx accumulates fields for the ONE audit line per invocation.

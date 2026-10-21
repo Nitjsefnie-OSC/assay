@@ -18,9 +18,14 @@ package main
 // t.Setenv-scoped HOME would not reach the child.
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/medici-finance/assay/gitquiet"
 )
 
 // fixtureRoster is the config-home file contents. 0600, in a directory this
@@ -42,6 +47,29 @@ ASSAY_SCAN_REPOS=example-org/tracker,example-org/agents,example-org/examples,exa
 // darFixtureExtra returns the product-config lines appended to the fixture roster
 // in TestMain. It is a no-op hook (rosterfixture_openstub_test.go) so this fixture
 // file carries no product-namespaced (non-ASSAY_) configuration.
+
+// pinFixtureGoCaches preserves the caller's resolved Go paths before the roster
+// fixture replaces HOME. Every Go child compiler, including the cross-module
+// heads bridge, must use the dependencies prepared by the caller (#3327).
+func pinFixtureGoCaches() error {
+	out, err := exec.Command("go", "env", "-json", "GOMODCACHE", "GOCACHE", "GOPATH").Output()
+	if err != nil {
+		return fmt.Errorf("resolve Go fixture paths: %w", err)
+	}
+	var paths map[string]string
+	if err := json.Unmarshal(out, &paths); err != nil {
+		return fmt.Errorf("decode Go fixture paths: %w", err)
+	}
+	for _, key := range []string{"GOMODCACHE", "GOCACHE", "GOPATH"} {
+		if paths[key] == "" {
+			return fmt.Errorf("empty Go fixture path %s", key)
+		}
+		if err := os.Setenv(key, paths[key]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func installFixtureRoster() (cleanup func(), err error) {
 	home, err := os.MkdirTemp("", "assay-roster-home-")
@@ -85,11 +113,28 @@ func TestMain(m *testing.M) {
 	if err := os.Unsetenv("DESK_LOOP"); err != nil {
 		panic("cannot clear DESK_LOOP for the test binary: " + err.Error())
 	}
+	// No test inherits the runner's GITHUB_ACTIONS either. reconcile picks its
+	// roster class from it, so on an Actions runner every reconcile test would
+	// read the empty env roster instead of the fixture file below, and the
+	// process-global class would leak into later roster tests (#3082). A test
+	// that needs Actions sets it itself with t.Setenv;
+	// TestGitHubActionsCleared pins this line.
+	if err := os.Unsetenv("GITHUB_ACTIONS"); err != nil {
+		panic("cannot clear GITHUB_ACTIONS for the test binary: " + err.Error())
+	}
+	if err := pinFixtureGoCaches(); err != nil {
+		panic(err)
+	}
 	cleanup, err := installFixtureRoster()
 	if err != nil {
 		panic("cannot install the test-fixture roster: " + err.Error())
 	}
-	code := m.Run()
+	// The decision-gate hold on --close-verify (lifecycle-v1 §4.5) reads the
+	// forge. The close-verify fixtures predate it and test the flip itself, so
+	// the hold is off for them; decisiongatehold_test.go restores the real check
+	// (closeVerifyDecisionGate) for every test that exercises it.
+	closeVerifyDecisionGateFn = func(string, string, []byte) error { return nil }
+	code := gitquiet.Run(m)
 	cleanup()
 	os.Exit(code)
 }

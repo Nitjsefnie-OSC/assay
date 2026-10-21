@@ -75,6 +75,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/medici-finance/assay/forgeread"
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
@@ -98,6 +99,7 @@ var readKinds = map[string]string{
 	"issue-list":     "issues of a stated state, optionally one label, with Incomplete on overflow (deskkit.Forge.ListIssues)",
 	"issue":          "one issue: state, body, author with type, closer (deskkit.Forge.GetIssueTyped, issue kind)",
 	"issue-states":   "an issue's close/reopen events and closing changes (deskkit.Forge.IssueStateEvents)",
+	"label-events":   "an issue's whole label history, unnamed events kept, with Complete (deskkit.Forge.IssueLabelHistory)",
 	"changes":        "changes of a stated state with author, base, fork facts (deskkit.Forge.ListChanges)",
 	"change":         "one change, with its merge-commit SHA (deskkit.Forge.GetPullRequest)",
 	"change-commits": "a change's own commit SHAs, with Complete (deskkit.Forge.ListChangeCommits)",
@@ -109,7 +111,7 @@ var readKinds = map[string]string{
 // is in BOTH issueKinds and changeKinds and must be given exactly one of the two.
 var (
 	repoKinds   = map[string]bool{"issues": true, "issue-list": true, "changes": true, "default-branch": true}
-	issueKinds  = map[string]bool{"trust": true, "comments": true, "issue": true, "issue-states": true}
+	issueKinds  = map[string]bool{"trust": true, "comments": true, "issue": true, "issue-states": true, "label-events": true}
 	changeKinds = map[string]bool{"comments": true, "change": true, "change-commits": true, "change-files": true}
 )
 
@@ -125,7 +127,7 @@ var stateWords = map[string][]string{
 var helpLong = `deskread — read-only forge reads on the seam, as JSON
 
 addressing: per-repo kinds (issues, issue-list, changes, default-branch) take --repo
-<owner/repo>; per-issue kinds (trust, issue, issue-states) take --issue <owner/repo#N>;
+<owner/repo>; per-issue kinds (trust, issue, issue-states, label-events) take --issue <owner/repo#N>;
 per-change kinds (change, change-commits, change-files) take --change <owner/repo#N>;
 comments takes exactly one of --issue and --change. Each address flag repeats, and ONE
 invocation serves the whole set, read concurrently (--max-parallel, default 6).
@@ -155,7 +157,13 @@ output: a versioned JSON envelope on stdout
    "partial": [{"repo": "o/n", "number": 7, "reason": "…"}]}
 
   per-issue and per-change kinds answer under "items", one key per kind: "issue",
-  "issueStates", "change", "changeCommits", "changeFiles".
+  "issueStates", "labelEvents", "change", "changeCommits", "changeFiles".
+
+  label-events answers {"complete": …, "events": [{"label": …, "removed": …, "createdAt": …,
+  "actorLogin": …, "actorId": …}]}: the whole history oldest first, an event whose label the
+  forge no longer names kept with an empty "label", an absent actor kept as an empty login and
+  id 0. "complete": false means a page bound was hit and the history is partial. The kind is
+  transport: it carries no verdict about the events.
 
 A repo (or issue, or change) that could not be read lands in "partial" with its reason and is
 ABSENT from "repos" ("items"); the exit code is still 0. That is deliberate: a caller must be
@@ -185,8 +193,16 @@ identity: two transports, named in the envelope's "identity" object and on one s
 `
 
 func main() {
-	os.Exit(deskkit.PerfRun("deskread", nil, os.Args[1:], func([]string) int {
-		return execute(os.Args[1:], os.Stdout, os.Stderr, startup)
+	selected := perfrec.ResolveContext(perfrec.ContextInput{})
+	os.Exit(deskkit.PerfRunMeasured("deskread", nil, os.Args[1:], func(a []string, measurement *perfrec.Session) (int, perfrec.Context) {
+		sink := func(c perfrec.Context) {
+			selected = c
+			if measurement != nil {
+				measurement.SelectContext(c)
+			}
+		}
+		code := execute(a, os.Stdout, os.Stderr, startup, sink)
+		return code, selected
 	}))
 }
 
@@ -273,7 +289,11 @@ func bindings() []cli.Binding {
 
 // execute runs one invocation against a fresh command tree. pre is the process startup (nil in
 // the in-package tests, as run never did it).
-func execute(args []string, stdout, stderr io.Writer, pre func(io.Writer, bool) int) int {
+func execute(args []string, stdout, stderr io.Writer, pre func(io.Writer, bool) int, sinks ...func(perfrec.Context)) int {
+	var sink func(perfrec.Context)
+	if len(sinks) > 0 {
+		sink = sinks[0]
+	}
 	build := func() *cobra.Command {
 		root := cli.NewRoot("deskread <kind> [flags]", "read-only forge reads on the seam, as JSON")
 		root.Long = helpLong
@@ -309,6 +329,7 @@ func execute(args []string, stdout, stderr io.Writer, pre func(io.Writer, bool) 
 		return root
 	}
 	return cli.Run(build, args, cli.Options{
+		Performance:     sink,
 		IO:              cli.IO{Out: stdout, Err: stderr},
 		Version:         versionLine(),
 		VersionTemplate: "{{.Version}}\n",
@@ -843,6 +864,7 @@ type ItemResult struct {
 	Comments      *[]CommentJSON     `json:"comments,omitempty"`
 	Issue         *IssueDetailJSON   `json:"issue,omitempty"`
 	IssueStates   *IssueStatesJSON   `json:"issueStates,omitempty"`
+	LabelEvents   *LabelEventsJSON   `json:"labelEvents,omitempty"`
 	Change        *ChangeDetailJSON  `json:"change,omitempty"`
 	ChangeCommits *ChangeCommitsJSON `json:"changeCommits,omitempty"`
 	ChangeFiles   *ChangeFilesJSON   `json:"changeFiles,omitempty"`
@@ -908,6 +930,24 @@ type IssueStatesJSON struct {
 	Complete       bool                `json:"complete"`
 	Events         []StateEventJSON    `json:"events"`
 	ClosingChanges []ClosingChangeJSON `json:"closingChanges"`
+}
+
+// LabelEventsJSON is deskkit.LabelHistory (the label-removal hold). Complete=false: a page bound was hit,
+// so the events below are a prefix of the history, never all of it.
+type LabelEventsJSON struct {
+	Complete bool             `json:"complete"`
+	Events   []LabelEventJSON `json:"events"`
+}
+
+// LabelEventJSON is one label application or removal. Label is empty for an event whose label the
+// forge no longer names (a deleted label); ActorLogin is empty and ActorID 0 where the forge
+// reported no actor. Nothing here is a verdict about who the actor is.
+type LabelEventJSON struct {
+	Label      string `json:"label"`
+	Removed    bool   `json:"removed"`
+	CreatedAt  string `json:"createdAt,omitempty"`
+	ActorLogin string `json:"actorLogin,omitempty"`
+	ActorID    int64  `json:"actorId,omitempty"`
 }
 
 // StateEventJSON is one close or reopen.
@@ -1101,6 +1141,22 @@ func readItem(kind string, target deskkit.TargetKind, tgt issueTarget, o readOpt
 			})
 		}
 		res.IssueStates = sj
+	case "label-events":
+		lh, lerr := f.IssueLabelHistory(fr, tgt.Number)
+		if lerr != nil {
+			return nil, lerr
+		}
+		if lh == nil {
+			return nil, deskkit.Unverifiable(fmt.Sprintf("the forge returned no label history for %s#%d", tgt.Repo, tgt.Number), nil)
+		}
+		lj := &LabelEventsJSON{Complete: lh.Complete, Events: []LabelEventJSON{}}
+		for _, e := range lh.Events {
+			lj.Events = append(lj.Events, LabelEventJSON{
+				Label: e.Name, Removed: e.Removed, CreatedAt: e.CreatedAt,
+				ActorLogin: e.AppliedBy, ActorID: e.AppliedByID,
+			})
+		}
+		res.LabelEvents = lj
 	case "change":
 		pr, perr := f.GetPullRequest(fr, tgt.Number)
 		if perr != nil {

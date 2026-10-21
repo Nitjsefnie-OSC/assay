@@ -41,6 +41,10 @@ type repoFixture struct {
 	// getErr makes GetIssue FAIL for that issue number (a rate limit, a 5xx, a timeout) —
 	// the state could not be positively read.
 	getErr map[int]error
+	// history is the label history IssueLabelHistory serves per issue number (the label-removal hold); an
+	// issue not seeded reads as a COMPLETE EMPTY history. historyErr makes that read fail.
+	history    map[int]*deskkit.LabelHistory
+	historyErr map[int]error
 }
 
 type fakeForge struct {
@@ -114,6 +118,21 @@ func (f *fakeForge) IssueContentEvents(_ deskkit.ForgeRepo, n int) (*deskkit.Tru
 	return nil, deskkit.Unverifiable(fmt.Sprintf("no events fixture for %s#%d", f.repo, n), nil)
 }
 
+// IssueLabelHistory is the label-history read behind the board's AWAIT-for-history superset
+// test (the label-removal hold, op 64). An unseeded issue reads as a complete empty history.
+func (f *fakeForge) IssueLabelHistory(_ deskkit.ForgeRepo, n int) (*deskkit.LabelHistory, error) {
+	*f.calls = append(*f.calls, forgeCall{op: "IssueLabelHistory", repo: f.repo, num: n})
+	if f.data != nil {
+		if err, ok := f.data.historyErr[n]; ok {
+			return nil, err
+		}
+		if h, ok := f.data.history[n]; ok {
+			return h, nil
+		}
+	}
+	return &deskkit.LabelHistory{Complete: true}, nil
+}
+
 // installForge plants the fixture roster + isolates HOME (the roster is still read for the
 // scan scope, the trusted set and the blessing authority) and overrides the forgeFor seam so
 // each scanned repo resolves to a recorded fake carrying that repo's fixture (an unseeded repo
@@ -126,7 +145,7 @@ func installForge(t *testing.T, byRepo map[string]*repoFixture) *[]forgeCall {
 	t.Setenv("DESK_TOOLS_DISABLED", "") // ensure the kill switch is disarmed
 	calls := &[]forgeCall{}
 	prev := forgeFor
-	forgeFor = func(repo string) (deskkit.Forge, deskkit.ForgeRepo, error) {
+	forgeFor = func(repo string, _ ...deskkit.RequestObserver) (deskkit.Forge, deskkit.ForgeRepo, error) {
 		owner, name, _ := strings.Cut(repo, "/")
 		return &fakeForge{repo: repo, data: byRepo[repo], calls: calls}, deskkit.ForgeRepo{Owner: owner, Name: name}, nil
 	}
@@ -211,7 +230,7 @@ func TestReadsOnly(t *testing.T) {
 	if len(*calls) == 0 {
 		t.Fatal("no forge ops recorded — the read-only proof enumerates nothing")
 	}
-	readOps := map[string]bool{"ListOpenIssues": true, "GetIssue": true, "IssueTrustEvents": true, "IssueContentEvents": true}
+	readOps := map[string]bool{"ListOpenIssues": true, "GetIssue": true, "IssueTrustEvents": true, "IssueContentEvents": true, "IssueLabelHistory": true}
 	sawList, sawGet := false, false
 	for _, c := range *calls {
 		if !readOps[c.op] {

@@ -216,6 +216,7 @@ func UnnumberedCapFor(tool string) int {
 // The rule is "may have reached the remote", not "succeeded", and the difference is
 // load-bearing:
 //
+//   - ResultLocal is a local audit receipt: no remote write, and no breaker reset.
 //   - ResultOK charges: the write landed.
 //   - ResultUnverifiable charges: the call was SENT and its outcome could not be
 //     confirmed — a timeout, or a GitHub 5xx returned after the comment actually
@@ -255,7 +256,7 @@ func UnnumberedCapFor(tool string) int {
 // classified deliberately here, and until it is, the safe default is to count it.
 func chargesBudget(result string) bool {
 	switch result {
-	case ResultRefused, ResultNoop, ResultRateLimited, ResultDisabled, ResultDryRun, ResultUnwritten:
+	case ResultLocal, ResultRefused, ResultNoop, ResultRateLimited, ResultDisabled, ResultDryRun, ResultUnwritten:
 		return false
 	default:
 		return true // ResultOK, ResultUnverifiable, and anything unclassified
@@ -321,7 +322,7 @@ func nonProgress(result string) bool {
 // run and hold the loop stop disarmed. Ignored, it neither trips the breaker nor rescues a
 // caller from it.
 func breakerIgnores(result string) bool {
-	return result == ResultRateLimited || result == ResultDisabled || result == ResultDryRun || result == ResultNoop
+	return result == ResultLocal || result == ResultRateLimited || result == ResultDisabled || result == ResultDryRun || result == ResultNoop
 }
 
 // AllowWrite enforces the outward-write gate as of now. See AllowWriteAt.
@@ -544,11 +545,25 @@ func pointsFor(tool string, now time.Time) ([]auditPoint, error) {
 
 // auditPoint is one of `tool`'s audit lines reduced to what the meters need.
 type auditPoint struct {
+	tool   string // canonical key, retained for operation-specific charging
 	ts     time.Time
 	result string
 	verb   string
 	repo   string
 	pr     *int
+}
+
+// chargesPointBudget separates audit visibility from outward-write charging.
+// deskgit fetch and heads are read-only even when their outcome is unverifiable. Recognizing
+// those existing audit rows here fixes both ledger readers without rewriting
+// history or removing progress/refusal events from the circuit breakers.
+// Missing/unknown verbs, tools and results retain the fail-closed default.
+func chargesPointBudget(e auditPoint) bool {
+	if e.tool == "deskgit" && (e.verb == "fetch" || e.verb == "heads") &&
+		(e.result == ResultOK || e.result == ResultUnverifiable) {
+		return false
+	}
+	return chargesBudget(e.result)
 }
 
 // chargedInWindow counts `tool`'s charged writes inside the rolling window that match
@@ -566,7 +581,7 @@ func chargedInWindow(now time.Time, mine []auditPoint, limit int, scope func(aud
 	cutoff := now.Add(-rateWindow)
 	var charged []time.Time
 	for _, e := range mine {
-		if e.ts.Before(cutoff) || !chargesBudget(e.result) {
+		if e.ts.Before(cutoff) || !chargesPointBudget(e) {
 			continue
 		}
 		if !scope(e) {

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -87,7 +88,7 @@ func VerifierReadEnv() []string { return verifierEnv() }
 func verifierGitBytes(root string, args ...string) ([]byte, error) {
 	cmd := exec.Command("git", append([]string{"--no-replace-objects", "-C", root}, args...)...)
 	cmd.Env = verifierEnv()
-	return cmd.Output()
+	return OutputProcess(cmd)
 }
 func verifierGit(root string, args ...string) (string, error) {
 	out, err := verifierGitBytes(root, args...)
@@ -493,6 +494,103 @@ func IsVerifierAttestation(title, author string) bool {
 	return strings.HasPrefix(title, VerifierAttestationTitle) && verifierAuthority(author)
 }
 
+// ReadVerifierAttestation admits an existing remote record without requiring the
+// original local verifier home. Scheduling readers use the same immutable record
+// and dispatcher stamp gates as execution and Evidence admission; this is never
+// authority to execute rows, land Evidence, or advance lifecycle.
+func ReadVerifierAttestation(f Forge, repo ForgeRepo, n int) (VerifierReceipt, error) {
+	return readVerifierAttestation(f, repo, n)
+}
+
+// The shared validator can consume only these read capabilities. Extending it
+// requires an explicit adapter change at compile time, rather than a nil-Forge
+// panic or an accidental live request from a prepared observation.
+type verifierAttestationReader interface {
+	attestationRecordReader
+	issueLabelEventReader
+	GetIssueTyped(ForgeRepo, int, TargetKind) (*Issue, error)
+}
+
+func readVerifierAttestation(f verifierAttestationReader, repo ForgeRepo, n int) (VerifierReceipt, error) {
+	r := VerifierReceipt{Issue: n}
+	if n <= 0 {
+		return r, Refused("verifier attestation number must be positive")
+	}
+	issue, err := f.GetIssueTyped(repo, n, TargetIssue)
+	if err != nil {
+		return r, Unverifiable("cannot read verifier attestation", err)
+	}
+	if issue == nil {
+		return r, Refused("missing verifier attestation")
+	}
+	_, raw, ok := strings.Cut(issue.Body, "\n\n")
+	if !ok {
+		return r, Refused("verifier attestation body is not a binding")
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r.Binding); err != nil {
+		return r, Refused("verifier attestation body is not a binding")
+	}
+	b := r.Binding
+	if (b.Version != 1 && b.Version != 2) || b.Repo != repo.Slug() || !workerHex64.MatchString(b.Run) ||
+		len(b.Source) != 40 || !workerHexCommit.MatchString(b.Source) || !workerHex64.MatchString(b.HomeSHA256) || !workerHex64.MatchString(b.BriefSHA256) || !workerHex64.MatchString(b.PlanSHA256) {
+		return r, Refused("invalid verifier attestation binding")
+	}
+	if err := r.CheckEvidenceTarget(b.Brief); err != nil {
+		return r, err
+	}
+	if b.Version == 1 && (b.SourceRepo != "" || b.TrackingSource != "" || b.TrackingHomeSHA256 != "" || b.TrackingCheckout != "") {
+		return r, Refused("same-repository verifier has cross-repository fields")
+	}
+	if b.Version == 2 && (!IsAllowedRepo(b.SourceRepo) || strings.EqualFold(b.SourceRepo, b.Repo) || len(b.TrackingSource) != 40 || !workerHexCommit.MatchString(b.TrackingSource) || !workerHex64.MatchString(b.TrackingHomeSHA256)) {
+		return r, Refused("invalid cross-repository verifier binding")
+	}
+	if b.Version == 2 {
+		if _, err := parseVerifierCheckout(b.TrackingCheckout); err != nil {
+			return r, err
+		}
+	}
+	if _, err := ModelStampLabels(b.Model, b.Tier); err != nil {
+		return r, err
+	}
+	if _, err := parseVerifierCheckout(b.Checkout); err != nil {
+		return r, err
+	}
+	title, body := VerifierAttestationTitle+b.Run, verifierBody(b)
+	issue, err = attestationRecordObserved(f, repo, n, issue, title, body, verifierAuthority, "verifier")
+	if err != nil {
+		return r, err
+	}
+	if issue.State != "closed" {
+		return r, Refused("verifier pre-work attestation has not completed")
+	}
+	// Keep a consequential current-state read AFTER body provenance. Reusing
+	// the initial issue is not permission to admit an edited/reopened record or
+	// moved labels. As in StampTimelineFor, current labels are read BEFORE their
+	// history. Dispatch and Evidence admission retain their independent reads.
+	issue, err = f.GetIssueTyped(repo, n, TargetIssue)
+	if err != nil {
+		return r, Unverifiable("cannot reconcile verifier attestation", err)
+	}
+	if err := attestationTarget(issue, title, body, verifierAuthority, "verifier"); err != nil {
+		return r, err
+	}
+	if issue.State != "closed" {
+		return r, Refused("verifier pre-work attestation has not completed")
+	}
+	tl, err := stampTimelineForIssue(f, repo, n, issue)
+	if err != nil {
+		return r, err
+	}
+	stamp, state := AttestedModelStampOf(tl, verifierAuthority)
+	if state != ModelStamped || stamp.Model != b.Model || stamp.Tier != b.Tier {
+		return r, Refused("missing or mismatched dispatcher verifier stamp")
+	}
+	r.URL = issue.URL
+	return r, nil
+}
+
 // CheckVerifierEvidence reuses pre-work admission at landing time, after the
 // verifier's edit to the attested brief's Evidence section, and binds the
 // landing target to the attested brief: an attestation for one brief never
@@ -592,6 +690,62 @@ func (r VerifierReceipt) CheckEvidenceContent(target string, content []byte, row
 		}
 	}
 	return nil
+}
+
+// CheckObservedBrief binds a scheduling reader's immutable source bytes to the
+// exact original brief and plan admitted before this verifier run.
+func (r VerifierReceipt) CheckObservedBrief(content []byte) error {
+	if verifierDigest(content) != r.Binding.BriefSHA256 || verifierDigest(withoutEvidence(content)) != r.Binding.PlanSHA256 {
+		return Refused("attested source brief digest mismatch")
+	}
+	return nil
+}
+
+// CheckVerifierSourceTree establishes unchanged source bytes for a scheduling
+// hold that has no wake receipt. It reuses admission's tree/checkout checks;
+// HEAD identity alone says nothing about modified, ignored or untracked bytes.
+func CheckVerifierSourceTree(root, source string) error {
+	checkout, err := readVerifierCheckout(root)
+	if err != nil {
+		return err
+	}
+	if err := verifierNoReplacements(root); err != nil {
+		return err
+	}
+	if err := verifierNoLocalAttributes(root); err != nil {
+		return err
+	}
+	return verifierSourceClosure(root, source, checkout, nil)
+}
+
+// VerifierEvidenceBindings returns real binding lines inside Evidence. Fenced
+// examples and mentions elsewhere never establish an Evidence run. Shared by
+// outcome admission and queue scheduling so the two read the same contract.
+func VerifierEvidenceBindings(content []byte) []string {
+	var lines []string
+	inEvidence, fence := false, ""
+	fenceLine := regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
+	for _, line := range strings.Split(string(content), "\n") {
+		if match := fenceLine.FindStringSubmatch(line); match != nil {
+			if fence == "" {
+				fence = match[1]
+			} else if match[1][0] == fence[0] && len(match[1]) >= len(fence) && strings.TrimSpace(match[2]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if fence != "" {
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			inEvidence = strings.TrimSpace(strings.TrimPrefix(line, "## ")) == "Evidence"
+		}
+		line = strings.TrimRight(line, " \t\r")
+		if inEvidence && strings.HasPrefix(line, "Verification-Attestation: ") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // PlanVerifierAttestation validates the existing local binding without forge access.

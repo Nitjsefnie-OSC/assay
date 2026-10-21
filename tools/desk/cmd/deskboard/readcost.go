@@ -114,8 +114,10 @@ type rateReading struct {
 
 // sweepCost is Header.cost on `actions`: what this sweep spent against the forge.
 //
-// Charged is Requests minus NotModified — the calls the quota was billed for (GraphQL
-// calls bill the graphql resource, REST calls the core one; ByClass separates them).
+// Charged is the legacy Requests-minus-NotModified request-count proxy. It is
+// neither measured GraphQL points nor an observed quota delta. Actual per-request
+// cost belongs to the optional perf-v3 provider observations, with separate units
+// and explicit coverage. Keep this operational count and floor/cache behavior.
 // Skipped counts per-PR typed reads that were not sent at all because the PR's head, last
 // update and check state matched the previous sweep (prfacts.go). Refused counts requests
 // the floor stopped before they were sent. RateLimit is the lowest remaining quota each
@@ -298,22 +300,6 @@ func (c sweepCost) floorError(now time.Time) error {
 			"refuse-floor of %d (--rate-floor / %s). No board is printed: a sweep that stopped "+
 			"part-way would read as complete. The quota resets at %s; re-run after that.",
 		b.Remaining, b.Resource, c.Floor, rateFloorEnv, reset), wait)
-}
-
-// resolveRateFloor applies --rate-floor over DESKBOARD_RATE_FLOOR over the default.
-func resolveRateFloor(flagVal string) (int, error) {
-	src, v := "--rate-floor", flagVal
-	if v == "" {
-		src, v = rateFloorEnv, strings.TrimSpace(os.Getenv(rateFloorEnv))
-	}
-	if v == "" {
-		return defaultRateFloor, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return 0, deskkit.Refused(fmt.Sprintf("deskboard: %s: invalid value %q: must be a non-negative integer (0 disables the floor)", src, v))
-	}
-	return n, nil
 }
 
 // endpointClass names the endpoint family a request path belongs to, for ByClass:

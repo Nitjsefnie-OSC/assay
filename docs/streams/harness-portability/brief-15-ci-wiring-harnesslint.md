@@ -74,22 +74,14 @@ into this one brief:
 against this brief.
 
 files:
-- **amend** `.github/workflows/ci.yml` — run `go test ./...` for `tools/harnessgen`,
-  `tools/harnesslint`, `tools/plugindrift` (extend the existing `tools/desk` special-case), and add
-  a step that runs the real-tree neutrality gate (`harnesslint bodies` + `harnesslint bindings`).
-- **amend** `plugins/assay/skills/ask-decision/SKILL.md` — neutralise the three `CLAUDE_PLUGIN_ROOT`
-  references (Task step b).
-- **amend** `plugins/assay/skills/install/SKILL.md` — neutralise the one `SessionStart` reference
-  (Task step b).
-- **amend** `tools/harnesslint/lint.go` (+ `main.go` if a flag is chosen) — teach `checkBindings`
-  to skip a **declared** non-matrix reference, announcing the skip (never silent).
-- **amend** `tools/harnesslint/lint_test.go` — the fail-first test(s) for the skip: a declared file
-  is skipped; an **un**declared file is still fully checked (Task step c, and §Fail-first).
-- **amend** `plugins/assay/references/desk-shell.md` — add the non-matrix declaration marker (if the
-  in-file-marker mechanism is chosen; see Task step c).
+- **amend** `.github/workflows/ci.yml` — run `go test ./...` for `tools/harnessgen`, `tools/harnesslint`, `tools/plugindrift` (extend the existing `tools/desk` special-case), and add a step that runs the real-tree neutrality gate (`harnesslint bodies` + `harnesslint bindings`).
+- **amend** `plugins/assay/skills/ask-decision/SKILL.md` — neutralise the three `CLAUDE_PLUGIN_ROOT` references (Task step b).
+- **amend** `plugins/assay/skills/install/SKILL.md` — neutralise the one `SessionStart` reference (Task step b).
+- **amend** `tools/harnesslint/lint.go` (+ `main.go` if a flag is chosen) — teach `checkBindings` to skip a **declared** non-matrix reference, announcing the skip (never silent).
+- **amend** `tools/harnesslint/lint_test.go` — the fail-first test(s) for the skip: a declared file is skipped; an **un**declared file is still fully checked (Task step c, and §Fail-first).
+- **amend** `plugins/assay/references/desk-shell.md` — add the non-matrix declaration marker (if the in-file-marker mechanism is chosen; see Task step c).
 - **add** `docs/streams/harness-portability/brief-15-ci-wiring-harnesslint.md` — this brief.
-- **amend** `docs/streams/harness-portability/README.md` — status row 15, wave 7, the notes and
-  dependency-wave block.
+- **amend** `docs/streams/harness-portability/README.md` — status row 15, wave 7, the notes and dependency-wave block.
 - **add** the required per-PR changelog fragment under the `changelog/` directory, named for the
   branch. **Delivered, and no longer present as a file**: the v1.0.0 release roll aggregated every
   fragment into `CHANGELOG.md` and cleared the directory, which is the designed end state for a

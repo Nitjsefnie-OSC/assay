@@ -41,8 +41,7 @@ id: 2cb59a99-aca1-47f2-be84-60be1a432231
 
 ## Context
 files:
-- `statusgen/attribution.go` — `attributionProblems`, the committer-identity cross-check block
-  and its `sameIdentity` resolution (currently `addNotice`).
+- `statusgen/attribution.go` — `attributionProblems`, the committer-identity cross-check block and its `sameIdentity` resolution (currently `addNotice`).
 - `statusgen/attribution_test.go` — the two cross-check tests asserting today's NOTICE-only behaviour.
 - `statusgen/testdata/attribution/` — the brief fixtures the tests read.
 facts:

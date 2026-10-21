@@ -14,6 +14,16 @@ Specify outcomes, boundaries and consequential decisions; leave execution schedu
 adopter. Read applicable project guidance for preferred techniques and actual constraints;
 an absent local profile is valid. Do not turn a preference into a binding constraint.
 
+## Bind implementation pickup to current context
+
+Read the [implementation pickup procedure](../../references/implementation-pickup.md).
+Specs and briefs identify the selected target/transition, semantic contracts and
+applicable project engineering guidelines by canonical pointer. Include their
+pickup/resume assessment in the implementation handoff; record revisions, coverage
+and continue/adapt/hold rather than assume the authoring snapshot is still current.
+Use the explicit manual bootstrap until the shared operation is shipped and supported.
+Do not rewrite completed Evidence or let a draft proposal veto approved work.
+
 ## Start from the controlling source
 
 Find the existing spec, relevant decisions, affected consumers and current implementation.
@@ -80,7 +90,7 @@ where relevant, not required headings or a section-count gate.
 - **Change and compatibility.** Explain migration, version compatibility, affected callers,
   rollback or recovery, and retirement of the previous path where applicable. Distinguish
   the desired end state from a transition that intentionally carries two implementations.
-- **Proof and decisions.** Give observable acceptance examples, including a relevant
+- **Proof and decisions.** Map conditions to independently verifiable acceptance examples, including a relevant
   failure or boundary case, and the evidence that could falsify the design. State what can
   be checked now versus after implementation. Separate facts from hypotheses; do not claim
   a metric or retrospective comparison proves causation. Name remaining decisions and
@@ -94,11 +104,11 @@ spec-quality review needs a deeper check; do not load it for every small edit.
 
 ## Review and hand off
 
-Check the proposal against its actual sources and a plausible counterexample. Report
-material gaps with the source and consequence; missing preferred formatting is not a
-defect. An adequate existing spec is a legitimate no-change result. For redesigns, separate
-wrong or changed intent from code that drifted or implemented correct intent incorrectly.
-Do not rewrite correct intent to compensate for an implementation bug.
+Review coverage, contradictions and plausible counterexamples against actual sources. On
+revisions, include unchanged criteria, inherited constraints and accepted decisions. Report
+gaps with their source and consequence; formatting preferences are not defects.
+An adequate spec needs no change. Separate changed intent from implementation defects;
+do not weaken correct intent to fit a bug. Use the linked review prompts as needed.
 
 Follow the existing [spec lifecycle](https://github.com/medici-finance/assay/blob/main/spec/lifecycle-v1.md#8-spec-and-scoping-doc-lifecycle)
 for Assay-tracked specs: draft, approved, routed; the ruling and citing briefs establish
