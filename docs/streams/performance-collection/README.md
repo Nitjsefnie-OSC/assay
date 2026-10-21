@@ -12,14 +12,17 @@ spec: docs/streams/performance-collection/README.md
 
 # Optional performance collection
 
-**Status:** draft — activation requested 18 October 2026; the approval ruling that activation needs is not yet recorded.
+**Status:** approved — the driver's full-scope approval ruling of 21 October 2026: https://github.com/medici-finance/assay/pull/3381#issuecomment-6322683460
+
+**Routes-to:** docs/streams/performance-collection/
+
 Collection can start locally before any database, API or managed cell exists. This stream
 owns delivery of optional collection/storage plumbing; it does not replace the semantic
 owners of work, runner accounting, measurement definitions or continuing outcomes.
-The driver asked on 18 October 2026 for this stream to be unparked. Activation applies to the
-whole stream on the board: once it is active, any brief whose `depends:` are met can appear in
-Next-up and be dispatched. That includes the remote-path briefs: /03 and /05 depend only on /01, while /02 also waits on
-desktools-v2/63–65.
+The driver asked on 18 October 2026 for this stream to be unparked, and the approval ruling
+above admits the whole stream. Every brief is dispatchable once its `depends:` are met, the
+remote-path briefs /03, /04, /05 and /06 included; no brief is held for a later ruling.
+/03 and /05 depend only on /01, while /02 also waits on desktools-v2/63–65.
 The delivery priority is the local-first path /01 → /02 → /07 → /08. The remote path keeps its
 separate scope and gates. Brief dependencies, verification and human gates stay in force. All
 existing todo states stay todo. Activation does not enable collection, transmission, deployment
@@ -336,7 +339,9 @@ proposals are separate rollout modes; activation requires the applicable recorde
 
 ## Workflow-efficiency contract amendment — 17 October 2026
 
-The stream was parked when this amendment was authored; its admission is active as of 18 October 2026. /01, /02 and /07 receive bounded phase/correlation, producer and tool-panel acceptance from the approved workflow-efficiency spec. There is no new spool, profile activation or DB/API requirement for early local qualification. See the [delivery map](../../desk-workflow-efficiency-change-map.md#authored-delivery-routing). Existing Evidence and activation gates remain unchanged.
+The stream was parked when this amendment was authored.
+It is active under the full-scope approval ruling of 21 October 2026: https://github.com/medici-finance/assay/pull/3381#issuecomment-6322683460
+/01, /02 and /07 receive bounded phase/correlation, producer and tool-panel acceptance from the approved workflow-efficiency spec. There is no new spool, profile activation or DB/API requirement for early local qualification. See the [delivery map](../../desk-workflow-efficiency-change-map.md#authored-delivery-routing). Existing Evidence and activation gates remain unchanged.
 
 ## Local instrument reuse — 2026-10-16
 
