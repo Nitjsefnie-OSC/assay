@@ -40,6 +40,7 @@ type index struct {
 	ids    []string // sorted brief identities
 	files  []fileRef
 	terms  []string
+	dups   []string // "<id> <kept locator> <ignored locator>" for each brief id held by two files
 }
 
 type fileRef struct {
@@ -85,8 +86,11 @@ func newIndex(s *Snapshot) (*index, error) {
 				continue
 			}
 			b := parseBrief(src, p, src.Files[p], m[1], m[2])
-			if _, dup := ix.briefs[b.ID]; dup {
-				continue // the first file in path order holds the identity
+			if kept, dup := ix.briefs[b.ID]; dup {
+				// the first file in path order holds the identity; the
+				// collision is recorded so it is visible on the receipt
+				ix.dups = append(ix.dups, "duplicate: brief id "+b.ID+" is held by "+kept.locator("")+"; "+b.locator("")+" is ignored")
+				continue
 			}
 			if lc, ok := lifecycles[m[1]][m[2]]; ok {
 				b.Lifecycle = lc
@@ -532,7 +536,7 @@ func (ix *index) prerequisites(h *Handoff) []string {
 			out = append(out, "partial: query "+q.Rule+" truncated at the result limit")
 		}
 	}
-	return out
+	return append(out, ix.dups...)
 }
 
 func nextAct(h *Handoff, unresolved bool) string {

@@ -17,7 +17,8 @@ package main
 // Exit codes are three-state: 0 pass (complete coverage, current receipt,
 // every obligation passes), 1 refuse (an obligation is refused, the receipt
 // must be reconciled, or an input is invalid), 2 usage, 3 hold (could-not-check
-// on an unavailable input, scoped to it).
+// on an unavailable input, scoped to it, or partial coverage on either side,
+// such as a query truncated at the result limit).
 
 import (
 	"encoding/json"

@@ -467,6 +467,116 @@ func TestContextMissingInputScoped(t *testing.T) {
 	}
 }
 
+// regression: a query truncated at the result limit makes coverage partial,
+// yet a recheck counted only unavailable sources as holds, so a truncated
+// receipt read as current and check passed it. Change detection on an
+// impacted brief also went through the read-set map, so a brief whose entry
+// the truncation cut was compared as unchanged (or, cut on one side only, as
+// changed).
+func TestContextRecheckTruncatedCoverageHolds(t *testing.T) {
+	const fileB02 = "sources/repo-b/docs/streams/beta/brief-02-export-consumer.md"
+	filler := func(m fstest.MapFS) {
+		for i := 1; i <= 2100; i++ {
+			m[fmt.Sprintf("sources/repo-a/aaa/f%04d.md", i)] = &fstest.MapFile{Data: []byte(fmt.Sprintf("# filler %04d\n", i))}
+		}
+	}
+	variant := func(fill, edit bool) *Snapshot {
+		m := loadJourney(t)
+		if fill {
+			filler(m)
+		}
+		if edit {
+			old := m[fileB02].Data
+			m[fileB02] = &fstest.MapFile{Data: append(append([]byte(nil), old...), "\nAn added sentence that changes what the consumer must do.\n"...)}
+		}
+		return snap(t, m, Limits{})
+	}
+	classOf := func(fs []Finding, scope, class string) *Finding {
+		for i := range fs {
+			if fs[i].Scope == scope && fs[i].Class == class {
+				return &fs[i]
+			}
+		}
+		return nil
+	}
+	// notable drops the preserved file findings the filler adds, so a failure
+	// message names only what decides the outcome.
+	notable := func(fs []Finding) []Finding {
+		var out []Finding
+		for _, f := range fs {
+			if f.Class != FindingPreserved {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+	readSetTruncated := func(h *Handoff) bool {
+		for _, q := range h.Discovery.Queries {
+			if q.Rule == QueryReadSet {
+				return q.Truncated
+			}
+		}
+		return false
+	}
+
+	// The prior receipt is itself truncated: the impacted beta:02 brief is cut
+	// from its read set, so its revision cannot be compared. Edited or not,
+	// recheck and check hold; neither reads as current or passes.
+	prior := discover(t, variant(true, false))
+	if prior.Discovery.Coverage.State != "partial" || !readSetTruncated(prior) {
+		t.Fatalf("fixture: prior coverage %q, read set truncated %v; want partial and truncated", prior.Discovery.Coverage.State, readSetTruncated(prior))
+	}
+	for _, edit := range []bool{false, true} {
+		s := variant(true, edit)
+		rc, err := Recheck(prior, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rc.Hold() || classOf(rc.Findings, "coverage:prior:"+QueryReadSet, FindingHold) == nil || classOf(rc.Findings, "coverage:snapshot:"+QueryReadSet, FindingHold) == nil {
+			t.Errorf("truncated prior and snapshot (edit %v): findings %+v, want holds scoped to each truncated read set", edit, notable(rc.Findings))
+		}
+		if classOf(rc.Findings, "subject:"+idB02, FindingHold) == nil {
+			t.Errorf("truncated prior (edit %v): findings %+v, want a hold on %s, whose prior revision the truncation cut", edit, notable(rc.Findings), idB02)
+		}
+		if rep := check(t, prior, nil, nil, s); rep.Outcome == OutcomePass {
+			t.Errorf("check over partial coverage (edit %v) = %s, want hold or refuse, never pass", edit, rep.Outcome)
+		}
+	}
+
+	// A complete prior against a truncated snapshot: the impacted briefs cut
+	// from the new read set are compared at their own revision, so the edited
+	// brief alone reconciles and the unchanged ones do not, and the partial
+	// snapshot still holds.
+	full := discover(t, variant(false, false))
+	for _, edit := range []bool{false, true} {
+		rc, err := Recheck(full, variant(true, edit))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rc.Hold() || classOf(rc.Findings, "coverage:snapshot:"+QueryReadSet, FindingHold) == nil {
+			t.Errorf("truncated snapshot (edit %v): findings %+v, want a hold on the truncated read set", edit, notable(rc.Findings))
+		}
+		for _, im := range full.Impacts {
+			f := classOf(rc.Findings, "subject:"+im.Subject, FindingReconcile)
+			if want := edit && im.Subject == idB02; (f != nil) != want {
+				t.Errorf("truncated snapshot (edit %v): reconcile on %s = %+v, want %v", edit, im.Subject, f, want)
+			} else if want && !strings.Contains(f.Reason, "the brief changed since the prior receipt") {
+				t.Errorf("reconcile on %s = %q, want the brief-changed reason", im.Subject, f.Reason)
+			}
+		}
+	}
+
+	// Control: the same edit with complete coverage on both sides reconciles
+	// the edited brief and holds nothing.
+	rc, err := Recheck(full, variant(false, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := classOf(rc.Findings, "subject:"+idB02, FindingReconcile); f == nil || rc.Hold() || !strings.Contains(f.Reason, "the brief changed since the prior receipt") {
+		t.Errorf("control: findings %+v, want only a reconcile on %s", notable(rc.Findings), idB02)
+	}
+}
+
 // regression: statusgen/20 Verify row 5 — checking only that a patch applies
 // lets a clean patch rewrite populated Evidence or a dated source account.
 func TestContextAmendmentPreservesDatedSources(t *testing.T) {
@@ -638,6 +748,14 @@ func TestContextDeliveredBriefRoutesFollowOn(t *testing.T) {
 	if v := follow(idB03); v.Outcome != OutcomeRefuse || v.Rule != RuleAmendUnbound {
 		t.Errorf("binding to a done brief: verdict = %+v, want refuse %s", v, RuleAmendUnbound)
 	}
+	// An unfinished brief that is neither linked to the delivered brief nor
+	// an owner cannot take its obligation; the unfinished owner can.
+	if v := follow(idA05); v.Outcome != OutcomeRefuse || v.Rule != RuleAmendUnbound || !strings.Contains(v.Reason, "not linked") {
+		t.Errorf("binding to an unlinked unfinished brief: verdict = %+v, want refuse %s", v, RuleAmendUnbound)
+	}
+	if v := follow(idB01); v.Outcome != OutcomePass || !strings.Contains(v.Reason, "unfinished owner") {
+		t.Errorf("binding to the unfinished owner: verdict = %+v, want pass", v)
+	}
 
 	// With no linked follow-on, the obligation routes to the unfinished owner;
 	// with neither, a new follow-on brief is needed.
@@ -650,6 +768,21 @@ func TestContextDeliveredBriefRoutesFollowOn(t *testing.T) {
 	editSnapshot(t, noLink, func(v map[string]any) { v["edges"] = []any{} })
 	if im := impactOf(discover(t, snap(t, noLink, Limits{})), idA01); im == nil || im.Disposition != "unresolved" || !strings.Contains(im.Reason, "new follow-on brief") {
 		t.Errorf("no route: impact = %+v, want unresolved, needing a new follow-on", im)
+	}
+}
+
+// Two brief files with one identity: the first in path order holds it, and
+// the collision is named on the receipt instead of resolving silently.
+func TestContextDuplicateBriefIDVisible(t *testing.T) {
+	m := loadJourney(t)
+	if h := discover(t, snap(t, m, Limits{})); len(h.Readiness.Prerequisites) != 1 {
+		t.Fatalf("fixture: prerequisites %v, want only the architecture line", h.Readiness.Prerequisites)
+	}
+	m["sources/repo-b/docs/streams/beta/brief-02-zz-copy.md"] = &fstest.MapFile{Data: []byte("# Brief 02 — Copy\n")}
+	h := discover(t, snap(t, m, Limits{}))
+	want := "duplicate: brief id " + idB02 + " is held by repo-b:docs/streams/beta/brief-02-export-consumer.md; repo-b:docs/streams/beta/brief-02-zz-copy.md is ignored"
+	if !contains(h.Readiness.Prerequisites, want) {
+		t.Errorf("prerequisites %v, want %q", h.Readiness.Prerequisites, want)
 	}
 }
 

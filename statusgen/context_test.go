@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -269,6 +270,92 @@ func TestPickupContextRecheck(t *testing.T) {
 				t.Errorf("findings %+v, want %s %s (%s)", got.Findings, c.class, c.scope, c.reason)
 			}
 		})
+	}
+}
+
+// regression: a receipt whose read set was truncated at the result limit
+// rechecked as "current" and checked as "pass" (exit 0) while printing
+// "coverage: partial". Partial coverage, on either side, is a hold (exit 3).
+func TestContextCLITruncatedCoverageHolds(t *testing.T) {
+	bin := buildStatusgenBinary(t)
+	const consumer = "sources/repo-b/docs/streams/beta/brief-02-export-consumer.md"
+	appendEdit := func(t *testing.T, dir string) {
+		t.Helper()
+		f, err := os.OpenFile(filepath.Join(dir, consumer), os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString("\nAn added sentence that changes what the consumer must do.\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	copyDir := func(t *testing.T, src string) string {
+		t.Helper()
+		dst := filepath.Join(t.TempDir(), "snapshot")
+		if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
+			t.Fatal(err)
+		}
+		return dst
+	}
+	type verbOut struct {
+		Outcome  string                   `json:"outcome"`
+		Findings []contexthandoff.Finding `json:"findings"`
+	}
+	run := func(t *testing.T, verb, dir, receipt string) (verbOut, int, string) {
+		t.Helper()
+		out, errOut, code := ctxRun(t, bin, verb, "--snapshot", dir, receipt, "--json")
+		var got verbOut
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%s --json: %v\n%s%s", verb, err, out, errOut)
+		}
+		text, _, _ := ctxRun(t, bin, verb, "--snapshot", dir, receipt)
+		return got, code, text
+	}
+
+	// The reviewer's reproduction: 2100 filler files push the impacted briefs
+	// past the read-set limit; then one impacted brief is edited.
+	s1 := ctxCopyJourney(t)
+	for i := 1; i <= 2100; i++ {
+		p := filepath.Join(s1, "sources/repo-a/aaa", fmt.Sprintf("f%04d.md", i))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(fmt.Sprintf("# filler %04d\n", i)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, errOut, code := ctxRun(t, bin, "discover", "--snapshot", s1, "--json")
+	if code != 3 {
+		t.Fatalf("discover over a truncated snapshot: exit %d, want 3\n%s", code, errOut)
+	}
+	r1 := ctxWriteTemp(t, "r1.json", []byte(raw))
+	s2 := copyDir(t, s1)
+	appendEdit(t, s2)
+	for _, verb := range []string{"recheck", "check"} {
+		got, code, text := run(t, verb, s2, r1)
+		if code != 3 || got.Outcome != "hold" || !strings.Contains(text, "coverage: partial") {
+			t.Errorf("%s over partial coverage: exit %d outcome %q, want 3 hold; findings %+v\n%s", verb, code, got.Outcome, got.Findings, text)
+		}
+		if strings.Contains(text, ": current") || strings.Contains(text, ": pass (") {
+			t.Errorf("%s over partial coverage reads as complete:\n%s", verb, text)
+		}
+	}
+
+	// Control: the same edit with complete coverage reconciles (exit 1).
+	r0raw, errOut, code := ctxRun(t, bin, "discover", "--snapshot", ctxJourney, "--json")
+	if code != 0 {
+		t.Fatalf("discover over the base journey: exit %d\n%s", code, errOut)
+	}
+	r0 := ctxWriteTemp(t, "r0.json", []byte(r0raw))
+	s3 := ctxCopyJourney(t)
+	appendEdit(t, s3)
+	got, code, text := run(t, "recheck", s3, r0)
+	if code != 1 || got.Outcome != "reconcile" || !strings.Contains(text, "reconcile: subject:example:repo-b:beta:02: the brief changed since the prior receipt") {
+		t.Errorf("control recheck: exit %d outcome %q, want 1 reconcile naming the brief change\n%s", code, got.Outcome, text)
+	}
+	if _, code, text := run(t, "check", s3, r0); code != 1 {
+		t.Errorf("control check: exit %d, want 1 (stale receipt)\n%s", code, text)
 	}
 }
 

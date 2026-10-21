@@ -153,7 +153,11 @@ func (ix *index) checkOne(v Verdict, a Amendment, bind Binding, h *Handoff, hd s
 		case !f.unfinished():
 			return refuseV(v, RuleAmendUnbound, "follow-up %s is %s, not an unfinished brief that can take the obligation", f.ID, f.Lifecycle)
 		default:
-			v.Reason = "routed to follow-up " + f.ID + "; " + a.Subject + " is left unchanged"
+			how := ix.linked(a.Subject, f)
+			if how == "" {
+				return refuseV(v, RuleAmendUnbound, "follow-up %s is not linked to %s: it neither depends on it nor is unblocked by it, and owns no term; bind a linked follow-on or an unfinished owner", f.ID, a.Subject)
+			}
+			v.Reason = "routed to follow-up " + f.ID + " (" + how + "); " + a.Subject + " is left unchanged"
 		}
 		return v
 	}
@@ -193,6 +197,25 @@ func (ix *index) checkOne(v Verdict, a Amendment, bind Binding, h *Handoff, hd s
 		return refuseV(v, CheckSilentRebind, "%s", r)
 	}
 	return v
+}
+
+// linked names how a follow-up brief is tied to the subject whose obligation
+// it takes: a linked follow-on (it depends on the subject, or the subject
+// unblocks it) or a declared owner. These are the routes ix.route offers; ""
+// means the follow-up is not linked and cannot take the obligation.
+func (ix *index) linked(subject string, f *brief) string {
+	if contains(f.Depends, subject) {
+		return "linked follow-on"
+	}
+	if b := ix.briefs[subject]; b != nil && contains(b.Unblocks, f.ID) {
+		return "linked follow-on"
+	}
+	for _, e := range ix.s.Edges {
+		if e.Edge == "owns" && e.Subject == f.ID {
+			return "unfinished owner"
+		}
+	}
+	return ""
 }
 
 // rewrites names the first protected region a patch removes a line from or

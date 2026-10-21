@@ -10,7 +10,7 @@ import (
 const (
 	FindingPreserved = "preserved" // an input changed, and no conclusion depends on it
 	FindingReconcile = "reconcile" // a conclusion depends on a changed input: reconcile before acting
-	FindingHold      = "hold"      // an input is unavailable: could-not-check, scoped to it
+	FindingHold      = "hold"      // an input is unavailable or coverage is partial: could-not-check, scoped to it
 	FindingIgnored   = "ignored"   // an input that cannot affect approved work (an unapproved rival)
 )
 
@@ -32,7 +32,9 @@ type RecheckResult struct {
 // Reconcile reports whether any finding requires reconciliation.
 func (r *RecheckResult) Reconcile() bool { return r.count(FindingReconcile) > 0 }
 
-// Hold reports whether any input was unavailable.
+// Hold reports whether any input was unavailable or either receipt's
+// coverage is partial (a source it could not read, a query truncated at the
+// result limit). A recheck that holds is never reported current.
 func (r *RecheckResult) Hold() bool { return r.count(FindingHold) > 0 }
 
 func (r *RecheckResult) count(class string) int {
@@ -51,8 +53,11 @@ func (r *RecheckResult) count(class string) int {
 // proposal or a changed declared owner, version or replacement each force
 // reconciliation even when every previously read file is unchanged. An edit no
 // conclusion depends on preserves the prior conclusions, and an unavailable
-// input is a hold scoped to that input. Over an unchanged snapshot the merged
-// receipt reproduces the prior digest.
+// input is a hold scoped to that input. Partial coverage on either side (a
+// source the prior receipt could not read, a query truncated at the result
+// limit) is a hold too, so a truncated receipt never reads as current. Over an
+// unchanged snapshot with complete coverage the merged receipt reproduces the
+// prior digest.
 func Recheck(prior *Handoff, s *Snapshot) (*RecheckResult, error) {
 	ix, err := newIndex(s)
 	if err != nil {
@@ -130,6 +135,7 @@ func (c *comparison) compare() {
 			c.held[im.Subject] = true
 		}
 	}
+	c.coverageHolds()
 
 	if !reflect.DeepEqual(c.prior.Target, c.fresh.Target) {
 		c.add("target", FindingReconcile, "the selected target, its approval or its transition changed")
@@ -156,6 +162,7 @@ func (c *comparison) compare() {
 
 	priorRead := atMap(queryResults(c.prior, QueryReadSet))
 	freshRead := atMap(queryResults(c.fresh, QueryReadSet))
+	priorCut, freshCut := readSetTruncated(c.prior), readSetTruncated(c.fresh)
 	priorImp, freshImp := impactsBySubject(c.prior), impactsBySubject(c.fresh)
 	for _, subj := range unionKeys(priorImp, freshImp) {
 		p, inPrior := priorImp[subj]
@@ -172,7 +179,7 @@ func (c *comparison) compare() {
 			// above, never re-derived from what this run could not read
 		case !inPrior:
 			reason := "new consumer"
-			if _, read := priorRead[loc]; loc == "" || !read {
+			if _, read := priorRead[loc]; loc == "" || (!read && !priorCut) {
 				reason += " outside the prior read set"
 			}
 			c.touched[subj] = true
@@ -183,9 +190,8 @@ func (c *comparison) compare() {
 		case p.Relationship != f.Relationship || p.Lifecycle != f.Lifecycle || !reflect.DeepEqual(p.Evidence, f.Evidence):
 			c.touched[subj] = true
 			c.add("subject:"+subj, FindingReconcile, "relationship, lifecycle or evidence changed")
-		case loc != "" && priorRead[loc] != freshRead[loc]:
-			c.touched[subj] = true
-			c.add("subject:"+subj, FindingReconcile, "the brief changed since the prior receipt")
+		case b != nil:
+			c.compareBrief(subj, b, priorRead, priorCut)
 		}
 	}
 
@@ -197,7 +203,7 @@ func (c *comparison) compare() {
 		if !priorProse[r] && freshImp[r].Subject == "" {
 			c.explains[r] = true
 			reason := "new prose candidate"
-			if _, read := priorRead[r]; !read {
+			if _, read := priorRead[r]; !read && !priorCut {
 				reason += " outside the prior read set"
 			}
 			c.add("prose:"+r, FindingReconcile, reason)
@@ -209,11 +215,74 @@ func (c *comparison) compare() {
 	}
 
 	for _, loc := range unionKeys(priorRead, freshRead) {
-		if priorRead[loc] == freshRead[loc] || c.explains[loc] || c.inUnavailable(loc) {
+		pv, inP := priorRead[loc]
+		fv, inF := freshRead[loc]
+		if pv == fv || c.explains[loc] || c.inUnavailable(loc) || (!inP && priorCut) || (!inF && freshCut) {
+			// unchanged, accounted for, unreadable, or cut from a truncated
+			// read set (which the coverage hold already covers)
 			continue
 		}
 		c.add("file:"+loc, FindingPreserved, "unrelated edit: no conclusion depends on it")
 	}
+}
+
+// coverageHolds raises a hold for every way either receipt's coverage falls
+// short of complete: a query truncated at the result limit, prior or new, and
+// a source the prior receipt could not read. A source unavailable to this run
+// already holds, scoped to that source. Partial coverage is never reported as
+// complete, so it is never reported current.
+func (c *comparison) coverageHolds() {
+	for _, side := range []struct {
+		name string
+		h    *Handoff
+	}{{"prior", c.prior}, {"snapshot", c.fresh}} {
+		n := 0
+		for _, q := range side.h.Discovery.Queries {
+			if q.Truncated {
+				n++
+				c.add("coverage:"+side.name+":"+q.Rule, FindingHold, "query truncated at the result limit: coverage is partial, so the receipt cannot be confirmed current")
+			}
+		}
+		cov := side.h.Discovery.Coverage
+		if side.name == "prior" {
+			for _, u := range cov.Unavailable {
+				n++
+				c.add("coverage:prior:source:"+u.Source, FindingHold, "the prior receipt could not read this source, so its conclusions there were never checked: could-not-check")
+			}
+		} else {
+			n += len(cov.Unavailable) // each already holds as source:<id>
+		}
+		if n == 0 && cov.State != "complete" {
+			c.add("coverage:"+side.name, FindingHold, "coverage is "+cov.State+", not complete: could-not-check")
+		}
+	}
+}
+
+// compareBrief compares an impacted brief's revision in the prior receipt with
+// its revision in this snapshot. The new revision comes from the brief itself,
+// never from the new read set, so a truncated read set cannot hide an edit or
+// invent one. When the prior read set was truncated before the brief, its
+// prior revision is unknown: a hold scoped to the subject, never a match.
+func (c *comparison) compareBrief(subj string, b *brief, priorRead map[string]string, priorCut bool) {
+	prev, read := priorRead[b.locator("")]
+	switch {
+	case read && prev == BlobRevision(b.Raw):
+	case !read && priorCut:
+		c.touched[subj] = true
+		c.add("subject:"+subj, FindingHold, "the prior receipt's read set was truncated before this brief, so its revision cannot be compared: could-not-check")
+	default:
+		c.touched[subj] = true
+		c.add("subject:"+subj, FindingReconcile, "the brief changed since the prior receipt")
+	}
+}
+
+func readSetTruncated(h *Handoff) bool {
+	for _, q := range h.Discovery.Queries {
+		if q.Rule == QueryReadSet {
+			return q.Truncated
+		}
+	}
+	return false
 }
 
 func (c *comparison) sortFindings() {
@@ -384,7 +453,7 @@ func (c *comparison) merge() *Handoff {
 		push(l)
 	}
 	for _, l := range c.prior.Readiness.Prerequisites {
-		if !strings.HasPrefix(l, "reconcile: ") && !strings.HasPrefix(l, "hold: ") && !strings.HasPrefix(l, "partial: ") {
+		if !strings.HasPrefix(l, "reconcile: ") && !strings.HasPrefix(l, "hold: ") && !strings.HasPrefix(l, "partial: ") && !strings.HasPrefix(l, "duplicate: ") {
 			push(l)
 		}
 	}
