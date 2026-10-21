@@ -39,7 +39,7 @@ consumers:
   - "tools/desk/internal/deskkit/declaredscope.go (ResolveDeclaredScope key emission; CheckReceiptScope lookup): follow-up desk-supervision/36"
   - "tools/desk/internal/deskkit/verifywake.go (RootRevisionReader scope: case): follow-up desk-supervision/36"
   - "tools/desk/internal/deskkit/verifyoutcomes.go (BuildOutcomeRecord, inputs := scope.Shapes): out-of-scope (inherits the new keys from ResolveDeclaredScope unchanged)"
-  - "tools/desk/cmd/deskevidence/outcomebinding.go (maps.Equal of Source and Evidence Shapes): out-of-scope (both sides use the same resolver; a file/directory kind change between them is a shape change and stays refused)"
+  - "tools/desk/cmd/deskevidence/outcomebinding.go (maps.Equal of Source and Evidence Shapes; maps.Equal of outcome.Inputs against the re-derived binding near line 128): out-of-scope (both sides use the same resolver, and a file/directory kind change between them stays refused; a record produced by a pre-change tool and bound by a post-change tool re-derives slash keys, so the inputs check refuses it, which fails closed and is remedied by re-producing the record with the current tool)"
   - "tools/desk/cmd/deskevidence/receiptvalidate.go (file: coverage only): out-of-scope (reads no scope: key)"
   - "tools/desk/cmd/verifyloop/testdata/wake-fixture-repo/ (scope keys are file literals only): out-of-scope (unchanged keys)"
   - "docs/declared-input-scope.md (Observation and reader contract): follow-up desk-supervision/36"
@@ -87,8 +87,9 @@ facts:
   refusal or the missing key, so it reports could-not-check, never unchanged. Fail-closed, and the
   same release carries both producer and reader. `verify-wake-v1.md` already says older readers
   report could-not-check on unfamiliar `scope:` keys.
-- residual, measured not widened: an extensionless FILE literal ending in a credential keyword
-  (`scope:x/token` naming a file) still trips the sweep. Count on main @ 8121208a6 is 0; record
+- residual, measured not widened: keys that keep the no-slash form still trip the sweep when they
+  end in a credential keyword — an extensionless FILE literal (`scope:x/token` naming a file), an
+  ABSENT literal, and a glob whose last segment ends in a credential keyword. Count on main @ 8121208a6 is 0; record
   it in the contract doc, do not fix it here.
 
 single-point-of-failure: the producer's key form is the only thing keeping directory keys clear of
@@ -120,7 +121,8 @@ recomputation), and each is tested with the other bypassed.
 
 1. **One key helper.** Add `ScopeInputKey(decl, kind string) string` (slash form exactly when `decl`
    is a literal and `kind == "tree"`) and `ParseScopeInputKey(key string) (decl string, dirForm bool, ok bool)`.
-   `ok` is false for an empty declaration, a double slash or a non-`scope:` key. The parser strips
+   `ok` is false for an empty declaration, a double slash, a non-`scope:` key, or a slash form whose
+   declaration is a glob (`scope:<glob>/` is never emitted, so it is refused, never normalised). The parser strips
    at most one trailing `/` and returns the canonical declaration. Use the helper at
    `declaredscope.go:519`. The digest value and its shape terms are unchanged byte for byte.
 2. **Completeness check accepts both forms.** `CheckReceiptScope` treats a declaration as covered
@@ -139,7 +141,8 @@ recomputation), and each is tested with the other bypassed.
 4. **Contract docs.** In `declared-input-scope.md`, state the two key forms and when each is
    emitted, that readers accept both, that "ambiguous" means both forms present, and the measured
    residual: at a slash-keyed position the generic pattern rule matches no value, dedicated provider
-   rules still fire, and readers refuse any non-digest value. Add one sentence after the "A trailing slash is normalized" line saying that
+   rules still fire, and readers refuse any non-digest value; and the no-slash keys that can still
+   trip the sweep (extensionless file literals, absent literals, globs ending in a credential keyword). Add one sentence after the "A trailing slash is normalized" line saying that
    normalisation applies to declarations and that keys re-add the slash for directories. In
    `verify-wake-v1.md`, extend the input-key grammar to `scope:<canonical-declaration>[/]` and keep
    the older-reader note true: older readers report could-not-check on slash keys.
@@ -147,7 +150,10 @@ recomputation), and each is tested with the other bypassed.
    `TestScopeKeyLegacyReceiptReads`, `TestScopeKeyAmbiguousForms`, `TestScopeKeyLayersIndependent`,
    `TestScopeKeyValueMustBeDigest`, `TestScopeKeyLeakSweepFixture`. `TestScopeKeyValueMustBeDigest`
    asserts a 40-character base62 value under a slash-keyed directory key is refused, and a well-formed
-   digest is accepted. `TestScopeKeyLeakSweepFixture` builds a real record through `BuildOutcomeRecord` over
+   digest is accepted. No test source commits a token-shaped literal: the base62 value is generated
+   at test time, and the golden digest of row 1 is pinned in a form the pinned gitleaks config does not
+   flag (e.g. stored split across two string constants with a comment that it is a digest), checked by
+   running the pre-push sweep over the changed files. `TestScopeKeyLeakSweepFixture` builds a real record through `BuildOutcomeRecord` over
    a fixture tree that declares the directory `tools/desk/cmd/desktoken`. When
    `SCOPE_KEY_FIXTURE_DIR` is set, it writes that record to
    `$SCOPE_KEY_FIXTURE_DIR/new/docs/streams/verify-outcomes/scope-fixture/01-20261021T000000Z-000000000000.json`,
@@ -168,10 +174,10 @@ Run from the repository root; Go rows run inside the `tools/desk` module.
 |---|---------|--------|-------|
 | 1 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyDirectoryForm$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyDirectoryForm' "$o")` | exit 0. A literal directory gets `scope:<decl>/`; a literal file, an absent literal and a glob keep `scope:<decl>`; the digest equals a golden value pinned from the base for the same fixture tree | check |
 | 2 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyLegacyReceiptReads$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyLegacyReceiptReads' "$o")` | exit 0. A receipt with a legacy directory key passes `CheckReceiptScope`, reads unchanged on an unchanged tree, and wakes when a member is added | check |
-| 3 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyAmbiguousForms$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyAmbiguousForms' "$o")` | exit 0. Both forms present is refused; `scope:x//` and `scope:/` read could-not-check; a slash key whose path is now a file wakes | check |
+| 3 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyAmbiguousForms$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyAmbiguousForms' "$o")` | exit 0. Both forms present is refused; `scope:x//`, `scope:/` and a slash-form glob key (`scope:<glob>/`) read could-not-check; a slash key whose path is now a file wakes | check |
 | 4 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyLayersIndependent$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyLayersIndependent' "$o")` | exit 0. With `CheckReceiptScope` bypassed, the wake reader alone still returns the original digest for a legacy key, and an empty digest never compares equal. With the wake reader stubbed, the completeness check alone still refuses a receipt that lacks the declaration in both forms | check |
 | 5 | `d=$(mktemp -d) && (cd tools/desk && SCOPE_KEY_FIXTURE_DIR="$d" go test ./internal/deskkit -run '^TestScopeKeyLeakSweepFixture$' -count=1 -timeout 120s) && p=docs/streams/verify-outcomes/scope-fixture/01-20261021T000000Z-000000000000.json && test -f "$d/new/$p" && test -f "$d/legacy/$p" && test -f "$d/planted/$p" && gitleaks version \| grep -Fx 8.30.1 && cp .gitleaks.toml "$d/new/" && cp .gitleaks.toml "$d/legacy/" && cp .gitleaks.toml "$d/planted/" && { (cd "$d/new" && gitleaks dir . --config .gitleaks.toml --exit-code 9 --no-banner --redact >/dev/null 2>&1); a=$?; (cd "$d/legacy" && gitleaks dir . --config .gitleaks.toml --exit-code 9 --no-banner --redact >/dev/null 2>&1); b=$?; (cd "$d/planted" && gitleaks dir . --config .gitleaks.toml --exit-code 9 --no-banner --redact >/dev/null 2>&1); c=$?; echo "new=$a legacy=$b planted=$c"; test "$a" = 0 && test "$b" = 9 && test "$c" = 9; }` | exit 0 and prints `new=0 legacy=9 planted=9`. The producer-built record is clean under pinned gitleaks with the unchanged repo config; its legacy twin is red (fail-first control); a dedicated-rule value at a slash-keyed position is still caught (pins the residual) | check |
-| 6 | `git diff --quiet "$(git merge-base HEAD refs/remotes/origin/main)" HEAD -- .gitleaks.toml .github/workflows/ docs/streams/verify-outcomes/ && echo untouched` | exit 0; prints `untouched` | check |
+| 6 | `b=8121208a6a4fb011ed1b0e7a00bd983a5aa4feeb && n=$(git log --format=%H -E --grep='^Brief: desk-supervision/36$' "$b"..HEAD \| wc -l) && test "$n" -gt 0 && test -z "$(git log --format=%H -E --grep='^Brief: desk-supervision/36$' "$b"..HEAD -- .gitleaks.toml .github/workflows/)" && test -z "$(git log --format=%H -E --grep='^Brief: desk-supervision/36$' --diff-filter=MD "$b"..HEAD -- docs/streams/verify-outcomes/)" && echo untouched` | exit 0; prints `untouched`. At least one commit since the authoring base carries this brief's trailer (the row is not vacuous), no such commit touches the sweep config or any workflow, and none modifies or deletes a landed outcome record. Works the same on the PR branch and on merged main; unrelated later commits to those paths do not affect it | check |
 | 7 | `(cd tools/desk && go test ./internal/deskkit/... ./cmd/deskevidence/... ./cmd/verifyloop/... -count=1 -timeout 300s)` | exit 0. Admission binding, receipt validation, the producer and the wake fixtures stay green (the flow across all consumers) | check:ci |
 | 8 | `statusgen --root . --lint` | exit 0; LINT PASS | check:ci |
 | 9 | `statusgen --root . --consumers --brief desk-supervision/36` | exit 0; the four follow-up rows are corroborated by the implementation diff | check:ci |
