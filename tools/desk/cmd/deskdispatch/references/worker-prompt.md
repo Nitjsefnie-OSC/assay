@@ -480,3 +480,15 @@ for: whatever you must see settled before you hand back, you must still see sett
   say how long you waited and what was still pending — never a pass (common clause C4).
 - Where your harness offers a durable monitor or a background wait that wakes you on the
   change, arm that instead of blocking.
+
+## Architecture pickup
+
+Before implementation effects, on resume and after a material scope/target change,
+follow `references/implementation-pickup.md` of the installed Assay plugin (in the Assay
+source tree: `plugins/assay/references/implementation-pickup.md`). If neither is
+available, this section is the whole procedure; do not skip it.
+Read the current project instructions, selected approved target/transition, semantic
+contracts and engineering guidelines. Record source revisions, coverage and a reasoned
+continue/adapt/hold disposition in your plan or PR. Preserve scope and active-work
+acknowledgment; an unapproved proposal alone never blocks authorized work. Use the
+manual bootstrap when the shared context operation is not shipped or supported.

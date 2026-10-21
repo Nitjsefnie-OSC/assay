@@ -34,8 +34,7 @@ id: 657026c6-eb54-49ef-bd9e-0380ed3ac161
 ## Context
 
 files:
-- **amend** `plugins/assay/skills/*/SKILL.md` (7 files) — harness touchpoints rewritten
-  to capability vocabulary
+- **amend** `plugins/assay/skills/*/SKILL.md` (7 files) — harness touchpoints rewritten to capability vocabulary
 - **create** `plugins/assay/references/claude-code.md` — Claude Code bindings
 - **create** `plugins/assay/references/codex.md` — Codex bindings + degradation cells
 - **create** `tools/harnesslint` — Go module: neutrality + vocabulary-closure lint

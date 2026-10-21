@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/spf13/cobra"
@@ -15,9 +16,11 @@ import (
 // dispatchCLI keeps parsing/configuration distinct from every domain authority.
 // Tests replace the typed handoff, never the custody checks in the domain handlers.
 type dispatchCLI struct {
-	inputs cli.Inputs
-	before func() error
-	handle func(string, dispatchOpts, string) error
+	measurement *perfrec.Session
+	performance func(perfrec.Context)
+	inputs      cli.Inputs
+	before      func() error
+	handle      func(string, dispatchOpts, string) error
 }
 
 // modeArgs is compatibility normalization only: the existing leading selector is
@@ -107,7 +110,7 @@ func newDispatchCLI(mode string, env dispatchCLI) *cobra.Command {
 		if mode == "" && v.Bool("kits") {
 			executionFlag := false
 			cmd.Flags().Visit(func(f *pflag.Flag) {
-				if f.Name != "kits" && f.Name != "trace" {
+				if f.Name != "kits" && f.Name != "trace" && !strings.HasPrefix(f.Name, "perf-") {
 					executionFlag = true
 				}
 			})
@@ -139,6 +142,9 @@ func newDispatchCLI(mode string, env dispatchCLI) *cobra.Command {
 			}
 		}
 		o := dispatchOpts{dryRun: v.Bool("dry-run")}
+		o.performance, _ = cli.PerformanceContext(cmd)
+		o.measurement = env.measurement
+		o.performanceWorkExplicit = cli.PerformanceInput(cmd).WorkPresent
 		if mode != "--stamp-only" {
 			o.root = v.String("root")
 			o.brief = v.String("brief")
@@ -196,7 +202,7 @@ func cliVersion() string {
 func parseDispatchCLI(args []string, env dispatchCLI, streams cli.IO) int {
 	mode, args := modeArgs(args)
 	return cli.Run(func() *cobra.Command { return newDispatchCLI(mode, env) }, args, cli.Options{
-		IO: streams, Version: cliVersion(), VersionTemplate: "{{.Version}}\n", GoFlagCompat: true,
+		Performance: env.performance, IO: streams, Version: cliVersion(), VersionTemplate: "{{.Version}}\n", GoFlagCompat: true,
 		ExitCode: func(err error) int { deskkit.ReportError(streams.Err, err); return deskkit.ExitCodeOf(err) },
 	})
 }

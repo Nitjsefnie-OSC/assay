@@ -84,18 +84,13 @@ thing in the loop, and the largest single cause is the forge reads this brief re
 files:
 - `tools/desk/cmd/deskread/` (planned) — the new read verb.
 - `statusgen/forgeread.go` (planned) — the `forgeReader` interface and its two implementations.
-- `statusgen/issues.go` — `ghIssueMetricLister` declared at `:571` with its single
-  `exec.Command("gh", …)` at `:577`, and `openIssueDebtNotice` at `:764`, whose
-  `exec.LookPath("gh")` guard is at `:768` and whose per-repo lister calls are at `:773`.
+- `statusgen/issues.go` — `ghIssueMetricLister` declared at `:571` with its single `exec.Command("gh", …)` at `:577`, and `openIssueDebtNotice` at `:764`, whose `exec.LookPath("gh")` guard is at `:768` and whose per-repo lister calls are at `:773`.
 - `statusgen/attribution.go` — the per-brief author pair at `:437-438`.
-- `statusgen/gitinfo.go` — `gitPathFirstAuthorIdentity` (`:189`) and
-  `gitPathLastAuthorIdentity` (`:170`), the two per-brief git reads the walk replaces.
+- `statusgen/gitinfo.go` — `gitPathFirstAuthorIdentity` (`:189`) and `gitPathLastAuthorIdentity` (`:170`), the two per-brief git reads the walk replaces.
 - `statusgen/brieffile.go` — `parseBriefFile` at `:388`.
-- `statusgen/main.go` — `run()`'s existing `changed []string` plumbing (`:32,84,111,114,334,422,474`),
-  the three `LoadHistory` calls on one path (`:662,772,978`).
+- `statusgen/main.go` — `run()`'s existing `changed []string` plumbing (`:32,84,111,114,334,422,474`), the three `LoadHistory` calls on one path (`:662,772,978`).
 - `statusgen/linkcheck.go` — `buildSourceIndex` at `:651`.
-- `tools/desk/cmd/deskread/main.go` — `ciTransportKinds`, the CI-transport kind set the
-  CI-transport brief in #2314 opens at `issues`, `trust` and `comments`.
+- `tools/desk/cmd/deskread/main.go` — `ciTransportKinds`, the CI-transport kind set the CI-transport brief in #2314 opens at `issues`, `trust` and `comments`.
 - `docs/telemetry.md` — the style this brief's `--lint` reach contract follows.
 
 **Why the risk answers are all `no`.** This brief adds no credential, mints nothing, moves

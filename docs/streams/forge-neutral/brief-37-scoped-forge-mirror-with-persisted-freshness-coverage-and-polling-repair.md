@@ -4,7 +4,7 @@ title: Scoped forge mirror with persisted freshness, coverage and polling repair
 why: "Every desk, status run and planning read asks the forge the same questions again, one verb at a time, and a throttled or partial read can look like an empty queue. One scoped mirror that records what it read, when, and how completely lets those readers share one answer and see when it is stale or incomplete, without each of them polling the forge."
 wave: 7
 depends: ["graph-execution/28", "graph-execution/29", "graph-execution/19", "forge-neutral/36", "forge-neutral/33", "desktools-v2/09"]
-unblocks: ["forge-neutral/38", "forge-neutral/41", "forge-neutral/43"]
+unblocks: ["forge-neutral/38", "forge-neutral/41", "forge-neutral/43", "cell-api/02"]
 effort: L
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
@@ -151,7 +151,9 @@ Options:
    footprint is smaller, and the earlier observations are gone if access returns. The mirror then
    re-reads from scratch.
 
-Default if no answer: none. The mirror stays unactivated and the brief stays held until answered.
+Default if no answer: none — blocks until answered.
+
+The mirror stays unactivated and the brief stays held until answered.
 
 ## Ground rules
 

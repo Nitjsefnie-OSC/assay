@@ -18,8 +18,10 @@ package deskkit
 // t.Setenv-scoped HOME would not reach the child.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -92,7 +94,34 @@ func installFixtureRoster() (cleanup func(), err error) {
 	}, nil
 }
 
+// startupBuildCaches are resolved before fixture HOME hides the caller's go env file.
+// Only the synthetic command build uses them; runtime children keep isolated HOME.
+var startupBuildCaches map[string]string
+var startupBuildCacheErr error
+
+func resolveStartupBuildCaches() {
+	out, err := exec.Command("go", "env", "-json", "GOMODCACHE", "GOCACHE").Output()
+	if err != nil {
+		startupBuildCacheErr = fmt.Errorf("resolve test build caches: %w", err)
+		return
+	}
+	if err := json.Unmarshal(out, &startupBuildCaches); err != nil {
+		startupBuildCacheErr = err
+		return
+	}
+	for _, key := range []string{"GOMODCACHE", "GOCACHE"} {
+		if !filepath.IsAbs(startupBuildCaches[key]) {
+			startupBuildCacheErr = fmt.Errorf("test build cache is not absolute: %s", key)
+			return
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
+	// Reexecuted protocol fixtures may deliberately have no Go tool on PATH.
+	// Cache-resolution errors belong only to the test that needs a build child.
+	resolveStartupBuildCaches()
+
 	// Resolve the operator's REAL state directory before anything redirects the home, and
 	// guard it for the whole run: a test that resolves it is refused and fails the binary.
 	uninstallGuard := installStateDirGuard()

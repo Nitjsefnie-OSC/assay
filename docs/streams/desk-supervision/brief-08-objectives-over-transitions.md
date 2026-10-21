@@ -16,6 +16,9 @@ effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
+delivery:
+  - {in: "assay#1266", covers: partial, note: "kit, fixtures and both arms' run artifacts only; the arms carry no observer log, so Task 3's wedge counts and Task 4's decision line remain owed (tracked in assay#2816)"}
+  - {in: "assay#3239", covers: partial, note: "repairs the Verify commands and withdraws the unsupported wedge counts and adoption conclusion; Task 3 and Task 4 remain owed until observer-backed runs exist"}
 schema: brief-v2
 authored: 2026-09-02 by desk-supervision authoring session
 sources:
@@ -42,24 +45,14 @@ id: eb82d786-ffc7-46d0-ae5e-98172a4b78f9
 ## Context
 
 files:
-- `tools/desk/cmd/deskdispatch/references/worker-prompt-objective.md` (new) — the
-  alternative kit: objective, tools available, the status map (draft PR → review → rework
-  → ready is the review desk's; the worker's states are `working`, `blocked`,
-  `handed-off`), the workpad rule, the blocked-access escape hatch, and the common clauses
-  included verbatim.
+- `tools/desk/cmd/deskdispatch/references/worker-prompt-objective.md` (new) — the alternative kit: objective, tools available, the status map (draft PR → review → rework → ready is the review desk's; the worker's states are `working`, `blocked`, `handed-off`), the workpad rule, the blocked-access escape hatch, and the common clauses included verbatim.
 - `tools/desk/cmd/deskdispatch/main.go` — register the kit under `--kit worker-objective`.
-- `tools/skillbench/fixtures/worker-kit/` (new) — the task set: five briefs from this
-  repo's own closed streams, re-runnable offline, each with a deterministic `check`.
-- `docs/streams/desk-supervision/08-report.md` — the stored skillbench reduction and
-  the observer-dependent decision, with missing evidence reported as could-not-check.
-- `docs/streams/desk-supervision/verify.d/08-reduction.sh` — rerun the reducer with a
-  scratch output path and check its report-file oracle.
-- `docs/streams/desk-supervision/verify.d/08-consumers.py` — corroborate all three
-  consumer routes against the exact historical delivery diff.
-- `docs/streams/desk-supervision/verify.d/08-mutations.py` — plant a failed task
-  result and an additional consumer in scratch; require each oracle to reject it.
-- `docs/streams/desktools-v2/cli-migration.json` — classify these three source-only
-  acceptance instruments as tests, using exact-path entries.
+- `tools/skillbench/fixtures/worker-kit/` (new) — the task set: five briefs from this repo's own closed streams, re-runnable offline, each with a deterministic `check`.
+- `docs/streams/desk-supervision/08-report.md` — the stored skillbench reduction and the observer-dependent decision, with missing evidence reported as could-not-check.
+- `docs/streams/desk-supervision/verify.d/08-reduction.sh` — rerun the reducer with a scratch output path and check its report-file oracle.
+- `docs/streams/desk-supervision/verify.d/08-consumers.py` — corroborate all three consumer routes against the exact historical delivery diff.
+- `docs/streams/desk-supervision/verify.d/08-mutations.py` — plant a failed task result and an additional consumer in scratch; require each oracle to reject it.
+- `docs/streams/desktools-v2/cli-migration.json` — classify these three source-only acceptance instruments as tests, using exact-path entries.
 
 single-point-of-failure: the task set — if the five tasks do not exercise a state the
 procedural kit anticipates and the objective kit must discover, the comparison measures

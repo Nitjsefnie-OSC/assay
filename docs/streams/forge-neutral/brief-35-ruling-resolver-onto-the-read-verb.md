@@ -120,26 +120,14 @@ forge-neutral/33 adds transport only: kinds, targets and envelope fields. Every 
 author type, an edit flag or a target to an accept or refuse outcome is made in this brief.
 
 files:
-- `statusgen/decisionruling.go` — `resolveRuling` (`:228`); its comment read (`:262`) and the
-  status switch after it; the comment-to-issue binding (`:285-292`); the edit check
-  (`:296-307`); the bot check (`:311-313`); its issue read (`:354`); `resolveDecisionRulings`
-  (`:620`); `rulingForgeClient` (`:633-648`), whose `gh auth token` fallback is at `:643`.
-- `statusgen/decisionruling_test.go` and `statusgen/decisionruling-mutations.json` — its tests
-  and mutation manifest.
+- `statusgen/decisionruling.go` — `resolveRuling` (`:228`); its comment read (`:262`) and the status switch after it; the comment-to-issue binding (`:285-292`); the edit check (`:296-307`); the bot check (`:311-313`); its issue read (`:354`); `resolveDecisionRulings` (`:620`); `rulingForgeClient` (`:633-648`), whose `gh auth token` fallback is at `:643`.
+- `statusgen/decisionruling_test.go` and `statusgen/decisionruling-mutations.json` — its tests and mutation manifest.
 - `statusgen/corroborate.go:1481` — the one caller, which builds the client today.
-- `statusgen/ghfetch.go` — `GetIssueComment` (`:198`) and `GetIssue` (`:205`), the two raw
-  reads the resolver uses.
-- `statusgen/transcribescan.go` — `ghCommentResolver` (`:104-129`), whose one `gh` launch is at
-  `:109`, and `parseCommentURL` (`:136-159`), which today keeps only the repository and the
-  comment id. `ghAuthorResolver` (`:76`) in the same file is a trust-predicate read and stays
-  forge-neutral/18's.
-- `statusgen/transcribeverdict.go` — `ghVerdictIssueResolver` (`:505-531`), whose one `gh`
-  launch is at `:506`. `ghVerdictMainHealth` (`:573`) in the same file is forge-neutral/18's.
-- `statusgen/main.go` — the three `ghCommentResolver` arguments (`:1980`, `:1987`, `:1995`)
-  and the two `ghVerdictIssueResolver` arguments (`:1987`, `:1994`).
-- `statusgen/transcribescan_test.go` and `statusgen/transcribeverdict_test.go` — the gate tests;
-  they inject `commentResolver` and `verdictIssueResolver` fixtures, so they keep passing
-  unchanged.
+- `statusgen/ghfetch.go` — `GetIssueComment` (`:198`) and `GetIssue` (`:205`), the two raw reads the resolver uses.
+- `statusgen/transcribescan.go` — `ghCommentResolver` (`:104-129`), whose one `gh` launch is at `:109`, and `parseCommentURL` (`:136-159`), which today keeps only the repository and the comment id. `ghAuthorResolver` (`:76`) in the same file is a trust-predicate read and stays forge-neutral/18's.
+- `statusgen/transcribeverdict.go` — `ghVerdictIssueResolver` (`:505-531`), whose one `gh` launch is at `:506`. `ghVerdictMainHealth` (`:573`) in the same file is forge-neutral/18's.
+- `statusgen/main.go` — the three `ghCommentResolver` arguments (`:1980`, `:1987`, `:1995`) and the two `ghVerdictIssueResolver` arguments (`:1987`, `:1994`).
+- `statusgen/transcribescan_test.go` and `statusgen/transcribeverdict_test.go` — the gate tests; they inject `commentResolver` and `verdictIssueResolver` fixtures, so they keep passing unchanged.
 
 **What changes for the ruling control.** This brief changes no accept or refuse rule's meaning, and no
 outcome that refuses today may pass afterwards. What it changes is every input those rules read:

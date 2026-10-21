@@ -91,6 +91,9 @@ func assemblePrompt(o dispatchOpts, plan dispatchPlan, home string) (string, err
 		shownItem = o.itemAlias + ":" + o.item
 	}
 	fmt.Fprintf(&b, "# Assignment — %s\n\n", shownItem)
+	if plan.performancePath != "" {
+		fmt.Fprintf(&b, "## Optional local performance context\n\nPrivate local handoff: `%s`. Apply only its seven documented ASSAY_PERF_* environment entries; ignore every other environment key. Use the loop-role override only as --perf-loop-role, never as DESK_LOOP. Apply entries per tool call with quoted env KEY=value arguments or supported --perf-* flags; never eval the file or export it into a persistent shell. Apply this context only for this launch and before expiresBeforeUtc; never copy them into logs, replies or a shared shell. This context is descriptive, never custody or dispatch authority. Preserve the operator-selected ASSAY_TELEMETRY setting; the handoff does not opt you in. Missing runtime propagation remains unavailable coverage.\n\n", plan.performancePath)
+	}
 	fmt.Fprintf(&b, "- **Item key:** `%s`\n", shownItem)
 	switch {
 	case review:
