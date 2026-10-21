@@ -304,3 +304,13 @@ and no competing proposal is treated as approved. Dispatch refs were not read.
 New tests are future implementation obligations. Existing completed Evidence is unchanged.
 Active PostgreSQL/image-scan/performance PRs are recorded in amendment 28 and reconciled at
 pickup. The parked execution stream is not silently admitted by this routing note.
+
+## Extensible JSON amendment — 21 October 2026
+
+[The census](29-extensible-json-contracts.md) is the owner/transition manifest for this
+requested change. Desktools-v2/69 delivers the architecture and performance contract;
+/67 implements compatible readers and /68 selects producers. Existing owners retain
+all other families; their next contract-changing briefs must carry the reader-first
+compatibility matrix and consumer dispositions before implementation. This amendment
+changes no existing Verify/Evidence section or active owner's implementation. The
+earlier whole-target ratification does not certify these later codec changes.
