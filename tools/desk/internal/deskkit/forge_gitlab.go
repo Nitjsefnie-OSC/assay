@@ -73,7 +73,8 @@ type GitLabForge struct {
 	// BaseURL is the GitLab instance root; empty means GitLabAPIBase.
 	BaseURL string
 	// Client, when non-nil, is the HTTP client the backend issues requests through.
-	Client *http.Client
+	Client   *http.Client
+	Observer RequestObserver
 
 	// cl caches the client built from Token/BaseURL. Lazily constructed by client() so a
 	// bare struct literal (the golden test's construction shape) still works.
@@ -139,8 +140,8 @@ func (gitlabNoLimiter) Wait(_ context.Context) error { return nil }
 //     call. That is the wrapper's job.
 func (g *GitLabForge) client() (*gitlab.Client, error) {
 	if g.Token == "" {
-		return nil, Unverifiable("refusing to reach the GitLab forge without an explicitly minted token — "+
-			"this backend never falls back to an anonymous or ambient identity", nil)
+		return nil, missingForgeToken("refusing to reach the GitLab forge without an explicitly minted token — " +
+			"this backend never falls back to an anonymous or ambient identity")
 	}
 	if g.cl != nil {
 		return g.cl, nil
@@ -154,7 +155,9 @@ func (g *GitLabForge) client() (*gitlab.Client, error) {
 	// transport sees every round-trip: perf forgeCalls means the same on both backends.
 	// countingClient copies, never mutates, the client it is handed; the no-redirect copy goes in
 	// first so the counting copy keeps the refusal (SEC-1: a GitLab credential never follows a redirect).
-	opts = append(opts, gitlab.WithHTTPClient(countingClient(gitlabNoRedirectClient(g.Client))))
+	hc := countingClient(gitlabNoRedirectClient(g.Client))
+	hc.Transport = observedTransport(hc.Transport, g.Observer, "provider", true)
+	opts = append(opts, gitlab.WithHTTPClient(hc))
 	cl, err := gitlab.NewClient(g.Token, opts...)
 	if err != nil {
 		return nil, Unverifiable("cannot build GitLab API client", err)
@@ -822,6 +825,15 @@ func (g *GitLabForge) OpenChangeForBranch(repo ForgeRepo, branch string) (*PullR
 // by the endpoint's own shape, without a filter. The dedupe scores title similarity locally, so
 // the search is a coarse pre-filter; the state/labels/URL are carried for the candidate report.
 func (g *GitLabForge) SearchIssues(repo ForgeRepo, in SearchIssuesInput) ([]IssueSearchResult, error) {
+	if in.DecisionGateMarkers {
+		if err := validateDecisionSearch(in); err != nil {
+			return nil, err
+		}
+		return g.searchDecisionMarkers(repo, in.DecisionGateBrief)
+	}
+	if in.DecisionGateBrief != "" {
+		return nil, Refused("decision-marker brief requires marker discovery mode")
+	}
 	cl, err := g.client()
 	if err != nil {
 		return nil, err
@@ -1377,10 +1389,20 @@ func (g *GitLabForge) trustEvents(repo ForgeRepo, number int, noteable, op strin
 		return nil, err
 	}
 	var env glGQLTrustEnvelope
+	query := fmt.Sprintf(gitlabTrustQuery, noteable)
+	var target any = &env
+	var options []gitlab.RequestOptionFunc
+	if g.Observer.Sink != nil && g.baseURL() == GitLabAPIBase {
+		end := strings.LastIndex(query, "}")
+		query = query[:end] + ` _assayPerf:queryComplexity{score}` + query[end:]
+		capture := &pointCapture{}
+		target = &pointDecoder{target: &env, capture: capture}
+		options = append(options, gitlab.WithContext(context.WithValue(context.Background(), pointCaptureKey{}, capture)))
+	}
 	_, qerr := cl.GraphQL.Do(gitlab.GraphQLQuery{
-		Query:     fmt.Sprintf(gitlabTrustQuery, noteable),
+		Query:     query,
 		Variables: map[string]any{"path": repo.Slug(), "iid": strconv.Itoa(number)},
-	}, &env)
+	}, target, options...)
 	if qerr != nil {
 		return nil, g.mapErr(http.MethodPost, gitlab.GraphQLAPIEndpoint, gitlabUnwrapGraphQLErr(qerr))
 	}
@@ -4214,8 +4236,8 @@ const gitlabPipelineDefinition = ".gitlab-ci.yml"
 // empty token is refused here too — the trigger call never goes out anonymous.
 func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {
 	if g.Token == "" {
-		return nil, Unverifiable("refusing to reach the GitLab forge without an explicitly minted token — "+
-			"this backend never falls back to an anonymous or ambient identity", nil)
+		return nil, missingForgeToken("refusing to reach the GitLab forge without an explicitly minted token — " +
+			"this backend never falls back to an anonymous or ambient identity")
 	}
 	opts := []gitlab.ClientOptionFunc{
 		gitlab.WithBaseURL(g.baseURL()),

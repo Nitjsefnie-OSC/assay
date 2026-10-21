@@ -29,6 +29,20 @@ import (
 	"time"
 )
 
+// errForgeTokenMissing identifies local credential absence without changing the
+// existing Unverifiable contract or enabling an ambient identity fallback.
+var errForgeTokenMissing = errors.New("explicitly minted forge token missing")
+
+// Keep the existing error text and DeskError code intact; the typed marker is
+// available through errors.Is without appending another user-visible cause.
+type forgeTokenMissingError struct{ *DeskError }
+
+func (e *forgeTokenMissingError) Is(target error) bool { return target == errForgeTokenMissing }
+func (e *forgeTokenMissingError) Unwrap() error        { return e.DeskError }
+func missingForgeToken(msg string) error {
+	return &forgeTokenMissingError{Unverifiable(msg, nil)}
+}
+
 // GitHubAPIBase is the single home of the GitHub REST/GraphQL host literal. Desk commands
 // that keep a package-level test hook (`var apiBaseURL = GitHubAPIBase`) source their
 // default from here so the literal is constructed in exactly one place — the forge module —
@@ -488,6 +502,14 @@ type EditChangeInput struct {
 // interface's own parameter names) does not read a `query` argument as an endpoint address.
 type SearchIssuesInput struct {
 	Query string
+	// DecisionGateMarkers selects the fixed, repo-scoped decision-marker discovery
+	// query instead of free text. Both backends walk every page or return an error;
+	// only this mode carries Body. Query must be empty in this mode. Consumers must
+	// still read each selected issue and its ruling through the canonical evaluator.
+	DecisionGateMarkers bool
+	// DecisionGateBrief optionally narrows marker discovery to one exact brief
+	// spelling. It is an opaque marker token, never provider search syntax.
+	DecisionGateBrief string
 }
 
 // IssueSearchResult is one issue matched by SearchIssues: the fields deskfile's dedupe scores
@@ -502,6 +524,7 @@ type IssueSearchResult struct {
 	State  string // open | closed
 	Labels []string
 	URL    string
+	Body   string `json:",omitempty"` // decision-marker discovery only
 }
 
 // LabelSpec names a label plus the cosmetic metadata used ONLY when the label has to be

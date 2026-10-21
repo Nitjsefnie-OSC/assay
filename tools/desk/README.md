@@ -23,6 +23,21 @@ tools/desk/
 Everything after that is the deep reference, one section per tool, and you do not need
 it on day one.
 
+## Review observation library contract
+
+The desk module's `internal/reviewflow` package provides a pure, typed
+[review-observation-v1](../../spec/review-observation-v1.md) boundary. It binds the
+full admitted population to provider/host/repository identity, exact revisions,
+independent lane facts, coverage and explicit freshness policy. Derived row totals
+are uncapped; incomplete reads cannot become an idle success. Observations and
+proposed verbs are advisory and do not grant claims or permission to write.
+
+`deskboard` shares classifier input assembly and `reviewloop plan` shares plan
+assembly with this API. Their existing flags and output remain compatible. The
+new contract has no collection command or observation-file CLI flag in this change;
+that handoff is desk-tools/40. The legacy idle cadence is unchanged; new library
+callers must supply their own policy revision, clock and oldest acceptable input.
+
 ## Review planner state contract
 
 `reviewloop plan` proposes review dispatches and draft-to-ready operations from the
@@ -74,8 +89,8 @@ changed or discarded.
 | `deskclaim` | `acquire`, `release`, `list`, `stale` — the flock-backed claimable-action lock | local-only (claims dir) | no |
 | `desksupervise` | `tick` (one classification sweep of every `state=dispatched` dispatch claim against `internal/loopengine`'s liveness taxonomy; `--claims-fixture`/`--observations-fixture` run it fully offline), `run --interval` (loop `tick` forever) — turns a wedged worker into a logged, minutes-scale reclaim (`RECLAIM-ELIGIBLE` / `BLOCKED-TIMEOUT`) instead of a silent hold on the 120-minute stale-claim backstop; fires the `after_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (logged, non-fatal) when it releases or lands a claim | read-mostly (probes read the audit trail, a branch's SHA, and a PR's `updated_at`) / outward write on a non-dry-run reclaim or blocked-timeout filing | no |
 | `opmetrics` | (no verbs) — operator-layer collector: reads transcripts/beacons/claims, writes one **aggregates-only** day-file | local-only (strictly read-only against every input) | no |
-| `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
-| `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); each takes `--dry-run` to report the hook plan without touching anything | local-only | no |
+| `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest; forge calls per tool and per release against the App rate-limit budget), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
+| `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `maintain objects` inventories and compacts the common Git directory offline; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); inspection takes `--dry-run` | local-only | no |
 | `deskgit` | `fetch` (bare / `--prune` / `--pr <N>` / `--branch <B>`) — the only git verb | local-only (inbound refs) | no |
 | `desktoken` | `<role>` — mint/reuse an App installation token | local-only (token cache) | no |
 | `deskapps` | `init` — the GitHub App Manifest-flow installer: serves the loopback page, posts the tier's manifests, converts the callback code, writes the PEM/records/role bindings. `resume`/`status`/`avatar` are later briefs (03/04/06) | local-only + loopback HTTP (no outward GitHub write of its own — the App is created by GitHub on the person's own click) | no |
@@ -447,9 +462,14 @@ unaffected and keep their current behaviour until they are moved over.
 
 ### Local performance history — `deskperf`
 
+Optional perf-v3 provider/auth instrumentation and its exact coverage are described
+in [Own provider observations](../../docs/provider-performance.md). The legacy
+counter descriptions below remain the perf-v1/perf-v2 contract.
+
 The audit ledger records WHAT a verb did; it records nothing about how long it took. With
 `ASSAY_TELEMETRY=1` exported (exactly `1` — `true`, `yes` or an empty value are all OFF), the
-desk commands append ONE `perf-v1` line per completed invocation to a local day file.
+desk commands append ONE `perf-v2` line per completed invocation to a local day file
+(boot and launch steps still write the legacy `perf-v1` line; `statusgen` writes `perf-v2` too).
 All 67 operational commands are wrapped, including deskfile, deskreply, scanloop, issueboard,
 reviewloop, verifyloop and the supervisor. `deskperf` is excluded so reading a report cannot
 change its input; `muhar` is a developer mutation harness with separate execution accounting.
@@ -467,11 +487,17 @@ deskperf boot --role worker-desk --json
 **What is recorded** — and nothing else, enforced by the record's type: the schema tag, a
 second-resolution UTC timestamp, the tool (canonical key, else `other`), the verb (the verb's
 own registered subcommand, else `other`; boot steps as `step:<name>`), the role (`$DESK_LOOP`
-canonical name, else `none`), wall ms, process CPU ms (omitted where unmeasurable, e.g.
-Windows), the exit code and its fixed result word, how many child processes the verb started
-through the shared runner (`deskkit.Run`) and their summed wall ms, how many HTTP
-round-trips went through the forge client's counting transport, the build stamp (hex, else
-`unpinned`), and a random per-install id.
+canonical name, else `none`), the exit code and its fixed result word, the build stamp (hex,
+else `unpinned`), and a random per-install id. A `perf-v2` invocation record adds: the
+measurement `boundary` (`process-init`: wall and CPU both start at a mark taken as the
+shared recorder initialises, so `main`'s configuration and activation checks are inside),
+wall ms and — only when `cpu` is `measured` — process CPU ms over that same interval, the
+CPU state (`measured`, `unsupported`, `failed`, `missing`), the `subprocess`,
+`subprocessMs` and `http` counters (child processes through the shared runner, their summed
+inclusive wall, HTTP round-trips through the forge client's counting transport), the cache
+and coalesced-waiter counters listed as `unavailable` (not observed, never zero), and timed
+phases (none yet). A legacy `perf-v1` record has wall ms, optional CPU ms and the three
+counts as `childProcs` / `childWallMs` / `forgeCalls`. Field tables: `docs/telemetry.md`.
 
 **Newly covered commands use the fixed verb `other` rather than copying arbitrary argv;
 the original seven retain their registered verb lists. Tool-level timing/counts are complete
@@ -510,8 +536,23 @@ code or its output. Per-invocation agent usage (tokens, cost) is the agent runne
 - `deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]` — per tool: count,
   p50 / p90 / max wall ms (nearest-rank), total wall ms, share of total wall, and refusal ratio
   (refused + unwritten + unverifiable over count); then the N slowest invocations (default
-  10) as ts / tool / verb / wall ms. Boot-step records are excluded (they subdivide a
-  `deskboot` run already counted once).
+  10) as ts / tool / verb / wall ms. Boot- and launch-step records are excluded (they
+  subdivide a `deskboot` or `cellctl` run already counted once). Legacy `perf-v1` records
+  render first, exactly as before; `perf-v2` records render as a SEPARATE group (JSON
+  `perfV2`) whose total is labelled summed invocation wall, with boundary and CPU-state
+  counts, the CPU distribution over measured records only, per-counter measured/unavailable
+  coverage (totals over measured records only) and per-phase distributions. The two groups
+  are never summed, and no inclusive child or phase time is added to a wall total. A
+  forge-calls section follows (JSON `forge`), per tool and per release build (`sourceSHA`):
+  runs, unavailable runs, total forge calls, calls per run p50 / p90 / max, share of all forge
+  calls, and the rate-limit cost — the busiest UTC hour's calls, and that hour and the p90 run
+  as a percentage of the 5000/hour App budget floor (pooled over every tool and installation:
+  a gauge, not a bound). It pools perf-v1 `forgeCalls` and the perf-v2
+  `http` counter (one seam, one budget); a run whose counter is unavailable — or a perf-v1
+  `statusgen` record from an older build, whose 0 means "not counted" — prints as
+  unavailable, never as zero. Current `statusgen` writes perf-v2, whose `http` count is
+  measured like any other.
+  Rules: `docs/telemetry.md`.
 - `deskperf boot [--days N] [--role R] [--json]` — `deskboot`'s per-step p50 / p90 / max, in
   boot order, and the summed boot cost per role.
 
@@ -2652,7 +2693,7 @@ format.
 
 `cmd/deskwt` makes the isolate-first rule (CLAUDE.md "Parallel sessions & worktrees") the
 path of least resistance, and makes cleanup safe by construction. Every verb acts ONLY on
-paths that RESOLVE under the sanctioned prefixes `/private/tmp/tracker-*` or
+paths that RESOLVE under the sanctioned temporary-root prefix or
 `<repo-root>/.claude/worktrees/`, refuses the shared checkout by IDENTITY (git-common-dir's
 parent), and there is **no `--force` flag anywhere**. It is a local-only verb class: it
 takes the C-5 audit line and the C-6 kill switch but NOT the outward-write rate limit.
@@ -2699,7 +2740,7 @@ deskwt role-clean <role> [--repo-root <checkout>] [--session <s>]              #
   `cellctl desk <cell> <role>` when `cellctl` is on PATH.
 
 - **`add`** creates `tracker-<name>` on a new tracking branch, under the sanctioned prefix
-  that is PORTABLE on the host OS: `/private/tmp/tracker-<name>` on POSIX, and
+  that is PORTABLE on the host OS: `tracker-<name>` beneath `/private/tmp` on POSIX, and
   `<repo-root>/.claude/worktrees/tracker-<name>` on Windows (`role-init` follows the same rule
   for its session-scoped worktree). Both prefixes are already in the allowlist above; the OS
   only decides WHICH one is targeted, never widening it. `/private/tmp` is not a usable
@@ -2840,6 +2881,108 @@ that is draining from one that is stuck, and on which gate. The cache pass adds 
 (**cache-checked** / **cache-reclaimed** / **cache-deferred** / **cache-orphans-reaped**)
 only when it acted or found pressure it could not clear.
 
+### Offline repository maintenance
+
+Deleting finished branches and worktrees does not consolidate the object store.
+Every ordinary prune invocation also attempts one bounded maintenance pass, coalesced
+across linked worktrees by a lock and attempt/success stamps in their canonical common
+Git directory. The default attempt interval is **24 hours** and the total inventory
+plus task budget is **two minutes**. An overlapping coordinator or recent attempt
+is reported as held, including failed attempts so a persistent late failure cannot
+repeat expensive packing on every prune loop. `--no-maintenance` skips this pass; `--branches-only` continues
+to run only branch cleanup. A maintenance failure prints `could-not-check` without
+preventing the lifecycle sweep or desk boot.
+
+Inspect before applying:
+
+```sh
+deskwt maintain objects --repo .                  # read-only inventory and plan
+deskwt maintain objects --repo . --json           # full machine-readable inventory
+deskwt maintain objects --repo . --apply          # apply if the shared cadence is due
+deskwt maintain objects --apply --min-interval 48h --timeout 1m
+```
+
+The report includes ref namespace counts, registered worktree heads and locks,
+dispatch claims, declared alternate object stores, effective reflog recovery settings, task
+outcomes and before/after loose-object and pack counts/bytes. Inspection creates no
+repository lock, stamp, config, scheduled job or pack. A preflight-approved attempt is stamped before mutation; successful apply separately
+stamps only after every task and the final inventory complete; malformed, unreadable or future
+state refuses maintenance rather than authorizing another pass.
+
+The fixed offline tasks pack refs, write a reachable commit graph, pack at most 1,000
+loose objects per pass, and consolidate small packs through Git's multi-pack index.
+Incremental consolidation uses a positive selection threshold capped at 64 MiB;
+the threshold selects input packs, rather than imposing an output-byte limit. One
+packing thread, bounded delta memory, the time budget and a 500,000-object / 2 GiB
+packed-store eligibility cap limit work. Registered worktree metadata is bounded
+to 4,096 holders; pack-directory enumeration separately admits at most 4,096
+entries, including junk. Metadata files use bounded regular-file reads. Stores above those
+caps are reported as held for a separate maintenance window. Reference/shared clones
+with declared alternates are also held: local object counts cannot bound traversal of
+their borrowed history. Both inspection and apply report that hold without running tasks.
+Providers with unknown reverse borrowers can still consolidate duplicate storage while
+retaining every object ID. Process supervision kills and observes the entire
+Unix process group or Windows job before releasing repository ownership. A crash or
+unproven child cleanup leaves `assay-maintenance-active.json` in the common Git
+directory; subsequent maintenance refuses. An operator must confirm all owned Git
+children stopped before removing that custody marker. Its age alone never clears it.
+
+These tasks retain **every object ID**, including unreachable objects that an
+unregistered reference clone may still borrow. Git removes only duplicate loose
+copies and packs whose objects are retained in other indexed packs. Maintenance
+never runs GC, expires reflogs, prunes unreachable objects, rewrites history,
+removes a worktree or deletes a branch/dispatch claim. Actual object reclamation
+requires a separate borrower-aware operator procedure; compacting duplicates does
+not reclaim all history retained for recovery.
+
+Tool-owned merge fetches use unique `refs/deskmerge/tmp/` refs with ownership receipts.
+Completed receipts may be recovered with compare-and-delete against their observed
+object ID. One shared cleanup lock serializes receipt transitions with maintenance.
+A producer can durably declare completion while that lock is busy; deletion waits
+for a later pass. Pending child cleanup blocks all maintenance until operator
+confirmation, even if the ref is already absent. More than 256 receipt-directory entries
+refuses automatic maintenance because complete custody cannot be proved within
+the inspection budget. Changed refs, worktree holders, active/incomplete receipts and legacy
+unowned refs are held. No ref is deleted merely for being old. Dispatch claim
+release remains exclusively owned by the claim protocol.
+The producer's completion declaration ends consumption of its private nonce ref;
+the holder check covers registered heads at that gate. This protocol does not
+synchronize an external actor manually assigning a HEAD to that private ref
+during cleanup. A detached checkout's object remains available because every
+object ID is retained. A worktree on an unborn (fresh or orphan) branch holds no
+object; an invalid branch name or unreadable branch stays held as could-not-check.
+For temporary destinations, a reader reporting no ref is insufficient: cleanup
+also proves filesystem absence before draining the receipt, including after a
+failed compare-and-delete. Unreadable or malformed destinations retain custody.
+
+Producer cleanup is best-effort: deskmerge answers from the base and head SHAs it
+observed before completion, so a hook refusal or missing native `git hook list`
+never changes its verdict. It warns on stderr naming the retained ref, and the
+receipt stays. Recovery requires a durable producer completion declaration; if
+that declaration failed, the warning preserves its error and maintenance holds the
+incomplete receipt. A completed receipt is eligible for a later
+`deskwt maintain objects --apply` pass.
+
+Remote-tracking refresh stays a separate, explicit forge operation:
+
+```sh
+deskgit fetch --prune --as worker
+deskwt maintain objects --apply
+```
+
+`deskgit` selects the role's sanctioned forge credentials and confines pruning to
+its explicit `refs/heads/*:refs/remotes/origin/*` refspec. Maintenance never fetches,
+prefetches or installs Git's default maintenance strategy. Ambient Git overrides,
+global/system task config and credential helpers are excluded. Before creating a
+maintenance lock and before every mutation, Git's effective global, repository and
+worktree hook settings are inspected. Any configured reference-transaction hook
+refuses maintenance; its configuration is preserved. Native `git hook list` is
+required, and unsupported Git versions refuse before mutation. Repository config
+includes, filtered repacks, partial clones and unreadable alternates refuse apply.
+Managed publishing clones should copy their objects (`git clone --no-hardlinks`);
+if a reference optimization is necessary, use `--reference … --dissociate` and prove
+the resulting clone works with the provider unavailable before publishing.
+
 ### `--reclaim-stale-locks` — giving the lock a lifecycle
 
 A locked worktree is always held: git refuses to deregister it, so deleting its directory
@@ -2952,8 +3095,11 @@ one hour). A held or recent attempt reports `held` or `recent` without repeating
 or work. Each invocation has a 30-second total command budget (`--timeout`, one second to
 five minutes). The lock is kernel-released on exit; its file must never be unlinked during
 operation. Unreadable/corrupt timestamps fail closed and require operator inspection.
-A killed native Git write may leave its own lockfile; that is reported as a failure on the
-next eligible attempt, never automatically removed.
+Apply also owns the shared temporary-ref lock and records durable child custody before
+launching either index task. Process supervision owns the Unix group or Windows job;
+a coordinator crash or uncertain cleanup leaves the shared active marker and holds both
+maintenance modes until an operator confirms all owned Git children stopped. Native Git
+lockfiles are never automatically removed.
 
 This is an explicit command for the repository supervisor to invoke; it does not install
 a scheduler or add work to every agent boot. It disables lazy fetching and all network
@@ -2961,8 +3107,8 @@ protocols for its Git children, ignores ambient `GIT_*` redirects, and never inv
 configured maintenance strategies, prefetch, full GC, reflog expiry or object deletion.
 Object reclamation is explicitly **held**: a source repository cannot enumerate every
 external clone borrowing its objects. Even an empty alternates list does not prove there
-are no borrowers. Loose-object/incremental-pack reclamation and a managed borrower registry
-remain follow-up work. Branch/worktree retirement stays in `deskwt prune`, claims in their
+are no borrowers. For bounded consolidation that retains every object ID, use `deskwt maintain objects`.
+A managed borrower registry and object deletion remain separate work. Branch/worktree retirement stays in `deskwt prune`, claims in their
 claim protocol, and remote-tracking refresh in the sanctioned transport.
 
 Maintenance requires native `git hook list` support. Before the attempt stamp and again
@@ -3098,6 +3244,15 @@ refusal, which the operator answers by writing the flag as `--flag=value` or aft
 The table's one hazard is the reverse: an entry for a flag that takes NO value would make the
 scan skip the real verb, so a flag goes into it only when the CLI's own help shows it consumes an
 argument.
+
+An allowlist entry can also be **bare-form only**. `talosctl services` is read-only as a bare
+listing, but the subcommand also accepts positional arguments, and the entry does not vouch for
+what an argument selects. So the guard inspects what follows that verb: with no positional
+argument (listed value flags with their values, and `--flag=value`, are not positional) the call
+is read-only; with one, it is classified like an unlisted verb and refused at the read-only tier,
+exit `5`. Any other flag after the verb is taken to consume nothing, so the token after it counts
+as positional — the fail-closed guess on this side of the verb. A lone `-` is positional, as the
+flag parser reads it, and so is anything after a bare `--`.
 
 Exit `5` is a **refusal, not a fallback trigger**. The message says so explicitly: reaching the
 same CLI by absolute path, by a rebuilt `PATH`, or through another tool is not the sanctioned
@@ -5259,20 +5414,17 @@ unprompted-code-execution class this tool exists to remove. Until `sudo make des
 
 `cmd/writeguard` is the Claude Code PreToolUse hook (registered in `.claude/settings.json`)
 that mechanically refuses writes to the SHARED checkout: Edit/Write/MultiEdit/NotebookEdit
-targets inside it, and Bash commands that write into it or cd into it. Full decision model:
-the `guard.go` package doc comment. It fails OPEN (any parse/git error allows) so a broken
-guard can never brick every session.
+targets inside it, and recognized Bash commands that write into it or cd into it.
+Decisions come from `deskcore/writepolicy`; the command observes paths, Git, claims
+and callouts and renders the existing hook protocol. See [the contract](../../docs/write-policy.md)
+and [source/consumer qualification](../../docs/write-policy-consumers.md). Legacy
+parse/Git failures produce no decision; that mapping is not available to managed admission.
 
-**Deployment (#20).** This repo's own `.claude/settings.json` now wires the
-installed `/opt/desk-tools/bin/writeguard` binary into `hooks.PreToolUse` for both the
-file-edit tools and `Bash` — mirroring the wiring already live in the sibling
-a sibling adopter repo. Before #20, the guard was built and
-unit-tested here (`go test ./cmd/writeguard/...`) but never actually armed for sessions
-dispatched against this repo's own shared checkout: prompt discipline (worker-prompt
-essentials in the batch-fanout skill, §Guardrails' `git -C <shared> status --porcelain`
-dirt-poll) was the only backstop for THIS repo, which is exactly the F-34/F-35 class this
-hook exists to mechanically close. Any repo that adopts `tools/desk` and wants the same
-backstop copies the same `hooks.PreToolUse` block into its own `.claude/settings.json`.
+**Deployment.** The supported harness configuration invokes the installed writeguard
+binary for file-edit tools and Bash. This public source tree has no adopter
+`.claude/settings.json`; `TestSettingsJSONWiresWriteguard` therefore skips. Building
+or publishing this package does not install or arm a hook. An adopter must separately
+qualify its actual configuration, missing-binary behavior and sandbox boundaries.
 
 **The shared-homed exemption is OPT-IN (#1035).** A session homed in the shared checkout
 (project dir AND payload cwd both resolve there, per #1007) is exempt ONLY when the
@@ -5397,8 +5549,11 @@ never on a keyword appearing in it:
 
 **Known-uncovered** (true before this PR and unchanged by it; not regressions): escaped or
 split command names (`\rm`, `r"m"`, `'git' clean`), interpreters (`python3 -c`,
-`perl -i -pe`), `find . -delete`, `rsync --backup-dir`, and the git mutations not in the
+`perl -i -pe`), `rsync --backup-dir`, and the git mutations not in the
 alternation (`revert`, `pull`, `branch -f`, `worktree add`, `config`).
+
+`find` mutation forms already recognized by the existing classifier are covered by
+`TestIssue1193FindDeleteExec` (18 cases). This does not qualify arbitrary `find` commands.
 
 Backtick substitution was listed here as uncovered-and-unchanged. **That was wrong and is
 measured wrong** (#1259 security review S-3): this PR's masking is what hid it, so main
@@ -5422,7 +5577,7 @@ this; it is the fail-safe working as designed, not a regression (main behaves th
 and the fix is to name the destination literally or `cd` there along an `&&`-chain first.
 
 The shape you are most likely to meet first is a **`;`-separated `cd`**:
-`cd /private/tmp && … ; cd /private/tmp/wg && git fetch … && git checkout …`. The `;` makes
+`cd <temporary-root> && … ; cd <worktree> && git fetch … && git checkout …`. The `;` makes
 the second `cd` non-honorable, so the frame stays at the payload cwd — and if that cwd is
 the shared checkout, the `git fetch`/`git checkout` read as targeting it and block. Correct
 and unchanged by this PR: only an `&&`-chain guarantees the `cd` actually succeeded. Chain
@@ -5854,6 +6009,14 @@ over `deskkit.Acquire/Release` (Kind=`dispatch`), so the verifyloop/worker-desk 
 paths keep their exact behaviour on the shared primitive.
 
 ## The adapter layer — `deskboot`, `deskdispatch`, `deskflip`
+
+`deskdispatch` now generates help with Cobra. Use `deskdispatch --help`,
+`deskdispatch --stamp-only --help`, `deskdispatch --check-verifier --help` or
+`deskdispatch --attest-verifier --help`; `help --stamp-only` also selects mode help.
+Help and version do not read configuration or credentials. See the
+[compatibility matrix](../../docs/streams/desktools-v2/dispatch-cli-matrix.md) for
+flag precedence, preserved callers and the shared syntax-error exit 2. Domain
+refusals retain their existing exit codes.
 
 Three verbs sit between a desk loop and the tools it drives. Each corresponds to one seam
 in the drain engine's contract — the pre-loop **boot**, the per-item **Dispatch**, the
@@ -7161,7 +7324,7 @@ single point of failure:
 | **Sentinel + fragment sweep** | A sentinel planted in a fixture transcript, and every ≥12-character substring of every fixture message, is absent from the artifact — and a **control** test plants a leak to prove the scanner still detects one. | `TestLeakNoTranscriptContentReachesTheArtifact`, `TestLeakScannerSeesPlantedLeak` |
 
 A `reason` is a machine CODE, never a sentence — sentences are where paths leak
-(`cannot read /Users/<name>/.claude/…` is a home-directory disclosure committed to a
+(`cannot read <home>/.claude/…` is a home-directory disclosure committed to a
 repo). Human-readable detail goes to stderr, which nobody commits.
 
 **Read-only against its inputs**, measured rather than promised:
@@ -7426,6 +7589,18 @@ it instead of the shell idiom the writeguard hook blocks. **Routing, filing, and
 (rows 4, 5, 9) remain the next adopters: closing waits on `deskclose` (#282), and filing
 composes with `deskfile` (#283).
 
+### Local audit receipts and write accounting
+
+Successful scan overrides emit `result: local`, from both writers (the standalone
+override and the outbound-write seam). They retain their surface digest,
+reason and identity, but consume no outward-write capacity and cannot reset a
+failure breaker. Readers treat `scan_override` / `ok` receipts written before this change
+(by either writer) the same way without rewriting the ledger. Unknown event/results still charge.
+
+`deskpr` records failures before a potentially mutating remote call as `unwritten`.
+Once a push, edit or label write has been attempted, an uncertain failure remains
+`unverifiable` and consumes capacity because the write may have reached the remote.
+
 ### PR creation budget
 
 `deskpr create` admits at most 20 new-PR attempts that succeeded or may have
@@ -7433,3 +7608,185 @@ reached the remote per repository per rolling hour. `update` and `edit` do not
 consume that counter. All three still share the aggregate 100-write/hour limit,
 and updates/edits retain their per-PR budgets. Existing-PR no-ops do not consume
 creation capacity. Missing or unknown legacy audit verbs count conservatively.
+
+## Activation discovery snapshots
+
+`DiscoverManifests` remains the reference full enumerator and YAML parser;
+`ComputeActivation` remains the activation evaluator. `VerbActivationRefusal` uses
+one process-local discovery slot in `internal/deskkit/activationindex.go`. Every
+`CheckVerbActivation` consumer inherits that owner. Configuration, trust and provider
+requirements are evaluated again on every call, including direct lower API calls.
+The slot contains no activation decision and grants no permission.
+
+Reuse validates the root spelling and filesystem identity, derivation revision,
+complete current membership and every readable manifest byte, plus the stored
+payload checksum/revision. Reference enumeration and validation share the same
+membership traversal: `.git` is excluded, nested checkouts carrying a `.git` file
+or directory are excluded and diagnosed, and ignored/untracked paths are included.
+A hit still traverses the entire tree and reads/hashes every manifest. It saves
+YAML parsing, sorting and duplicate derivation only. HEAD, directory mtimes, TTLs
+and the previously read file list are insufficient evidence of membership.
+
+The slot is serialized under a mutex and limited to one root and 1 MiB of
+payload/source input. A cold call returns the canonical reference observation and
+may retain a complete immutable **candidate** captured from the exact bytes it parsed.
+Retaining a candidate is not accepting a hit. The independent full membership/byte
+validation is mandatory immediately before **every** reused return, including the
+candidate's first attempted reuse. A miss does not pay a second traversal merely
+to retain a candidate; no production entrypoint currently reaches a second call.
+There is no cross-process startup saving claim.
+
+A reference read failure marks the capture nonreusable, even though the reference
+still returns its existing unreadable diagnostic. Thus deleting an unreadable path
+cannot turn its incomplete digest into a hit carrying an obsolete diagnostic.
+An edit during capture or before first reuse must pass the independent validation;
+otherwise the candidate is evicted and new reference discovery supplies the result.
+This moves validation to the single choke point before reused output, preserving
+its safety property rather than accepting unvalidated captured data.
+
+Readers decode fresh values so callers cannot mutate the slot. Candidate retention
+additionally compares the complete round-tripped parsed value with the reference
+value. JSON cannot preserve arbitrary bytes in YAML `!!binary` strings or filesystem
+names: any lossy round trip declines reuse and retains exact reference behavior,
+including inactive refusals and diagnostics. Missing, unreadable, oversized,
+corrupt, unsupported or changed inputs fall back to the reference; they never accept
+a partial cached list. The original
+reference's error/skip policy remains authoritative. No persistent file, watcher,
+service, CLI flag or new dependency is added. This deliberately does **not** offer
+a cross-process startup cache: portable filesystem metadata cannot qualify such a
+shortcut for arbitrary dirty/ignored inputs. Concurrent source edits have the
+same non-atomic observation limitation as fresh reference enumeration.
+
+`TestCompiledStartupDiscoveryWorkload` builds the actual `deskboard`,
+`deskdispatch` and `desktoken` packages. An observer-only build counts reference
+traversal, validation traversal, reads and parses, including pre-recorder startup;
+separate ordinary builds measure external elapsed time. Fixtures use isolated
+homes, 4/256 ordinary directories and one manifest; the execution ends at a
+synthetic missing-provider refusal without reaching credentials or the forge.
+Each telemetry setting has six samples with fresh homes and six with a reused
+home; OS/filesystem caches are uncontrolled. Reported p50 is the lower median
+and p95 the maximum of six samples. These are startup/refusal switch costs, not
+recorder-write overhead or a successful operation benchmark. The matched successful
+hotpath and v3 attribution belong to desktools-v2/62.
+
+Board and dispatch help/version keep their execution-only activation ownership.
+Token still checks activation before parsing; its help/version migration belongs
+to desktools-v2/33. The compiled test asserts these current boundaries and catches
+a planted scan before the parser/recorder. Run the reproducible production-owner
+negative controls from `tools/desk` with
+`python3 internal/deskkit/testdata/activation_mutations.py`. Each mutant must fail
+its named behavior test, not merely fail to compile; the script restores source.
+
+Observed 20 October 2026 at source `30197bda7` (before the lossless-admission
+correction), with Go 1.27.2, darwin/arm64, six ordinary-build
+samples per cell (milliseconds, p50/p95). “Fresh” and “reused” refer to isolated
+home state, **not** a cold disk or a reusable snapshot across processes:
+
+| Command | Ordinary dirs | Fresh home, telemetry off | Reused home, off | Fresh home, on | Reused home, on |
+|---|---:|---:|---:|---:|---:|
+| deskboard | 4 | 14.71 / 259.22 | 14.07 / 15.54 | 14.30 / 14.78 | 13.30 / 14.30 |
+| deskboard | 256 | 49.92 / 83.25 | 84.64 / 150.88 | 39.99 / 63.19 | 37.94 / 38.43 |
+| deskdispatch | 4 | 14.37 / 287.87 | 13.82 / 20.61 | 14.10 / 14.88 | 14.02 / 15.00 |
+| deskdispatch | 256 | 41.42 / 47.61 | 41.52 / 42.92 | 40.97 / 42.30 | 40.77 / 43.76 |
+| desktoken | 4 | 11.73 / 157.97 | 12.43 / 12.66 | 12.93 / 13.14 | 12.55 / 13.42 |
+| desktoken | 256 | 39.23 / 42.60 | 38.31 / 40.15 | 37.46 / 40.49 | 39.86 / 40.89 |
+
+Those historical observer runs counted 7/259 visited directories per reference pass and the
+same 7/259 per admission-validation pass (root, `.git`, manifest directory and
+ordinary directories), one parsed manifest, one validation read, and zero reuse
+per invocation. The unchanged in-process fixture separately proves the second
+call performs zero additional reference parses/enumerations and one complete
+validation traversal/read; it is **not** scan-free. Fresh-home outliers and the
+large board variance show why these small samples cannot establish causal
+telemetry overhead or a general latency target. This is an implementation
+measurement, not independently recorded verification Evidence.
+
+Pickup census at the implementation base: 41 command `main.go` files call
+`CheckVerbActivation`: `issueboard`, `writeguard`, `deskclaim`, `fanoutloop`,
+`deskpost`, `deskreconcile`, `deskmonitor`, `deskroster`, `desksupervise`,
+`deskreply`, `deskgit`, `deskboard`, `deskdispatch`, `deskpathguard`,
+`untrustcorpus`, `deskrun`, `deskrelease`, `deskadvisory`, `scanloop`,
+`deskdisposition`, `deskdigest`, `reviewloop`, `deskflip`, `deskevidence`,
+`deskinbox`, `deskrestamp`, `desktoken`, `verifyloop`, `deskboot`, `deskautolane`,
+`deskread`, `deskfile`, `deskmerge`, `deskmigrate`, `deskversion`, `deskpr`,
+`deskcomms`, `desklabel`, `deskwt`, `deskclose` and `deskcalibrate`. They inherit
+the single owner; their custody/stop/command adapters are unchanged. Only the
+three specified commands receive the compiled workload qualification here.
+
+Security follow-up for the snapshot representation: the byte-parity regression
+exercises different invalid-UTF-8 required/provided keys through the production
+owner and separately plants raw filesystem names/diagnostics. The same-length dirty
+edit pins content hashing independently of path/length. Additional owner mutations
+pin root spelling, same-content filesystem identity replacement and validation
+immediately before the first reused return, with edits during capture and before
+reuse. Read-failure candidate exclusion and unreadable-then-deleted diagnostic
+parity also have a production-owner mutation. The validation error predicate is
+independently necessary: a trailing empty manifest-free directory can become
+unreadable after capture, making fresh discovery fail while leaving the content
+digest unchanged. A real permission-change regression first requires both the walk
+error and identical digest, then checks that the owner returns the fresh error
+instead of reusing. Removing only `err == nil` is killed by that regression.
+The production predicate is unchanged. A host running as root, or a filesystem that
+ignores the mode change, reports could-not-check/SKIP rather than a permission-test
+pass; the mutation runner reports that case as unqualified, never killed.
+
+The compiled-workload test resolves the existing Go module/build caches before
+TestMain redirects HOME to its isolated roster fixture. Only the build child
+receives those absolute cache locations; its proxy is off, its go-env file is
+disabled, and runtime command children retain their private HOME and minimal
+environment. An offline CI-like reproduction supplies caches only through the
+original HOME's go-env file with GOMODCACHE/GOPATH/GOENV/GOFLAGS unset; the old
+child build fails there and the corrected workload passes there. Full ordinary
+package coverage also passes with explicit existing caches. The mutation runner first requires an unmodified passing
+baseline for every selected discriminator and rejects nested build/tool failures
+as unqualified (exit 6) rather than behavioral kills. A real undefined-symbol
+child build after a passing baseline was rejected, as was an unmodified baseline
+with an intentionally empty offline module cache; neither was counted as killed.
+
+The raw-filename subcase could not run on the measured darwin filesystem, which
+rejects invalid UTF-8 path bytes; it reports SKIP rather than pass. A separate
+YAML binary component-id/optional-key fixture proves lossless handling at a second
+parsed site on this platform. Linux raw-path execution is unobserved here; no Linux pass or CI execution is claimed.
+
+The cold-path correctness follow-up removes the historical second traversal while
+retaining complete independent validation before each reused return. Its workload
+test compares the unchanged reference owner with a cold candidate capture on the
+same physical 4/256-directory fixtures, one manifest, nine interleaved samples.
+These are in-process owner timings with the same test observer, not compiled Git-base
+binaries. OS caches are uncontrolled; the reference runs first in each pair. Both
+paths must count one reference enumeration/read/parse, 7/259 reference directories,
+zero validation reads/directories and zero reuse on every cold sample. Compiled
+startup work is tested separately with the three actual command packages.
+
+Candidate-lifecycle observations on 20 October 2026, Go 1.27.2 darwin/arm64,
+non-race owner test, nine interleaved samples (milliseconds, p50/p95):
+
+| Identical fixture | Reference owner | Cold candidate capture |
+|---|---:|---:|
+| 4 ordinary dirs, one manifest | 0.600 / 1.820 | 0.643 / 0.994 |
+| 256 ordinary dirs, one manifest | 13.750 / 15.219 | 12.865 / 15.301 |
+
+Each side counted one reference traversal/read/parse and zero validation work;
+7/259 directories were visited. Timing variance and the fixed pairing order prevent
+a causal speedup conclusion. The candidate still adds hashing, serialization and
+lossless comparison cost; the structural improvement is removing the second cold
+traversal, not eliminating all capture overhead or establishing a deployed win.
+
+The actual compiled candidate-lifecycle workload separately observed these external
+startup/refusal times, six samples per cell, with the same telemetry/home-state
+limits as above (milliseconds, p50/p95):
+
+| Command | Ordinary dirs | Fresh home, telemetry off | Reused home, off | Fresh home, on | Reused home, on |
+|---|---:|---:|---:|---:|---:|
+| deskboard | 4 | 12.30 / 244.06 | 11.99 / 12.44 | 11.82 / 12.76 | 12.21 / 12.60 |
+| deskboard | 256 | 26.05 / 31.69 | 24.13 / 28.40 | 24.72 / 24.92 | 24.60 / 25.17 |
+| deskdispatch | 4 | 14.95 / 268.21 | 14.68 / 15.07 | 15.28 / 16.21 | 12.66 / 13.21 |
+| deskdispatch | 256 | 25.36 / 27.55 | 24.94 / 26.27 | 25.82 / 27.21 | 30.35 / 31.45 |
+| desktoken | 4 | 11.42 / 171.96 | 10.96 / 11.44 | 10.72 / 11.08 | 10.62 / 11.07 |
+| desktoken | 256 | 22.57 / 33.64 | 25.15 / 28.87 | 22.45 / 22.92 | 22.33 / 23.05 |
+
+All three observer builds counted reference=1, parse=1, validation directories=0,
+validation reads=0, reuse=0 on cold startup. The production candidate is available
+only within that process. No current shipped entrypoint repeats activation, and
+no cross-process reuse or speedup is claimed. The mandatory fresh validation before
+any future reused return remains exercised by the in-package owner tests.

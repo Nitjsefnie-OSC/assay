@@ -47,10 +47,14 @@ func TestEveryDeskCommandRecordsPerformance(t *testing.T) {
 					return true
 				}
 				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "PerfRun" {
+				if !ok || (sel.Sel.Name != "PerfRun" && sel.Sel.Name != "PerfRunResolved" && sel.Sel.Name != "PerfRunMeasured" && sel.Sel.Name != "PerfRunSelected") {
 					return true
 				}
-				if len(call.Args) != 4 {
+				wantArgs := 4
+				if sel.Sel.Name == "PerfRunSelected" {
+					wantArgs = 5
+				}
+				if len(call.Args) != wantArgs && !(sel.Sel.Name == "PerfRunMeasured" && len(call.Args) == 5 && call.Ellipsis.IsValid()) {
 					t.Errorf("%s: wrong performance entrypoint", name)
 					return true
 				}
@@ -130,7 +134,7 @@ func TestNewDeskCommandsAppendPerformance(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &r); err != nil {
 			t.Fatal(err)
 		}
-		if r.Schema != PerfSchema {
+		if r.Schema != PerfSchemaV2 {
 			t.Fatal("wrong schema")
 		}
 		counts[r.Tool]++

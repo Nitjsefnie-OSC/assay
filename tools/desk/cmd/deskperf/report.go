@@ -5,18 +5,30 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"sort"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
 // reportJSON is `deskperf report --json`: the same aggregates as the table, one object.
+// Summary is the LEGACY perf-v1 group, unchanged in shape and meaning; PerfV2 is the perf-v2
+// group, present only when the window holds perf-v2 records. The two are never combined: their
+// walls are measured over different boundaries. Forge is the forge-call view over both groups
+// (a forge call spends the same budget whichever schema recorded it), present only when the
+// window holds a perf-v1 or perf-v2 invocation record.
 type reportJSON struct {
-	Days    int                 `json:"days"`
-	Tool    string              `json:"tool,omitempty"`
-	Role    string              `json:"role,omitempty"`
-	Skipped int                 `json:"skipped"`
-	Summary deskkit.PerfSummary `json:"summary"`
+	Days    int                       `json:"days"`
+	Tool    string                    `json:"tool,omitempty"`
+	Role    string                    `json:"role,omitempty"`
+	Skipped int                       `json:"skipped"`
+	Summary deskkit.PerfSummary       `json:"summary"`
+	PerfV3  *perfrec.V3Summary        `json:"perfV3,omitempty"`
+	PerfV2  *deskkit.PerfV2Summary    `json:"perfV2,omitempty"`
+	Forge   *deskkit.PerfForgeSummary `json:"forge,omitempty"`
 }
 
 func cmdReport(args []string, stdout, stderr io.Writer) error {
@@ -25,6 +37,13 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	tool := fs.String("tool", "", "only this tool (canonical key, e.g. deskpr)")
 	role := fs.String("role", "", "only this desk role ($DESK_LOOP canonical name)")
 	top := fs.Int("top", 10, "how many of the slowest invocations to list")
+	profile := fs.String("perf-profile", os.Getenv("ASSAY_PERF_PROFILE"), "workflow permits local attribution grouping and filtering")
+	group := fs.String("group-by", "tool", "v3 group: tool, work, session, agent, deskRole, role")
+	session := fs.String("session-id", "", "v3 workflow session filter")
+	agent := fs.String("agent-id", "", "v3 workflow agent filter")
+	deskRole := fs.String("desk-role", "", "v3 workflow originating desk filter")
+	assigned := fs.String("assigned-role", "", "v3 workflow execution role filter")
+	work := fs.String("work", "", "v3 workflow typed JSON-object locator filter")
 	asJSON := fs.Bool("json", false, "emit the aggregates as one JSON object")
 	if err := parse(fs, args); err != nil {
 		return err
@@ -35,10 +54,28 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	if *top < 0 {
 		return deskkit.Refused(fmt.Sprintf("--top %d: must be 0 or more", *top))
 	}
+	filter := perfrec.V3Filter{SessionID: *session, AgentID: *agent, DeskRole: *deskRole, Role: *assigned}
+	if *work != "" {
+		var w perfrec.WorkRef
+		dec := json.NewDecoder(strings.NewReader(*work))
+		dec.DisallowUnknownFields()
+		if dec.Decode(&w) != nil || dec.Decode(new(any)) != io.EOF {
+			return deskkit.Refused("invalid work filter")
+		}
+		filter.Work = &w
+	}
+	permission := perfrec.Profile(*profile)
+	if permission != "" && permission != perfrec.ProfileTool && permission != perfrec.ProfileWorkflow && permission != "off" {
+		return deskkit.Refused("invalid performance profile")
+	}
+	if _, err := perfrec.ReduceV3(nil, permission, *group, filter); err != nil {
+		return deskkit.Refused(err.Error())
+	}
 	h, err := load(*days)
 	if err != nil {
 		return err
 	}
+	// Step records subdivide an invocation that has its own record: never in this report.
 	var verbs []deskkit.PerfRecord
 	for _, r := range h.Records {
 		if !deskkit.IsPerfStep(r) {
@@ -53,15 +90,79 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 		return noMatch(filterText(*tool, *role))
 	}
 	sum := deskkit.SummarisePerf(recs, *top)
+	v2 := deskkit.SummarisePerfV2(recs, *top)
+	forge := deskkit.SummarisePerfForge(recs)
+	v3, err := perfrec.ReduceV3(recs, permission, *group, filter)
+	if err != nil {
+		return deskkit.Refused(err.Error())
+	}
+	if (*group != "tool" || *session != "" || *agent != "" || *deskRole != "" || *assigned != "" || *work != "") && v3.Records == 0 {
+		return deskkit.Refused("no v3 record matches the workflow filter")
+	}
 
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		return encodeErr(enc.Encode(reportJSON{Days: *days, Tool: *tool, Role: *role, Skipped: h.Skipped, Summary: sum}))
+		rep := reportJSON{Days: *days, Tool: *tool, Role: *role, Skipped: h.Skipped, Summary: sum}
+		if v3.Records > 0 || v3.Conflicts > 0 || v3.Invalid > 0 {
+			rep.PerfV3 = &v3
+		}
+		if v2.Records > 0 {
+			rep.PerfV2 = &v2
+		}
+		if forge.Runs > 0 {
+			rep.Forge = &forge
+		}
+		return encodeErr(enc.Encode(rep))
 	}
+	if sum.Records > 0 {
+		if err := legacyTable(stdout, sum, *days, *tool, *role, h.Skipped); err != nil {
+			return err
+		}
+	} else {
+		skippedLine(stdout, h.Skipped)
+	}
+	if v2.Records > 0 {
+		if sum.Records > 0 {
+			fmt.Fprintln(stdout)
+		}
+		if err := v2Table(stdout, v2, *days, *tool, *role); err != nil {
+			return err
+		}
+	}
+	if forge.Runs > 0 {
+		fmt.Fprintln(stdout)
+		if err := forgeTable(stdout, forge); err != nil {
+			return err
+		}
+	}
+	if v3.Records > 0 || v3.Conflicts > 0 || v3.Invalid > 0 {
+		if sum.Records > 0 || v2.Records > 0 {
+			fmt.Fprintln(stdout)
+		}
+		fmt.Fprintf(stdout, "perf-v3 — %d records; %d duplicates; %d conflicting identities excluded; %d invalid\n", v3.Records, v3.Duplicates, v3.Conflicts, v3.Invalid)
+		fmt.Fprintf(stdout, "logical service queries %d; service transport attempts %d; handlers %d (separate boundaries)\n", v3.LogicalQueries, v3.ServiceTransports, v3.Handlers)
+		for _, g := range v3.Groups {
+			fmt.Fprintf(stdout, "%s: %d records; summed own-process wall %d ms; measured own CPU %d ms (%d records)\n", g.Key, g.Records, g.SumOwnProcessWallMs, g.SumOwnCPUMs, g.CPURecords)
+		}
+		for _, r := range v3.Requests {
+			points := "unavailable"
+			if r.Points.Value != nil {
+				points = fmt.Sprint(*r.Points.Value)
+			}
+			fmt.Fprintf(stdout, "%s %s %s %s/%s: %d own attempts; measured request work %d ms; points %s %s (%s, %d samples)\n", r.Kind, r.Class, r.Origin, r.Protocol, r.Resource, r.Attempts, r.DurationSumMs, points, r.Points.Unit, r.Points.Coverage, r.PointSamples)
+		}
+		fmt.Fprintln(stdout, "Intervals overlap; request/child/handler time is never added to process elapsed time. Missing measurements remain coverage gaps.")
+	}
+	return nil
+}
+
+// legacyTable renders the perf-v1 group exactly as deskperf always has, so a perf-v1-only
+// history reads the same before and after perf-v2.
+func legacyTable(stdout io.Writer, sum deskkit.PerfSummary, days int, tool, role string, skipped int) error {
 	fmt.Fprintf(stdout, "deskperf report — %d record(s) over the last %d UTC day(s)%s, total wall %d ms\n",
-		sum.Records, *days, filterSuffix(*tool, *role), sum.TotalMs)
-	skippedLine(stdout, h.Skipped)
+		sum.Records, days, filterSuffix(tool, role), sum.TotalMs)
+	skippedLine(stdout, skipped)
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "TOOL\tCOUNT\tP50 MS\tP90 MS\tMAX MS\tTOTAL MS\tSHARE %\tREFUSAL RATIO")
 	for _, t := range sum.Tools {
@@ -71,18 +172,133 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	if err := tw.Flush(); err != nil {
 		return deskkit.Unverifiable("cannot write the report", err)
 	}
-	if len(sum.Slowest) > 0 {
-		fmt.Fprintf(stdout, "\nslowest %d invocation(s):\n", len(sum.Slowest))
+	return slowestTable(stdout, sum.Slowest)
+}
+
+func slowestTable(stdout io.Writer, slow []deskkit.PerfSlow) error {
+	if len(slow) == 0 {
+		return nil
+	}
+	fmt.Fprintf(stdout, "\nslowest %d invocation(s):\n", len(slow))
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TS\tTOOL\tVERB\tWALL MS")
+	for _, s := range slow {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", s.TS, s.Tool, s.Verb, s.WallMs)
+	}
+	if err := tw.Flush(); err != nil {
+		return deskkit.Unverifiable("cannot write the report", err)
+	}
+	return nil
+}
+
+// v2Table renders the perf-v2 group: its own header naming the boundary and that the figure
+// is SUMMED invocation wall (not elapsed time), the coverage lines, the per-tool wall and
+// measured-CPU distributions, counter coverage, phase distributions and the slowest list.
+func v2Table(stdout io.Writer, v2 deskkit.PerfV2Summary, days int, tool, role string) error {
+	fmt.Fprintf(stdout, "perf-v2 — %d record(s) over the last %d UTC day(s)%s, summed invocation wall %d ms "+
+		"(a sum of per-invocation walls, not elapsed time; not comparable with the legacy total)\n",
+		v2.Records, days, filterSuffix(tool, role), v2.SumWallMs)
+	fmt.Fprintf(stdout, "boundary: %s · cpu: %s · phase overlap: %d record(s)\n",
+		countList(v2.Boundaries, []string{perfrec.BoundaryProcess, perfrec.BoundaryCaller}),
+		countList(v2.CPU, []string{perfrec.CPUMeasured, perfrec.CPUUnsupported, perfrec.CPUFailed, perfrec.CPUMissing}),
+		v2.PhaseOverlap)
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TOOL\tCOUNT\tP50 MS\tP90 MS\tMAX MS\tSUM WALL MS\tSHARE %\tREFUSAL RATIO\tCPU N\tCPU P50 MS\tCPU P90 MS\tCPU MAX MS")
+	for _, t := range v2.Tools {
+		cpu := "-\t-\t-"
+		if t.CPUCount > 0 {
+			cpu = fmt.Sprintf("%d\t%d\t%d", t.CPUP50Ms, t.CPUP90Ms, t.CPUMaxMs)
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%.1f\t%.3f\t%d\t%s\n",
+			t.Tool, t.Count, t.P50Ms, t.P90Ms, t.MaxMs, t.SumWallMs, t.SharePct, t.RefusalRatio, t.CPUCount, cpu)
+	}
+	if err := tw.Flush(); err != nil {
+		return deskkit.Unverifiable("cannot write the report", err)
+	}
+	fmt.Fprintln(stdout, "\ncounters (TOTAL over measured records only; unavailable = not observed, never zero; "+
+		"subprocessMs is inclusive child wall, never added to wall):")
+	tw = tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "COUNTER\tMEASURED\tUNAVAILABLE\tTOTAL")
+	for _, c := range v2.Counters {
+		total := "-"
+		if c.Measured > 0 {
+			total = fmt.Sprint(c.Total)
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", c.Counter, c.Measured, c.Unavailable, total)
+	}
+	if err := tw.Flush(); err != nil {
+		return deskkit.Unverifiable("cannot write the report", err)
+	}
+	if len(v2.Phases) > 0 {
+		fmt.Fprintln(stdout, "\nphases (per-record ms inside the invocation wall; never summed with it):")
 		tw = tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "TS\tTOOL\tVERB\tWALL MS")
-		for _, s := range sum.Slowest {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", s.TS, s.Tool, s.Verb, s.WallMs)
+		fmt.Fprintln(tw, "TOOL\tPHASE\tRECORDS\tN\tP50 MS\tP90 MS\tMAX MS")
+		for _, p := range v2.Phases {
+			fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%d\t%d\t%d\n", p.Tool, p.Phase, p.Records, p.N, p.P50Ms, p.P90Ms, p.MaxMs)
+		}
+		if err := tw.Flush(); err != nil {
+			return deskkit.Unverifiable("cannot write the report", err)
+		}
+	}
+	return slowestTable(stdout, v2.Slowest)
+}
+
+// forgeTable renders the forge-call section: one header line with the totals and the busiest
+// hour against the App budget floor (PerfForgeBudgetPerHour says why that is a gauge, not a
+// bound), then one table per tool and one per release build. A row with
+// no measured run prints "-" for every figure — unavailable is not observed, never zero.
+func forgeTable(stdout io.Writer, f deskkit.PerfForgeSummary) error {
+	peak := "-"
+	if f.PeakHour != "" {
+		peak = fmt.Sprintf("%s %d call(s), %.2f%%", f.PeakHour, f.PeakHourCalls, f.PeakHourBudgetPct)
+	}
+	fmt.Fprintf(stdout, "forge calls — %d call(s) over %d run(s) (legacy forgeCalls %d, perf-v2 http %d, unavailable %d); "+
+		"busiest UTC hour %s of the %d/hour App budget floor\n",
+		f.Calls, f.Runs, f.FromV1, f.FromV2, f.Unavailable, peak, f.BudgetPerHour)
+	fmt.Fprintf(stdout, "(HTTP attempts, not GraphQL points; unavailable = not observed, never zero; the hour pools every "+
+		"tool and App installation against one installation's %d/hour REST floor, so a percentage gauges pressure "+
+		"and is no installation's measured draw)\n", f.BudgetPerHour)
+	for _, g := range []struct {
+		head string
+		rows []deskkit.PerfForgeStats
+	}{{"TOOL", f.Tools}, {"RELEASE", f.Releases}} {
+		fmt.Fprintln(stdout)
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, g.head+"\tRUNS\tUNAVAILABLE\tCALLS\tP50/RUN\tP90/RUN\tMAX/RUN\tSHARE %\tPEAK HOUR CALLS\tPEAK HOUR %\tP90 RUN %")
+		for _, r := range g.rows {
+			figs := "-\t-\t-\t-\t-\t-\t-\t-"
+			if r.Measured > 0 {
+				figs = fmt.Sprintf("%d\t%d\t%d\t%d\t%.1f\t%d\t%.2f\t%.2f",
+					r.Calls, r.P50PerRun, r.P90PerRun, r.MaxPerRun, r.SharePct, r.PeakHourCalls, r.PeakHourBudgetPct, r.P90RunBudgetPct)
+			}
+			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", r.Key, r.Runs, r.Unavailable, figs)
 		}
 		if err := tw.Flush(); err != nil {
 			return deskkit.Unverifiable("cannot write the report", err)
 		}
 	}
 	return nil
+}
+
+// countList renders "a N · b M" over the known keys in order, then any other key by name.
+func countList(m map[string]int, known []string) string {
+	var parts []string
+	seen := map[string]bool{}
+	for _, k := range known {
+		seen[k] = true
+		parts = append(parts, fmt.Sprintf("%s %d", k, m[k]))
+	}
+	var rest []string
+	for k := range m {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		parts = append(parts, fmt.Sprintf("%s %d", k, m[k]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func filterText(tool, role string) string {

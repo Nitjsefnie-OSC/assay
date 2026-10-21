@@ -1,11 +1,13 @@
 // Command deskperf reads the opt-in, local-only perf history the desk verbs write when
-// ASSAY_TELEMETRY=1 (deskkit/perf.go) and turns it into per-tool percentiles
-// and a boot-cost breakdown.
+// ASSAY_TELEMETRY=1 (deskkit/perf.go) and turns it into per-tool percentiles,
+// a forge-call and rate-limit view, and a boot-cost breakdown.
 //
-//	deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]
-//	deskperf boot   [--days N] [--role R] [--json]
-//	deskperf --version
-//	deskperf -h | --help
+//		deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]
+//	     [--perf-profile workflow] [--group-by tool|work|session|agent|deskRole|role]
+//	     [--session-id ID] [--agent-id ID] [--desk-role ROLE] [--assigned-role ROLE] [--work JSON]
+//		deskperf boot   [--days N] [--role R] [--json]
+//		deskperf --version
+//		deskperf -h | --help
 //
 // It is a separate binary rather than a deskaudit subcommand because the two datasets make
 // opposite promises: the audit ledger never loses a row and is read by the budget and
@@ -34,9 +36,21 @@ const usage = `deskperf — read the local perf history (opt-in: ASSAY_TELEMETRY
 
 usage:
   deskperf report [--days N] [--tool X] [--role R] [--top N] [--json]
+      [--perf-profile workflow] [--group-by tool|work|session|agent|deskRole|role]
+      [--session-id ID] [--agent-id ID] [--desk-role ROLE] [--assigned-role ROLE] [--work JSON]
       per tool: count, p50 / p90 / max wall ms, total wall ms, share of total wall,
       refusal ratio (refused + unwritten + unverifiable over count); then the top-N
-      slowest invocations (default 10) as ts / tool / verb / wallMs
+      slowest invocations (default 10) as ts / tool / verb / wallMs. Legacy
+      records (the original schema) and perf-v2 records are reported as SEPARATE
+      groups, never summed: the perf-v2 group adds its boundary and CPU coverage,
+      the measured-CPU distribution, per-counter measured/unavailable coverage and
+      per-phase distributions. A forge-calls section follows, per tool and per
+      release build (sourceSHA): runs, unavailable runs, total forge calls, calls
+      per run p50 / p90 / max, share of all forge calls, the busiest UTC hour's
+      calls and that hour and the p90 run as a share of the 5000/hour App budget
+      floor (pooled over every tool and installation: a gauge, not a bound).
+      It pools legacy forgeCalls and the perf-v2 http counter (one budget); a run
+      whose counter is unavailable prints as unavailable, never as zero
   deskperf boot [--days N] [--role R] [--json]
       deskboot's per-step p50 / p90 / max and the summed boot cost, per role
   deskperf --version      print the build stamp
@@ -46,8 +60,10 @@ usage:
 longer window is refused rather than silently answered with 7.
 
 The history lives in <state dir>/perf/YYYY-MM-DD.jsonl (state dir: ~/.config/assay). It is
-written only when ASSAY_TELEMETRY is exactly 1, holds no repo, PR, branch, path, argv or
-free text, and never leaves the machine. deskperf only reads it.
+written only when ASSAY_TELEMETRY is exactly 1. v1/v2 and v3 tool records contain no
+workflow identifiers. v3 workflow records contain bounded local work and opaque agent/session
+IDs; grouping/filtering those requires explicit workflow permission. No argv or free text
+is recorded, and nothing leaves the machine. deskperf only reads it.
 
 exit: 0 ok · 3 disabled (kill switch/stop flag) · 5 refused (bad flags, or no record
 matches the filter) · 6 unverifiable (no perf history to read)`

@@ -239,6 +239,7 @@ func parseBriefTable(body string) ([]Brief, error) {
 }
 
 func parseStreamREADME(path string) (*Stream, error) {
+	defer perfEnter("parse")()
 	raw, err := readStreamREADME(path)
 	if err != nil {
 		return nil, err

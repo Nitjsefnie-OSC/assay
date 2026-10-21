@@ -76,20 +76,20 @@
     {
       "name": "skip the post-rotation self-check (a rotated token the forge does not yet accept is returned as good, the first-read 401 comes back)",
       "file": "cmd/desktoken/gitlab.go",
-      "old": "\tstatus, serr := gitlabSelfCheck(base, result.Token)\n\tif serr != nil {",
+      "old": "\tstatus, serr := gitlabSelfCheck(base, result.Token, clients...)\n\tif serr != nil {",
       "new": "\tstatus, serr := 200, error(nil)\n\tif serr != nil {"
     },
     {
       "name": "accept any self-check status as verified (a 401 on the new token still prints the path as good)",
       "file": "cmd/desktoken/gitlab.go",
-      "old": "\tif status != 200 {\n\t\treturn gitlabSelfCheckFailure(role, base, path, current, status)\n\t}",
-      "new": "\tif status != 200 && false {\n\t\treturn gitlabSelfCheckFailure(role, base, path, current, status)\n\t}"
+      "old": "\tif status != 200 {\n\t\treturn gitlabSelfCheckFailure(role, base, path, current, status, clients...)\n\t}",
+      "new": "\tif status != 200 && false {\n\t\treturn gitlabSelfCheckFailure(role, base, path, current, status, clients...)\n\t}"
     },
     {
       "name": "treat a self-check the transport could not make as a pass (an unreachable forge returns the path as good)",
       "file": "cmd/desktoken/gitlab.go",
-      "old": "\tstatus, serr := gitlabSelfCheck(base, result.Token)\n\tif serr != nil {",
-      "new": "\tstatus, serr := gitlabSelfCheck(base, result.Token)\n\tif serr != nil {\n\t\tstatus, serr = 200, nil\n\t}\n\tif serr != nil {"
+      "old": "\tstatus, serr := gitlabSelfCheck(base, result.Token, clients...)\n\tif serr != nil {",
+      "new": "\tstatus, serr := gitlabSelfCheck(base, result.Token, clients...)\n\tif serr != nil {\n\t\tstatus, serr = 200, nil\n\t}\n\tif serr != nil {"
     },
     {
       "name": "drop the group/other-WRITE refusal from the private-key mode rule (a 0660/0620 key becomes acceptable)",
@@ -112,14 +112,14 @@
     {
       "name": "coverage: a failed repository page becomes a SHORT list read as complete (drop the exit-6 refusal; return the partial list)",
       "file": "cmd/desktoken/coverage.go",
-      "old": "\t\trepos, rerr := listInstallationRepos(tok.Token)\n\t\tif rerr != nil {",
-      "new": "\t\trepos, rerr := listInstallationRepos(tok.Token)\n\t\tif false && rerr != nil {"
+      "old": "\t\trepos, rerr := listInstallationRepos(tok.Token, authClient)\n\t\tif rerr != nil {",
+      "new": "\t\trepos, rerr := listInstallationRepos(tok.Token, authClient)\n\t\tif false && rerr != nil {"
     },
     {
       "name": "coverage: print the enumeration token beside the installation header (the no-token-leak assertion must fire)",
       "file": "cmd/desktoken/coverage.go",
-      "old": "\t\trepos, rerr := listInstallationRepos(tok.Token)\n\t\tif rerr != nil {\n\t\t\t// A page read that failed",
-      "new": "\t\tfmt.Println(tok.Token)\n\t\trepos, rerr := listInstallationRepos(tok.Token)\n\t\tif rerr != nil {\n\t\t\t// A page read that failed"
+      "old": "\t\trepos, rerr := listInstallationRepos(tok.Token, authClient)\n\t\tif rerr != nil {\n\t\t\t// A page read that failed",
+      "new": "\t\tfmt.Println(tok.Token)\n\t\trepos, rerr := listInstallationRepos(tok.Token, authClient)\n\t\tif rerr != nil {\n\t\t\t// A page read that failed"
     },
     {
       "name": "coverage: --repo matches on the bare name, not full_name (a same-named repo in another org matches the wrong installation)",

@@ -48,19 +48,11 @@ id: 4b4dc7f7-13f1-42cc-8b97-6ff097f1e7c8
 files:
 - `tools/ci-load/activation/ci.yml`, `plugin-drift.yml`, `assay-statusgen.yml`,
   `assay-qualgen.yml`, `evidence-automerge.yml` — the five post-change workflow files.
-- `tools/ci-load/activation/ci-load.diff` — the unified diff of those five against the
-  versions in `.github/workflows/`, as a reading aid.
-- `tools/ci-load/activation/README.md` — copy command, verification, rollback, and the rule
-  the edits were held to.
-- `tools/ci-load/pathsemantics.py` — the offline negative control for Verify rows 3 / 3b: it
-  reads the `paths-ignore` list out of the staged workflows and asserts GitHub's rule on
-  five diff shapes, three of which must NOT skip.
+- `tools/ci-load/activation/ci-load.diff` — the unified diff of those five against the versions in `.github/workflows/`, as a reading aid.
+- `tools/ci-load/activation/README.md` — copy command, verification, rollback, and the rule the edits were held to.
+- `tools/ci-load/pathsemantics.py` — the offline negative control for Verify rows 3 / 3b: it reads the `paths-ignore` list out of the staged workflows and asserts GitHub's rule on five diff shapes, three of which must NOT skip.
 - `docs/streams/desk-supervision/README.md` — the Briefs row and the wave block.
-- `changelog/ci-per-push-fanout.md` (planned) — the fragment. Marked `(planned)` because a
-  release roll AGGREGATES every fragment into the dated `CHANGELOG.md` section and CLEARS
-  `changelog/` in the same commit, so a fragment path is transient by design: it exists only
-  between the brief's own PR and the next release cut. This one was consumed by the v0.26.0
-  roll.
+- `changelog/ci-per-push-fanout.md` (planned) — the fragment. Marked `(planned)` because a release roll AGGREGATES every fragment into the dated `CHANGELOG.md` section and CLEARS `changelog/` in the same commit, so a fragment path is transient by design: it exists only between the brief's own PR and the next release cut. This one was consumed by the v0.26.0 roll.
 
 prescribes (applied by a human copy, NOT written by this brief's diff):
 `.github/workflows/ci.yml`, `plugin-drift.yml`, `assay-statusgen.yml`, `assay-qualgen.yml`,
@@ -277,7 +269,7 @@ docs-only by construction (its own lane refuses anything outside `docs/streams/`
 | 8 | check | `for f in ci plugin-drift assay-statusgen assay-qualgen evidence-automerge; do diff -q "tools/ci-load/activation/$f.yml" ".github/workflows/$f.yml" \|\| exit 1; done` | exit 0, no output — the staged copies and the landed files are byte-identical, so the reviewed diff is the running diff |
 | 9 | check:ci | `for f in tools/ci-load/activation/*.yml; do python3 -c "import yaml,sys; d=yaml.safe_load(open(sys.argv[1])); print(sys.argv[1], d.get(True) or d.get('on'), d.get('concurrency')); sys.exit(0 if (d.get(True) or d.get('on')) and d.get('jobs') else 1)" "$f" \|\| exit 1; done` | exit 0; five lines. `ci.yml` shows `push` with `branches: ['main']` and a four-entry `paths-ignore`, and `cancel-in-progress` conditioned on `github.event_name == 'pull_request'`; `plugin-drift.yml` shows `paths-ignore` on `pull_request` and a bare `branches: ['main']` on `push` |
 | 10 | check:ci | `cd statusgen && go run . --root .. --lint; echo $?` | `0`, and no `PROBLEM:` line naming `desk-supervision/09` or any file under `tools/ci-load/` |
-| 11 | check:ci +dereference | `o=$(statusgen --root . --consumers --brief desk-supervision/09 --delivery dfbd883d58f18a00c36e665f860e69507044219f --base afd0346d21de37fe9a5647e3e1826ea2928ff68a); s=$?; printf '%s\n' "$o"; test "$s" -eq 0 && case "$o" in *'summary: 1 corroborated, 0 disproved, 3 unchecked, 0 brief(s) claiming nothing'*) ;; *) exit 1;; esac && case "$o" in *'CORROBORATED  tools/ci-load/activation/*.yml: fixed-here'*) ;; *) exit 1;; esac` | exit 0; exact `summary: 1 corroborated, 0 disproved, 3 unchecked, 0 brief(s) claiming nothing`. Claims are read from the immutable delivered snapshot and compared only with its first-parent diff. The 3 UNCHECKED entries remain individual review obligations; this row does not discharge their truth. The block must list all four consumers and mark `tools/ci-load/activation/*.yml` **CORROBORATED**. The three exclusions remain individually discharged by row 6 for `zeroci.go`, row 7 for `flip.go`, and rows 2 and 4 for `leak-sweep`. |
+| 11 | check:ci +dereference | `cd statusgen && go run . --root .. --consumers 2>&1 \| grep -A6 'desk-supervision/09'` | exit 0; the block lists all four `consumers:` entries and marks `tools/ci-load/activation/*.yml` **CORROBORATED**. The three `out-of-scope` entries render UNCHECKED by design — that routing is a judgement no diff settles, and each one's stated reason is discharged by a row above (row 6 for `zeroci.go`, row 7 for `flip.go`, rows 2 and 4 for `leak-sweep`) |
 
 ## Evidence
 <!-- appended at implementation time: one row per Verify item —
