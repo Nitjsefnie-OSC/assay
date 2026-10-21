@@ -64,7 +64,7 @@ decision so the refactor codes against the reconciled reading, not either docume
   rests on it `revalidate`: supersede the investigation, or record the revalidation here.
 
 Record each revalidation as one line, `revalidated: <path> @ <merge-base> — <basis>` (the
-revision acceptance row 1 diffs to), naming the conclusions re-checked and the result. Unknown applicability is not a basis, and cannot satisfy
+revision acceptance row 1 diffs to; a merge of main moves it, so rewrite these lines after one), naming the conclusions re-checked and the result. Unknown applicability is not a basis, and cannot satisfy
 a `keep` row that rests on the conclusion.
 
 **Worked example.** At `pinned-source` r10. The investigation `2026-01-21-cmd-example.md`
@@ -140,7 +140,7 @@ exit code and output line, and every forge or file write, driven through its ent
 Reads, from the repository root: `grep -n '^| S-' docs/contracts.md | grep -F '<module>'` for
 the owner; then for a library `go -C <owner package> doc -all .`, and for a command
 `go -C <module> doc -cmd -u -all .` (its usage, exit codes and entry functions) and
-`git grep -nE '\.(Bool|Duration|Int|String|Var)\("' -- '<module>/*.go' ':!<module>/*_test.go'`
+`git grep -nE '\.(Bool|Duration|Float64|Int|Int64|String|Uint|Uint64)(Var)?\(|\.(BoolFunc|Func|TextVar|Var)\(' -- '<module>/*.go' ':!<module>/*_test.go'`
 (its flags). Each test carries, directly above its declaration,
 `// characterization: <module> <oracle-file>`, two fields, so the test ledger can list it.
 A replay corpus for the module, where one exists, may be cited here as a source.
@@ -175,8 +175,8 @@ owner still declared by its `// semantic:` marker. Reads:
 - `grep -n '^| S-' docs/contracts.md | grep -F '<module>'` and
   `grep -n '^| R-' docs/contracts.md | grep -F '<s-row>'`.
 - `git grep -n '// semantic: <s-row>'`: the marker above the owner's declaration.
-- `cd tools/desk && go test ./internal/arch/ -count=1`: the architecture rules.
-- `cd tools/desk && go test ./internal/weight/ -run TestPrintWeight -count=1 -v`: the weight
+- `go -C tools/desk test ./internal/arch/ -count=1`: the architecture rules.
+- `go -C tools/desk test ./internal/weight/ -run TestPrintWeight -count=1 -v`: the weight
   line, at the merge-base and at the candidate.
 
 **Worked example.** `S-example` (owner `internal/example/token.go`, marker present at r10);
@@ -195,7 +195,7 @@ shell's directory: Go commands name their directory with `go -C`.
 | 1 | `a=$(grep -m1 '^divergence:' <investigation>) && b=$(grep -m1 '^divergence:' <oracle-file>) && test "$a" = "$b" && d=$(git diff --name-only <pinned-source> <merge-base> -- <module> <dependency-references>) && printf '%s\n' "$d" \| while read -r p; do test -z "$p" \|\| grep -qF "revalidated: $p @ <merge-base>" <oracle-file> \|\| echo "UNREVALIDATED $p"; done && echo SOURCES-READ` | exactly one line, `SOURCES-READ`: both files carry the same `divergence:` line, both revisions resolve, and every path that changed on main between assembly and the candidate's merge-base (never the refactor's own edits) has a `revalidated:` line in §1 at `<merge-base>`. An `UNREVALIDATED` line refuses (the intent is not current); so does a missing `SOURCES-READ` (a `divergence:` line missing or differing, or a source that does not resolve) |
 | 2 | `sed -n '/^## 2\. Failure modes/,/^## 3\./p' <oracle-file> \| grep -E '^[\|] *(#\|F-\|class #)' \| awk -F'\|' '{t=$4; gsub(/[ ]/,"",t); print (t == "" ? "EMPTY-TEST " $2 : t)}'` | no `EMPTY-TEST` line; each printed test is tagged and passes in row 4 |
 | 3 | `sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test' \| awk -F'\|' '{gsub(/ /,"",$3); print $3}' \| sort \| uniq -c && o=$(sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test') && p=$(gh pr view <N> --json body --jq .body \| tr -d '\r' \| sed -n '/^## Oracle$/,/^## /p' \| grep -E '^[\|] *Test') && test "$o" = "$p" && echo ORACLE-VERBATIM` | only `keep` and `drop` counted, then `ORACLE-VERBATIM` (the PR body's `## Oracle` section carries the §3 triage rows byte for byte); any `unknown`, any other word, or a missing or differing table refuses |
-| 4 | `go -C <module> test ./... -count=1 -v 2>&1 \| grep -cE '^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'; go -C tools/desk test ./internal/testledger/ -run TestReportTestLedger -count=1 -v -args -base=<merge-base> -head=<candidate-source> 2>&1 \| grep -E 'untrailed\|characterization-untriaged\|could-not-check\|retired-trailed\|^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'` | `0`, then only `retired-trailed` lines, each `drop` test named in one whose quoted reason is `accident per oracle §3`: every `keep` and failure-mode test passes, and every `drop` left with the trailer. An `untrailed`, `characterization-untriaged`, `could-not-check`, `SKIP` or `FAIL` line refuses (a skipped or unreadable report is never clean) |
+| 4 | `go -C <module> test ./... -count=1 -v 2>&1 \| awk '/^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL\|^go: /{b++} /^[[:space:]]*--- PASS/{p++} END{print b+0, p+0}'; go -C tools/desk test ./internal/testledger/ -run TestReportTestLedger -count=1 -v -args -base=<merge-base> -head=<candidate-source> 2>&1 \| grep -E 'untrailed\|characterization-untriaged\|could-not-check\|retired-trailed\|^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'` | `0 N` with N ≥ the number of tests named in §2 and §3 (a `go:` error line, such as a missing module directory, counts as a failure, and a module where nothing ran prints `0 0`), then only `retired-trailed` lines, each `drop` test named in one whose quoted reason is `accident per oracle §3`: every `keep` and failure-mode test passes, and every `drop` left with the trailer. An `untrailed`, `characterization-untriaged`, `could-not-check`, `SKIP` or `FAIL` line refuses (a skipped or unreadable report is never clean) |
 | 5 | `go -C tools/desk test ./internal/arch/ -count=1 && git grep -c '// semantic: <s-row>' <candidate-source> -- <owner path>` | `ok`, then ≥ `1` (the invariants hold and the owner is still declared) |
 
 **Worked example.** At r10, before the intervening change:
