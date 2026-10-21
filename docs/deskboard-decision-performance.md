@@ -70,8 +70,9 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`d0287b5d0b9d414a1fc136bcd3fc53cf193e7bcb`. The later performance-report commit changes documentation only. This cohort
-includes the independent review repair that preserves exact marker spellings.
+`c36cf0e757b7aad9098415cd13b40893bef7459a`. The later performance-report commit changes documentation only. This cohort
+includes the independent review repairs for exact spelling, typed selective lookup,
+classified safe diagnostics and stable GitHub paging.
 Both local test binaries carry their respective source stamp. Five independent
 processes per variant were run in alternating before/after order; `-test.count=5`
 in one process is unsuitable because process-init time would accumulate.
@@ -82,12 +83,12 @@ in one process is unsuitable because process-init time would accumulate.
 | Search attempts, every sample | 12 | 1 |
 | Other REST attempts, every sample | 36 | 24 |
 | GraphQL attempts, every sample | 12 | 12 |
-| Process wall time, ms | 614, 702, 596, 607, 560 | 255, 140, 76, 81, 77 |
-| Median process wall time, ms | 607 | 81 |
-| Own process CPU, ms | 40, 36, 33, 34, 29 | 30, 23, 23, 23, 22 |
-| Median own process CPU, ms | 34 | 23 |
+| Process wall time, ms | 573, 554, 549, 568, 580 | 73, 71, 74, 74, 83 |
+| Median process wall time, ms | 568 | 74 |
+| Own process CPU, ms | 33, 25, 24, 40, 47 | 23, 21, 19, 17, 24 |
+| Median own process CPU, ms | 33 | 21 |
 
-That is **38.3% fewer HTTP attempts** and **86.7% less median elapsed time in this
+That is **38.3% fewer HTTP attempts** and **87.0% less median elapsed time in this
 latency fixture**. It is not a production speedup claim. Small CPU samples and their
 variance do not establish a general CPU improvement. Unique explicit issue references
 save no discovery calls; repositories needing more pages or having many shared
@@ -105,7 +106,7 @@ no operator consent, workflow grouping, audit ledger or live pin changes.
 Binary SHA-256 values:
 
 - Before: `ffebc60bf0fa6f942a0c490d5249903e091169ac8dbc4bcdfae6518341c741a8`
-- After: `ea118c2895d9be24efd9b695f3a6258d5ab68765723f45ecdd46d9995aaa87f4`
+- After: `4d6025fcb15063b7ce8c930baabd27faf8824e9f197e7bc9dd30eaa8919e2d1f`
 
 To reproduce from each respective source tree with the same test file:
 
@@ -136,9 +137,10 @@ cd tools/desk
 go run ./cmd/muhar -j 2 -spec cmd/deskboard/decision-admission-mutations.json
 ```
 
-The repaired source qualifies twelve mutations: a healthy pristine baseline and
-positive control, twelve caught faults, zero survivors and zero could-not-mutate.
-The cross-project alias fault is included explicitly.
+The repaired source qualifies sixteen mutations: a healthy pristine baseline and
+positive control, sixteen caught faults, zero survivors and zero could-not-mutate.
+Cross-project aliases, lost diagnostic class, raw provider-detail leakage,
+GitHub syntax sent to GitLab and unstable paging are included explicitly.
 
 Existing review snapshots, conditional transports, per-PR reuse, quota floors,
 root resolution, queue semantics, trust controls and perf-v3 observation machinery
