@@ -100,8 +100,8 @@
     {
       "name": "#3841: text after a comment's end counts as inside the comment",
       "file": "heldscope.go",
-      "old": "} else if strings.TrimSpace(t[j+3:]) != \"\" {",
-      "new": "} else if false {"
+      "old": "if strings.TrimSpace(t[j+n:]) != \"\" {",
+      "new": "if n < 0 {"
     },
     {
       "name": "#3841: an HTML block that is not a comment counts as a comment",
@@ -352,20 +352,50 @@
     {
       "name": "#3841: a comment's end is searched after the four-byte opener (<!--> stays open)",
       "file": "heldscope.go",
-      "old": "if j := strings.Index(t, \"-->\"); j < 0 {",
-      "new": "if j := strings.Index(t[4:], \"-->\"); j < 0 {"
+      "old": "j, n := heldCommentEnd(t)",
+      "new": "j, n := heldCommentEnd(t[4:])"
     },
     {
       "name": "#3841: a comment's end is searched past the opener's first dash (<!--> stays open; Q10)",
       "file": "heldscope.go",
-      "old": "if j := strings.Index(t, \"-->\"); j < 0 {",
-      "new": "if j := strings.Index(t[3:], \"-->\"); j < 0 {"
+      "old": "j, n := heldCommentEnd(t)",
+      "new": "j, n := heldCommentEnd(t[3:])"
     },
     {
       "name": "#3841: the indent limit admits four spaces (Q4)",
       "file": "heldscope.go",
       "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
       "new": "return len(lead) <= 4 && !strings.Contains(lead, \"\\t\")"
+    },
+    {
+      "name": "#3841: \"--!>\" does not end a comment",
+      "file": "heldscope.go",
+      "old": "if k := strings.Index(s, \"--!>\"); k >= 0 && (j < 0 || k < j) {",
+      "new": "if k := -1; k >= 0 && (j < 0 || k < j) {"
+    },
+    {
+      "name": "#3841: \"--!>\" ends a comment only when no \"-->\" is on the line",
+      "file": "heldscope.go",
+      "old": "if k := strings.Index(s, \"--!>\"); k >= 0 && (j < 0 || k < j) {",
+      "new": "if k := strings.Index(s, \"--!>\"); k >= 0 && j < 0 {"
+    },
+    {
+      "name": "#3841: lines after a \"--!>\" end stay comment text",
+      "file": "heldscope.go",
+      "old": "comment = false // a \"--!>\" end leaves the block open, read",
+      "new": "comment = !strings.Contains(lower, \"-->\")"
+    },
+    {
+      "name": "#3841: an opener closed by \"--!>\" ends the whole block",
+      "file": "heldscope.go",
+      "old": "end = \"-->\" // closed by \"--!>\": the rest of the block is read",
+      "new": "end = \"\""
+    },
+    {
+      "name": "#3841: text after an in-block comment end counts as inside the comment",
+      "file": "heldscope.go",
+      "old": "if strings.TrimSpace(lower[j+n:]) != \"\" {",
+      "new": "if n < 0 {"
     }
   ]
 }

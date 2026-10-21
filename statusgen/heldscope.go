@@ -246,6 +246,18 @@ func heldCommentIndent(lead string) bool {
 	return len(lead) <= 3 && !strings.Contains(lead, "\t")
 }
 
+// heldCommentEnd returns the index and length of the first comment end in s:
+// "-->", or "--!>", at which the page parser also ends a comment. It returns
+// -1 when s holds neither. Searched from the opener's first byte, it also
+// closes "<!--!>", which the page parser does not: the stricter choice.
+func heldCommentEnd(s string) (int, int) {
+	j, n := strings.Index(s, "-->"), 3
+	if k := strings.Index(s, "--!>"); k >= 0 && (j < 0 || k < j) {
+		j, n = k, 4
+	}
+	return j, n
+}
+
 // The kinds of line heldHTMLLines tells apart.
 const (
 	heldNotHTML     = iota
@@ -258,9 +270,11 @@ const (
 // any other HTML block, or a comment's line with text after its end, is
 // heldHTMLOther. A comment is read only where the renderer opens one: "<!--"
 // at three spaces of indentation or fewer and no tab (heldCommentIndent), and
-// its end is the first "-->" counted from the opener's first byte, so
-// "<!-->" and "<!--->" close on their own line. Any other "<!--" line opens a
-// block that is not a comment. A block that ends on its own line is read as
+// its end is the first "-->" or "--!>" counted from the opener's first byte
+// (heldCommentEnd), so "<!-->" and "<!--->" close on their own line. The
+// HTML block itself runs to the first line holding "-->", so the lines after
+// a "--!>" end render live and are heldHTMLOther. Any other "<!--" line opens
+// a block that is not a comment. A block that ends on its own line is read as
 // running to the next blank line unless it is a comment: the stricter choice.
 func heldHTMLLines(lines []string, inFence []bool) []int {
 	kind := make([]int, len(lines))
@@ -272,12 +286,17 @@ func heldHTMLLines(lines []string, inFence []bool) []int {
 			kind[i] = heldHTMLOther
 			if comment {
 				kind[i] = heldHTMLComment
-			}
-			if j := strings.Index(lower, end); j >= 0 {
-				if comment && strings.TrimSpace(lower[j+len(end):]) != "" {
+				j, n := heldCommentEnd(lower)
+				if j < 0 {
+					continue
+				}
+				if strings.TrimSpace(lower[j+n:]) != "" {
 					kind[i] = heldHTMLOther
 				}
-				end, comment = "", false
+				comment = false // a "--!>" end leaves the block open, read
+			}
+			if strings.Contains(lower, end) {
+				end = ""
 			}
 			continue
 		case open:
@@ -301,10 +320,16 @@ func heldHTMLLines(lines []string, inFence []bool) []int {
 				continue
 			}
 			kind[i] = heldHTMLComment
-			if j := strings.Index(t, "-->"); j < 0 {
+			j, n := heldCommentEnd(t)
+			if j < 0 {
 				end, comment = "-->", true
-			} else if strings.TrimSpace(t[j+3:]) != "" {
+				continue
+			}
+			if strings.TrimSpace(t[j+n:]) != "" {
 				kind[i] = heldHTMLOther
+			}
+			if !strings.Contains(t, "-->") {
+				end = "-->" // closed by "--!>": the rest of the block is read
 			}
 			continue
 		}
