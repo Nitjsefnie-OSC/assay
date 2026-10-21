@@ -140,8 +140,8 @@ func (gitlabNoLimiter) Wait(_ context.Context) error { return nil }
 //     call. That is the wrapper's job.
 func (g *GitLabForge) client() (*gitlab.Client, error) {
 	if g.Token == "" {
-		return nil, Unverifiable("refusing to reach the GitLab forge without an explicitly minted token — "+
-			"this backend never falls back to an anonymous or ambient identity", errForgeTokenMissing)
+		return nil, missingForgeToken("refusing to reach the GitLab forge without an explicitly minted token — " +
+			"this backend never falls back to an anonymous or ambient identity")
 	}
 	if g.cl != nil {
 		return g.cl, nil
@@ -4213,8 +4213,8 @@ const gitlabPipelineDefinition = ".gitlab-ci.yml"
 // empty token is refused here too — the trigger call never goes out anonymous.
 func (g *GitLabForge) triggerClient() (*gitlab.Client, error) {
 	if g.Token == "" {
-		return nil, Unverifiable("refusing to reach the GitLab forge without an explicitly minted token — "+
-			"this backend never falls back to an anonymous or ambient identity", errForgeTokenMissing)
+		return nil, missingForgeToken("refusing to reach the GitLab forge without an explicitly minted token — " +
+			"this backend never falls back to an anonymous or ambient identity")
 	}
 	opts := []gitlab.ClientOptionFunc{
 		gitlab.WithBaseURL(g.baseURL()),
