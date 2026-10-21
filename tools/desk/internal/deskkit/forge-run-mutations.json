@@ -190,8 +190,8 @@
     {
       "name": "review SEC-1 — client() uses the injected client as given, or the library default (the pre-fix construction)",
       "file": "internal/deskkit/forge_gitlab.go",
-      "old": "\topts = append(opts, gitlab.WithHTTPClient(countingClient(gitlabNoRedirectClient(g.Client))))\n\tcl, err := gitlab.NewClient(",
-      "new": "\topts = append(opts, gitlab.WithHTTPClient(countingClient(g.Client)))\n\tcl, err := gitlab.NewClient("
+      "old": "\thc := countingClient(gitlabNoRedirectClient(g.Client))\n\thc.Transport = observedTransport(",
+      "new": "\thc := countingClient(g.Client)\n\thc.Transport = observedTransport("
     },
     {
       "name": "review SEC-1 — the trigger client follows redirects (a 307 re-sends the trigger token in the body)",
