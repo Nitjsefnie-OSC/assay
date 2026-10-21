@@ -387,10 +387,10 @@ The canonical flag/environment table is in the attribution specification.
 Use the shared parser bindings and public perfrec resolver, including empty
 clears and replacement work lists. Attribution never changes the operational
 DESK_LOOP. When a child needs a different operational loop, preserve originating
-desk attribution through --perf-desk-role on supported tool calls. Unsupported
+desk attribution through --perf-loop-role on supported tool calls. Unsupported
 adapters remain explicit gaps; optional writer failure cannot block the operation.
 
 Apply validated handoff entries to each tool call with per-command `env KEY=value
 ... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
 never evaluate the handoff as shell code or export it into a persistent shell.
-Use `--perf-desk-role` for descriptive desk attribution; never alter `DESK_LOOP`.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

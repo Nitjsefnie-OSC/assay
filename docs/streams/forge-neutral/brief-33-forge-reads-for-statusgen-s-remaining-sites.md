@@ -82,15 +82,9 @@ kind, which is the consuming call site the freeze rule requires. It moves no sta
 that stays 18's job.
 
 files:
-- `tools/desk/internal/deskkit/forge.go`: the `Forge` interface (`:1370`) and the result types
-  named in Task 1–2.
-- `tools/desk/internal/deskkit/forge_github.go`, `tools/desk/internal/deskkit/forge_gitlab.go`:
-  both backends of every addition.
-- `tools/desk/internal/deskkit/forge_github_golden_test.go`,
-  `tools/desk/internal/deskkit/forge_gitlab_test.go`,
-  `tools/desk/internal/deskkit/testdata/forge_golden/`,
-  `tools/desk/internal/deskkit/testdata/forge_gitlab_golden/`: golden cases on recorded
-  fixtures.
+- `tools/desk/internal/deskkit/forge.go`: the `Forge` interface (`:1370`) and the result types named in Task 1–2.
+- `tools/desk/internal/deskkit/forge_github.go`, `tools/desk/internal/deskkit/forge_gitlab.go`: both backends of every addition.
+- `tools/desk/internal/deskkit/forge_github_golden_test.go`, `tools/desk/internal/deskkit/forge_gitlab_test.go`, `tools/desk/internal/deskkit/testdata/forge_golden/`, `tools/desk/internal/deskkit/testdata/forge_gitlab_golden/`: golden cases on recorded fixtures.
 - `tools/desk/internal/deskkit/forge_surface_deskread_test.go`: the method-set `want` list.
 - `tools/desk/cmd/deskread/main.go`, `tools/desk/cmd/deskread/forge.go`, and the deskread
   tests: the new kinds.

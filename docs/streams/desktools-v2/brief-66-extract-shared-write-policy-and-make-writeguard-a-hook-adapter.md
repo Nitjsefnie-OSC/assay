@@ -10,7 +10,9 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: Local write-isolation and exemption behavior are security controls; review must confirm policy relocation and all adapters preserve refusals and independent sandbox enforcement.
 decision-trigger: spec
-issues: []
+issues: [3752]
+decision-issue: 3752
+ruling: "https://github.com/medici-finance/assay/issues/3752#issuecomment-6299695731"
 schema: brief-v2
 version: 1
 id: 26781d38-3bac-4c4e-8ba2-0688894744fb
@@ -70,7 +72,9 @@ failure path remains explicit, and managed admission does not inherit a legacy f
 Options:
 1. **Approve the bounded extraction** — preserve legacy behavior and qualify the separate managed profile before activation.
 2. **Narrow or hold it** — retain current behavior until the missing boundary or compatibility evidence is supplied.
-Default if no answer: none — blocks the undecided security change until answered.
+Default if no answer: none — blocks until answered.
+
+The undecided security change remains blocked until answered.
 
 ## Ground rules
 

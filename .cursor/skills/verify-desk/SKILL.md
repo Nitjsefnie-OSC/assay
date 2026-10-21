@@ -241,7 +241,7 @@ existing grants.
    printable; anything less and the desk is mid-drain, not standing down.
 
 **Wake receipts — a failed/blocked brief is not re-run just to reproduce its failure**
-(`verify-wake-v1`; `docs/streams/desk-supervision/verify-wake-v1.md`). When a verifier run ends
+(`verify-wake-v1`; [canonical receipt contract](https://github.com/medici-finance/assay/blob/main/docs/verify-wake.md)). When a verifier run ends
 `verify-fail`/`blocked`, its landed outcome sidecar row carries a WAKE RECEIPT: the inputs it
 observed, the blocker class, and the checkable condition that must change before re-running is
 worth a slot. `verifyloop plan` reads it and buckets the brief accordingly — **consume the
@@ -310,9 +310,19 @@ incomplete record, naming the first missing field (`wake_schema`, `receipt_id`, 
 delivered the brief, as `{repo, number, merge_sha}`; or an explicit `prs: []` with
 `prs_unknown_reason: "no-pr-delivery"` when nothing was delivered), `verifier_tier` (`any` or
 `strong`, equal to your admitted tier; never a model name), `started` and `finished` (RFC3339 UTC,
-`started <= finished <= ts`), plus the existing `rows_passed` / `rows_total`. Optionally add
-`row_results` (`{row, result}` for ALL rows; `pass` / `fail` / `could-not-run` / `deferred`) and
-`dispatch_ref` (`<claim_key>@<YYYYMMDDTHHMMSSZ>.<12 hex>`, copied from your dispatch; it stays
+`started <= finished <= ts`), plus the existing `rows_passed` / `rows_total`.
+When rows is non-empty, row_results is required for ALL original Verify IDs and their observed results.
+This includes non-contiguous numeric and suffixed inventories. Each exact result is
+`{row, result}` (`pass` / `fail` / `could-not-run` / `deferred`); when `rows` is empty
+or omitted, `row_results` remains optional.
+`rows` names only exact identities still held by the receipt, never every covered row;
+coverage belongs in `row_results` / `rows_total`. A `verified` record omits `rows`.
+For draft payloads using covered rows, follow the producer migration in
+[the outcome-row producer migration](https://github.com/medici-finance/assay/blob/main/docs/verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows): preserve the original payload and
+witnesses, derive held identities only from that run's real results, and retain
+incomplete evidence unlanded if it cannot establish them. Never rewrite historical
+Evidence or guess PASS identities from counts. All native landing controls still apply.
+Optionally add `dispatch_ref` (`<claim_key>@<YYYYMMDDTHHMMSSZ>.<12 hex>`, copied from your dispatch; it stays
 self-reported). The writer reads each `prs` entry back from the forge (exists, merged, merge commit,
 reachable as `verify-wake-v1.md` specifies: a same-repo GitHub change in the record's `sha` history, a
 change in another repository in that repository's default branch, a GitLab change merged into its
@@ -1128,7 +1138,7 @@ opaque identities only through the launcher's retained mapping; a lost mapping
 is a continuity gap. Work, assigned execution role and optional parent links are
 descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
 If your operational loop differs from the originating desk attribution, use the
-explicit --perf-desk-role flag on supported tool calls; never change operational
+explicit --perf-loop-role flag on supported tool calls; never change operational
 identity for measurement. Keep local workflow references and handoffs private.
 See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
 and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
@@ -1137,4 +1147,4 @@ unsupported boundary stays unknown.
 Apply validated handoff entries to each tool call with per-command `env KEY=value
 ... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
 never evaluate the handoff as shell code or export it into a persistent shell.
-Use `--perf-desk-role` for descriptive desk attribution; never alter `DESK_LOOP`.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

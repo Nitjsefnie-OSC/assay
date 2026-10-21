@@ -744,7 +744,7 @@ func flipProvenance(path, evidence string, marks []int, runStart int) error {
 	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 	ev := strings.Split(evidence, "\n")
-	start, _, ok := evidenceLineRange(content)
+	start, end, ok := evidenceLineRange(content)
 	if !ok || start-1+len(ev) > len(lines) || strings.Join(lines[start-1:start-1+len(ev)], "\n") != evidence {
 		return fmt.Errorf("provenance: the Evidence section of %s cannot be mapped to file lines", base)
 	}
@@ -790,7 +790,7 @@ func flipProvenance(path, evidence string, marks []int, runStart int) error {
 	if runStart < 0 || runStart >= len(spans) {
 		return fmt.Errorf("provenance: the PASS run starts outside the Evidence of %s", base)
 	}
-	first, last := start+spans[runStart][0], start+len(ev)-1
+	first, last := start+spans[runStart][0], end
 	out, err = historyGit(dir, "blame", "--line-porcelain",
 		"-L", fmt.Sprintf("%d,%d", first, last), "--", base).Output()
 	if err != nil {

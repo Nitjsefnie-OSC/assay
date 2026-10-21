@@ -15,13 +15,69 @@ import (
 	"time"
 )
 
+// The final path is the parent's readiness signal. Keep it absent until the
+// complete PID is written; this fixture has one writer in a fresh temp directory.
+// The writer parameter exposes the create-before-write boundary to the test.
+func publishLegacyPID(path string, pid int, writeFile func(string, []byte, os.FileMode) error) error {
+	staged := path + ".tmp"
+	defer os.Remove(staged)
+	if err := writeFile(staged, []byte(strconv.Itoa(pid)), 0600); err != nil {
+		return err
+	}
+	return os.Rename(staged, path)
+}
+
+// regression: #3736
+func TestLegacyPIDPublication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "child-pid")
+	const pid = 4242
+	var staged string
+	err := publishLegacyPID(path, pid, func(name string, data []byte, mode os.FileMode) error {
+		staged = name
+		if filepath.Dir(name) != filepath.Dir(path) || mode != 0600 {
+			t.Fatalf("PID staging must use a same-directory file with mode 0600: %s %o", name, mode)
+		}
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		// Observe the exact boundary at which the old direct write exposed an
+		// empty file, without a scheduler race or a retry in the parent reader.
+		if data, err := os.ReadFile(path); !os.IsNotExist(err) {
+			t.Fatalf("PID visible before payload write: %q (error: %v)", data, err)
+		}
+		if _, err := f.Write(data); err != nil {
+			return err
+		}
+		return f.Close()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != strconv.Itoa(pid) {
+		t.Fatalf("published PID = %q, error = %v", data, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("published PID mode = %o, want 0600", info.Mode().Perm())
+	}
+	if _, err := os.Stat(staged); !os.IsNotExist(err) {
+		t.Fatalf("PID staging file remains: %v", err)
+	}
+}
+
 // The old timeout/foreign-marker fixtures never killed an actual coordinator
 // while its launched child remained alive after the OS locks were released.
 // regression: #2513
 func TestLegacyCrashHelper(t *testing.T) {
 	mode := os.Getenv("ASSAY_LEGACY_CRASH_MODE")
 	if len(os.Args) > 1 && os.Args[len(os.Args)-1] == "legacy-child" {
-		if err := os.WriteFile(os.Getenv("ASSAY_LEGACY_CHILD_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		if err := publishLegacyPID(os.Getenv("ASSAY_LEGACY_CHILD_PID"), os.Getpid(), os.WriteFile); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(20 * time.Second)

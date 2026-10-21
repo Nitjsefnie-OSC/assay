@@ -77,17 +77,11 @@ below is what enforces it.
 ## Context
 
 files:
-- `schemas/desksupervise-status-v1.json` — promote the per-claim `tokens` stub into a
-  `resource` object and fill it.
-- `tools/desk/internal/deskkit/vitals.go` (new) — `ResourceVitals` type + a
-  field-preserving merge writer onto `<StateDir>/roster/<session>.json`, mirroring
-  `ackbeacon.go`'s `AppendAck` exactly (load raw keys, touch only `resource`+`session`,
-  round-trip every other key untouched).
+- `schemas/desksupervise-status-v1.json` — promote the per-claim `tokens` stub into a `resource` object and fill it.
+- `tools/desk/internal/deskkit/vitals.go` (new) — `ResourceVitals` type + a field-preserving merge writer onto `<StateDir>/roster/<session>.json`, mirroring `ackbeacon.go`'s `AppendAck` exactly (load raw keys, touch only `resource`+`session`, round-trip every other key untouched).
 - `tools/desk/internal/deskkit/vitals_test.go` (new).
-- `tools/desk/cmd/deskroster/sets.go` — `set` gains optional vitals flags (the per-tick emit
-  path the desk session already calls).
-- `tools/desk/cmd/desksupervise/status.go` — the renderer joins each claim's holder session to
-  that session's beacon `resource` and emits it (table + JSON).
+- `tools/desk/cmd/deskroster/sets.go` — `set` gains optional vitals flags (the per-tick emit path the desk session already calls).
+- `tools/desk/cmd/desksupervise/status.go` — the renderer joins each claim's holder session to that session's beacon `resource` and emits it (table + JSON).
 - `tools/desk/cmd/desksupervise/testdata/` — a beacon fixture carrying a `resource` block.
 - `tools/desk/README.md` — note the new `deskroster set` vitals flags.
 

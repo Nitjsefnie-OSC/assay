@@ -54,17 +54,11 @@ version: 1
 ## Context
 
 files:
-- `tools/desk/internal/deskkit/provenance.go` (new) — one function per signal, each returning
-  a measured value or a could-not-check, plus `Card(signals) string` rendering the neutral
-  comment. Pure over injected readers; no network in the package under test.
+- `tools/desk/internal/deskkit/provenance.go` (new) — one function per signal, each returning a measured value or a could-not-check, plus `Card(signals) string` rendering the neutral comment. Pure over injected readers; no network in the package under test.
 - `tools/desk/internal/deskkit/provenance_test.go` (new).
-- `tools/desk/cmd/deskprovenance/main.go` (new) — the verb: gather, render, post as a comment,
-  replacing its own previous card rather than appending. `--dry-run` prints and posts nothing.
-- `tools/desk/cmd/deskprovenance/testdata/` — fixtures: a plainly-ordinary author, an author
-  matching every bulk-sweep signal, an author with several signals unreadable, an author whose
-  diff touches continuous-integration and lockfile paths.
-- `docs/contributor-provenance.md` (planned) (new) — what the card measures, the benign explanation
-  carried alongside each signal, and the signals deliberately excluded and why.
+- `tools/desk/cmd/deskprovenance/main.go` (new) — the verb: gather, render, post as a comment, replacing its own previous card rather than appending. `--dry-run` prints and posts nothing.
+- `tools/desk/cmd/deskprovenance/testdata/` — fixtures: a plainly-ordinary author, an author matching every bulk-sweep signal, an author with several signals unreadable, an author whose diff touches continuous-integration and lockfile paths.
+- `docs/contributor-provenance.md` (planned) (new) — what the card measures, the benign explanation carried alongside each signal, and the signals deliberately excluded and why.
 - `changelog/contributor-provenance-card.md` (new).
 
 single-point-of-failure: the card's wording is the only thing standing between a set of weak

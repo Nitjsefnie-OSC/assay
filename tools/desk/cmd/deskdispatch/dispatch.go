@@ -1209,6 +1209,29 @@ func stepClaim(o dispatchOpts, repo, script string, isScript bool, auth claimAut
 	case deskkit.ExitRefused:
 		show := runCmdEnv(o.root, auth.env, script, append([]string{"show", claimKey, "--repo", repo}, auth.args...)...)
 		holder := firstLine(show.stdout)
+		// ALIAS-HELD: the key itself reads FREE but another spelling of the same PR is live
+		// (medici-finance/assay#3700). That is a live holder by definition, so it is named as
+		// one and never run through the staleness read below, which would take state/age from
+		// the alias line of a claim the tool already judged live.
+		// Only when the key itself reads FREE: when it is HELD too, its own holder is the one to name
+		// (and to run through the staleness read below), not the alias's.
+		if alias := aliasHolderLine(show.stdout); show.err == nil && alias != "" &&
+			strings.Contains(show.stdout, "FREE "+claimKey) {
+			return deskkit.Refused(fmt.Sprintf(
+				"step %s: %s is already claimed by a LIVE holder under another spelling of the same PR — "+
+					"do not proceed. Existing claim: %s. This verb never steals: breaking a live claim is a "+
+					"deliberate, auditable act with a stated reason, and it belongs to a human or to the claim "+
+					"tool's own steal verb.", stepClaimAcquire, claimKey, alias))
+		}
+		// `show` exits unverifiable when it could not read the claim set or one alias leg: a collision
+		// with another spelling cannot be ruled out, so this is not a claim-acquire error to "fix".
+		if show.err != nil && exitCodeOf(show.err) == deskkit.ExitUnverifiable {
+			return deskkit.Refused(fmt.Sprintf(
+				"step %s: the claim tool refused to acquire %s (%s) and its `show` could not read the claim set or "+
+					"another spelling of the same PR (%s). A collision cannot be ruled out — unverifiable, NOT a "+
+					"key error. Re-run once the forge read recovers.",
+				stepClaimAcquire, claimKey, r.run.Said(), firstLine(show.stderr+show.stdout)))
+		}
 		// A holder was READ: the show verb succeeded, said something, and did not say the
 		// key is FREE. Only this is a collision — but a collision is not the same as a LIVE
 		// holder. The two-phase claim TTL (dispatch-claim.sh: state=claimed→20m,
@@ -2312,4 +2335,15 @@ func audit(o dispatchOpts, err error) {
 	}); lerr != nil {
 		fmt.Fprintf(os.Stderr, "deskdispatch: WARNING: could not write audit line: %v\n", lerr)
 	}
+}
+
+// aliasHolderLine returns the first `ALIAS-HELD <id> — …` line of the claim tool's `show` output,
+// or "" when it printed none.
+func aliasHolderLine(showOut string) string {
+	for _, line := range strings.Split(showOut, "\n") {
+		if strings.Contains(line, "ALIAS-HELD ") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
 }

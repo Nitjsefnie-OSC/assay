@@ -4,7 +4,7 @@ title: "Measure own forge request timing and GraphQL cost"
 why: "HTTP counts alone cannot explain forge latency or quota consumption. Existing transport and provider response seams must expose actual attempts, durations and attributable GraphQL cost without issuing monitoring requests or mistaking shared quota deltas for per-request charges."
 wave: 3
 depends: ["desktools-v2/63"]
-unblocks: ["desktools-v2/62", "performance-collection/02"]
+unblocks: ["desktools-v2/62", "performance-collection/02", "desktools-v2/68"]
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}

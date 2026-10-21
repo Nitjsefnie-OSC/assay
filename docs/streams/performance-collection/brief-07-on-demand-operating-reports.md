@@ -77,7 +77,9 @@ Options:
 1. Accept the demonstrated scope, source coverage and access/effect boundaries; select the concrete operating profile before activation.
 2. Hold the unsupported boundary and continue offline fixture work only.
 
-Default if no answer: none — acceptance/activation remains held; offline implementation can proceed.
+Default if no answer: none — blocks until answered.
+
+Acceptance/activation remains held; offline implementation can proceed.
 
 ## Ground rules
 
@@ -105,7 +107,7 @@ unknowns. Reconstruct complete dispatcher-plus-agent cohorts using source-qualif
 never sum parent aggregates with children or compare pooled builds/workloads as controlled wins.
 Keep baseline/subject and tool-only/supervision-only/combined changes separate when #3325 is
 adopted; tokens are not a substitute for CPU or forge points. Allow local qualification exports
-consumed by desk-tools/44 without DB/API/upload; the parked stream is optional to early
+consumed by desk-tools/44 without DB/API/upload; performance collection remains optional to early
 qualification. Pending #3305 owns reusable scorecard/experiment policy if landed, not this report
 renderer.
 
@@ -126,7 +128,7 @@ separate from sample version; upgrading to v1.0.49 cannot relabel #3353's v1.0.4
 
 Use saved local observations with DB/API absent. Missing phase/correlation data is could-not-check,
 never proof of faster startup. This reports the existing launch owner's result; it introduces
-neither a latency SLO nor another runtime owner and does not activate this parked stream.
+neither a latency SLO nor another runtime owner and does not change this stream's admission state.
 
 ## Verify
 

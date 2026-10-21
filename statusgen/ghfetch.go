@@ -240,6 +240,7 @@ func (c *ghClient) get(url string) ([]byte, int, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	perfCountHTTP()
 	resp, err := c.doer.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("HTTP transport error: %v", err)

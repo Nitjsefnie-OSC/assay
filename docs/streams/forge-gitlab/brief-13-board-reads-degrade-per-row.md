@@ -78,15 +78,8 @@ radius** of a change-level refusal, and the fix is the contract the read sitting
 already documents for itself.
 
 files:
-- `tools/desk/cmd/deskboard/board.go` — the classifier. Each change-level read gains the
-  per-row degrade; each repo-level read keeps the sweep-fatal return and carries a one-line
-  comment saying which kind it is, so the next reader does not have to re-derive the
-  distinction. The benign-merge arm is already repaired by PR #1068 — do NOT re-land it; treat
-  its guard, its safe-side degrade and its which-endpoint diagnostic as the reference shape the
-  other four sites are brought up to.
-- `tools/desk/cmd/deskboard/*_test.go` — the regression test: a sweep over several open changes
-  where exactly one carries an unreadable change-level field still exits 0, still renders every
-  other row, and renders the affected row on the SAFE side.
+- `tools/desk/cmd/deskboard/board.go` — the classifier. Each change-level read gains the per-row degrade; each repo-level read keeps the sweep-fatal return and carries a one-line comment saying which kind it is, so the next reader does not have to re-derive the distinction. The benign-merge arm is already repaired by PR #1068 — do NOT re-land it; treat its guard, its safe-side degrade and its which-endpoint diagnostic as the reference shape the other four sites are brought up to.
+- `tools/desk/cmd/deskboard/*_test.go` — the regression test: a sweep over several open changes where exactly one carries an unreadable change-level field still exits 0, still renders every other row, and renders the affected row on the SAFE side.
 - `docs/streams/forge-gitlab/README.md` — the status row.
 - `changelog/forge-gitlab-13-board-reads-degrade-per-row.md` (planned).
 

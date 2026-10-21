@@ -1,6 +1,6 @@
 # Assay’s future architecture
 
-**Status: future architecture we are moving towards. Updated 16 October 2026.** This is the whole-system direction for Assay, including portfolio-directed improvement and drift assessment. It describes the destination, not the currently deployed system. Detailed contract/schema amendments, implementation and activation retain their own review and qualification requirements; this designation does not approve every mechanism or grant deployment authority. The [implementation boundary](#implemented-foundations-and-work-still-to-build) below separates inspected foundations from work still to build.
+**Status: future architecture we are moving towards. Updated 21 October 2026; includes the requested extensible JSON amendment.** This is the whole-system direction for Assay, including portfolio-directed improvement and drift assessment. It describes the destination, not the currently deployed system. Detailed contract/schema amendments, implementation and activation retain their own review and qualification requirements; this designation does not approve every mechanism or grant deployment authority. The [implementation boundary](#implemented-foundations-and-work-still-to-build) below separates inspected foundations from work still to build.
 
 The target starts with one host containing multiple isolated cells, permits command breaks where they simplify the design, reconciles affected unfinished plans together, and includes the service and cockpit in public Assay. PostgreSQL coordinates runtime work; recovery should reconstruct useful state while permitting classified transient loss and safe repeated work. See [storage and recovery](14-storage-forge-graph.md).
 
@@ -533,3 +533,18 @@ Target-consumer clarification, 19 October 2026: graph-execution/22 directly cons
 parser port is withdrawn (medici-finance/assay#3409 merged, ruled at
 medici-finance/assay#3420), so /66 has no parser-port edge: writeguard keeps its current
 parser, routed exempt, and /66 owns the hook adapter. The guard controls are not retired.
+
+## Extensible JSON contracts — requested amendment, 21 October 2026
+
+The future architecture uses a stable versioned core and independently versioned
+extensions for durable records, component APIs and machine-readable outputs. Optional
+observations can evolve without replacing an entire record; unsupported required
+capabilities, authority semantics and acceptance requirements still refuse. Strict
+producer validation, privacy bounds and immutable historical evidence remain mandatory.
+
+The [contract census and transition policy](29-extensible-json-contracts.md) names
+existing owners and affected JSON families, including precedents already supporting
+additive fields or optional extensions. Perf-v4 is the first concrete migration:
+retain v1/v2/v3 readers, qualify the new reader before selecting producers, and direct
+future performance upgrades to v4. This supersedes v3 as the *future format target*
+in the earlier performance amendment, not its completed implementation or evidence.
