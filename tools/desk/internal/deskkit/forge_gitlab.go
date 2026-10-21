@@ -803,6 +803,15 @@ func (g *GitLabForge) OpenChangeForBranch(repo ForgeRepo, branch string) (*PullR
 // by the endpoint's own shape, without a filter. The dedupe scores title similarity locally, so
 // the search is a coarse pre-filter; the state/labels/URL are carried for the candidate report.
 func (g *GitLabForge) SearchIssues(repo ForgeRepo, in SearchIssuesInput) ([]IssueSearchResult, error) {
+	if in.DecisionGateMarkers {
+		if err := validateDecisionSearch(in); err != nil {
+			return nil, err
+		}
+		return g.searchDecisionMarkers(repo, in.DecisionGateBrief)
+	}
+	if in.DecisionGateBrief != "" {
+		return nil, Refused("decision-marker brief requires marker discovery mode")
+	}
 	cl, err := g.client()
 	if err != nil {
 		return nil, err
