@@ -54,17 +54,11 @@ version: 1
 ## Context
 
 files:
-- `tools/desk/internal/deskkit/provenance.go` (new) — one function per signal, each returning
-  a measured value or a could-not-check, plus `Card(signals) string` rendering the neutral
-  comment. Pure over injected readers; no network in the package under test.
+- `tools/desk/internal/deskkit/provenance.go` (new) — one function per signal, each returning a measured value or a could-not-check, plus `Card(signals) string` rendering the neutral comment. Pure over injected readers; no network in the package under test.
 - `tools/desk/internal/deskkit/provenance_test.go` (new).
-- `tools/desk/cmd/deskprovenance/main.go` (new) — the verb: gather, render, post as a comment,
-  replacing its own previous card rather than appending. `--dry-run` prints and posts nothing.
-- `tools/desk/cmd/deskprovenance/testdata/` — fixtures: a plainly-ordinary author, an author
-  matching every bulk-sweep signal, an author with several signals unreadable, an author whose
-  diff touches continuous-integration and lockfile paths.
-- `docs/contributor-provenance.md` (planned) (new) — what the card measures, the benign explanation
-  carried alongside each signal, and the signals deliberately excluded and why.
+- `tools/desk/cmd/deskprovenance/main.go` (new) — the verb: gather, render, post as a comment, replacing its own previous card rather than appending. `--dry-run` prints and posts nothing.
+- `tools/desk/cmd/deskprovenance/testdata/` — fixtures: a plainly-ordinary author, an author matching every bulk-sweep signal, an author with several signals unreadable, an author whose diff touches continuous-integration and lockfile paths.
+- `docs/contributor-provenance.md` (planned) (new) — what the card measures, the benign explanation carried alongside each signal, and the signals deliberately excluded and why.
 - `changelog/contributor-provenance-card.md` (new).
 
 single-point-of-failure: the card's wording is the only thing standing between a set of weak
@@ -176,7 +170,7 @@ until this is decided.
 | 7 | `cd tools/desk && ./deskprovenance --dry-run --fixture cmd/deskprovenance/testdata/bulk-sweep-author.json` | exit 1; output contains `not a judgement of the change` (the abstention is present on the flagged path, which is the path where it matters) | check |
 | 8 | `git -C . grep -n -e follower -e employer -e geograph -- tools/desk/internal/deskkit/provenance.go` | exit 1; no matching line (the excluded categories appear nowhere in the gatherer) | check |
 | 9 | `grep -n 'deliberately' docs/contributor-provenance.md` | exit 0; at least one matching line naming the excluded signals | check |
-| 10 | `o=$(statusgen --root . --consumers --brief contributor-trust/01 --delivery 01da8dfd6625f2fd70f1a70cf929170a2ef7c8a7 --base 4bf9c299243b41a9300ce058723d1e4b9083c77e); s=$?; printf '%s\n' "$o"; test "$s" -eq 0 && case "$o" in *'summary: 3 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing'*) ;; *) exit 1;; esac` | exit 0; exact `summary: 3 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing`. Claims are read from the immutable delivered snapshot and compared only with its first-parent diff. The 1 UNCHECKED entries remain individual review obligations; this row does not discharge their truth. | check |
+| 10 | `statusgen --root . --consumers --brief assay:assay:contributor-trust:01` | exit 0; output does not contain `DISPROVED`; output does not contain `COULD-NOT-CHECK`; output contains `corroborated` (the fully-qualified key is required — the short `<stream>/<NN>` form answers `no brief-v1 file` and exits 2, so it can never corroborate anything) | check |
 
 Pre-mortem to detection map. "A signal fails to read and the card says everything is fine" is
 caught by row 4, which requires both the third exit state and the visible token. "The card

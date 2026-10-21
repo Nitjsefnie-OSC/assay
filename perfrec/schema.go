@@ -2,9 +2,9 @@ package perfrec
 
 // schema.go — the perf-v2 vocabulary and the JSON codec that keeps the two schemas apart.
 //
-// A day file may hold perf-v1 lines (older binaries, statusgen, boot and launch steps) and
-// perf-v2 lines (Session) side by side. The codec is the one place that decides which fields a
-// line of each schema carries:
+// A day file may hold perf-v1 lines (older binaries, including older statusgen builds, and boot
+// and launch steps) and perf-v2 lines (Session, which statusgen now writes too) side by side.
+// The codec is the one place that decides which fields a line of each schema carries:
 //
 //   - Marshal writes EXACTLY the named schema's field set and refuses a record that carries
 //     another schema's fields — a v1 record with a v2 field, or a v2 record with a legacy
@@ -162,14 +162,35 @@ func (r Record) hasLegacyCounters() bool {
 // fields, an unknown schema, or an invalid perf-v2 coverage is refused, never written.
 func (r Record) MarshalJSON() ([]byte, error) {
 	switch r.Schema {
+	case SchemaV3:
+		if err := validV3(r); err != nil {
+			return nil, err
+		}
+		old := r
+		old.Schema = SchemaV2
+		old.V3 = nil
+		b, err := old.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var fields map[string]json.RawMessage
+		if err = json.Unmarshal(b, &fields); err != nil {
+			return nil, err
+		}
+		fields["schema"], _ = json.Marshal(SchemaV3)
+		fields["v3"], err = json.Marshal(r.V3)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(fields)
 	case Schema:
-		if r.hasV2Fields() {
+		if r.hasV2Fields() || r.V3 != nil {
 			return nil, ErrSchemaReuse
 		}
 		return json.Marshal(legacyRecord{r.Schema, r.TS, r.Tool, r.Verb, r.Role, r.WallMs, r.CPUMs, r.Exit,
 			r.Result, r.ChildProcs, r.ChildWallMs, r.ForgeCalls, r.SourceSHA, r.Install})
 	case SchemaV2:
-		if r.hasLegacyCounters() {
+		if r.hasLegacyCounters() || r.V3 != nil {
 			return nil, ErrSchemaReuse
 		}
 		w := v2Record{r.Schema, r.TS, r.Tool, r.Verb, r.Role, r.Boundary, r.WallMs, r.CPU, r.CPUMs, r.Exit,
@@ -205,6 +226,32 @@ func (r *Record) UnmarshalJSON(b []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	switch head.Schema {
+	case SchemaV3:
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(b, &fields); err != nil {
+			return err
+		}
+		var v V3Data
+		if !strictJSON(fields["v3"], &v) {
+			return ErrSchemaReuse
+		}
+		delete(fields, "v3")
+		fields["schema"], _ = json.Marshal(SchemaV2)
+		old, err := json.Marshal(fields)
+		if err != nil {
+			return err
+		}
+		var base Record
+		if err = json.Unmarshal(old, &base); err != nil {
+			return err
+		}
+		base.Schema = SchemaV3
+		base.V3 = &v
+		if err = validV3(base); err != nil {
+			return err
+		}
+		*r = base
+		return nil
 	case Schema:
 		var l legacyRecord
 		if err := dec.Decode(&l); err != nil {

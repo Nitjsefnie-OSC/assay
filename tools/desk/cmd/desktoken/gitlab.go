@@ -258,7 +258,7 @@ type gitlabRotateResult struct {
 // deliberately out of scope (see the brief).
 //
 // The current token is never placed in an error string — an error must be safe to print.
-func rotateGitLabToken(base, current string) (*gitlabRotateResult, error) {
+func rotateGitLabToken(base, current string, clients ...*http.Client) (*gitlabRotateResult, error) {
 	url := strings.TrimRight(base, "/") + "/personal_access_tokens/self/rotate"
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -267,7 +267,7 @@ func rotateGitLabToken(base, current string) (*gitlabRotateResult, error) {
 	req.Header.Set("PRIVATE-TOKEN", current)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := authHTTP(clients).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("POST rotate: %w", err)
 	}
@@ -307,7 +307,7 @@ const gitlabSelfCheckPath = "/user"
 // an error (the check could not be made — not a rejection, not an acceptance).
 //
 // The token is never placed in an error string — an error from this function is printed.
-func gitlabSelfCheck(base, token string) (int, error) {
+func gitlabSelfCheck(base, token string, clients ...*http.Client) (int, error) {
 	url := strings.TrimRight(base, "/") + gitlabSelfCheckPath
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -316,7 +316,7 @@ func gitlabSelfCheck(base, token string) (int, error) {
 	req.Header.Set("PRIVATE-TOKEN", token)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := authHTTP(clients).Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("GET %s: %w", gitlabSelfCheckPath, err)
 	}
@@ -334,9 +334,9 @@ func gitlabSelfCheck(base, token string) (int, error) {
 // worse than one that holds the successor the forge has not yet caught up with.
 //
 // Neither token value reaches the message.
-func gitlabSelfCheckFailure(role, base, path, previous string, newStatus int) error {
+func gitlabSelfCheckFailure(role, base, path, previous string, newStatus int, clients ...*http.Client) error {
 	prev := ""
-	prevStatus, perr := gitlabSelfCheck(base, previous)
+	prevStatus, perr := gitlabSelfCheck(base, previous, clients...)
 	switch {
 	case perr != nil:
 		prev = "could not be checked (" + perr.Error() + ")"
@@ -514,7 +514,7 @@ func readGitLabCustody(path string) (string, error) {
 // Refusal behaviors mirror the GitHub key path: a missing custody file, a non-regular-file
 // custody, and a wrong file mode each refuse (exit 6) with a named remedy, and no token-shaped
 // value ever reaches stdout, stderr, env, or argv.
-func cmdGitLabRotate(role string, ac *auditCtx, rotate bool) error {
+func cmdGitLabRotate(role string, ac *auditCtx, rotate bool, clients ...*http.Client) error {
 	// The audit verb records what was actually DONE. A no-rotate lookup logged as "rotate"
 	// would put rotations in the trail that never happened, which is exactly the kind of
 	// audit line an incident reconstruction cannot trust.
@@ -625,7 +625,7 @@ func cmdGitLabRotate(role string, ac *auditCtx, rotate bool) error {
 	// Rotate. The endpoint invalidates `current` atomically and returns the new token; from
 	// here until write-verify succeeds, the old token is dead and the new one lives only in
 	// memory, so the new value MUST be persisted before returning.
-	result, xerr := rotateGitLabToken(base, current)
+	result, xerr := rotateGitLabToken(base, current, clients...)
 	if xerr != nil {
 		return deskkit.Unverifiable("rotate gitlab token for role "+role, xerr)
 	}
@@ -644,7 +644,7 @@ func cmdGitLabRotate(role string, ac *auditCtx, rotate bool) error {
 	// is handed to a caller that will present it on its very next request. One read-only GET,
 	// no retry, no sleep (file header, SELF-CHECK). A status other than 200 — or no status at
 	// all — never returns the path as good.
-	status, serr := gitlabSelfCheck(base, result.Token)
+	status, serr := gitlabSelfCheck(base, result.Token, clients...)
 	if serr != nil {
 		return deskkit.Unverifiable(fmt.Sprintf(
 			"post-rotation self-check for role %s could not be completed: the rotated token is persisted "+
@@ -652,7 +652,7 @@ func cmdGitLabRotate(role string, ac *auditCtx, rotate bool) error {
 				"Re-run the mint once the forge is reachable.", role, path), serr)
 	}
 	if status != 200 {
-		return gitlabSelfCheckFailure(role, base, path, current, status)
+		return gitlabSelfCheckFailure(role, base, path, current, status, clients...)
 	}
 
 	// Success: print the PATH only.

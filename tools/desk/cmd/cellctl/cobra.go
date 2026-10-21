@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -119,7 +120,9 @@ func rawVerb(args []string) bool {
 
 // runTree executes one invocation against a fresh tree and returns its exit code. It is the
 // only place that turns the exit panic into a code.
-func runTree(args []string) (code int) {
+func runTree(args []string) int { return runTreeSelected(args, nil) }
+
+func runTreeSelected(args []string, sink func(perfrec.Context)) (code int) {
 	maintenanceCommand = ""
 	defer releaseMaintenanceAdmissions()
 	rawSelector, rawSelected, verbWords, cellsRootSelected = "", false, nil, ""
@@ -187,6 +190,7 @@ func runTree(args []string) (code int) {
 		args = args[2:]
 	}
 	return cli.Run(buildRoot, args, cli.Options{
+		Performance:     sink,
 		IO:              cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr},
 		Version:         versionLine(),
 		VersionTemplate: "{{.Version}}\n",
@@ -684,6 +688,8 @@ func deskCmd() *cobra.Command {
 		v := resolve(set, c)
 		launchNeeds(v)
 		in := deskInputsFrom(v, lastBare(args[2:]))
+		// Reuse the parser-selected invocation recorded by this cellctl process.
+		in.Performance, _ = cli.PerformanceContext(cmd)
 		in.EndStaleLockHolder = v.Bool("end-stale-lock-holder") // declared on `desk` only, never `up`
 		cmdDesk(c, args[1], in)
 		return nil

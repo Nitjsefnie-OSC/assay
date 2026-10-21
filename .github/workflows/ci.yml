@@ -60,6 +60,9 @@ jobs:
           tar -C "${HOME}/go-toolchain" -xzf "${RUNNER_TEMP}/go.tar.gz"
           echo "${HOME}/go-toolchain/go/bin" >> "${GITHUB_PATH}"
 
+      - name: Test release image contract
+        run: python3 -B -m unittest discover -s tools/release -p images_test.py -v
+
       # Run before the all-module sweep: statusgen alone does not depend on the
       # desk child compiled by its offline bridge test. Match the release gate.
       - name: Test and vet statusgen
@@ -110,6 +113,7 @@ jobs:
               # must execute on PRs; build/vet and rendering existing artifacts
               # do not reach the trace append path (review F-m2-ci).
               */qualgen|qualgen) extra="GOWORK=off go test -count=1 -timeout=60s -run '^(TestM2.*|TestCLILegacyForms)$' ." ;;
+              */deskcore|deskcore) extra="GOWORK=off go test -count=1 ./..." ;;
               */tools/desk|tools/desk) extra="go test ./..." ;;
               */tools/harnessgen|tools/harnessgen) extra="go test ./..." ;;
               */tools/harnesslint|tools/harnesslint) extra="go test ./..." ;;
@@ -118,6 +122,9 @@ jobs:
               # deps/audit-ledger guards over the CPU reader files are hermetic and
               # were latent under build+vet alone.
               */perfrec|perfrec) extra="go test ./..." ;;
+              # Runner lifecycle/authority and the exact local perfrec dependency
+              # closure must execute, not only compile, on every source change.
+              */loopadmin|loopadmin) extra="GOWORK=off go test ./..." ;;
             esac
             if ( cd "$dir" && go build ./... && go vet ./... && eval "$extra" ); then
               echo "${dir}: OK"

@@ -11,19 +11,24 @@ the install id each exist once.
   network or process-launch package (`deps_test.go`), and an external consumer's
   closure carries no network, process-launch, credential or desk package
   (`consumer_test.go`).
-- **No free text.** Every string field is a constant, a roster member the
+- **No free text.** v1/v2 and the v3 tool profile exclude workflow locators. The v3 workflow profile permits bounded typed local work references and opaque logical identities. Other string fields are constants, roster members the
   caller compiled in, a hex build stamp, or random hex; perf-v2 labels also pass
   `Label`.
 - **Never load-bearing.** A failed write is swallowed; it cannot change a
   caller's exit code.
 
-## Two schemas
+## Versioned schemas
 
 - `perf-v1` (`Schema`, built by `New`) is the legacy record, frozen: its fields
-  and meanings never change. Boot and launch steps and `statusgen` still write it.
+  and meanings never change. Boot and launch steps still write it; `statusgen`
+  writes `perf-v2`.
+- `perf-v3` (`SchemaV3`, explicit selected profile) adds bounded local attribution and request observations. See [the frozen contract and API](V3.md).
 - `perf-v2` (`SchemaV2`, built by a `Session`) measures wall and CPU over one
   declared boundary and records counters with explicit coverage. The desk
-  tools' `PerfRun` writes it.
+  tools' `PerfRun` writes it. Phases are written in the tool's roster order,
+  not the order the run entered them, and cover only the time a phase was
+  open: time before the first phase and after the last is inside `wallMs` but
+  in no phase, so the phase `ms` never sum to it.
 
 `Record` marshals and unmarshals strictly per the schema its `schema` field
 names: a perf-v1 record carrying a perf-v2 field (or the reverse) is refused,
