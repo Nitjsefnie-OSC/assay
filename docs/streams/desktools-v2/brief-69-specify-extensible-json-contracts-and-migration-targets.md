@@ -72,6 +72,26 @@ not accept section presence as architectural conformance.
 
 <!-- Independent postmerge verifier records actual commands, source and outcomes here. -->
 
+Verified against medici-finance/assay origin/main 917772b3ee4709bc47e5d0888cb5cc698444b13e, which contains delivery merge 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (PR 3830). Totals: 6 of 6 required rows run, 6 pass, 0 fail, 0 could-not-run.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---|---|---|---|---|
+| 1 | `git diff --check` | exit 0 | exit 0; no whitespace errors reported | 2026-10-21 | assay-verifier-app[bot] @ 917772b3ee4709bc47e5d0888cb5cc698444b13e (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `statusgen --root . --lint` | exit 0; no new lint failures | exit 0; LINT: PASS (statusgen v1.0.54); no PROBLEM line names desktools-v2/67, /68 or /69 | 2026-10-21 | assay-verifier-app[bot] @ 917772b3ee4709bc47e5d0888cb5cc698444b13e (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:loopadmin/runner/request.go` | exit 0; DecodeRequest separates strict core from ext, and CheckCapabilities refuses unsupported require entries | exit 0; 475 lines; LaunchRequest carries Extensions under json ext; DecodeRequest runs scanStrict, checkKeys and DisallowUnknownFields and its comment says optional additions travel under ext; CheckCapabilities returns ErrUnsupportedMandatory for an undeclared ext: entry, an undefined capability and an undeclared capability | 2026-10-21 | assay-verifier-app[bot] @ 917772b3ee4709bc47e5d0888cb5cc698444b13e (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:tools/desk/cmd/opmetrics/emit.go` | exit 0; SchemaVersion comment explicitly permits additive fields | exit 0; 259 lines; comment above SchemaVersion = opmetrics/2 reads: Bump on any field REMOVAL or meaning change; additive fields do not require a bump | 2026-10-21 | assay-verifier-app[bot] @ 917772b3ee4709bc47e5d0888cb5cc698444b13e (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:perfrec/v3.go` | exit 0; V3Data matches all mapped payload members incl. requestDrops and nullable query, no queryCoverage; validV3 tool role none and workflow role equality; query only for client/handler | exit 0; 459 lines; V3Data has 7 members (profile, attribution, observationKind, requests, requestDrops, requestCoverage, query as pointer with omitempty), each mapped by the perf-v4 roster in the attribution spec (core profile/observationKind; requests extension carries requests, requestDrops, requestCoverage; query extension carries query); zero matches for queryCoverage; validV3 rejects tool profile with role other than none and workflow profile whose role differs from the attribution role (none allowed for empty); validQuery returns false for a non-nil query unless kind is client or handler | 2026-10-21 | assay-verifier-app[bot] @ 917772b3ee4709bc47e5d0888cb5cc698444b13e (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 6 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:tools/desk/internal/deskkit/perfread.go` | exit 0; FilterPerf explicitly excludes v3 from the legacy desk-role filter | exit 0; 527 lines; FilterPerf comment says a legacy role filter excludes v3, which needs the workflow-aware ReduceV3 filter; code drops a record when role is set and Schema equals perfrec.SchemaV3 | 2026-10-21 | assay-verifier-app[bot] @ 917772b3ee4709bc47e5d0888cb5cc698444b13e (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Verification-Attestation: medici-finance/assay#3847 run=e75a5c355045adecc0cdda6a3d3c55032510297b376a95a15cb4654f4835c673 source=917772b3ee4709bc47e5d0888cb5cc698444b13e brief=docs/streams/desktools-v2/brief-69-specify-extensible-json-contracts-and-migration-targets.md model=claude-opus-5-5 tier=strong
+
+Risk-bearing values: the frontmatter carries risk metadata with every answer no, and the delivery is docs/spec only (no codec, config or authority change), so the fail-safe trigger does not fire. These literals were enumerated from the delivery diff anyway. All are proposed design bounds for desktools-v2/67, reversible by a docs edit, so they rank as reversible:
+
+- RISK-VALUE: DERIVED — v4 line ceiling = 1 MiB including newline @ docs/performance-attribution-spec.md:356 — equals the existing reader scanner ceiling sc.Buffer(..., 1<<20) at tools/desk/internal/deskkit/perfread.go:121, so a v4 line that is legal is never refused by the current reader.
+- RISK-VALUE: NAMED, NOT DERIVED — max extensions = eight; name grammar = [a-z][a-z0-9-]{0,31}; max version = 2147483647; max nesting depth = 32 @ docs/performance-attribution-spec.md:357-359 — 2147483647 is int32 max and eight is four initial groups plus headroom, per the spec's own text; the depth-32 adequacy depends on the largest typed v4 record, which the spec assigns to /67 boundary tests, not yet implemented.
+
+**VERIFY: PASS** — 6/6 rows
+
 ## Review
 
 Independent correctness and security review of the exact head; normal ready/merge gates.
