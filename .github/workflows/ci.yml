@@ -34,18 +34,23 @@ env:
   GO_VERSION: "1.27.2"
 
 jobs:
-  # Decides whether this run needs the heavy jobs below. The ONE case it skips is
-  # a pull request opened by the verifier App whose every changed file is under
-  # docs/ (an Evidence/status landing): no Go, shell or plugin source changed, so
-  # the builds below cannot change their verdict. Everything else, every push to
+  # Decides whether this run needs the skippable jobs below. The ONE case it
+  # skips is a pull request opened by the verifier App whose every changed file
+  # is under docs/ (an Evidence/status landing). Everything else, every push to
   # main, and any change set this step cannot read, sets heavy=true.
   #
-  # Each heavy job gates on `needs.scope.outputs.heavy != 'false'` at JOB level,
-  # never with a workflow-level paths filter: a job skipped by its `if:` reports
-  # success to a required check (build-test), while a workflow skipped by a paths
-  # filter leaves the required check pending forever. The comparison is
-  # fail-closed: if this job fails or is skipped, the output is empty, which is
-  # not 'false', so the heavy jobs run.
+  # Only jobs that read nothing under docs/ may gate on it: desk-platform-compile,
+  # plugin-shell-suites, skillslint and cursor-generated; a docs-only change
+  # cannot alter their verdict. build-test-shard (and so the required build-test)
+  # and harnesslint read docs/ from the real tree, so they never gate on this job
+  # and run on every pull request. No required check is gated here.
+  # TestCIScopeSkipSparesDocsReaders (tools/desk/internal/deskkit) fails if a job
+  # that a CI-registry row says reads docs/, or whose own text names a docs/
+  # path, becomes skippable by this decision.
+  #
+  # Each skippable job gates on `needs.scope.outputs.heavy != 'false'` at JOB
+  # level. The comparison is fail-closed: if this job fails or is skipped, the
+  # output is empty, which is not 'false', so the jobs run.
   #
   # The PR author and file paths are compared as data and never interpolated
   # into the script. GitHub-hosted, so the decision costs no self-hosted pool time.
@@ -83,7 +88,7 @@ jobs:
             echo "changed files outside docs/: full run"; printf '%s\n' "$outside" | sed 's/^/  /'
           else
             heavy=false
-            echo "verifier-App PR, every changed file under docs/: heavy jobs skipped"
+            echo "verifier-App PR, every changed file under docs/: docs-blind jobs skipped"
             printf '%s\n' "$files" | sed 's/^/  /'
           fi
           echo "heavy=${heavy}" >> "$GITHUB_OUTPUT"
@@ -169,9 +174,8 @@ jobs:
   # The required check is NOT this job: it is the `build-test` aggregator below,
   # which keeps the exact check name branch protection requires.
   build-test-shard:
-    needs: scope
-    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
-    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
+    # Never gated on the scope job: tests in this suite read docs/ from the real
+    # tree (see the scope job), so it runs on every pull request and push.
     strategy:
       fail-fast: false
       matrix:
@@ -308,29 +312,24 @@ jobs:
 
   # The required check `build-test`. Branch protection requires a check of this
   # exact name, so it stays a single job that reports one verdict for the whole
-  # sharded suite: success only when every build-test-shard leg succeeded, or
-  # when the legs were skipped because the scope job decided this is a
-  # verifier-App docs-only PR. Any failed, cancelled or otherwise-skipped leg
-  # fails it. `always()` makes it report even when the run is cancelled, so a
+  # sharded suite: success only when every build-test-shard leg succeeded. Any
+  # failed, cancelled or skipped leg fails it; there is no pass-without-running
+  # path. `always()` makes it report even when the run is cancelled, so a
   # cancelled suite reads as a failure here, never as a skipped (passing) check.
   # GitHub-hosted: it only reads the needs context.
   build-test:
-    needs: [scope, build-test-shard]
+    needs: [build-test-shard]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: All build-test shards passed
         env:
           SHARDS: ${{ needs.build-test-shard.result }}
-          SCOPE: ${{ needs.scope.result }}
-          HEAVY: ${{ needs.scope.outputs.heavy }}
         run: |
           set -euo pipefail
-          echo "build-test-shard: ${SHARDS}; scope: ${SCOPE}, heavy=${HEAVY:-<unset>}"
+          echo "build-test-shard: ${SHARDS}"
           if [ "$SHARDS" = "success" ]; then
             echo "every shard passed"
-          elif [ "$SHARDS" = "skipped" ] && [ "$SCOPE" = "success" ] && [ "$HEAVY" = "false" ]; then
-            echo "verifier-App docs-only PR: shards skipped by the scope decision"
           else
             echo "::error::build-test shards concluded '${SHARDS}' — the suite did not pass"
             exit 1
@@ -429,9 +428,8 @@ jobs:
   # tree the tool cannot read is a failure here, never a quiet pass. A reference
   # file it skips by declaration is announced on stderr in the job log.
   harnesslint:
-    needs: scope
-    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
-    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
+    # Never gated on the scope job: it reads docs/streams/harness-portability/
+    # README.md, so a docs-only pull request can change its verdict.
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -459,6 +457,8 @@ jobs:
   cursor-generated:
     needs: scope
     # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    # Its harnessgen suite reads docs/codex-smoke-protocol.md, but the same suite
+    # also runs in build-test-shard (rest), which is never skipped.
     if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     strategy:
       fail-fast: false
