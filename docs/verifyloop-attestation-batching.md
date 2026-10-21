@@ -93,7 +93,7 @@ The repeatable request reduction is 63.5% against the matched 189-call parent, o
 reuse and batching and is historical context, not this change's wall-time control.
 Overflowing connections can add requests above this population's measured 69; the
 complete native fallbacks are retained for correctness. The real mutation harness has
-a green baseline, caught positive control, all nine mutations caught and zero
+a green baseline, caught positive control, all thirteen mutations caught and zero
 could-not-mutate. Full planner/shared-library suites, focused race coverage, documentation
 lint and public-surface scan qualify the change.
 
@@ -106,3 +106,14 @@ Focused regressions cover per-target errors, missing provenance, edit/reopen/rel
 changes across stages, pagination fallbacks, scope fences, bounded chunks, candidate
 scoping, missing batch results, pass refresh and fresh PR-head reconciliation. The
 mutation recipe is `tools/desk/cmd/verifyloop/pending-batch-mutations.json`.
+
+Review follow-up confirmation at `044a1cd9ed9d47c65214056dfc74a9a7007760b9`:
+normal preflight again admitted all four frozen roots; the complete 266-item plan was
+exactly equal to the original qualification. Total GitHub attempts remained 69,
+scheduling attempts 61 and observed GraphQL points 7. Tool wall time was 29.436 seconds
+(CPU 1.678 seconds), using the same counters, profiles and native transport defaults.
+This is a single follow-up confirmation, separate from the paired timing comparison above.
+The expanded mutation recipe catches all thirteen defects, including the adapter's third
+issue read, invalid repository slug, foreign receipt repository and a valid change-kind
+reference. The subsequent test correction uses a parsed PR URL to reach the kind guard;
+it changes no production code.

@@ -88,7 +88,7 @@ func TestPendingBatchPreparationScopesCandidates(t *testing.T) {
 		}},
 		{"change-kind-receipt", func(f *pendingForge) {
 			for key, blob := range f.blobs {
-				f.blobs[key] = bytes.ReplaceAll(blob, []byte("example-org/tracker#41"), []byte("example-org/tracker!41"))
+				f.blobs[key] = bytes.ReplaceAll(blob, []byte("example-org/tracker#41"), []byte("https://github.com/example-org/tracker/pull/41"))
 			}
 		}},
 		{"irrelevant", func(f *pendingForge) { f.files[0].Filename = "elsewhere.md" }},
