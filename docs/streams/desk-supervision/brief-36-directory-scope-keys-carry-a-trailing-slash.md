@@ -57,6 +57,7 @@ files:
 - `tools/desk/internal/deskkit/verifywake.go`
 - `tools/desk/internal/deskkit/declaredscope_test.go`
 - `tools/desk/internal/deskkit/scopekey_test.go` (planned)
+- `tools/desk/internal/deskkit/scopekey-mutations.json` (planned)
 - `docs/declared-input-scope.md`
 - `docs/streams/desk-supervision/verify-wake-v1.md`
 - `changelog/scope-key-directory-slash.md` (planned)
@@ -126,7 +127,8 @@ recomputation), and each is tested with the other bypassed.
    at most one trailing `/` and returns the canonical declaration. Use the helper at
    `declaredscope.go:519`. The digest value and its shape terms are unchanged byte for byte.
 2. **Completeness check accepts both forms.** `CheckReceiptScope` treats a declaration as covered
-   when exactly one of `scope:<decl>` or `scope:<decl>/` is present and non-empty. If both are
+   when exactly one of `scope:<decl>` or `scope:<decl>/` is present and non-empty. The `scope:<decl>/`
+   alternative exists only for a literal declaration; for a glob, only `scope:<decl>` counts. If both are
    present, refuse with an "ambiguous scope key" error, which reads as could-not-check. Also refuse
    (could-not-check) the value of every `scope:` key, in either form, that is not exactly the digest
    format the producer writes at `declaredscope.go:519`. Once a directory key ends in `/`, the pattern
@@ -154,7 +156,8 @@ recomputation), and each is tested with the other bypassed.
    asserts a 40-character base62 value under a slash-keyed directory key is refused, and a well-formed
    digest is accepted. No test source commits a token-shaped literal: the base62 value is generated
    at test time, and the golden digest of row 1 is pinned in a form the pinned gitleaks config does not
-   flag (e.g. stored split across two string constants with a comment that it is a digest), checked by
+   flag: one constant whose identifier carries no credential keyword (e.g. `goldenDirDigest`; never split
+   a value across constants, which is the shape of a real evasion), checked by
    running the pre-push sweep over the changed files. `TestScopeKeyLeakSweepFixture` builds a real record through `BuildOutcomeRecord` over
    a fixture tree that declares the directory `tools/desk/cmd/desktoken`. When
    `SCOPE_KEY_FIXTURE_DIR` is set, it writes that record to
@@ -164,6 +167,10 @@ recomputation), and each is tested with the other bypassed.
    directory key `scope:tools/desk/cmd/desktoken/` replaced by a value that a dedicated provider rule of the pinned gitleaks config matches. That value
    is generated at test time and never committed.
    When the variable is unset it still asserts the producer emitted `scope:tools/desk/cmd/desktoken/`.
+   Add a mutation spec, `scopekey-mutations.json` (planned), beside the code in the house format
+   (`"test"`, a `"control"` positive control, and `"mutations"`, each `{name,file,old,new}`), whose
+   `"test"` runs the rows 3 and 10 tests. It carries at least these mutants of `declaredscope.go`: the
+   both-forms refusal removed, the digest-format check removed, and the slash-form glob refusal removed.
 6. **Changelog.** `changelog/scope-key-directory-slash.md` (planned) under `### Fixed`: outcome records key
    declared directories with a trailing slash so the secret sweep stops flagging them, and old
    records still read.
@@ -176,14 +183,15 @@ Run from the repository root; Go rows run inside the `tools/desk` module.
 |---|---------|--------|-------|
 | 1 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyDirectoryForm$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyDirectoryForm' "$o")` | exit 0. A literal directory gets `scope:<decl>/`; a literal file, an absent literal and a glob keep `scope:<decl>`; the digest equals a golden value pinned from the base for the same fixture tree | check |
 | 2 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyLegacyReceiptReads$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyLegacyReceiptReads' "$o")` | exit 0. A receipt with a legacy directory key passes `CheckReceiptScope`, reads unchanged on an unchanged tree, and wakes when a member is added | check |
-| 3 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyAmbiguousForms$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyAmbiguousForms' "$o")` | exit 0. Both forms present is refused; `scope:x//`, `scope:/` and a slash-form glob key (`scope:<glob>/`) read could-not-check; a slash key whose path is now a file wakes | check |
+| 3 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyAmbiguousForms$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyAmbiguousForms' "$o")` | exit 0. Both forms present is refused; `scope:x//`, `scope:/` and a slash-form glob key (`scope:<glob>/`) read could-not-check; a slash key whose path is now a file wakes | check +mutation |
 | 4 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyLayersIndependent$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyLayersIndependent' "$o")` | exit 0. With `CheckReceiptScope` bypassed, the wake reader alone still returns the original digest for a legacy key, and an empty digest never compares equal. With the wake reader stubbed, the completeness check alone still refuses a receipt that lacks the declaration in both forms | check |
 | 5 | `d=$(mktemp -d) && (cd tools/desk && SCOPE_KEY_FIXTURE_DIR="$d" go test ./internal/deskkit -run '^TestScopeKeyLeakSweepFixture$' -count=1 -timeout 120s) && p=docs/streams/verify-outcomes/scope-fixture/01-20261021T000000Z-000000000000.json && test -f "$d/new/$p" && test -f "$d/legacy/$p" && test -f "$d/planted/$p" && gitleaks version \| grep -Fx 8.30.1 && cp .gitleaks.toml "$d/new/" && cp .gitleaks.toml "$d/legacy/" && cp .gitleaks.toml "$d/planted/" && { (cd "$d/new" && gitleaks dir . --config .gitleaks.toml --exit-code 9 --no-banner --redact >/dev/null 2>&1); a=$?; (cd "$d/legacy" && gitleaks dir . --config .gitleaks.toml --exit-code 9 --no-banner --redact >/dev/null 2>&1); b=$?; (cd "$d/planted" && gitleaks dir . --config .gitleaks.toml --exit-code 9 --no-banner --redact --report-format json --report-path "$d/planted.json" >/dev/null 2>&1); c=$?; echo "new=$a legacy=$b planted=$c"; test "$a" = 0 && test "$b" = 9 && test "$c" = 9 && jq -e 'length > 0 and all(.[]; .RuleID != "generic-api-key")' "$d/planted.json" >/dev/null && echo planted-rule-dedicated; }` | exit 0 and prints `new=0 legacy=9 planted=9` then `planted-rule-dedicated`. The producer-built record is clean under pinned gitleaks with the unchanged repo config; its legacy twin is red (fail-first control); a dedicated-rule value as the value of the slash-form key `scope:tools/desk/cmd/desktoken/` is still caught, by a rule other than `generic-api-key` (pins the residual) | check |
-| 6 | `b=8121208a6a4fb011ed1b0e7a00bd983a5aa4feeb && n=$(git log --format=%H -E --grep='^Brief: desk-supervision/36$' "$b"..HEAD \| wc -l) && test "$n" -gt 0 && test -z "$(git log --format=%H -E --grep='^Brief: desk-supervision/36$' "$b"..HEAD -- .gitleaks.toml .github/workflows/)" && test -z "$(git log --format=%H -E --grep='^Brief: desk-supervision/36$' --diff-filter=MD "$b"..HEAD -- docs/streams/verify-outcomes/)" && echo untouched` | exit 0; prints `untouched`. At least one commit since the authoring base carries this brief's trailer (the row is not vacuous), no such commit touches the sweep config or any workflow, and none modifies or deletes a landed outcome record. Works the same on the PR branch and on merged main; unrelated later commits to those paths do not affect it | check |
+| 6 | `b=8121208a6a4fb011ed1b0e7a00bd983a5aa4feeb && git diff --quiet --no-renames "$b" HEAD -- .gitleaks.toml .gitleaksignore .github/workflows/leaksweep-pattern.yml .github/workflows/leaksweep-control.yml && test -z "$(git diff --no-renames --name-only --diff-filter=MDRT "$b" HEAD -- docs/streams/verify-outcomes/)" && echo untouched` | exit 0; prints `untouched`. Whole-tree content check, not a per-commit filter, so a commit without this brief's trailer cannot slip through: the sweep config, the `.gitleaksignore` fingerprint file (absent at base; any addition is red) and both leak-sweep workflows are byte-identical to the authoring base, and no landed outcome record has been modified, deleted, renamed or retyped since it. It fails closed: an unrelated later change to these paths turns it red, and the verifier then reviews that change before passing the row | check |
 | 7 | `(cd tools/desk && go test ./internal/deskkit/... ./cmd/deskevidence/... ./cmd/verifyloop/... -count=1 -timeout 300s)` | exit 0. Admission binding, receipt validation, the producer and the wake fixtures stay green (the flow across all consumers) | check:ci |
 | 8 | `statusgen --root . --lint` | exit 0; LINT PASS | check:ci |
 | 9 | `statusgen --root . --consumers --brief desk-supervision/36` | exit 0; the four follow-up rows are corroborated by the implementation diff | check:ci |
-| 10 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyValueMustBeDigest$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyValueMustBeDigest' "$o")` | exit 0. A 40-character base62 value under a slash-keyed directory key is refused as could-not-check; a well-formed digest is accepted | check |
+| 10 | `(cd tools/desk && o=$(mktemp) && go test ./internal/deskkit -run '^TestScopeKeyValueMustBeDigest$' -count=1 -timeout 120s -v > "$o" 2>&1; grep -F -- '--- PASS: TestScopeKeyValueMustBeDigest' "$o")` | exit 0. A 40-character base62 value under a slash-keyed directory key is refused as could-not-check; a well-formed digest is accepted | check +mutation |
+| 11 | `(cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/scopekey-mutations.json)` | exit 0. Baseline GREEN, positive control CAUGHT, and every mutation CAUGHT: the ambiguous-form refusal, the digest-format check and the slash-form glob refusal each have a test that fails without them | check +mutation |
 
 ## Pre-mortem
 
@@ -193,10 +201,10 @@ Run from the repository root; Go rows run inside the `tools/desk` module.
 | Producer changes the digest value as well as the key, so every legacy receipt wakes | 1 (pinned golden digest), 2 |
 | Wake reader still indexes `Shapes[input]`, so legacy directory keys return `""` and wake forever | 2, 4 |
 | Completeness check only knows the new form, so historical receipts go could-not-check | 2 |
-| Both forms in one receipt accepted silently | 3 |
+| Both forms in one receipt accepted silently | 3, 11 (the refusal is load-bearing) |
 | Fix proven only on a hand-written key, not on what the producer actually emits | 5 (record built through BuildOutcomeRecord) |
 | Fixture is green because gitleaks never ran or ran a different version | 5 (file existence, version pin, legacy twin must be red) |
-| Allowlist or workflow quietly widened to get green | 6 |
+| Allowlist, ignore-fingerprint file or leak-sweep workflow quietly widened to get green, by any commit | 6 (whole-tree content pin against the authoring base) |
 | Slash key hides a token from the generic pattern rule | 5 (`planted=9`, dedicated rule id: dedicated rules still fire before publication); 10 (readers refuse to read a non-digest value after publication; not a pre-publication control) |
 | Glob or file keys change shape by accident | 1 |
 | Contract docs describe the wrong grammar | review-only: reviewer reads the two doc edits against rows 1-3 |
