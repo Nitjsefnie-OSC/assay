@@ -25,7 +25,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/50 | 2026-10-21 | 15 withdrawn |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-20 |  |
 | [forge-neutral](docs/streams/forge-neutral/README.md) | P1 | active | 5/43 | 2026-10-20 |  |
-| [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-20 |  |
+| [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-21 |  |
 | [harness-portability](docs/streams/harness-portability/README.md) | P2 | active | 5/17 | 2026-10-20 |  |
 | [iso-9001](docs/streams/iso-9001/README.md) | P2 | active | 4/11 | 2026-10-20 |  |
 | [measured-status](docs/streams/measured-status/README.md) | P1 | active | 0/6 | 2026-10-20 |  |
@@ -126,7 +126,7 @@ _Held by per-stream caps: 16 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 0f6d392a 2026-10-21T09:14:44Z_
+_last regen: a62c2a85 2026-10-21T09:46:08Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +147,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 0f6d392a 2026-10-21T09:14:44Z_
+_last regen: a62c2a85 2026-10-21T09:46:08Z_
 
 **Progress:** 34/83 brief items done.
 
