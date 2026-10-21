@@ -21,7 +21,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [derived-board](docs/streams/derived-board/README.md) | P1 | active | 3/11 | 2026-10-21 |  |
 | [desk-containers](docs/streams/desk-containers/README.md) | P2 | active | 2/29 | 2026-10-21 |  |
 | [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 8/35 | 2026-10-21 |  |
-| [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/52 | 2026-10-20 |  |
+| [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/52 | 2026-10-21 |  |
 | [desktools-go-git](docs/streams/desktools-go-git/README.md) | P2 | active | 5/8 | 2026-10-20 |  |
 | [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/53 | 2026-10-21 | 15 withdrawn |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-21 |  |
@@ -126,7 +126,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: aec9230c 2026-10-21T17:53:51Z_
+_last regen: 8e7bce68 2026-10-21T17:57:55Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +147,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: aec9230c 2026-10-21T17:53:51Z_
+_last regen: 8e7bce68 2026-10-21T17:57:55Z_
 
 **Progress:** 34/86 brief items done.
 
@@ -205,7 +205,7 @@ _last regen: aec9230c 2026-10-21T17:53:51Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (8 for the desk · 39 for the driver · 32 for workers · 20 for an operator · 37 runner-pending — of 141 total; 4 could-not-check)
+## Awaiting verification / review (7 for the desk · 39 for the driver · 32 for workers · 20 for an operator · 37 runner-pending — of 141 total; 5 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
@@ -359,7 +359,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 12 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ e4d474af8bca (claude-opus-5-5) | — |
 | desktools-v2 | 14 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-07 assay-verifier-app[bot] @ 91f04b81ba06 (claude-opus-5-5) | — |
 
-### Desk-actionable (8)
+### Desk-actionable (7)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -369,15 +369,15 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | derived-board | 06 [exec:strong] | implemented | 2500 | 1 | — | verify-desk | dispatch one judge | — | — |
 | desk-supervision | 04 [exec:strong] | implemented | 2000 | 2 | — | verify-desk | dispatch one judge | — | — |
 | harness-portability | 14 [exec:strong] | implemented | 2000 | 2 | — | verify-desk | triage, then re-bucket | — | — |
-| desk-tools | 17 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 | harness-portability | 13 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
 
-### Could-not-check (4)
+### Could-not-check (5)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
 | desk-tools | 37 [exec:strong] | implemented | 15000 | 28 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 | desktools-v2 | 64 [exec:strong] | implemented | 6500 | 11 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
+| desk-tools | 17 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 | harness-portability | 07 | implemented | 1000 | 0 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 | statusgen | 06 [exec:strong] | implemented | 1000 | 0 | — | verify-desk | could-not-check: Evidence's last verdict is FAIL but no verify-outcome record names this brief — the blocker class is unrecorded | — | — |
 
