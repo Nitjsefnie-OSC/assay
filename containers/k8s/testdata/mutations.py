@@ -81,6 +81,29 @@ def cases(clean):
                               and d['metadata']['name'] == role)
                 target['spec']['template']['spec']['securityContext'][field] = 1000
             fixtures['image-identity-' + role + '-' + field] = wrong_identity
+    # regression: #3857 — every role reference must be the one its release
+    # build recorded. Each plant is a well-formed immutable reference that the
+    # shape check alone admits: a digest no release recorded, another role's
+    # recorded digest, and the recorded digest under a different release tag.
+    for workload in (d for d in clean if d['kind'] == 'StatefulSet'):
+        role = workload['metadata']['name']
+        others = [d for d in clean if d['kind'] == 'StatefulSet' and d['metadata']['name'] != role]
+        foreign = others[0]['spec']['template']['spec']['containers'][0]['image'].split('@')[1]
+        def unrecorded(ds, role=role, kind='digest', foreign=foreign):
+            target = next(d for d in ds if d['kind'] == 'StatefulSet'
+                          and d['metadata']['name'] == role)
+            box = target['spec']['template']['spec']['containers'][0]
+            name, digest = box['image'].split('@')
+            if kind == 'digest':
+                digest = 'sha256:' + hashlib.sha256(b'unrecorded ' + role.encode()).hexdigest()
+            elif kind == 'swapped':
+                digest = foreign
+            else:
+                name = name.rsplit(':', 1)[0] + ':v0.0.1'
+            box['image'] = name + '@' + digest
+        for kind in ['digest', 'swapped', 'tag']:
+            fixtures['image-provenance-' + role + '-' + kind] = (
+                lambda ds, f=unrecorded, kind=kind: f(ds, kind=kind))
     for name, change in fixtures.items():
         mutant = copy.deepcopy(clean)
         change(mutant)

@@ -85,6 +85,10 @@ artifact bytes, validate the manifest against the selected version, source
 revision and release repository, then update repository/cell pins together.
 For a verify-runner consumer, copy `verify-runner-image.txt` into its image lock
 and move the accompanying tool-version marker in the same change.
+The Kubernetes desk package keeps the selected release's `release-images.json`
+byte for byte beside its manifests; its offline check validates that record with
+this contract and requires every role reference to equal the recorded one
+(`containers/k8s/README.md`, "Image provenance").
 
 If a required image/reference is absent, report the producer release incomplete
 for that consumer. Do not repair it by building an image in the re-pin process.
