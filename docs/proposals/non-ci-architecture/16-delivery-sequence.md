@@ -218,3 +218,15 @@ these owners. Collection/01 defines aliased event meanings independently; /02 co
 v1/v2/v3 after /63–65; later storage/transport/reporting preserves their coverage and units.
 A local record/read/report path needs no server or database. Keep collection parked and
 credential work independent; do not reopen /61 or imply deployment/collection activation.
+
+## Extensible contracts and perf-v4 — requested amendment, 21 October 2026
+
+Apply the [JSON transition policy](29-extensible-json-contracts.md) across the existing
+semantic owners. Deliver desktools-v2/69's architecture/specification first, /67's
+perf-v4 codec and historical-compatible reader next, then /68's selected producers
+once /64 and /65 independently qualify. Existing statusgen/26 snapshot reuse and
+benchmarks and desktools-v2/62's integration retain their declared dependencies;
+reconcile their future writer/read tests to v4 without discarding landed v3 behavior
+or inventing verification. Other JSON families migrate with their owner's next
+contract revision, using reader-first cutovers and published release pins. No
+performance-collection activation or simultaneous fleet upgrade is implied.
