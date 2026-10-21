@@ -6,6 +6,9 @@ import subprocess
 import sys
 
 cases = [
+    ("validation error ignored", "internal/deskkit/activationindex.go",
+     'if err == nil && source.valid', 'if (err == nil || err != nil) && source.valid',
+     'TestSnapshotValidationError'),
     ("lossy payload admission", "internal/deskkit/activationindex.go",
      'reflect.DeepEqual(data, decoded)', 'reflect.DeepEqual(decoded, decoded)',
      'TestSnapshotByteParity'),
@@ -53,6 +56,10 @@ for name, target, old, new, test in cases:
         result = subprocess.run(['go', 'test', './internal/deskkit', '-run', '^'+test+'$',
                                  '-count=1', '-timeout=180s', '-v'], env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="backslashreplace")
+        if f"--- SKIP: {test} (" in result.stdout:
+            print(result.stdout)
+            print(f'COULD-NOT-CHECK: {name}: required fixture did not execute')
+            raise SystemExit(6)
         # A build failure is not a killed behavior mutant.
         if result.returncode == 0 or '--- FAIL: '+test not in result.stdout:
             print(result.stdout)

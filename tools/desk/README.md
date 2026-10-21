@@ -7715,10 +7715,15 @@ edit pins content hashing independently of path/length. Additional owner mutatio
 pin root spelling, same-content filesystem identity replacement and validation
 immediately before the first reused return, with edits during capture and before
 reuse. Read-failure candidate exclusion and unreadable-then-deleted diagnostic
-parity also have a production-owner mutation. The validation
-error predicate on reuse remains a defense-in-depth check without a separately
-killed error-only mutant: ordinary partial-read errors also change the digest.
-This is retained as an explicit test-coverage limit, not an asserted proof.
+parity also have a production-owner mutation. The validation error predicate is
+independently necessary: a trailing empty manifest-free directory can become
+unreadable after capture, making fresh discovery fail while leaving the content
+digest unchanged. A real permission-change regression first requires both the walk
+error and identical digest, then checks that the owner returns the fresh error
+instead of reusing. Removing only `err == nil` is killed by that regression.
+The production predicate is unchanged. A host running as root, or a filesystem that
+ignores the mode change, reports could-not-check/SKIP rather than a permission-test
+pass; the mutation runner reports that case as unqualified, never killed.
 
 The raw-filename subcase could not run on the measured darwin filesystem, which
 rejects invalid UTF-8 path bytes; it reports SKIP rather than pass. A separate

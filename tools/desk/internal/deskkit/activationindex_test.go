@@ -365,3 +365,48 @@ func TestSnapshotUnreadableCapture(t *testing.T) {
 	}
 	snapshotParity(t, root)
 }
+
+// regression: F-snapshot-validation-error
+func TestSnapshotValidationError(t *testing.T) {
+	count := snapshotObserver(t)
+	root := t.TempDir()
+	writeManifest(t, root, "a-first", nil, nil, nil)
+	trailing := filepath.Join(root, "z-empty")
+	if err := os.Mkdir(trailing, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := activationManifests(root); err != nil {
+		t.Fatal(err)
+	}
+	if activationIndex.slot == nil {
+		t.Fatal("precondition: complete readable tree must retain a candidate")
+	}
+	captured := activationIndex.slot.source
+	if err := os.Chmod(trailing, 0); err != nil {
+		t.Skipf("could-not-check: directory permission change unsupported: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(trailing, 0700); err != nil {
+			t.Error(err)
+		}
+	})
+	// Root, ACLs or unsupported filesystems can bypass POSIX modes. Never count a
+	// fixture that remained readable as proof of the validation error predicate.
+	if _, err := os.ReadDir(trailing); err == nil {
+		t.Skip("could-not-check: permissions did not make the trailing empty directory unreadable")
+	} else if !os.IsPermission(err) {
+		t.Skipf("could-not-check: expected permission denial, got %v", err)
+	}
+	observed, validationErr := validateManifests(root)
+	if validationErr == nil || observed.digest() != captured {
+		t.Fatalf("precondition: trailing manifest-free walk error must leave digest unchanged: err=%v equal=%v", validationErr, observed.digest() == captured)
+	}
+	want, wantSkipped, wantErr := DiscoverManifests(root)
+	if wantErr == nil {
+		t.Fatal("precondition: fresh enumeration must observe the real permission error")
+	}
+	got, gotSkipped, gotErr := activationManifests(root)
+	if gotErr == nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(gotSkipped, wantSkipped) || fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || count("reuse") != 0 {
+		t.Fatalf("validation error was accepted despite unchanged digest: got=%+v %v %v want=%+v %v %v reuse=%d", got, gotSkipped, gotErr, want, wantSkipped, wantErr, count("reuse"))
+	}
+}
