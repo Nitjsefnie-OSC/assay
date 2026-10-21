@@ -130,7 +130,7 @@ work through the existing coordinator policy; no generic model supervisor is add
    /26's invocation records plus desk-supervision/34's non-enrolled-worker compatibility path; count
    each run once, and keep unavailable usage unknown. Record qualified image, harness,
    launcher/plugin, model/profile, exact subject and cache state. Initial proof needs
-   no parked collection DB/API, new consent or live model run. A later adopting pilot
+   no performance-collection DB/API, new consent or live model run. A later adopting pilot
    measures real cost; offline tests establish deterministic launch counts, not dollars.
 
 Already-shipped explicit cadence is the optional containment path described in the

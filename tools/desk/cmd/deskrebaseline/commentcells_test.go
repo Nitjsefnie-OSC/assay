@@ -59,9 +59,9 @@ func TestRebaselineCommentCells(t *testing.T) {
 	}
 	var probed []string
 	orig := runCommand
-	runCommand = func(_ string, command string) (bool, int) {
+	runCommand = func(_ string, command string) (bool, int, string) {
 		probed = append(probed, command)
-		return true, 0
+		return true, 0, ""
 	}
 	t.Cleanup(func() { runCommand = orig })
 	root := t.TempDir()
