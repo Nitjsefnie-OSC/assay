@@ -33,10 +33,13 @@ type Verdict struct {
 }
 
 // Report is a check run: whether the receipt is current against the
-// snapshot, what the recheck found, and a verdict per obligation.
+// snapshot, what the recheck found, and a verdict per obligation. Current is
+// true only when the recheck neither reconciles nor holds: partial coverage
+// is never confirmed current. A hold leaves Current false without making the
+// receipt stale, so the outcome stays a hold, not a stale-receipt refusal.
 type Report struct {
 	Receipt  string    `json:"receipt"` // the checked handoff's canonical digest
-	Current  bool      `json:"current"`
+	Current  bool      `json:"current"` // no reconcile and no hold: confirmed current
 	Findings []Finding `json:"findings"`
 	Verdicts []Verdict `json:"verdicts"`
 	Outcome  string    `json:"outcome"`
@@ -64,7 +67,7 @@ func Check(h *Handoff, m *Manifest, patches map[string][]byte, s *Snapshot) (*Re
 	if err != nil {
 		return nil, err
 	}
-	rep := &Report{Receipt: h.Digest(), Current: !rc.Reconcile(), Findings: rc.Findings, Verdicts: []Verdict{}}
+	rep := &Report{Receipt: h.Digest(), Current: !rc.Reconcile() && !rc.Hold(), Findings: rc.Findings, Verdicts: []Verdict{}}
 	if rep.Findings == nil {
 		rep.Findings = []Finding{}
 	}
@@ -76,11 +79,12 @@ func Check(h *Handoff, m *Manifest, patches map[string][]byte, s *Snapshot) (*Re
 			entries[e.Obligation] = e
 		}
 	}
+	stale := rc.Reconcile()
 	hd := h.Digest()
 	for _, a := range h.Amendments {
 		v := Verdict{Obligation: a.ID, Subject: a.Subject, Outcome: OutcomePass, Reason: "binds, applies and preserves history"}
 		switch {
-		case !rep.Current:
+		case stale:
 			v.Outcome, v.Rule, v.Reason = OutcomeRefuse, CheckStaleReceipt, "the receipt no longer matches the snapshot; recheck and reconcile before checking amendments"
 		case manifestErr != nil:
 			v.Outcome, v.Rule, v.Reason = OutcomeRefuse, RuleOf(manifestErr), manifestErr.Error()
@@ -101,7 +105,7 @@ func Check(h *Handoff, m *Manifest, patches map[string][]byte, s *Snapshot) (*Re
 			rep.Outcome = OutcomeHold
 		}
 	}
-	if !rep.Current {
+	if stale {
 		rep.Outcome = OutcomeRefuse
 	}
 	if rep.Outcome == OutcomePass && rc.Hold() {

@@ -522,6 +522,7 @@ func TestContextRecheckTruncatedCoverageHolds(t *testing.T) {
 	// The prior receipt is itself truncated: the impacted beta:02 brief is cut
 	// from its read set, so its revision cannot be compared. Edited or not,
 	// recheck and check hold; neither reads as current or passes.
+	heldCand, heldP := candPatch(t, loadJourney(t), fileA02, "Build the reconciliation report.\n", "Build the reconciliation report.\nAdd a layout-version column.\n")
 	prior := discover(t, variant(true, false))
 	if prior.Discovery.Coverage.State != "partial" || !readSetTruncated(prior) {
 		t.Fatalf("fixture: prior coverage %q, read set truncated %v; want partial and truncated", prior.Discovery.Coverage.State, readSetTruncated(prior))
@@ -538,8 +539,15 @@ func TestContextRecheckTruncatedCoverageHolds(t *testing.T) {
 		if classOf(rc.Findings, "subject:"+idB02, FindingHold) == nil {
 			t.Errorf("truncated prior (edit %v): findings %+v, want a hold on %s, whose prior revision the truncation cut", edit, notable(rc.Findings), idB02)
 		}
-		if rep := check(t, prior, nil, nil, s); rep.Outcome == OutcomePass {
-			t.Errorf("check over partial coverage (edit %v) = %s, want hold or refuse, never pass", edit, rep.Outcome)
+		// A hold is not confirmation: the receipt is not current, yet it is
+		// not stale either, so the outcome stays a hold and an obligation
+		// that binds and applies is not refused as a stale receipt.
+		if rep := check(t, prior, nil, nil, s); rep.Outcome != OutcomeHold || rep.Current {
+			t.Errorf("check over partial coverage (edit %v) = %s, current %v; want hold, current false", edit, rep.Outcome, rep.Current)
+		}
+		rep := check(t, amend(t, prior, idA02, "Report per layout version.", heldCand), nil, map[string][]byte{heldCand.Digest: heldP}, s)
+		if v := verdictOf(t, rep, "ob-1"); rep.Outcome != OutcomeHold || rep.Current || v.Rule == CheckStaleReceipt {
+			t.Errorf("check of an amendment over partial coverage (edit %v) = %s, current %v, verdict %+v; want hold, current false, no stale-receipt refusal", edit, rep.Outcome, rep.Current, v)
 		}
 	}
 
@@ -574,6 +582,14 @@ func TestContextRecheckTruncatedCoverageHolds(t *testing.T) {
 	}
 	if f := classOf(rc.Findings, "subject:"+idB02, FindingReconcile); f == nil || rc.Hold() || !strings.Contains(f.Reason, "the brief changed since the prior receipt") {
 		t.Errorf("control: findings %+v, want only a reconcile on %s", notable(rc.Findings), idB02)
+	}
+	// A reconcile makes the receipt stale: not current, and each obligation
+	// is refused as a stale receipt, with or without partial coverage too.
+	for _, fill := range []bool{false, true} {
+		rep := check(t, amend(t, full, idA02, "Report per layout version.", heldCand), nil, map[string][]byte{heldCand.Digest: heldP}, variant(fill, true))
+		if v := verdictOf(t, rep, "ob-1"); rep.Outcome != OutcomeRefuse || rep.Current || v.Outcome != OutcomeRefuse || v.Rule != CheckStaleReceipt {
+			t.Errorf("check after a reconcile (truncated snapshot %v) = %s, current %v, verdict %+v; want refuse, current false, refuse %s", fill, rep.Outcome, rep.Current, v, CheckStaleReceipt)
+		}
 	}
 }
 

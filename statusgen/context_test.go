@@ -273,6 +273,14 @@ func TestPickupContextRecheck(t *testing.T) {
 	}
 }
 
+// ctxBoolPtr prints an optional JSON boolean, naming an absent field.
+func ctxBoolPtr(b *bool) string {
+	if b == nil {
+		return "absent"
+	}
+	return fmt.Sprint(*b)
+}
+
 // regression: a receipt whose read set was truncated at the result limit
 // rechecked as "current" and checked as "pass" (exit 0) while printing
 // "coverage: partial". Partial coverage, on either side, is a hold (exit 3).
@@ -300,6 +308,7 @@ func TestContextCLITruncatedCoverageHolds(t *testing.T) {
 	}
 	type verbOut struct {
 		Outcome  string                   `json:"outcome"`
+		Current  *bool                    `json:"current"`
 		Findings []contexthandoff.Finding `json:"findings"`
 	}
 	run := func(t *testing.T, verb, dir, receipt string) (verbOut, int, string) {
@@ -337,8 +346,11 @@ func TestContextCLITruncatedCoverageHolds(t *testing.T) {
 		if code != 3 || got.Outcome != "hold" || !strings.Contains(text, "coverage: partial") {
 			t.Errorf("%s over partial coverage: exit %d outcome %q, want 3 hold; findings %+v\n%s", verb, code, got.Outcome, got.Findings, text)
 		}
-		if strings.Contains(text, ": current") || strings.Contains(text, ": pass (") {
+		if strings.Contains(text, ": current") || strings.Contains(text, ": pass (") || strings.Contains(text, "current: true") {
 			t.Errorf("%s over partial coverage reads as complete:\n%s", verb, text)
+		}
+		if verb == "check" && (got.Current == nil || *got.Current || !strings.Contains(text, ": hold (current: false)")) {
+			t.Errorf("check over partial coverage: --json current %s, want false, and text naming hold (current: false)\n%s", ctxBoolPtr(got.Current), text)
 		}
 	}
 
@@ -354,8 +366,8 @@ func TestContextCLITruncatedCoverageHolds(t *testing.T) {
 	if code != 1 || got.Outcome != "reconcile" || !strings.Contains(text, "reconcile: subject:example:repo-b:beta:02: the brief changed since the prior receipt") {
 		t.Errorf("control recheck: exit %d outcome %q, want 1 reconcile naming the brief change\n%s", code, got.Outcome, text)
 	}
-	if _, code, text := run(t, "check", s3, r0); code != 1 {
-		t.Errorf("control check: exit %d, want 1 (stale receipt)\n%s", code, text)
+	if got, code, text := run(t, "check", s3, r0); code != 1 || got.Outcome != "refuse" || got.Current == nil || *got.Current {
+		t.Errorf("control check: exit %d outcome %q current %s, want 1 refuse, current false (stale receipt)\n%s", code, got.Outcome, ctxBoolPtr(got.Current), text)
 	}
 }
 

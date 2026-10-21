@@ -73,9 +73,10 @@ type Proposal struct {
 	Handoff *Handoff
 }
 
-// Limits bound what one run reads. A source over a read limit is unavailable
-// (scoped could-not-check); a query over MaxResults is truncated (partial
-// coverage). Neither is ever read as empty.
+// Limits bound what a run reads from each source: MaxFiles and MaxTotalBytes
+// are per source, MaxFileBytes per file, and MaxResults per query. A source
+// over a read limit is unavailable (scoped could-not-check); a query over
+// MaxResults is truncated (partial coverage). Neither is ever read as empty.
 type Limits struct {
 	MaxFiles      int
 	MaxFileBytes  int64

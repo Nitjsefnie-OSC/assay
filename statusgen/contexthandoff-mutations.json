@@ -98,6 +98,18 @@
       "new": "\tcase !read && priorCut && false:\n"
     },
     {
+      "name": "f1-hold-reads-current",
+      "file": "contexthandoff/check.go",
+      "old": "Current: !rc.Reconcile() && !rc.Hold(), Findings",
+      "new": "Current: !rc.Reconcile(), Findings"
+    },
+    {
+      "name": "f1-hold-reads-stale",
+      "file": "contexthandoff/check.go",
+      "old": "\tstale := rc.Reconcile()\n",
+      "new": "\tstale := !rep.Current\n"
+    },
+    {
       "name": "a1-unlinked-follow-up",
       "file": "contexthandoff/check.go",
       "old": "\t\t\tif how == \"\" {\n",
