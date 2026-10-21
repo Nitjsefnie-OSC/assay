@@ -4,6 +4,7 @@ date: "2026-10-08"
 title: "Widen the run-log read to the worker and reviewer roles, and keep run retry behind the same roster-bound run credential that refuses a human-bound entry"
 consequence: major
 decided-by: "human:<name>"
+ruling: "https://github.com/medici-finance/assay/issues/1557#issuecomment-6324027443"
 alternatives:
   - "Grant run retry to the worker and reviewer roles along with the log read, as one broad read-and-retry grant — ruled out: retry needs `actions: write` on GitHub (`api` on GitLab), the same scope that also cancels runs, deletes run logs and disables workflows repo-wide. Bundling it with the read would let one over-broad grant quietly cover both, which is the exposure `forge-neutral/14` made dispatch roster-bound to avoid."
   - "Put the log read behind the roster-bound run credential too, as a single-credential verb — ruled out: a log read needs only `actions: read` (GitHub) or `read_api` (GitLab), which cannot cancel, delete or disable anything. Requiring the release-runner credential for it would leave a repo with a human-bound or unset binding unable to read its own CI failure at all, so the problem that motivated the brief (a worker blind to why its check is red) would stay unsolved."
@@ -26,6 +27,9 @@ That confirms the two points the brief's `gate-why` puts to the human: that the 
 `actions: read` / `read_api` grant is safe to widen to both the worker and the reviewer
 roles, and that `retry` carries the same over-broad-scope shape as dispatch and so earns
 the same roster-bound refusal rather than a lighter gate because it only retries.
+
+That earlier comment does not name this record, so the `ruling` key points at the driver's later
+ruling on the same decision issue, which ratifies `DR-forge-neutral-17` by name: [this comment](https://github.com/medici-finance/assay/issues/1557#issuecomment-6324027443).
 
 This closes the human gate the brief's frontmatter declares (`gate: human`, `risk:
 {sensitive-data: yes}`). The constraint behind the decision is the asymmetry of the two
