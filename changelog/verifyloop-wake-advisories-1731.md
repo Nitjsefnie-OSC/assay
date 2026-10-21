@@ -1,0 +1,6 @@
+### Fixed
+- Preserve legacy numeric verdict execution while retaining unsupported scheduling rows as uncertainty; surface malformed latest wake receipts, reject observable held/PASS overlap and clarify partial-run execution.
+- Retain all nonempty scheduling row labels as uncertainty, preserve earlier diagnostic reasons, exclude offline-deferred rows from partial dispatch and refuse row-key casing/count overlap at the writer. Re-anchor the command-reader class guard without removing any assertion.
+- Refuse held rows outside a reported exact or count-only inventory while retaining exact suffix identities and legacy records without a declared total.
+- Producer migration required: outcome `rows` must contain held identities, not all covered rows; verified producers omit it and complete coverage stays in `row_results`. Current covered-row payloads can be refused. Follow the documented witnessed-results correction or fresh native-run path; committed records and Evidence are never rewritten. Seed the pending-Evidence wake path with the same exact deferred-row context as the scan.
+- Require complete exact `row_results` in producer guidance whenever held `rows` is non-empty, including gapped numeric and suffixed inventories; retain the strict writer refusals and pin the first out-of-range boundary.
