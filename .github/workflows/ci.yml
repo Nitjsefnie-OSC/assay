@@ -34,12 +34,69 @@ env:
   GO_VERSION: "1.27.2"
 
 jobs:
+  # Decides whether this run needs the heavy jobs below. The ONE case it skips is
+  # a pull request opened by the verifier App whose every changed file is under
+  # docs/ (an Evidence/status landing): no Go, shell or plugin source changed, so
+  # the builds below cannot change their verdict. Everything else, every push to
+  # main, and any change set this step cannot read, sets heavy=true.
+  #
+  # Each heavy job gates on `needs.scope.outputs.heavy != 'false'` at JOB level,
+  # never with a workflow-level paths filter: a job skipped by its `if:` reports
+  # success to a required check (build-test), while a workflow skipped by a paths
+  # filter leaves the required check pending forever. The comparison is
+  # fail-closed: if this job fails or is skipped, the output is empty, which is
+  # not 'false', so the heavy jobs run.
+  #
+  # The PR author and file paths are compared as data and never interpolated
+  # into the script. GitHub-hosted, so the decision costs no self-hosted pool time.
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      heavy: ${{ steps.decide.outputs.heavy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # pull_request checks out the PR merge commit; depth 2 also fetches its
+          # parents, so HEAD^1 is the base tip and HEAD^1..HEAD is the PR's change set.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+
+      - name: Decide — verifier-App docs-only PR?
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          # The one identity whose docs-only PRs skip the heavy jobs. Same
+          # constant changelog-check.yml and evidence-automerge.yml key on.
+          VERIFIER_AUTHOR: assay-verifier-app[bot]
+        run: |
+          set -euo pipefail
+          heavy=true
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "event '$EVENT': full run"
+          elif [ "$PR_AUTHOR" != "$VERIFIER_AUTHOR" ]; then
+            echo "author '$PR_AUTHOR' is not '$VERIFIER_AUTHOR': full run"
+          elif ! files="$(git diff --no-renames --name-only HEAD^1 HEAD)"; then
+            echo "could-not-check: the PR change set could not be read: full run"
+          elif [ -z "$files" ]; then
+            echo "empty change set: full run"
+          elif outside="$(printf '%s\n' "$files" | grep -v -E '^docs/' || true)"; [ -n "$outside" ]; then
+            echo "changed files outside docs/: full run"; printf '%s\n' "$outside" | sed 's/^/  /'
+          else
+            heavy=false
+            echo "verifier-App PR, every changed file under docs/: heavy jobs skipped"
+            printf '%s\n' "$files" | sed 's/^/  /'
+          fi
+          echo "heavy=${heavy}" >> "$GITHUB_OUTPUT"
+
   # Cross-compiles tools/desk for windows/amd64 and darwin/arm64. Not a required
   # check. On pull_request it runs only when the change set can alter what it
   # compiles (the scope step below); on push to main it always runs. When the
   # scope step skips the compile the job still concludes success, with the reason
   # printed in its log.
   desk-platform-compile:
+    needs: scope
+    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,6 +152,9 @@ jobs:
           GOOS=darwin GOARCH=arm64 go vet ./...
 
   build-test:
+    needs: scope
+    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,6 +261,9 @@ jobs:
   # this job. New `plugins/assay/scripts/*.test.sh` files are picked up without
   # editing this workflow.
   plugin-shell-suites:
+    needs: scope
+    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -233,6 +296,9 @@ jobs:
   # Needs the Go toolchain (the tool is `go run .` in tools/skillslint; the runner
   # ships no `make`), installed by hand from go.dev/dl as build-test documents.
   skillslint:
+    needs: scope
+    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -277,6 +343,9 @@ jobs:
   # tree the tool cannot read is a failure here, never a quiet pass. A reference
   # file it skips by declaration is announced on stderr in the job log.
   harnesslint:
+    needs: scope
+    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -302,6 +371,9 @@ jobs:
             bindings ../../plugins/assay/references
 
   cursor-generated:
+    needs: scope
+    # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
+    if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
     strategy:
       fail-fast: false
       matrix:
