@@ -32,7 +32,27 @@ clients. It accepts no caller qualifiers. GitHub checks `total_count`,
 `incomplete_results`, bodies, duplicate identities and next-page signals, bounded by
 the provider's ten-page/1,000-result search window. GitLab walks its existing bounded
 issue-page window, checks continuity and rejects duplicate or missing pages. Neither
-adapter retries through a different identity or permission scope.
+adapter retries through a different identity or permission scope. GitHub marker
+pages are sorted by creation time ascending; pagination completeness checks still
+apply because sorting does not make a multi-request read transactional.
+
+The dispatcher's selective lookup uses the same typed mode, with an opaque brief
+spelling. Each backend owns its query syntax: GitLab uses description search,
+not GitHub's `in:body` qualifier. Both paths filter exact marker spellings before
+the same fresh membership check. Native adapter fixtures cover selective/shared
+parity and retain GitLab's refusal when an issue and merge request share a number.
+No live GitLab execution is claimed.
+
+Discovery failures carry closed diagnostic categories: result/page limit,
+incomplete response/pagination, rate limit, authentication/authorization, or other
+transport/response failure. Raw provider bodies and locators are not rendered in
+row reasons. A failure remains unknown rather than an empty healthy queue.
+
+Scope remains the measured repeated-read regression. `throughput` still needs the
+canonical state/label/history/ruling checks to determine its decision-hold count;
+it does not substitute a weaker shortcut. The historical App-search symptom has
+not been reproduced or root-caused, so the PR references issue #3373 without
+closing it or claiming that symptom resolved.
 
 The observation owner is in `deskkit`; `deskboard` owns only bounded scheduling and
 presentation. This is an in-process step toward a shared read view, compatible with

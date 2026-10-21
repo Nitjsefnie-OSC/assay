@@ -14,6 +14,9 @@ func TestDecisionMarkerSearchGitHubPages(t *testing.T) {
 		if r.URL.Path != "/search/issues" || q.Get("q") != `repo:example-org/tracker is:issue "decision-gate" in:body` || q.Get("per_page") != "100" {
 			t.Errorf("unexpected scope/query %s", r.URL)
 		}
+		if q.Get("sort") != "created" || q.Get("order") != "asc" {
+			t.Errorf("unstable marker paging: %s", r.URL)
+		}
 		page := q.Get("page")
 		if page == "1" {
 			w.Header().Set("Link", `<https://example.invalid/?page=2>; rel="next"`)
@@ -123,5 +126,79 @@ func TestDecisionMarkerSearchRejectsQualifiers(t *testing.T) {
 		if _, err := f.SearchIssues(forgeTestRepo, SearchIssuesInput{Query: "repo:other/tracker", DecisionGateMarkers: true}); err == nil {
 			t.Fatal("qualifier accepted")
 		}
+		for _, in := range []SearchIssuesInput{
+			{DecisionGateMarkers: true, DecisionGateBrief: "s/01 repo:other/tracker"},
+			{DecisionGateMarkers: true, DecisionGateBrief: "s/01\x00"},
+			{DecisionGateBrief: "s/01"},
+		} {
+			if _, err := f.SearchIssues(forgeTestRepo, in); err == nil {
+				t.Fatal("untyped marker syntax reached search", in)
+			}
+		}
+	}
+}
+
+// Exercise both canonical single-brief lookup and shared discovery through each
+// native adapter. Only the remote HTTP endpoint is replaced; no live probe.
+// regression: medici-finance/assay#3373
+func TestDecisionMarkerSearchSingleAndSweepParity(t *testing.T) {
+	for _, backend := range []string{"github", "gitlab", "gitlab-collision"} {
+		t.Run(backend, func(t *testing.T) {
+			id := "assay:tracker:s:01"
+			bodies := map[int]string{1: "<!-- decision-gate: assay:otherproj:s:01 -->", 2: "<!-- decision-gate: " + id + " -->"}
+			selective := 0
+			s := newB33GitHub(t, func(w http.ResponseWriter, r *http.Request, _ string) {
+				q := r.URL.Query()
+				if strings.HasSuffix(r.URL.Path, "/merge_requests/2") {
+					if backend == "gitlab-collision" {
+						fmt.Fprint(w, `{"id":5,"iid":2,"state":"closed"}`)
+					} else {
+						w.WriteHeader(404)
+						fmt.Fprint(w, `{"message":"fixture absent"}`)
+					}
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/issues/2") {
+					fmt.Fprintf(w, `{"id":2,"iid":2,"number":2,"state":"closed","labels":[],"body":%q,"description":%q}`, bodies[2], bodies[2])
+					return
+				}
+				if backend == "github" {
+					if strings.Contains(q.Get("q"), id) || strings.Contains(q.Get("q"), "s/01") {
+						selective++
+					}
+					if q.Get("sort") != "created" || q.Get("order") != "asc" {
+						t.Error("unstable GitHub paging")
+					}
+					fmt.Fprintf(w, `{"total_count":2,"incomplete_results":false,"items":[{"number":1,"body":%q},{"number":2,"body":%q}]}`, bodies[1], bodies[2])
+					return
+				}
+				if q.Get("in") != "description" || q.Get("scope") != "all" || q.Get("state") != "all" || strings.Contains(q.Get("search"), "in:body") {
+					t.Errorf("GitHub query syntax leaked to GitLab: %s", r.URL)
+				}
+				if q.Get("search") != "decision-gate" {
+					selective++
+					if q.Get("search") != "decision-gate: "+id && q.Get("search") != "decision-gate: s/01" {
+						t.Errorf("wrong selective query %s", r.URL)
+					}
+				}
+				fmt.Fprintf(w, `[{"id":1,"iid":1,"description":%q},{"id":2,"iid":2,"description":%q}]`, bodies[1], bodies[2])
+			})
+			var f DecisionForge = s.forge()
+			if strings.HasPrefix(backend, "gitlab") {
+				f = &GitLabForge{Token: "fixture-token", BaseURL: s.srv.URL, Client: s.srv.Client()}
+			}
+			b := BriefAdmission{ID: id}
+			want := BriefDecisionWait(f, forgeTestRepo, b, sweepRatifier)
+			got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(b)
+			if backend == "gitlab-collision" {
+				if got != want || got.Unknown == "" || got.Waiting {
+					t.Fatalf("GitLab kind ambiguity was waived: shared=%+v single=%+v", got, want)
+				}
+				return
+			}
+			if got != want || got.Issue != 2 || got.Unknown != "" || got.Waiting || selective != 2 {
+				t.Fatalf("typed lookup differs: shared=%+v single=%+v selective=%d", got, want, selective)
+			}
+		})
 	}
 }

@@ -34,8 +34,8 @@
     {
       "name": "search body replaces fresh marker membership",
       "file": "internal/deskkit/briefadmission.go",
-      "old": "if normalizeDecisionBriefID(m[1]) == want {",
-      "new": "if normalizeDecisionBriefID(m[1]) == want || want != \"\" {"
+      "old": "if decisionBodyHasSpelling(item.Body, spelling) {",
+      "new": "if true || decisionBodyHasSpelling(item.Body, spelling) {"
     },
     {
       "name": "highest numbered candidate wins",
@@ -46,8 +46,8 @@
     {
       "name": "GitHub incomplete result accepted",
       "file": "internal/deskkit/decisionsearch.go",
-      "old": "|| *w.Incomplete ||",
-      "new": "|| false ||"
+      "old": "|| *w.Incomplete {",
+      "new": "|| false {"
     },
     {
       "name": "GitHub next page ignored",
@@ -76,8 +76,32 @@
     {
       "name": "foreign project colon markers become aliases",
       "file": "internal/deskkit/decisionsweep.go",
-      "old": "spellings := []string{id}\n\t\tif alt := otherDecisionBriefSpelling(id); alt != \"\" {\n\t\t\tspellings = append(spellings, alt)\n\t\t}",
+      "old": "spellings := decisionBriefSpellings(id)",
       "new": "var spellings []string\n\t\tfor spelling := range s.markers {\n\t\t\tif normalizeDecisionBriefID(spelling) == normalizeDecisionBriefID(id) {\n\t\t\t\tspellings = append(spellings, spelling)\n\t\t\t}\n\t\t}"
+    },
+    {
+      "name": "result cap loses its diagnostic class",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "cause = \"decision-marker result limit reached\"",
+      "new": "cause = \"transport or response unavailable\""
+    },
+    {
+      "name": "raw provider error leaks into board reason",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "return fmt.Sprintf(\"the search for %s's decision issue on %s could not run (%s)\", id, repo.Slug(), cause)",
+      "new": "_ = cause; return fmt.Sprintf(\"the search for %s's decision issue on %s could not run (%s)\", id, repo.Slug(), err.Error())"
+    },
+    {
+      "name": "GitHub search syntax forwarded to GitLab",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "gitlab.Ptr(search)",
+      "new": "gitlab.Ptr(fmt.Sprintf(\"%q in:body\", search))"
+    },
+    {
+      "name": "GitHub discovery loses stable sort",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "&sort=created&order=asc",
+      "new": "&order=asc"
     }
   ]
 }

@@ -493,6 +493,9 @@ type SearchIssuesInput struct {
 	// only this mode carries Body. Query must be empty in this mode. Consumers must
 	// still read each selected issue and its ruling through the canonical evaluator.
 	DecisionGateMarkers bool
+	// DecisionGateBrief optionally narrows marker discovery to one exact brief
+	// spelling. It is an opaque marker token, never provider search syntax.
+	DecisionGateBrief string
 }
 
 // IssueSearchResult is one issue matched by SearchIssues: the fields deskfile's dedupe scores

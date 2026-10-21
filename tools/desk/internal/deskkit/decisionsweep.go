@@ -1,7 +1,6 @@
 package deskkit
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 )
@@ -63,12 +62,9 @@ func (s *DecisionSweep) Wait(b BriefAdmission) DecisionWait {
 			}
 		})
 		if s.discoveryErr != nil {
-			return DecisionWait{Unknown: fmt.Sprintf("the search for %s's decision issue on %s could not run", id, s.repo.Slug())}
+			return DecisionWait{Unknown: decisionSearchUnknown(s.repo, id, s.discoveryErr)}
 		}
-		spellings := []string{id}
-		if alt := otherDecisionBriefSpelling(id); alt != "" {
-			spellings = append(spellings, alt)
-		}
+		spellings := decisionBriefSpellings(id)
 		// Copy before sorting: concurrent briefs may share index entries.
 		var candidates []int
 		seen := map[int]bool{}

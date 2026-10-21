@@ -11,13 +11,14 @@ import (
 )
 
 type decisionSweepFixture struct {
-	mu     sync.Mutex
-	issues map[int]*Issue
-	search []IssueSearchResult
-	events map[int][]LabelEvent
-	trust  map[int]*TrustPayload
-	failed string
-	calls  map[string]int
+	mu      sync.Mutex
+	issues  map[int]*Issue
+	search  []IssueSearchResult
+	events  map[int][]LabelEvent
+	trust   map[int]*TrustPayload
+	failed  string
+	failure error
+	calls   map[string]int
 }
 
 func newDecisionSweepFixture() *decisionSweepFixture {
@@ -45,9 +46,38 @@ func (f *decisionSweepFixture) call(key string) error {
 	defer f.mu.Unlock()
 	f.calls[key]++
 	if f.failed == key {
+		if f.failure != nil {
+			return f.failure
+		}
 		return errors.New("fixture unavailable")
 	}
 	return nil
+}
+
+// regression: medici-finance/assay#3373
+func TestDecisionSweepFailureCategories(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{Unverifiable("not-for-display", errDecisionSearchCap), "result limit reached"},
+		{Unverifiable("not-for-display", errDecisionSearchIncomplete), "response or pagination incomplete"},
+		{&ForgeAPIError{Status: 403, Body: "not-for-display"}, "authentication or authorization failed"},
+		{&ForgeAPIError{Status: 429, RateLimited: true, Body: "not-for-display"}, "provider rate limit"},
+		{errors.New("not-for-display"), "transport or response unavailable"},
+	} {
+		f := newDecisionSweepFixture()
+		f.failed = "search"
+		f.failure = c.err
+		b := BriefAdmission{ID: "s/01"}
+		got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(b)
+		if got.Waiting || !strings.Contains(got.Unknown, c.want) || strings.Contains(got.Unknown, "not-for-display") {
+			t.Fatalf("cause lost or leaked: %+v want %s", got, c.want)
+		}
+		if want := BriefDecisionWait(f, forgeTestRepo, b, sweepRatifier); got != want {
+			t.Fatalf("single and shared causes differ: %+v %+v", got, want)
+		}
+	}
 }
 func (f *decisionSweepFixture) GetIssue(_ ForgeRepo, n int) (*Issue, error) {
 	if err := f.call(fmt.Sprintf("issue:%d", n)); err != nil {
@@ -59,13 +89,13 @@ func (f *decisionSweepFixture) SearchIssues(_ ForgeRepo, in SearchIssuesInput) (
 	if err := f.call("search"); err != nil {
 		return f.search, err
 	} // partial content must be discarded
-	if in.DecisionGateMarkers {
+	if in.DecisionGateMarkers && in.DecisionGateBrief == "" {
 		return f.search, nil
 	}
 	var hits []IssueSearchResult
 	for _, hit := range f.search {
 		for _, m := range decisionMarkerRe.FindAllStringSubmatch(hit.Body, -1) {
-			if strings.Contains(in.Query, m[1]) {
+			if (in.DecisionGateMarkers && in.DecisionGateBrief == m[1]) || (!in.DecisionGateMarkers && strings.Contains(in.Query, m[1])) {
 				hits = append(hits, hit)
 				break
 			}

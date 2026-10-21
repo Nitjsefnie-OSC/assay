@@ -233,19 +233,16 @@ func decisionIssueByMarker(f DecisionForge, fr ForgeRepo, id string) (int, strin
 	if id == "" {
 		return 0, ""
 	}
-	spellings := []string{id}
-	if alt := otherDecisionBriefSpelling(id); alt != "" {
-		spellings = append(spellings, alt)
-	}
+	spellings := decisionBriefSpellings(id)
 	seen := map[int]bool{}
 	var candidates []int
 	for _, s := range spellings {
-		hits, err := f.SearchIssues(fr, SearchIssuesInput{Query: fmt.Sprintf("%q in:body", DecisionGateMarkerPrefix+": "+s)})
+		hits, err := f.SearchIssues(fr, SearchIssuesInput{DecisionGateMarkers: true, DecisionGateBrief: s})
 		if err != nil {
-			return 0, fmt.Sprintf("the search for %s's decision issue on %s could not run", id, fr.Slug())
+			return 0, decisionSearchUnknown(fr, id, err)
 		}
 		for _, h := range hits {
-			if !seen[h.Number] {
+			if decisionBodyHasSpelling(h.Body, s) && !seen[h.Number] {
 				seen[h.Number] = true
 				candidates = append(candidates, h.Number)
 			}
@@ -258,20 +255,36 @@ func decisionIssueByMarker(f DecisionForge, fr ForgeRepo, id string) (int, strin
 // search bodies are an index, not authoritative membership. Shared sweeps reuse
 // this same lowest-numbered-candidate rule as the single-brief dispatcher.
 func decisionIssueFromCandidates(f DecisionForge, fr ForgeRepo, id string, candidates []int) (int, string) {
-	want := normalizeDecisionBriefID(id)
 	sort.Ints(candidates)
 	for _, c := range candidates {
 		item, err := f.GetIssue(fr, c)
 		if err != nil || item == nil {
 			return 0, fmt.Sprintf("a candidate decision issue %s#%d for %s could not be read", fr.Slug(), c, id)
 		}
-		for _, m := range decisionMarkerRe.FindAllStringSubmatch(item.Body, -1) {
-			if normalizeDecisionBriefID(m[1]) == want {
+		for _, spelling := range decisionBriefSpellings(id) {
+			if decisionBodyHasSpelling(item.Body, spelling) {
 				return c, ""
 			}
 		}
 	}
 	return 0, ""
+}
+
+func decisionBodyHasSpelling(body, spelling string) bool {
+	for _, m := range decisionMarkerRe.FindAllStringSubmatch(body, -1) {
+		if m[1] == spelling {
+			return true
+		}
+	}
+	return false
+}
+
+func decisionBriefSpellings(id string) []string {
+	spellings := []string{id}
+	if alt := otherDecisionBriefSpelling(id); alt != "" {
+		spellings = append(spellings, alt)
+	}
+	return spellings
 }
 
 var (
