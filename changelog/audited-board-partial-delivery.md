@@ -1,5 +1,2 @@
-Declare the performance-recorder slice in PR #3759 as partial delivery of
-statusgen/26. Its snapshot reuse and workload obligations remain owed. A bounded
-source-backed ten-row regression keeps that slice in progress while preserving
-the nine independently reviewed full witnesses, existing refusal floors and
-protected board cells. No production Go behavior or generated board is changed.
+### Fixed
+- Keep PR #3759's performance-recorder slice in progress for statusgen/26, preserving its owed snapshot reuse and workload work and the nine reviewed full witnesses. Production Go and generated boards are unchanged.
