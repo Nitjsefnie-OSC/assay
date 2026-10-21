@@ -129,7 +129,7 @@ type JoinInput struct {
 // decode would have matched.
 var joinTopKeys = []string{
 	"prs", "prs_unknown_reason", "verifier_tier", "started", "finished", "rows_passed", "rows_total",
-	"row_results", "dispatch_ref", "dispatch_ref_sha256",
+	"rows", "row_results", "dispatch_ref", "dispatch_ref_sha256",
 }
 
 var prEntryKeys = []string{"repo", "number", "merge_sha", "withheld"}
@@ -351,6 +351,7 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 		return Refused(fmt.Sprintf("refused: rows_passed %d exceeds rows_total %d", passed, total))
 	}
 
+	heldRows := map[VerifyRowID]bool{}
 	if v, has := f["rows"]; has {
 		var rows []VerifyRowID
 		if err := json.Unmarshal(v, &rows); err != nil {
@@ -362,7 +363,11 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 				return Refused("refused: rows repeats row " + string(row))
 			}
 			seen[row] = true
+			heldRows[row] = true
 		}
+	}
+	if hasPassed && hasTotal && passed > total-len(heldRows) {
+		return Refused(fmt.Sprintf("refused: rows_passed %d exceeds non-held rows %d", passed, total-len(heldRows)))
 	}
 	if v, has := f["row_results"]; has {
 		var entries []json.RawMessage
@@ -400,11 +405,28 @@ func checkRunMetadataShape(f map[string]json.RawMessage) error {
 				return Refused(fmt.Sprintf("refused: row_results[%d].result must be one of pass, fail, could-not-run, deferred", i))
 			}
 			if res == RowPass {
+				if heldRows[row] {
+					return Refused("refused: held row " + string(row) + " also claims PASS")
+				}
 				pass++
 			}
 		}
 		if hasPassed && pass != passed {
 			return Refused(fmt.Sprintf("refused: row_results holds %d pass rows but rows_passed is %d", pass, passed))
+		}
+		for row := range heldRows {
+			if !seen[row] {
+				return Refused("refused: held row " + string(row) + " is absent from row_results inventory")
+			}
+		}
+	} else if hasTotal {
+		// Without exact results, only the declared contiguous numeric inventory
+		// 1..total is known. Never infer a suffix or a foreign held identity.
+		for row := range heldRows {
+			n, err := strconv.Atoi(string(row))
+			if err != nil || n > total {
+				return Refused("refused: held row " + string(row) + " is outside count-only inventory 1..rows_total")
+			}
 		}
 	}
 	return nil
