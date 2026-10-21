@@ -42,12 +42,12 @@ exec-tier: strong
 exec-tier-why: "(a) the template must tell a session precisely what settles a keep-versus-drop triage, which is judgement; (b) it spans the investigation template, the semantic index, the arch tests, the regression tags and the author-brief skill."
 domain: complicated
 consumers:
-  - "docs/refactor-oracle-template.md (planned): follow-up build-less-brittle/12 (this brief)"
-  - "docs/brittle-investigation-template.md §Next act (`redesign` names the oracle as the act before the design brief): follow-up build-less-brittle/12 (this brief; ≤ 3 lines)"
-  - "docs/investigations/README.md (the `-oracle.md` filename rule): follow-up build-less-brittle/12 (this brief; ≤ 2 lines)"
-  - "plugins/assay/skills/author-brief/SKILL.md (a design brief from `redesign` carries `oracle:` and the five acceptance rows): follow-up build-less-brittle/12 (this brief; ≤ 3 lines, offset)"
-  - "tools/desk/cmd/deskdispatch/references/review-prompt.md §Design fit first (the oracle's triage table is a material claim): follow-up build-less-brittle/12 (this brief; ≤ 2 lines, offset)"
-  - "tools/desk/internal/testledger (a `characterization-untriaged` report line): follow-up build-less-brittle/12 (this brief)"
+  - "docs/refactor-oracle-template.md: fixed-here"
+  - "docs/brittle-investigation-template.md §Next act (`redesign` names the oracle as the act before the design brief): fixed-here"
+  - "docs/investigations/README.md (the `-oracle.md` filename rule): fixed-here"
+  - "plugins/assay/skills/author-brief/SKILL.md (a design brief from `redesign` carries `oracle:` and the five acceptance rows): fixed-here"
+  - "tools/desk/cmd/deskdispatch/references/review-prompt.md §Design fit first (the oracle's triage table is a material claim): fixed-here"
+  - "tools/desk/internal/testledger (a `characterization-untriaged` report line): fixed-here"
   - "build-less-brittle/13 (the agent-run incident refactor assembles this oracle itself): follow-up build-less-brittle/13"
   - "installed deskdispatch binaries (kits are embedded): out-of-scope (reach consumers on the next desk-tools release and pin bump)"
 ---
