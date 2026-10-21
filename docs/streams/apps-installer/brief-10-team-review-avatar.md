@@ -86,5 +86,32 @@ facts:
 ## Evidence
 <!-- appended at implementation time: one row per Verify item -->
 
+### 2026-10-21 independent verification (fresh verifier, admitted run)
+
+Observed source: 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (merged main, detached home). Delivery: squash commit f52610f4e036de6b8e01e16c6f7aadde168b5b25 on the first-parent chain, single parent 59246f0b7a95c5ac600ef209d6731fd378125e6e. Dispatcher admission check passed before any row ran (Verification-Attestation run 968ae11e4bc4a988b79eeb0846106dab27761570f10095f226893c7d60f4ca98, brief sha256 760e5af3d376b3ed0795893f5d415e3b08874f591205a97f4f43d200d90b8fa2). Toolchain: go1.27.2 darwin/arm64, git 2.56.0.
+
+Verification-Table: delivery=f52610f4e036de6b8e01e16c6f7aadde168b5b25 base=59246f0b7a95c5ac600ef209d6731fd378125e6e original=59246f0b7a95c5ac600ef209d6731fd378125e6e
+
+Table re-derivation: 6 rows, 0 author-added. The delivery changed only row 4's Class (check to check +mutation); every Command and Expect is byte-identical to the base. The Verify section is unchanged between the delivery and the observed source. The proof thresholds file is untouched by the delivery.
+
+| # | Command | Expected | Observed | Date | Runner |
+|---|---------|----------|----------|------|--------|
+| 1 | `cd tools/desk && go build -o /tmp/deskavatar ./cmd/deskavatar && rm -rf /tmp/av10 && /tmp/deskavatar --org example --tier team --out /tmp/av10 --sizes 200 && ls /tmp/av10 \| grep -cE -e '^example-read\.' -e '^example-act\.' -e '^example-review\.'` | 6 | exit 0; printed 6 (example-act, example-read, example-review, each as .svg and .png) | 2026-10-21 | assay-verifier-app[bot] @ 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `cd tools/desk && go test ./internal/avatar/ -run 'TestTeam.*Proof' -count=1 -v 2>&1 \| grep -c -- '--- PASS: TestTeam.*Proof'` | ≥ 1 | exit 0; printed 2 (TestTeamThreeTileProof and TestTeamProofEveryHue both PASS) | 2026-10-21 | assay-verifier-app[bot] @ 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `cd tools/desk && go test ./internal/avatar/ -run 'TestTeamReadActUnchanged' -count=1 -v 2>&1 \| grep -c -- '--- PASS: TestTeamReadActUnchanged'` | 1 | exit 0; printed 1 | 2026-10-21 | assay-verifier-app[bot] @ 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd tools/desk && go test ./internal/avatar/ -run 'TestProofRejects' -count=1 -v 2>&1 \| grep -c -- '--- PASS: TestProofRejects'` | ≥ 1 | exit 0; printed 1 (TestProofRejectsReviewLikeRead PASS) | 2026-10-21 | assay-verifier-app[bot] @ 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `cd tools/desk && go test ./internal/avatar/ -count=1` | exit 0 | exit 0; ok github.com/medici-finance/assay/tools/desk/internal/avatar 2.516s | 2026-10-21 | assay-verifier-app[bot] @ 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 6 | `statusgen --root . --consumers --brief apps-installer/10` | exit 0 | exit 2 (statusgen v1.0.54): COULD-NOT-CHECK, the committed Evidence carried no Verification-Table marker naming the delivery, so no claim was corroborated or disproved. Could-not-run accounting: this row earns no credit at this source. Supplemental probe (no acceptance credit): the same command with --delivery f52610f4e036de6b8e01e16c6f7aadde168b5b25 --base 59246f0b7a95c5ac600ef209d6731fd378125e6e exited 0 with 4 corroborated, 0 disproved, 0 unchecked | 2026-10-21 | assay-verifier-app[bot] @ 3cea6aa621ec0364fb7a6cbd1196141829ba6c4c (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Row 6 diagnostic (no acceptance credit): re-running the row 6 command with this block present but uncommitted exited 0 and reported 0 corroborated, 0 disproved, 4 unchecked, because the uncommitted brief edit puts the brief in the working-tree diff; unchecked is not corroborated, so row 6 stays without credit until the marker is committed.
+
+Risk-bearing value enumeration (diff scope: generate.go, main.go and the tests of the delivery; the item is not irreversible and carries full risk metadata, all no, so this is for completeness):
+
+- reviewBody mix ratio = 0.55 @ tools/desk/internal/avatar/generate.go:183; review glyph = GlyphDisc @ generate.go:185; review glyph colour colGlyphLite = "#EAF0FF" (pre-existing, compose.go:15, reused). All are cosmetic and reversible by an edit and a redeploy; the proof thresholds (proofDeltaE = 25.0, proofIoU = 0.6, proof.go lines 12 and 13) were not changed by the delivery.
+
+RISK-VALUE: DERIVED — reviewBody mix ratio = 0.55 @ tools/desk/internal/avatar/generate.go:183 — a reversible cosmetic tone choice; the brief's acceptance is the unchanged 20 px proof, which rows 2 and 5 show passing across every hue, with thresholds untouched by the delivery.
+
+**VERIFY: BLOCKED** — 5/6 rows pass; row 6 exited 2 COULD-NOT-CHECK at this source because the committed Evidence had no Verification-Table marker. This block supplies that marker; re-run row 6 once it lands.
+
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
