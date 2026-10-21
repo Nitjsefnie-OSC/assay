@@ -53,7 +53,7 @@
       "name": "GitHub next page ignored",
       "file": "internal/deskkit/decisionsearch.go",
       "old": "len(out) == *w.Total && !hasNextLink(hdr)",
-      "new": "len(out) == *w.Total"
+      "new": "len(out) == *w.Total && (!hasNextLink(hdr) || true)"
     },
     {
       "name": "GitLab first page treated as whole",
