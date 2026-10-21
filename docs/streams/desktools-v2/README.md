@@ -121,6 +121,9 @@ is the one contract; /15–/17 own its foundation, rollout and completion.
 | 64 | [Propagate performance context through desks, agents and tool CLIs](brief-64-propagate-performance-context-through-desks-agents-and-tool-clis.md) | 3 | M | implemented | — | — |
 | 65 | [Measure own forge request timing and GraphQL cost](brief-65-measure-own-forge-request-timing-and-graphql-cost.md) | 3 | M | implemented | — | — |
 | 66 | [Extract shared write policy and make writeguard a hook adapter](brief-66-extract-shared-write-policy-and-make-writeguard-a-hook-adapter.md) | 1 | L | todo | — | — |
+| 67 | [Define an extensible perf-v4 envelope and compatible readers](brief-67-define-an-extensible-perf-v4-envelope-and-compatible-readers.md) | 3 | M | todo | — | — |
+| 68 | [Select perf-v4 in shared producers and qualify the direct migration](brief-68-select-perf-v4-in-shared-producers-and-qualify-the-direct-migration.md) | 4 | M | todo | — | — |
+| 69 | [Specify extensible JSON contracts and migration targets](brief-69-specify-extensible-json-contracts-and-migration-targets.md) | 1 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -340,3 +343,13 @@ Target-consumer clarification, 19 October 2026: graph-execution/22 directly cons
 parser port is withdrawn (medici-finance/assay#3409 merged, ruled at
 medici-finance/assay#3420), so /66 has no parser-port edge: writeguard keeps its current
 parser, routed exempt, and /66 owns the hook adapter. The guard controls are not retired.
+
+## Extensible performance successor — 21 October 2026
+
+[The contract census](../../proposals/non-ci-architecture/29-extensible-json-contracts.md)
+updates the future architecture across JSON owners. Critical path for selected-profile
+performance is /69 (design/specification) → /67 (reader/core/extensions) → /68 (producer
+selection). /67 also needs /63; /68 also needs /64 and /65 verification. Authoring
+these briefs does not claim their implementation. Existing /26 and /62 work retains
+its snapshot, phase, benchmark and verification obligations; future format tasks
+migrate to v4 through dated amendments rather than editing completed evidence.
