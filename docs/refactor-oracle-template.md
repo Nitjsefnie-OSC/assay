@@ -140,10 +140,10 @@ exit code and output line, and every forge or file write, driven through its ent
 Reads, from the repository root: `grep -n '^| S-' docs/contracts.md | grep -F '<module>'` for
 the owner; then for a library `go -C <owner package> doc -all .`, and for a command
 `go -C <module> doc -cmd -u -all .` (its usage, exit codes and entry functions) and
-`git grep -nE '\.(Bool|Duration|Float64|Int|Int64|String|Uint|Uint64|BoolFunc|Func)\(("|[A-Za-z_][A-Za-z_.]*,)|\.(Bool|Duration|Float64|Int|Int64|String|Text|Uint|Uint64)?Var\([^,]+, *("|[A-Za-z_][A-Za-z_.]*,)|Flag: *("|[A-Za-z_])' -- '<module>/*.go' ':!<module>/*_test.go'`
+`git grep -nE '\.(Bool|Duration|Float64|Int|Int64|String|Uint|Uint64|BoolFunc|Func)\(("[^"]*"|[A-Za-z_][A-Za-z_.]*),|\.(Bool|Duration|Float64|Int|Int64|String|Text|Uint|Uint64)?Var\([^,]+, *("[^"]*"|[A-Za-z_][A-Za-z_.]*),|(^|[^A-Za-z_])Flag: *("|[A-Za-z_])' -- '<module>/*.go' ':!<module>/*_test.go'`
 (its flags). The read covers the `flag`/`pflag` call forms with a literal or a named-constant flag
-name, and the `Flag:` field of a binding table. A flag declared another way (a helper closure
-building the name) is outside it: run the command with `-h` and add every flag it prints that the
+name, and the `Flag:` key of a binding table. A `Flag: k` line inside a helper stands for the flags
+the helper builds, and a flag declared another way is outside the read: run the command with `-h` and add every flag it prints that the
 read missed to the triage table as its own row, so the surface is not the grep's shape. Each test carries, directly above its declaration,
 `// characterization: <module> <oracle-file>`, two fields, so the test ledger can list it.
 A replay corpus for the module, where one exists, may be cited here as a source.
