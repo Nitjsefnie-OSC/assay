@@ -2,7 +2,7 @@
 
 The pending-Evidence reuse change removed repeated reads of the same attestation, but
 one distinct successful attestation still required four provider requests. In the
-qualified four-root population, 31 distinct attestations accounted for 124 of 187 total
+earlier four-root profile, 31 distinct attestations accounted for 124 of 187 total
 GitHub requests. This change collects that distinct population before validating it.
 
 ## Composition and authority
@@ -58,11 +58,41 @@ The three fixed batch documents join the existing closed cost-query inventory; t
 are variables and no provider text expands that inventory. Legacy consent and unknown
 custom/enterprise-schema cost behavior are unchanged.
 
-Qualification compares parent and subject on the same four frozen roots, with normal
-preflight and verifier custody, native default HTTP settings, the same total-request
-counter and warm credentials. The complete plan, admitted roots, physical GitHub attempts
-(including identity and Git preflight), wall time, CPU and point coverage must all be
-reported. The integrated measurements will be recorded here before publication.
+The measured parent is `fb7d8bb04ba46eddf8e75867e61620c19a4f74fe`; the measured
+subject code is `0758413cfc581ba96ee83421ebd21bdf69d813c6`. Both used native default
+HTTP settings, matching standard-library counters/runtime profiling and normal verifier
+custody. CPU-heavy tests were stopped during measurement. Subsequent qualification edits
+change only documentation.
+
+Measured parent/subject/subject/parent on the same four frozen roots, with normal preflight and custody:
+
+| Run | Wall | Total GitHub HTTP attempts | Measured GraphQL points |
+|---|---:|---:|---:|
+| Parent | 61.987 s | 189 | 34 |
+| Batch | 28.367 s | 69 | 7 |
+| Batch repeat | 26.580 s | 69 | 7 |
+| Parent repeat | 62.517 s | 190 | 34 |
+
+The 190-call repeat includes one normal token-refresh request. The other parent/subject difference is exactly 120 scheduling requests: 124 attestation reads become four. One additional verifier PR since the earlier profile adds two reads to both versions, explaining 69 rather than the prototype's 67-call budget. All four runs produced exactly identical complete 266-item plans, admitted all four roots, preserved all 28 uncertainties, and left their frozen HEADs/tracked files unchanged. Mean wall time fell 55.9% (2.27×); this is a repeated observation for this population, not a universal network-latency guarantee.
+
+The plans contained 81 dispatchable items, 2 Evidence-only, 183 bucketed and zero
+pending holds. Scheduling requests fell 181 → 61; the remaining eight common calls were
+four Git preflight advertisements and four identity probes. Parent CPU samples were
+2.169 / 2.095 seconds, versus 1.586 / 1.489 for batching. The attestation phase fell
+36.445 / 36.387 seconds → 2.370 / 2.581. Mean total wall time was 62.252 → 27.474 seconds.
+Provider response bytes fell from about 4.30 MB to 3.44 MB. All scheduling responses were
+2xx and request drops were zero. REST point cost remains unsupported and partial recorder
+coverage remains explicit. No monetary saving is inferred. Raw plans, operational root
+identities, counter traces and profiles are retained privately.
+
+The repeatable request reduction is 63.5% against the matched 189-call parent, or
+120 scheduling requests in either pair. The original 280-call profile predates both
+reuse and batching and is historical context, not this change's wall-time control.
+Overflowing connections can add requests above this population's measured 69; the
+complete native fallbacks are retained for correctness. The real mutation harness has
+a green baseline, caught positive control, all nine mutations caught and zero
+could-not-mutate. Full planner/shared-library suites, focused race coverage, documentation
+lint and public-surface scan qualify the change.
 
 The collection step can observe more relevant files up front than a successful early
 lazy hold would. That bounded tradeoff is explicit: it excludes unrelated/non-verifier
