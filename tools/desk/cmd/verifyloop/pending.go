@@ -501,9 +501,12 @@ func pendingRun(f deskkit.Forge, repo deskkit.ForgeRepo, root string, it loopeng
 	// checked against the attestation above; substitute ONLY that landed brief's
 	// exact writer hash, leaving every other existing wake input untouched.
 	reader := pendingInputs{WakeInputs: inputs, brief: "file:" + b.Brief, digest: deskkit.Sha256Hex(content)}
-	p := map[string]string{}
+	parsedRows := parseVerifyRowsIn(extractVerify(string(current)))
+	var signals briefFrontmatter
+	deriveContentSignalsRows(&signals, parsedRows)
+	p := map[string]string{"deferred_rows": signals.DeferredRows}
 	var rows []deskkit.VerifyRowID
-	for _, row := range parseVerifyRowsIn(extractVerify(string(current))) {
+	for _, row := range parsedRows {
 		rows = append(rows, row.ID)
 	}
 	deriveWakePayload(p, rec, rows, reader, issues, repo.Slug(), now)
