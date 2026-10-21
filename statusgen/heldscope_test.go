@@ -301,6 +301,9 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 	blocked := "**VERIFY: BLOCKED** — could-not-check, see the note above."
 	earlier := proseRun("Run 1 — 2026-10-01", 8, rc2, summary+"\n"+note, blocked)
 	final := proseRun("Run 2 — 2026-10-03", 8, allOK, "All eight rows re-run on an online runner.", "**VERIFY: PASS**")
+	rerun2 := proseRun("Run 2", 2, allOK, "", "**VERIFY: PASS**")
+	two := func(extra string) string { return proseRun("Run 1", 2, allOK, extra, blocked) }
+	eight := func(extra string) string { return proseRun("Run 1", 8, allOK, extra, blocked) }
 	handTable := "### Run 2\n\n| # | Result |\n|---|---|\n" +
 		"| 1 | ok |\n| 2 | ok |\n| 3 | ok |\n| 4 | ok |\n| 5 | ok |\n| 6 | ok |\n| 7 | ok |\n| 8 | ok |\n\n**VERIFY: PASS**\n"
 	runHeldScanCases(t, []heldScanCase{
@@ -350,6 +353,53 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		{"hold in the last entry's prose", earlier + proseRun("Run 2", 8, allOK, "Row 7 was could-not-check in Run 1.", "**VERIFY: PASS**"), true},
 		{"last entry misaligned row",
 			earlier + strings.Replace(final, "| 8 | `tool check 8` | 0 | ok |", "| 8 | `a | b` | 0 | ok |", 1), true},
+
+		// The ruled scope (#3841): under full coverage, held prose naming a row
+		// absent from every keyed table or naming no row is dropped, and so is a
+		// hold in a fence or an HTML comment. A row an earlier entry records in
+		// a table the scan cannot key (no separator row, another shape, no
+		// leading pipe, HTML) keeps every entry read, whether the hold sits on
+		// the row or in prose naming it; so does a hold in a non-comment HTML
+		// block.
+		// Admitted: the ruled scope.
+		{"row named only in prose", two("Row 3 HELD — the restore drill was never run.") + rerun2, false},
+		{"untabled row in a note", eight("- row 9 could-not-check: runner offline.") + final, false},
+		{"row-less note", two("- could-not-check: integration suite") + rerun2, false},
+		{"hold in an HTML comment", two("<!-- could-not-check: runner offline -->") + rerun2, false},
+		{"hold in a multi-line comment", two("<!--\nrow 3 HELD — runner offline\n-->") + rerun2, false},
+		{"hold in a fence", two("```\nrow 3 HELD — runner offline\n```") + rerun2, false},
+		{"fenced table, row in prose",
+			eight("```\n| # | Result |\n|---|---|\n| 9 | exit 2 |\n```\n\n- row 9 could-not-check.") + final, false},
+		{"table in an HTML comment",
+			two("<!--\n| Check | State |\n|---|---|\n| restore drill | HELD — runner offline |\n-->") + rerun2, false},
+		{"pipe in a code span, prose hold", two("- `a | b` could-not-check: runner offline.") + rerun2, false},
+		{"escaped pipe, prose hold", two("- a \\| b could-not-check: runner offline.") + rerun2, false},
+
+		// Refused: a row recorded in a table the scan cannot key.
+		{"pipeless table row held",
+			two("# | Command | Result\n--|--|--\n3 | drill | HELD — runner offline") + rerun2, true},
+		{"pipeless table, hold in prose",
+			two("Row | Check | Result\n--|--|--\n3 | drill | exit 2\n\n- row 3 could-not-check.") + rerun2, true},
+		{"HTML table cell held",
+			two("<table><tr><td>3</td><td>HELD — runner offline</td></tr></table>") + rerun2, true},
+		{"HTML table, hold on its own line",
+			two("<table>\n<tr><td>3</td>\n<td>\nHELD — runner offline\n</td></tr>\n</table>") + rerun2, true},
+		{"HTML table, hold in prose",
+			two("<table><tr><td>3</td><td>exit 2</td></tr></table>\n\n- row 3 could-not-check.") + rerun2, true},
+		{"other-shape table, hold in prose",
+			eight("| Check | Result |\n|---|---|\n| restore drill | exit 2 |\n\n- restore drill could-not-check") + final, true},
+		{"no-separator table, prose hold",
+			eight("| # | Result |\n| 9 | exit 2 |\n\n- row 9 could-not-check.") + final, true},
+		{"blockquoted table row held",
+			two("> | # | Result |\n> |---|---|\n> | 3 | HELD — runner offline |") + rerun2, true},
+		{"lazy row after a keyed table",
+			strings.Replace(two(""), "| 2 | `tool check 2` | 0 | ok |\n\n",
+				"| 2 | `tool check 2` | 0 | ok |\n3 HELD — runner offline\n\n", 1) + rerun2, true},
+		// Refused: a hold inside an HTML block that is not a comment.
+		{"text after a comment's end",
+			two("<!-- note --> row 3 HELD — runner offline") + rerun2, true},
+		{"hold in an HTML details block",
+			two("<details>\nrow 3 HELD — runner offline\n</details>") + rerun2, true},
 	})
 }
 

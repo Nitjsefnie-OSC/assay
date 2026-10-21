@@ -57,16 +57,24 @@ import (
 //     (below).
 //     (b) Whole entries (#3841): the last entry covers EVERY row key of
 //     EVERY earlier entry's results tables — rows that held and rows that
-//     did not — there is at least one such key, and every data row of those
-//     tables is aligned and keyed. Then the earlier entries are superseded
+//     did not — there is at least one such key, every data row of those
+//     tables is aligned and keyed, and no earlier entry records a row in a
+//     table the scan cannot key. Then the earlier entries are superseded
 //     as wholes: their prose, an entry-level verdict such as VERIFY:
-//     BLOCKED, and a held or could-not-check note that names no row are all
-//     dropped. A held occurrence on a table line that is not an aligned,
-//     keyed results row (a table of another shape) is still read. One earlier
-//     key the last entry did not cover, one earlier row that cannot be
-//     aligned or keyed, or earlier entries with no keyed row at all leave
-//     (a) as the only way, so a held occurrence anywhere else — prose, a
-//     misaligned row, a table of another shape — leaves every entry read.
+//     BLOCKED, a held or could-not-check note that names no row or names a
+//     row absent from every keyed table, and a hold in fenced code or wholly
+//     inside an HTML comment are all dropped. A hold on any other line of an
+//     HTML block (heldHTMLLines) is still read. A table the scan cannot key
+//     is any line of an earlier entry, outside fenced code and HTML comments
+//     and not a keyed results row or its header, that carries an unescaped
+//     "|" outside inline code or an HTML table tag (heldTableish) — a table
+//     of another shape, with no separator row, with no leading pipe, inside
+//     a blockquote, or in HTML — or a non-blank line right after a results
+//     table, which GFM may read as one more row of it. One earlier key the
+//     last entry did not cover, one earlier row that cannot be aligned or
+//     keyed, one such table line, or earlier entries with no keyed row at all
+//     leave (a) as the only way, so a held occurrence anywhere else — prose,
+//     a misaligned row, a table of another shape — leaves every entry read.
 //     The last entry covers a key when it has live results tables
 //     (heldCovered) with a row of the same key (heldRowKey: key-column name
 //     and key text), and EVERY row of that key in the last entry is clean:
@@ -99,7 +107,7 @@ type heldLineRead struct {
 	prose bool     // a line outside every table, in an entry with a results table (rule 2)
 	blank [][2]int // byte ranges of the line (cell contents) the scan must not read
 	key   string   // the row key of an aligned results-table data row; "" for any other line
-	whole bool     // a line of an entry that whole-entry supersession (rule 3b) may drop: any line but a table line that is not an aligned, keyed results row
+	whole bool     // a line of an entry that whole-entry supersession (rule 3b) may drop: any line outside a non-comment HTML block
 }
 
 // heldScope is heldScanScope's decision: what to read of each line, and
@@ -115,7 +123,7 @@ type heldScope struct {
 // (the scan's hits, in any order) that lie before the last entry are all
 // replaced by it: every one is a keyed results-table row the last entry
 // re-ran (rule 3a), or the last entry re-ran every earlier row and the hit is
-// not on a table line it cannot key (rule 3b). A single hit it cannot classify
+// not in an HTML block other than a comment (rule 3b). A single hit it cannot classify
 // keeps every hit read.
 func (s heldScope) supersedes(hits []int) bool {
 	if s.from < 0 {
@@ -139,7 +147,8 @@ func (s heldScope) supersedes(hits []int) bool {
 
 // heldWholeCovered reports whether the last entry re-ran every earlier entry
 // whole (rule 3b): every earlier entry's results-table rows are all aligned
-// and keyed, there is at least one such key, and covered holds every one.
+// and keyed and it records no row in a table the scan cannot key, there is at
+// least one such key, and covered holds every one.
 func heldWholeCovered(keys [][]string, aligned []bool, covered map[string]bool) bool {
 	n := 0
 	for e := range keys {
@@ -174,6 +183,123 @@ func heldFenceToggle(line string) bool {
 // heldTableLine reports whether line is a table line: it starts with "|".
 func heldTableLine(line string) bool {
 	return strings.HasPrefix(strings.TrimSpace(line), "|")
+}
+
+// heldHTMLTableRe is an HTML table tag anywhere on a line.
+var heldHTMLTableRe = regexp.MustCompile(`(?i)</?(?:table|thead|tbody|tfoot|tr|td|th)\b`)
+
+// heldTableish reports whether line may carry a table row the scan cannot
+// key (rule 3b): an unescaped "|" outside inline code, or an HTML table tag.
+func heldTableish(line string) bool {
+	return heldPipeOutsideCode(line) || heldHTMLTableRe.MatchString(line)
+}
+
+// heldPipeOutsideCode reports whether line holds a "|" that is neither
+// backslash-escaped nor inside a code span. A backtick run with no closing run
+// of the same length on the line is literal text, as CommonMark reads it.
+func heldPipeOutsideCode(line string) bool {
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			i++
+		case '|':
+			return true
+		case '`':
+			n := 1
+			for i+n < len(line) && line[i+n] == '`' {
+				n++
+			}
+			if j := heldCloseRun(line, i+n, n); j >= 0 {
+				i = j + n - 1
+			} else {
+				i += n - 1
+			}
+		}
+	}
+	return false
+}
+
+// heldCloseRun returns where a backtick run of exactly n starts in line at or
+// after from, or -1.
+func heldCloseRun(line string, from, n int) int {
+	for i := from; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		m := 1
+		for i+m < len(line) && line[i+m] == '`' {
+			m++
+		}
+		if m == n {
+			return i
+		}
+		i += m
+	}
+	return -1
+}
+
+// The kinds of line heldHTMLLines tells apart.
+const (
+	heldNotHTML     = iota
+	heldHTMLComment // a line wholly inside an HTML comment
+	heldHTMLOther   // any other line of an HTML block
+)
+
+// heldHTMLLines classifies each line by the HTML block it sits in (rule 3b):
+// a comment line is one whose every byte lies inside the comment; a line of
+// any other HTML block, or a comment's line with text after its end, is
+// heldHTMLOther. A block that ends on its own line is read as running to the
+// next blank line unless it is a comment: the stricter choice.
+func heldHTMLLines(lines []string, inFence []bool) []int {
+	kind := make([]int, len(lines))
+	end, open, comment := "", false, false
+	for i, l := range lines {
+		lower := strings.ToLower(l)
+		switch {
+		case end != "":
+			kind[i] = heldHTMLOther
+			if comment {
+				kind[i] = heldHTMLComment
+			}
+			if j := strings.Index(lower, end); j >= 0 {
+				if comment && strings.TrimSpace(lower[j+len(end):]) != "" {
+					kind[i] = heldHTMLOther
+				}
+				end, comment = "", false
+			}
+			continue
+		case open:
+			if isBlankLine(l) {
+				open = false
+			} else {
+				kind[i] = heldHTMLOther
+			}
+			continue
+		case inFence[i]:
+			continue
+		}
+		h, e := heldHTMLOpen(l)
+		if !h {
+			continue
+		}
+		kind[i] = heldHTMLOther
+		if t := strings.TrimLeft(lower, " \t"); strings.HasPrefix(t, "<!--") {
+			kind[i] = heldHTMLComment
+			if e != "" {
+				end, comment = e, true
+			} else if j := strings.Index(t[4:], "-->"); strings.TrimSpace(t[4+j+3:]) != "" {
+				kind[i] = heldHTMLOther
+			}
+			continue
+		}
+		if e != "" {
+			end = e
+		} else {
+			open = true
+		}
+	}
+	return kind
 }
 
 // heldFence is an open CommonMark fence: its character and run length.
@@ -470,6 +596,7 @@ func heldScanScope(evidence string) heldScope {
 		}
 		inFence[i] = fence
 	}
+	html := heldHTMLLines(lines, inFence)
 
 	// Entries, split at live level-3 headings.
 	starts := []int{0}
@@ -515,6 +642,9 @@ func heldScanScope(evidence string) heldScope {
 				}
 				if tb.keyCol >= 0 && hasResult {
 					hasResults = true
+					if j < hi && !isBlankLine(lines[j]) {
+						aligned[e] = false // a line GFM may read as one more row of the table
+					}
 					tables = append(tables, tb)
 					out[i].skip, out[i+1].skip = true, true // header and separator
 					for r := i + 2; r < j; r++ {
@@ -542,7 +672,10 @@ func heldScanScope(evidence string) heldScope {
 			i = j
 		}
 		for i := lo; i < hi; i++ {
-			out[i].whole = inFence[i] || !heldTableLine(lines[i]) || out[i].key != ""
+			out[i].whole = html[i] != heldHTMLOther
+			if !inFence[i] && !out[i].skip && out[i].key == "" && html[i] != heldHTMLComment && heldTableish(lines[i]) {
+				aligned[e] = false // a table the scan cannot key
+			}
 		}
 		if !hasResults {
 			continue
