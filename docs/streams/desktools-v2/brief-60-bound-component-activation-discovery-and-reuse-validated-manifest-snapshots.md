@@ -141,6 +141,19 @@ Reuse those seams when available and record missing coverage otherwise; no dupli
 writer/parser, speculative ID inference or additional measurement request. Existing credential,
 cache/discovery and CLI work remains independently deliverable and is not held for v3.
 
+## Implementation choice within the declared fallback
+
+The bounded fallback is process-local reuse of parsed discovery, with one slot and
+1 MiB source/payload limits. Every reuse still performs a complete membership and
+content-validation traversal; the warm benefit is avoiding YAML parsing and derived
+sorting/deduplication, not eliminating filesystem scans. Persistent startup reuse is
+not qualified. The three compiled synthetic workloads measure external elapsed
+inactive-provider refusals with fresh/reused isolated homes and telemetry off/on;
+these do not qualify successful hotpath or recorder-write overhead (/62). Current
+board/dispatch help is scan-free; token's pre-parser activation remains owned by /33.
+See `tools/desk/README.md` for measured costs and limitations. Existing Verify rows
+and independent Evidence ownership are unchanged.
+
 ## Evidence
 
 <!-- Independent verifier records actual subject revision, environment, command, exit, named result and date. No implementation is claimed by this authoring change. -->
