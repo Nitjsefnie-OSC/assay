@@ -271,6 +271,9 @@ var dispatchRequirements = []dispatchRequirement{
 // This is an illustrative metadata shape, never observations to copy into Evidence.
 const wakeOutcomeRowsExample = `{"rows":[2],"rows_total":3,"rows_passed":2,"row_results":[{"row":1,"result":"pass"},{"row":2,"result":"could-not-run"},{"row":"6a","result":"pass"}]}`
 
+// A gapped inventory needs exact results: row 10 is held out of nine original rows.
+const wakeOutcomeGappedRowsExample = `{"rows":[10],"rows_total":9,"rows_passed":8,"row_results":[{"row":1,"result":"pass"},{"row":2,"result":"pass"},{"row":3,"result":"pass"},{"row":4,"result":"pass"},{"row":5,"result":"pass"},{"row":6,"result":"pass"},{"row":7,"result":"pass"},{"row":8,"result":"pass"},{"row":10,"result":"could-not-run"}]}`
+
 func renderDispatchPrompt(it loopengine.Item, tier loopengine.Tier) string {
 	verifyTable := it.Payload["verify_table"]
 	if strings.TrimSpace(verifyTable) == "" {
@@ -322,8 +325,9 @@ func renderDispatchPrompt(it loopengine.Item, tier loopengine.Tier) string {
 	if rows := payloadValue(it, "wake_passed_rows"); rows != "" {
 		fmt.Fprintf(&b, "Prior receipt PASS observations (do NOT re-run or relabel as fresh Evidence, and never infer a whole-brief PASS): %s\n\n", rows)
 	}
-	b.WriteString("Outcome-record producer contract: rows names only exact identities still held by this receipt; never list every covered row in rows. row_results accounts for the full original inventory. A verified record omits rows. Derive these fields only from this run's real witnessed Evidence, never from this illustrative example. For existing draft records using covered rows, follow the producer migration at https://github.com/medici-finance/assay/blob/main/docs/verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows; preserve historical records and report missing row evidence rather than guessing.\n")
+	b.WriteString("Outcome-record producer contract: rows names only exact identities still held by this receipt; never list every covered row in rows. When rows is non-empty, row_results is required for ALL original Verify IDs and their observed results. This includes non-contiguous numeric and suffixed inventories. When rows is empty or omitted, row_results remains optional. A verified record omits rows. Derive these fields only from this run's real witnessed Evidence, never from this illustrative example. For existing draft records using covered rows, follow the producer migration at https://github.com/medici-finance/assay/blob/main/docs/verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows; preserve historical records and report missing row evidence rather than guessing.\n")
 	b.WriteString("Outcome row metadata example: " + wakeOutcomeRowsExample + "\n")
+	b.WriteString("Gapped row metadata example: " + wakeOutcomeGappedRowsExample + "\n")
 	b.WriteString("You are NOT this brief's implementer (verifier != author). Fresh agent only.\n")
 	b.WriteString("Report back a STRUCTURED result: one Evidence row per Verify row (command, exit, output),\n")
 	b.WriteString("a clear verdict PASS|FAIL|BLOCKED, and your runner identity. Free-text verdicts are not accepted.\n")

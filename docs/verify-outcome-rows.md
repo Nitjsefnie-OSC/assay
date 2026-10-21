@@ -19,7 +19,12 @@ The `rows` field names held identities, never the list of all rows covered by a 
 Coverage belongs in `row_results` and `rows_total`; retain every original identity,
 including suffixes, there. A `verified` producer omits `rows`. A failed or blocked
 producer lists only the rows whose observed result remains held, and no held row
-may also claim PASS. Emit exact results for non-contiguous or suffixed inventories.
+may also claim PASS. Whenever `rows` is non-empty, `row_results` is required for
+ALL original Verify identities and their observed results, including non-contiguous
+numeric and suffixed inventories. With an empty or omitted `rows`, exact results
+remain optional. Count-only records are legacy-compatible only when held IDs fit
+the declared contiguous `1..rows_total` inventory; new held-set producers always
+supply exact results.
 The writer's count, overlap, casing and inventory checks remain refusals.
 
 This is a producer correction with an operational impact, not a transparent upgrade.

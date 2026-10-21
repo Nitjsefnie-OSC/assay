@@ -422,3 +422,43 @@ func TestPartialWakeOutcomeProducerExample(t *testing.T) {
 		t.Fatal("producer semantics missing")
 	}
 }
+
+// regression: #1731
+func TestPartialWakeOutcomeProducerRequiresExactHeldResults(t *testing.T) {
+	root := planFixtureRoot(t, map[string]string{"01": planBriefRows(3)})
+	it := selectOne(t, root, "example-stream/01")
+	tier, _ := (&VerifyLoop{}).TierPolicy(it)
+	prompt := renderDispatchPrompt(it, tier)
+	if !strings.Contains(prompt, "When rows is non-empty, row_results is required for ALL original Verify IDs and their observed results") {
+		t.Fatal("producer must require exact results for every non-empty held set")
+	}
+	_, tail, ok := strings.Cut(prompt, "Gapped row metadata example: ")
+	if !ok {
+		t.Fatal("gapped inventory producer example missing")
+	}
+	raw, _, _ := strings.Cut(tail, "\n")
+	if _, err := deskkit.ParseJoinInput([]byte(raw)); err != nil {
+		t.Fatalf("gapped producer example violates writer contract: %v", err)
+	}
+	var rec deskkit.WakeReceipt
+	if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.Rows) != 1 || rec.Rows[0] != "10" || rec.RowsTotal != 9 || rec.RowsPassed != 8 || len(rec.RowResults) != 9 || rec.RowResults[8].Row != "10" {
+		t.Fatalf("gapped producer lost exact held/inventory identities: %#v", rec)
+	}
+	// Counts alone cannot bind held row 10 to a nine-row inventory. The producer
+	// must keep the exact results; do not relax the writer to accept this shape.
+	var countOnly map[string]any
+	if err := json.Unmarshal([]byte(raw), &countOnly); err != nil {
+		t.Fatal(err)
+	}
+	delete(countOnly, "row_results")
+	withoutResults, err := json.Marshal(countOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deskkit.ParseJoinInput(withoutResults); err == nil {
+		t.Fatal("gapped held set accepted without required exact results")
+	}
+}

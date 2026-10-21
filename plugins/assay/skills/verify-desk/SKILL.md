@@ -309,12 +309,15 @@ incomplete record, naming the first missing field (`wake_schema`, `receipt_id`, 
 delivered the brief, as `{repo, number, merge_sha}`; or an explicit `prs: []` with
 `prs_unknown_reason: "no-pr-delivery"` when nothing was delivered), `verifier_tier` (`any` or
 `strong`, equal to your admitted tier; never a model name), `started` and `finished` (RFC3339 UTC,
-`started <= finished <= ts`), plus the existing `rows_passed` / `rows_total`. Optionally add
-`row_results` (`{row, result}` for ALL rows; `pass` / `fail` / `could-not-run` / `deferred`).
+`started <= finished <= ts`), plus the existing `rows_passed` / `rows_total`.
+When rows is non-empty, row_results is required for ALL original Verify IDs and their observed results.
+This includes non-contiguous numeric and suffixed inventories. Each exact result is
+`{row, result}` (`pass` / `fail` / `could-not-run` / `deferred`); when `rows` is empty
+or omitted, `row_results` remains optional.
 `rows` names only exact identities still held by the receipt, never every covered row;
 coverage belongs in `row_results` / `rows_total`. A `verified` record omits `rows`.
 For draft payloads using covered rows, follow the producer migration in
-[the canonical receipt contract](https://github.com/medici-finance/assay/blob/main/docs/verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows): preserve the original payload and
+[the outcome-row producer migration](https://github.com/medici-finance/assay/blob/main/docs/verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows): preserve the original payload and
 witnesses, derive held identities only from that run's real results, and retain
 incomplete evidence unlanded if it cannot establish them. Never rewrite historical
 Evidence or guess PASS identities from counts. All native landing controls still apply.

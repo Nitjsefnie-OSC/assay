@@ -163,6 +163,24 @@
       "file": "cmd/verifyloop/dispatch.go",
       "old": "`{\"rows\":[2],\"rows_total\":3,\"rows_passed\":2,",
       "new": "`{\"rows\":[1,2,\"6a\"],\"rows_total\":3,\"rows_passed\":2,"
+    },
+    {
+      "name": "writer-count-bound-off-by-one",
+      "file": "internal/deskkit/verifyoutcomejoin.go",
+      "old": "if err != nil || n > total {",
+      "new": "if err != nil || n > total+1 {"
+    },
+    {
+      "name": "producer-exact-results-optional",
+      "file": "cmd/verifyloop/dispatch.go",
+      "old": "When rows is non-empty, row_results is required for ALL original Verify IDs and their observed results",
+      "new": "When rows is non-empty, row_results is optional for ALL original Verify IDs and their observed results"
+    },
+    {
+      "name": "producer-gapped-results-omitted",
+      "file": "cmd/verifyloop/dispatch.go",
+      "old": "{\"rows\":[10],\"rows_total\":9,\"rows_passed\":8,\"row_results\":[{\"row\":1,\"result\":\"pass\"},{\"row\":2,\"result\":\"pass\"},{\"row\":3,\"result\":\"pass\"},{\"row\":4,\"result\":\"pass\"},{\"row\":5,\"result\":\"pass\"},{\"row\":6,\"result\":\"pass\"},{\"row\":7,\"result\":\"pass\"},{\"row\":8,\"result\":\"pass\"},{\"row\":10,\"result\":\"could-not-run\"}]}",
+      "new": "{\"rows\":[10],\"rows_total\":9,\"rows_passed\":8}"
     }
   ]
 }

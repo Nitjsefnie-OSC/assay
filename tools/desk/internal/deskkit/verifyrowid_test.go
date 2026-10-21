@@ -72,6 +72,7 @@ func TestVerifyRowIDWriterBoundsHeldInventory(t *testing.T) {
 	for _, raw := range []string{
 		`{"rows":[9],"rows_total":2,"row_results":[{"row":1,"result":"pass"},{"row":2,"result":"pass"}]}`,
 		`{"rows":[7,8],"rows_total":3}`,
+		`{"rows":[3],"rows_total":2}`, // first row outside the count-only boundary
 		`{"rows":["6a"],"rows_total":2}`,
 	} {
 		if _, err := ParseJoinInput([]byte(raw)); err == nil {
