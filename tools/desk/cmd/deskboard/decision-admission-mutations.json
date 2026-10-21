@@ -1,0 +1,77 @@
+{
+  "test": "go test ./internal/deskkit ./cmd/deskboard -count=1 -timeout 90s -run '^(TestDecision|TestBoardAdmission|TestBoardDropsUnruledGate)'",
+  "control": {
+    "name": "CONTROL: a missing ruling no longer holds",
+    "file": "internal/deskkit/briefadmission.go",
+    "old": "w.Waiting = true",
+    "new": "w.Waiting = false"
+  },
+  "mutations": [
+    {
+      "name": "discovery repeated per row",
+      "file": "internal/deskkit/decisionsweep.go",
+      "old": "s.discover.Do(func() {",
+      "new": "new(sync.Once).Do(func() {"
+    },
+    {
+      "name": "issue read not coalesced",
+      "file": "internal/deskkit/decisionsweep.go",
+      "old": "if read := s.issues[n]; read != nil {",
+      "new": "if read := s.issues[n]; false && read != nil {"
+    },
+    {
+      "name": "ruling read not coalesced",
+      "file": "internal/deskkit/decisionsweep.go",
+      "old": "if read := s.reads[n]; read != nil {",
+      "new": "if read := s.reads[n]; false && read != nil {"
+    },
+    {
+      "name": "partial discovery treated as complete",
+      "file": "internal/deskkit/decisionsweep.go",
+      "old": "if s.discoveryErr != nil {",
+      "new": "if false && s.discoveryErr != nil {"
+    },
+    {
+      "name": "search body replaces fresh marker membership",
+      "file": "internal/deskkit/briefadmission.go",
+      "old": "if normalizeDecisionBriefID(m[1]) == want {",
+      "new": "if normalizeDecisionBriefID(m[1]) == want || want != \"\" {"
+    },
+    {
+      "name": "highest numbered candidate wins",
+      "file": "internal/deskkit/briefadmission.go",
+      "old": "sort.Ints(candidates)",
+      "new": "sort.Sort(sort.Reverse(sort.IntSlice(candidates)))"
+    },
+    {
+      "name": "GitHub incomplete result accepted",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "|| *w.Incomplete ||",
+      "new": "|| false ||"
+    },
+    {
+      "name": "GitHub next page ignored",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "len(out) == *w.Total && !hasNextLink(hdr)",
+      "new": "len(out) == *w.Total"
+    },
+    {
+      "name": "GitLab first page treated as whole",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "if resp.NextPage == 0 {",
+      "new": "if true {"
+    },
+    {
+      "name": "single worker serializes admission reads",
+      "file": "cmd/deskboard/admission.go",
+      "old": "sweepConcurrent(results, sweepConcurrency,",
+      "new": "sweepConcurrent(results, 1,"
+    },
+    {
+      "name": "ruling cache survives a sweep",
+      "file": "internal/deskkit/decisionsweep.go",
+      "old": "func NewDecisionSweep(f DecisionForge, repo ForgeRepo, isRatifier func(string, int64) bool) *DecisionSweep {\n\treturn &DecisionSweep{forge: f, repo: repo, ratifier: isRatifier, reads: map[int]*decisionSweepRead{}, issues: map[int]*decisionSweepIssue{}}\n}\n",
+      "new": "var leakedDecisionReads = map[int]*decisionSweepRead{}\n\nfunc NewDecisionSweep(f DecisionForge, repo ForgeRepo, isRatifier func(string, int64) bool) *DecisionSweep {\n\treturn &DecisionSweep{forge: f, repo: repo, ratifier: isRatifier, reads: leakedDecisionReads, issues: map[int]*decisionSweepIssue{}}\n}\n"
+    }
+  ]
+}

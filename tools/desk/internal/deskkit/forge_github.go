@@ -682,6 +682,12 @@ func (g *GitHubForge) OpenChangeForBranch(repo ForgeRepo, branch string) (*PullR
 // prefixed with `repo:{o}/{r} is:issue`, so the caller supplies free text and the backend owns
 // the scope qualifiers — the closed-surface property (no caller-supplied search syntax).
 func (g *GitHubForge) SearchIssues(repo ForgeRepo, in SearchIssuesInput) ([]IssueSearchResult, error) {
+	if in.DecisionGateMarkers {
+		if err := validateDecisionSearch(in); err != nil {
+			return nil, err
+		}
+		return g.searchDecisionMarkers(repo)
+	}
 	q := strings.TrimSpace(fmt.Sprintf("repo:%s is:issue %s", repo.Slug(), strings.TrimSpace(in.Query)))
 	path := fmt.Sprintf("/search/issues?q=%s&per_page=%d", url.QueryEscape(q), forgeSearchPerPage)
 	var w ghIssueSearchWire

@@ -233,7 +233,6 @@ func decisionIssueByMarker(f DecisionForge, fr ForgeRepo, id string) (int, strin
 	if id == "" {
 		return 0, ""
 	}
-	want := normalizeDecisionBriefID(id)
 	spellings := []string{id}
 	if alt := otherDecisionBriefSpelling(id); alt != "" {
 		spellings = append(spellings, alt)
@@ -252,6 +251,14 @@ func decisionIssueByMarker(f DecisionForge, fr ForgeRepo, id string) (int, strin
 			}
 		}
 	}
+	return decisionIssueFromCandidates(f, fr, id, candidates)
+}
+
+// decisionIssueFromCandidates confirms marker membership on fresh issue reads;
+// search bodies are an index, not authoritative membership. Shared sweeps reuse
+// this same lowest-numbered-candidate rule as the single-brief dispatcher.
+func decisionIssueFromCandidates(f DecisionForge, fr ForgeRepo, id string, candidates []int) (int, string) {
+	want := normalizeDecisionBriefID(id)
 	sort.Ints(candidates)
 	for _, c := range candidates {
 		item, err := f.GetIssue(fr, c)
