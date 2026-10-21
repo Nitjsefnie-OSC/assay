@@ -97,7 +97,7 @@ func (g *GitHubForge) baseURL() string {
 func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {
 	if g.Token == "" {
 		return nil, Unverifiable("refusing to reach the GitHub forge without an explicitly minted token — "+
-			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", nil)
+			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", errForgeTokenMissing)
 	}
 	if g.rc != nil {
 		return g.rc, nil
@@ -2357,7 +2357,7 @@ func (g *GitHubForge) ListWorkflowFiles(repo ForgeRepo, ref string) ([]string, e
 func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {
 	if g.Token == "" {
 		return "", Unverifiable("refusing to reach the GitHub forge without an explicitly minted token — "+
-			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", nil)
+			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", errForgeTokenMissing)
 	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", repo.Owner, repo.Name, number)
 	req, rerr := http.NewRequest(http.MethodGet, g.baseURL()+path, nil)

@@ -29,6 +29,10 @@ import (
 	"time"
 )
 
+// errForgeTokenMissing identifies local credential absence without changing the
+// existing Unverifiable contract or enabling an ambient identity fallback.
+var errForgeTokenMissing = errors.New("explicitly minted forge token missing")
+
 // GitHubAPIBase is the single home of the GitHub REST/GraphQL host literal. Desk commands
 // that keep a package-level test hook (`var apiBaseURL = GitHubAPIBase`) source their
 // default from here so the literal is constructed in exactly one place — the forge module —

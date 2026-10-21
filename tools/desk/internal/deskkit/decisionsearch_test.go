@@ -235,3 +235,61 @@ func TestDecisionMarkerSearchSingleAndSweepParity(t *testing.T) {
 		})
 	}
 }
+
+// Missing minted credentials remain unverifiable and never reach a provider or
+// become a clean absence; the shared and selective paths retain a useful cause.
+// regression: medici-finance/assay#3373
+func TestDecisionMissingMintedTokenCause(t *testing.T) {
+	for _, backend := range []string{"github", "gitlab"} {
+		t.Run(backend, func(t *testing.T) {
+			gh := newB33GitHub(t, func(http.ResponseWriter, *http.Request, string) { t.Error("missing token reached provider") })
+			var f DecisionForge
+			if backend == "github" {
+				f = &GitHubForge{BaseURL: gh.srv.URL}
+			} else {
+				f = &GitLabForge{BaseURL: gh.srv.URL}
+			}
+			hits, err := f.SearchIssues(forgeTestRepo, SearchIssuesInput{DecisionGateMarkers: true})
+			if hits != nil || ExitCodeOf(err) != ExitUnverifiable {
+				t.Fatalf("missing token changed error contract: hits=%+v err=%v", hits, err)
+			}
+			b := BriefAdmission{ID: "s/01"}
+			single := BriefDecisionWait(f, forgeTestRepo, b, sweepRatifier)
+			shared := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(b)
+			if single != shared || shared.Waiting || !strings.Contains(shared.Unknown, "minted provider token unavailable") {
+				t.Fatalf("missing token lost cause or became absence: single=%+v shared=%+v", single, shared)
+			}
+			if len(gh.seen) != 0 {
+				t.Fatalf("missing token reached provider: %v", gh.seen)
+			}
+		})
+	}
+}
+
+// The four native missing-token origins retain exit 6 and a typed cause. This
+// calls only guarded client constructors and an offline diff read, never a trigger.
+// regression: medici-finance/assay#3373
+func TestDecisionForgeTokenMissingOrigins(t *testing.T) {
+	gh := newB33GitHub(t, func(http.ResponseWriter, *http.Request, string) { t.Error("missing token reached provider") })
+	g := &GitHubForge{BaseURL: gh.srv.URL}
+	l := &GitLabForge{BaseURL: gh.srv.URL}
+	for _, tc := range []struct {
+		name string
+		read func() error
+	}{
+		{"github-client", func() error { _, err := g.restClient(); return err }},
+		{"github-diff", func() error { _, err := g.ChangeDiff(forgeTestRepo, 1); return err }},
+		{"gitlab-client", func() error { _, err := l.client(); return err }},
+		{"gitlab-trigger-constructor", func() error { _, err := l.triggerClient(); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.read()
+			if ExitCodeOf(err) != ExitUnverifiable || !errors.Is(err, errForgeTokenMissing) {
+				t.Fatalf("missing token lost exit/cause: %v", err)
+			}
+		})
+	}
+	if len(gh.seen) != 0 {
+		t.Fatalf("missing token reached provider: %v", gh.seen)
+	}
+}
