@@ -87,11 +87,19 @@ Verification-Attestation: medici-finance/assay#3847 run=e75a5c355045adecc0cdda6a
 
 Risk-bearing values: the frontmatter carries risk metadata with every answer no, and the delivery is docs/spec only (no codec, config or authority change), so the fail-safe trigger does not fire. These literals were enumerated from the delivery diff anyway. All are proposed design bounds for desktools-v2/67, reversible by a docs edit, so they rank as reversible:
 
-- RISK-VALUE: DERIVED — v4 line ceiling = 1 MiB including newline @ docs/performance-attribution-spec.md:356 — equals the existing reader scanner ceiling sc.Buffer(..., 1<<20) at tools/desk/internal/deskkit/perfread.go:121, so a v4 line that is legal is never refused by the current reader.
+- RISK-VALUE: DERIVED — v4 JSON line size < 1 MiB including newline @ docs/performance-attribution-spec.md:356 — stays below the existing reader scanner ceiling sc.Buffer(..., 1<<20) at tools/desk/internal/deskkit/perfread.go:121. This derives scanner byte capacity only, not schema acceptance: pre-v4 readers may reject perf-v4, and qualified readers must be distributed before selecting the writer (docs/performance-attribution-spec.md:387).
 - RISK-VALUE: NAMED, NOT DERIVED — max extensions = eight; name grammar = [a-z][a-z0-9-]{0,31}; max version = 2147483647; max nesting depth = 32 @ docs/performance-attribution-spec.md:357-359 — 2147483647 is int32 max and eight is four initial groups plus headroom, per the spec's own text; the depth-32 adequacy depends on the largest typed v4 record, which the spec assigns to /67 boundary tests, not yet implemented.
 - RISK-VALUE question filed: #3851 (perf-v4 envelope bounds; the brief advances, the derivation stays open there).
 
 **VERIFY: PASS** — 6/6 rows
+
+### Interpretation correction — 2026-10-21
+
+Correction of F-v4-reader-claim and F-v4-reader-guarantee on PR #3852 by gpt-6-astra, strong tier. The corrected derivation above is limited to scanner byte capacity. Static source inspection at 116a2f1494fca6c97209f10883861467f729216d confirms that tools/desk/internal/deskkit/perfread.go:128 skips schemas outside v1/v2/v3 and perfrec/schema.go:228-281 rejects unknown schemas; docs/performance-attribution-spec.md:356 and :387 retain the strict size bound and reader-first rollout requirement. Those reader files and these spec passages match the original verification source and reviewed PR head.
+
+This admission covers only the interpretation correction. No Verify-table rerun, execution witness, new acceptance result or lifecycle advancement is claimed. The original six observations, date, runner, source, totals and PASS marker above remain attributed to run #3847 and its original binding. The named-but-not-derived bounds and question #3851 remain unchanged.
+
+Verification-Attestation: medici-finance/assay#3928 run=59a39fbe97a350fdcf76b628305403442ef2de849af7c247fa32fbcaf0b2e9e2 source=116a2f1494fca6c97209f10883861467f729216d brief=docs/streams/desktools-v2/brief-69-specify-extensible-json-contracts-and-migration-targets.md model=gpt-6-astra tier=strong
 
 ## Review
 
