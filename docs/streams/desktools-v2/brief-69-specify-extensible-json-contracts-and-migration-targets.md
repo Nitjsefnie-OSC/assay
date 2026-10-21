@@ -89,6 +89,7 @@ Risk-bearing values: the frontmatter carries risk metadata with every answer no,
 
 - RISK-VALUE: DERIVED — v4 line ceiling = 1 MiB including newline @ docs/performance-attribution-spec.md:356 — equals the existing reader scanner ceiling sc.Buffer(..., 1<<20) at tools/desk/internal/deskkit/perfread.go:121, so a v4 line that is legal is never refused by the current reader.
 - RISK-VALUE: NAMED, NOT DERIVED — max extensions = eight; name grammar = [a-z][a-z0-9-]{0,31}; max version = 2147483647; max nesting depth = 32 @ docs/performance-attribution-spec.md:357-359 — 2147483647 is int32 max and eight is four initial groups plus headroom, per the spec's own text; the depth-32 adequacy depends on the largest typed v4 record, which the spec assigns to /67 boundary tests, not yet implemented.
+- RISK-VALUE question filed: #3851 (perf-v4 envelope bounds; the brief advances, the derivation stays open there).
 
 **VERIFY: PASS** — 6/6 rows
 
