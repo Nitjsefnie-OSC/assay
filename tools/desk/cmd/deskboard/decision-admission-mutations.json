@@ -102,6 +102,36 @@
       "file": "internal/deskkit/decisionsearch.go",
       "old": "&sort=created&order=asc",
       "new": "&order=asc"
+    },
+    {
+      "name": "local refusal loses its diagnostic class",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "cause = \"decision query refused locally\"",
+      "new": "cause = \"transport or response unavailable\""
+    },
+    {
+      "name": "GitHub short-page overrun mislabelled as result cap",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": "Unverifiable(\"decision-marker search exceeded its page bound\", errDecisionSearchIncomplete)",
+      "new": "Unverifiable(\"decision-marker search exceeded its page bound\", errDecisionSearchCap)"
+    },
+    {
+      "name": "embedded double quote accepted",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": " || r == '\"' ",
+      "new": " "
+    },
+    {
+      "name": "embedded backslash accepted",
+      "file": "internal/deskkit/decisionsearch.go",
+      "old": " || r == '\\\\' ",
+      "new": " "
+    },
+    {
+      "name": "shared path skips opaque-token validation",
+      "file": "internal/deskkit/decisionsweep.go",
+      "old": "if err := validateDecisionSearch(SearchIssuesInput{DecisionGateMarkers: true, DecisionGateBrief: id}); err != nil {",
+      "new": "if err := validateDecisionSearch(SearchIssuesInput{DecisionGateMarkers: true, DecisionGateBrief: id}); false && err != nil {"
     }
   ]
 }

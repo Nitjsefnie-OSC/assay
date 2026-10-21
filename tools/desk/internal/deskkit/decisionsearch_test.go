@@ -1,6 +1,7 @@
 package deskkit
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -130,10 +131,42 @@ func TestDecisionMarkerSearchRejectsQualifiers(t *testing.T) {
 			{DecisionGateMarkers: true, DecisionGateBrief: "s/01 repo:other/tracker"},
 			{DecisionGateMarkers: true, DecisionGateBrief: "s/01\x00"},
 			{DecisionGateBrief: "s/01"},
+			{DecisionGateMarkers: true, DecisionGateBrief: `s/0"1`},
+			{DecisionGateMarkers: true, DecisionGateBrief: `s/0\1`},
 		} {
 			if _, err := f.SearchIssues(forgeTestRepo, in); err == nil {
 				t.Fatal("untyped marker syntax reached search", in)
 			}
+		}
+	}
+}
+
+// regression: medici-finance/assay#3373
+func TestDecisionMarkerGitHubPageBoundCause(t *testing.T) {
+	pages := 0
+	gh := newB33GitHub(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
+		pages++
+		w.Header().Set("Link", `<https://example.invalid/>; rel="next"`)
+		fmt.Fprintf(w, `{"total_count":100,"incomplete_results":false,"items":[{"number":%d,"body":"x"}]}`, pages)
+	})
+	_, err := gh.forge().SearchIssues(forgeTestRepo, SearchIssuesInput{DecisionGateMarkers: true})
+	if pages != decisionSearchPages || !errors.Is(err, errDecisionSearchIncomplete) || errors.Is(err, errDecisionSearchCap) {
+		t.Fatalf("short continuing pages mislabelled: pages=%d err=%v", pages, err)
+	}
+}
+
+// Invalid tokens must have the same local refusal on the shared and selective
+// paths, before any provider request; explicit issue refs remain independent.
+// regression: medici-finance/assay#3373
+func TestDecisionSweepInvalidSpellingParity(t *testing.T) {
+	gh := newB33GitHub(t, func(http.ResponseWriter, *http.Request, string) { t.Error("invalid spelling reached provider") })
+	for _, id := range []string{`s/0"1`, `s/0\1`, "s/01\x00", "s/0 1", "s/0\u20281"} {
+		b := BriefAdmission{ID: id}
+		f := gh.forge()
+		want := BriefDecisionWait(f, forgeTestRepo, b, sweepRatifier)
+		got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(b)
+		if got != want || got.Waiting || !strings.Contains(got.Unknown, "refused locally") {
+			t.Fatalf("invalid token parity: shared=%+v single=%+v", got, want)
 		}
 	}
 }
