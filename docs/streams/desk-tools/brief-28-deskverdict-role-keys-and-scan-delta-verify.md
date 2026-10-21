@@ -389,6 +389,39 @@ Ranked last (reversible operational knobs, no derivation needed): transcribeFloo
 
 **VERIFY: FAIL** — rows 1–5 and 7 pass (the row 7 mutation was killed). Row 6 fails as written (exit 1) because its command changes into a directory that does not exist. This is a check-definition defect, unchanged since 2026-09-27 and tracked by #1735 (open).
 
+### Non-implementer verifier re-run: 2026-10-21, assay-verifier-app[bot] (claude-opus-5-5), merged main 65a6418cd90c921153db509370212b1cdcd4f5e1
+
+Verification-Attestation: medici-finance/assay#3887 run=79c7f17a993bedd31accda7c24cd9fdbb0617e6a0303fde0d7ff9e4a531bf27d source=65a6418cd90c921153db509370212b1cdcd4f5e1 brief=docs/streams/desk-tools/brief-28-deskverdict-role-keys-and-scan-delta-verify.md model=claude-opus-5-5 tier=strong
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `cd tools/desk && go test -run Verdict ./internal/deskkit/ && go test -run Canonical ./internal/deskkit/ && go test -run WrongKey ./internal/deskkit/ && go test -run Reflow ./internal/deskkit/ && go test -run DeriveAndParse ./internal/deskkit/ && go test -run PubkeyVarForRole ./internal/deskkit/ && go test -run Role ./internal/deskkit/` | exit 0, pre-existing verdict tests plus the six role tests | exit 0 — seven `ok github.com/medici-finance/assay/tools/desk/internal/deskkit` lines; a -v run of the six named role tests shows each `--- PASS` (TestValidVerdictRole, TestPubkeyVarForRole, TestIssueLoopRoleRoundtrip, TestRoleMismatchRefusedBeforeCrypto, TestUnrecognizedRoleNeverFallsBackToVerifier, TestNoRoleFieldDefaultsToVerifier) | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `cd tools/desk && go test ./cmd/deskverdict/... -v` | exit 0, pre-existing CLI tests plus the seven role CLI tests | exit 0 — 19 top-level `--- PASS`, 0 `--- FAIL`; `ok github.com/medici-finance/assay/tools/desk/cmd/deskverdict`; all seven named TestCLI* role tests present and passing | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `cd statusgen && go test -run ScanDelta . -v` | exit 0, 14 tests | exit 0 — 14 `--- PASS` (10 TestScanDelta*, 4 TestRunTranscribeScanDelta*), 0 `--- FAIL`; `ok github.com/medici-finance/assay/statusgen` | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd statusgen && go test -run TranscribeScan . && go test -run Verdict . && go test -run PubkeyVar .` | exit 0 | exit 0 — three `ok github.com/medici-finance/assay/statusgen` lines | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `test ! -e .github/verify && test -z "$(git ls-files "*.pem" "*.key" "*issue-loop-pubkey*")"` | exit 0 (negative path: no key material in tree) | exit 0 — empty output | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 6 | `cd tools/desk && gofmt -l cmd/deskverdict/ internal/deskkit/verdict.go internal/deskkit/verdict_test.go && cd ../statusgen && gofmt -l transcribescan.go transcribeverdict.go transcribeverdict_test.go transcribescandelta_test.go main.go` | exit 0, empty output | exit 1 — `cd: no such file or directory: ../statusgen` (the first gofmt half printed nothing; the second half never ran because the cd failed) | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 7 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestRoleMismatchRefusedBeforeCrypto$' -count=1 -v` | exit 0 baseline; mutation reddens; restore returns exit 0 | exit 0 baseline — `--- PASS: TestRoleMismatchRefusedBeforeCrypto`. Mutation (the 3-line declared-role block, verdict.go lines 453-455, deleted in a scratch copy of the module outside this tree): exit 1 — `verdict_test.go:368: role mismatch must be REFUSED even with a cryptographically valid signature, got 0 (verified: signature matches the canonical verdict payload)`. Restored (cmp identical to the tree copy): exit 0 | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Result: 6 of 7 rows pass; row 6 fails as written.
+
+Findings:
+
+- Row 6 still fails on merged main 65a6418cd90c. Its command is unchanged: from tools/desk, the relative path ../statusgen resolves to tools/statusgen, which does not exist (statusgen lives at the repo root). #1735, which tracks this check-definition defect, is still OPEN.
+- The property row 6 checks still holds. A supplemental probe with the path corrected to `cd ../../statusgen` exits 0 with empty output, so both halves are gofmt-clean. This probe is diagnostic only and discharges no original row.
+- Since bbf8e3516245 (the 2026-10-15 head), the declared files that changed are statusgen/main.go, statusgen/transcribescan.go, statusgen/transcribeverdict.go and tools/desk/cmd/deskverdict/main.go. Rows 1-4 and 7, which exercise them, still pass; verdict.go is unchanged.
+- Review note (b), re-checked at this head: in VerifyVerdictBodyForRole (tools/desk/internal/deskkit/verdict.go:453) the declared-role comparison comes before CanonicalizeJSON at line 456; in scanDeltaVerifyBody (statusgen/transcribescan.go) the role check at line 777 comes before the canonicaliser at 783 and the RSA verify at 792.
+- Run conditions: every go test ran with a throwaway HOME and scratch temp directory outside this tree, with -count=1; no row needed a cluster, a live service or another OS, and every row executed.
+
+Risk-bearing values (all four risk answers are "no" and the item is not irreversible; enumeration over the delivering change's literals, re-read at this head):
+
+RISK-VALUE: DERIVED — VerdictRoleIssueLoop = "issue-loop" @ tools/desk/internal/deskkit/verdict.go:93 (twin scanDeltaWantRole = "issue-loop" @ statusgen/transcribescan.go:701; roster key RoleBots["issue-loop"] @ statusgen/transcribescan.go:804) — must equal the existing role-binding name for the intake App; deskkit's role-token table maps intake-desk to "issue-loop" (tools/desk/internal/deskkit/roletoken.go:46). All three copies are byte-identical.
+RISK-VALUE: DERIVED — IssueLoopPubkeyVar = "ASSAY_ISSUE_LOOP_PUBKEY" @ tools/desk/internal/deskkit/verdict.go:108 (twin scanDeltaPubkeyVar @ statusgen/transcribescan.go:697) — follows the VerifierPubkeyVar = "ASSAY_VERIFIER_PUBKEY" convention (verdict.go:515) and is byte-identical across the two independent modules; a drift would silently put the consuming lane into could-not-check.
+RISK-VALUE: NAMED, NOT DERIVED — privKeyEnvForRole "ISSUE_LOOP_PEM" / privKeyFileForRole "issue-loop-app.pem" @ tools/desk/cmd/deskverdict/sign.go:329,336 — local custody lookup names; the operator-side config they must match lives outside this repo and could not be checked from here. A wrong value is reversible and fails closed.
+Ranked last (reversible operational knobs, no derivation needed): transcribeFloodThreshold = 25 @ statusgen/transcribescan.go:59; scanDeltaSchemaVersion = "scan-delta-v1" @ statusgen/transcribescan.go:688; CLI exit codes 5 (sign, unknown --key) and 6 (verify, unknown --key or no pubkey).
+
+**VERIFY: FAIL** — rows 1–5 and 7 pass (the row 7 mutation was killed). Row 6 fails as written (exit 1) because its command changes into a directory that does not exist. This is a check-definition defect, unchanged since 2026-09-27 and tracked by #1735 (open).
+
 ## Review
 Gate: model (from frontmatter — all four risk answers no). Reviewer records verdict + date in
 the stream README table. Review note: confirm (a) every pre-existing verdict/scan/verify test

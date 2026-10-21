@@ -29,7 +29,7 @@ consumer/Verify updates; the accompanying brief diffs now propose those Task/Ver
 | performance-collection/01, event/spool/local report, todo/L | Amend contract through its owner | Select bounded phase, coverage and request-cost distinctions; preserve profiles/consent, seven-day initial local window and optional-sink isolation. Split extra implementation if needed. No new spool/schema owner in desk-tools. |
 | performance-collection/02, producer adapters, todo/L | Amend producer obligations; split implementation if needed | Carry selected phase and parent/child attribution, source versions, kit/caller mapping and honest unavailable/inclusive-CPU coverage. Operational dispatch/audit identities remain private; only the selected aliased profile can correlate them. |
 | performance-collection/07, on-demand reports, todo/L | Fold diagnostic report requirements | Add phase/endpoint and complete-cycle views to the tool panel using source-qualified data. Preserve its existing three-report bundle, pooled distributions and offline/no-provider-read contract. No second reporting CLI/skill or analytics database. |
-| performance-collection/03–06 and /08–09 | Retain independent scope | Database, ingestion, upload, daily reporting and automated repair are not prerequisites for local instrumentation or the read-path efficiency lane. Do not promote or activate this parked stream by implication. |
+| performance-collection/03–06 and /08–09 | Retain independent scope | Database, ingestion, upload, daily reporting and automated repair are not prerequisites for local instrumentation or the read-path efficiency lane. Do not promote or activate the performance-collection stream by implication; its activation rides its own recorded ruling. |
 | forge-neutral/36, narrow reader SDK, implemented | Reuse boundary | Current first shared read is open issues. A public review-observation API needs a separately scoped extraction; existing `internal` command packages are not external APIs. |
 | forge-neutral/37–38, mirror/events, todo | Fold eventual bulk-reader consumer requirements | Scope, coverage, freshness, coalesced refresh and event/poll repair remain here. Migrate actual consumers through qualified versions; early direct-read optimization stays independent. No private or command-specific mirror. |
 | forge-neutral/39–40, typed serving/custody, todo | Fold future queue/context serving contracts | Service requests and client adapters expose the same contracts; credentials and role effects remain separately contained. Not needed merely to share code in the desk module. |
@@ -115,7 +115,7 @@ Evidence is reopened. The numbering below is in the existing desk-tools stream.
 | forge-neutral/44 | Complete review-preparation cohort in existing Git trial; A4, A8 |
 | forge-neutral/45 | Actual served review/issue consumer journeys plus installed-version/fault qualification; A1–A5, A9 |
 
-Richer measurement remains owned by the parked performance-collection stream. Its
+Richer measurement remains owned by the performance-collection stream. Its
 implementation/consent, DB/API and report availability are not prerequisites for local
 cost qualification or early direct-reader shipping. No new collection policy is enabled.
 The served path follows its existing runtime dependencies: /39 now requires the qualified
@@ -148,7 +148,7 @@ messaged and no active PR contract was silently changed by this authoring change
 
 [Contract](performance-attribution-spec.md): perfrec /63–65 now owns the new local v3
 instrument, typed CLI/env/launcher context and own-request timing/GraphQL points. Collection
-retains aliased import, its event/spool/transport owner and parked state. Earlier statements
+retains aliased import, its event/spool/transport owner and its own admission state. Earlier statements
 that richer measurement belongs only in collection apply to that transport contract, not to
 this explicitly versioned local instrument. /62 and statusgen/26 adopt v3; collection/01–09
 preserve identity/coverage/units into reports, without raw local locators in exports.
