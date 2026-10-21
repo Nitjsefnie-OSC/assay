@@ -346,6 +346,12 @@ func TestScopeAnnotationInSpan(t *testing.T) {
 		"- `tools/{a,b}.go (new)`":                     "tools/a.go,tools/b.go",
 		// The outside-the-quotes form keeps its scope.
 		"- `tools/a.go` (planned)": "tools/a.go",
+		// A glued or leading parenthetical is part of the literal path, even
+		// after a multibyte character whose last byte is 0x85 or 0xA0.
+		"- `tools/a.go(x)`": "tools/a.go(x)",
+		"- `tools/à(x)`":    "tools/à(x)",
+		"- `tools/Å(x)`":    "tools/Å(x)",
+		"- `(new)`":         "(new)",
 	} {
 		for _, content := range []string{"## Context\nfiles:\n" + entry + "\nfacts: x\n", "## Context\nfiles: " + strings.TrimPrefix(entry, "- ") + "\nfacts: x\n"} {
 			paths, err := BriefDeclaredFiles(content)

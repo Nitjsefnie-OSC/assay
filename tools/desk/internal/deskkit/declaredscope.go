@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // InputKeyScopePrefix binds declaration membership, including planned absence.
@@ -328,7 +329,13 @@ func declarationLine(line string) ([]string, error) {
 func TrimScopeAnnotation(p string) string {
 	for strings.HasSuffix(p, ")") {
 		open := strings.LastIndexByte(p, '(')
-		if open <= 0 || !unicode.IsSpace(rune(p[open-1])) {
+		if open <= 0 {
+			return p
+		}
+		// Decode the whole character before the paren: a lone UTF-8
+		// continuation byte (0x85, 0xA0) would read as a space, so a glued
+		// "à(x)" would be cut to "à".
+		if r, _ := utf8.DecodeLastRuneInString(p[:open]); !unicode.IsSpace(r) {
 			return p
 		}
 		inner := p[open+1 : len(p)-1]
