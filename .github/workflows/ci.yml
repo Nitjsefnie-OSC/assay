@@ -151,10 +151,32 @@ jobs:
           for p in $(go list ./...); do GOOS=windows GOARCH=amd64 go test -c -o /dev/null "$p" || exit 1; done
           GOOS=darwin GOARCH=arm64 go vet ./...
 
-  build-test:
+  # build-test, sharded. The suite that used to run serially in one job (~15
+  # min, ~11 of them the tools/desk `go test ./...`) runs as four legs:
+  #
+  #   rest    release-image contract, statusgen test+vet, build+vet of every
+  #           module plus each module's own suite EXCEPT tools/desk's, and the
+  #           role-bound claim transport regressions;
+  #   desk-K  `go test` on the K-th third of tools/desk's packages.
+  #
+  # The desk legs split `go list ./...` with .github/scripts/go-test-shard.py,
+  # which refuses unless the shards are pairwise disjoint, none is empty, and
+  # their union equals the `go list ./...` it was given: every tools/desk package
+  # is tested exactly once. The shard count is taken from the matrix itself
+  # (strategy.job-total), so adding or removing a desk-K entry re-partitions
+  # rather than dropping a third.
+  #
+  # The required check is NOT this job: it is the `build-test` aggregator below,
+  # which keeps the exact check name branch protection requires.
+  build-test-shard:
     needs: scope
     # Skipped only on a verifier-App docs-only PR (see the scope job); fail-closed.
     if: ${{ !cancelled() && needs.scope.outputs.heavy != 'false' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # `rest` must stay first: desk-K's K is its strategy.job-index.
+        shard: [rest, desk-1, desk-2, desk-3]
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,11 +192,13 @@ jobs:
           echo "${HOME}/go-toolchain/go/bin" >> "${GITHUB_PATH}"
 
       - name: Test release image contract
+        if: matrix.shard == 'rest'
         run: python3 -B -m unittest discover -s tools/release -p images_test.py -v
 
       # Run before the all-module sweep: statusgen alone does not depend on the
       # desk child compiled by its offline bridge test. Match the release gate.
       - name: Test and vet statusgen
+        if: matrix.shard == 'rest'
         run: |
           set -euo pipefail
           go version
@@ -182,6 +206,7 @@ jobs:
           cd statusgen && go test ./... && go vet ./...
 
       - name: Build and vet every module
+        if: matrix.shard == 'rest'
         run: |
           set -euo pipefail
           go version
@@ -200,10 +225,12 @@ jobs:
           while IFS= read -r gomod; do
             dir="$(dirname "$gomod")"
             echo "::group::${dir}"
-            # tools/desk also runs its full suite here: the release workflow's
+            # tools/desk's full suite runs too — in the desk-K legs of this
+            # matrix, not here (see the shard step below): the release workflow's
             # desk-tools leg already runs `go test ./...` on this tree (the
             # structural-guard caveat above no longer applies to it), and two
             # guard tests went latent on main under build+vet alone (#547, #550).
+            # This leg still builds and vets tools/desk.
             #
             # tools/harnessgen, tools/harnesslint and tools/plugindrift run their
             # suites here too (harness-portability/15). They are safe in THIS repo
@@ -223,7 +250,8 @@ jobs:
               # do not reach the trace append path (review F-m2-ci).
               */qualgen|qualgen) extra="GOWORK=off go test -count=1 -timeout=60s -run '^(TestM2.*|TestCLILegacyForms)$' ." ;;
               */deskcore|deskcore) extra="GOWORK=off go test -count=1 ./..." ;;
-              */tools/desk|tools/desk) extra="go test ./..." ;;
+              # tools/desk: build+vet here; `go test` in the desk-K legs.
+              */tools/desk|tools/desk) extra=true ;;
               */tools/harnessgen|tools/harnessgen) extra="go test ./..." ;;
               */tools/harnesslint|tools/harnesslint) extra="go test ./..." ;;
               */tools/plugindrift|tools/plugindrift) extra="go test ./..." ;;
@@ -245,10 +273,68 @@ jobs:
           done < <(git ls-files '*go.mod')
           exit "$fail"
 
+      # One third of tools/desk's packages per desk-K leg. The partition is
+      # computed from this commit's `go list ./...` and verified (disjoint, none
+      # empty, union == the list) before any test runs; see go-test-shard.py.
+      - name: Test tools/desk package shard
+        if: matrix.shard != 'rest'
+        env:
+          SHARD: ${{ matrix.shard }}
+          JOB_INDEX: ${{ strategy.job-index }}
+          JOB_TOTAL: ${{ strategy.job-total }}
+        run: |
+          set -euo pipefail
+          go version
+          # Legs after `rest` are the desk shards: K = job-index, N = job-total - 1.
+          shards=$(( JOB_TOTAL - 1 ))
+          if [ "$SHARD" != "desk-${JOB_INDEX}" ]; then
+            echo "::error::matrix leg '$SHARD' is at job-index ${JOB_INDEX}; desk legs must be desk-1..desk-${shards} in order after rest"
+            exit 1
+          fi
+          python3 -B .github/scripts/go-test-shard.py --self-test
+          list="${RUNNER_TEMP}/desk-packages.txt"
+          mine="${RUNNER_TEMP}/desk-shard.txt"
+          (cd tools/desk && go list ./...) > "$list"
+          python3 -B .github/scripts/go-test-shard.py --shards "$shards" --index "$JOB_INDEX" < "$list" > "$mine"
+          mapfile -t pkgs < "$mine"
+          test "${#pkgs[@]}" -gt 0
+          cd tools/desk && go test "${pkgs[@]}"
+
       # The preceding build/vet sweep warms both modules' dependency caches.
       # Tests run offline and cover the real cross-module child transport.
       - name: Role-bound claim transport regressions
+        if: matrix.shard == 'rest'
         run: bash statusgen/test-role-claims.sh
+
+  # The required check `build-test`. Branch protection requires a check of this
+  # exact name, so it stays a single job that reports one verdict for the whole
+  # sharded suite: success only when every build-test-shard leg succeeded, or
+  # when the legs were skipped because the scope job decided this is a
+  # verifier-App docs-only PR. Any failed, cancelled or otherwise-skipped leg
+  # fails it. `always()` makes it report even when the run is cancelled, so a
+  # cancelled suite reads as a failure here, never as a skipped (passing) check.
+  # GitHub-hosted: it only reads the needs context.
+  build-test:
+    needs: [scope, build-test-shard]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: All build-test shards passed
+        env:
+          SHARDS: ${{ needs.build-test-shard.result }}
+          SCOPE: ${{ needs.scope.result }}
+          HEAVY: ${{ needs.scope.outputs.heavy }}
+        run: |
+          set -euo pipefail
+          echo "build-test-shard: ${SHARDS}; scope: ${SCOPE}, heavy=${HEAVY:-<unset>}"
+          if [ "$SHARDS" = "success" ]; then
+            echo "every shard passed"
+          elif [ "$SHARDS" = "skipped" ] && [ "$SCOPE" = "success" ] && [ "$HEAVY" = "false" ]; then
+            echo "verifier-App docs-only PR: shards skipped by the scope decision"
+          else
+            echo "::error::build-test shards concluded '${SHARDS}' — the suite did not pass"
+            exit 1
+          fi
 
   # The plugin SHELL suites. `assay-inbox.sh` / `inbound-monitor.sh` carry their
   # own regression suites (`*.test.sh`) but the build-test job above runs Go
