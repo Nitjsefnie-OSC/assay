@@ -3,14 +3,15 @@ module github.com/medici-finance/assay/tools/desk
 go 1.27.0
 
 require (
-	github.com/medici-finance/assay/gitquiet v0.0.0-00010101000000-000000000000
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/a2aproject/a2a-go/v2 v2.5.0
 	github.com/cli/go-gh/v2 v2.13.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/medici-finance/assay/comms v0.0.0-00010101000000-000000000000
+	github.com/medici-finance/assay/deskcore v0.0.0-00010101000000-000000000000
 	github.com/medici-finance/assay/forgeread v0.0.0-00010101000000-000000000000
+	github.com/medici-finance/assay/gitquiet v0.0.0-00010101000000-000000000000
 	github.com/medici-finance/assay/perfrec v0.0.0-00010101000000-000000000000
 	github.com/spf13/cast v1.7.1
 	github.com/spf13/cobra v1.10.2
@@ -78,3 +79,5 @@ replace github.com/medici-finance/assay/forgeread => ../../forgeread
 replace github.com/medici-finance/assay/perfrec => ../../perfrec
 
 replace github.com/medici-finance/assay/gitquiet => ../../gitquiet
+
+replace github.com/medici-finance/assay/deskcore => ../../deskcore

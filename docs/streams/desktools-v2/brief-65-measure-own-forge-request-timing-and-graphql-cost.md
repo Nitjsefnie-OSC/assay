@@ -4,7 +4,7 @@ title: "Measure own forge request timing and GraphQL cost"
 why: "HTTP counts alone cannot explain forge latency or quota consumption. Existing transport and provider response seams must expose actual attempts, durations and attributable GraphQL cost without issuing monitoring requests or mistaking shared quota deltas for per-request charges."
 wave: 3
 depends: ["desktools-v2/63"]
-unblocks: ["desktools-v2/62", "performance-collection/02"]
+unblocks: ["desktools-v2/62", "performance-collection/02", "desktools-v2/68"]
 effort: M
 gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
@@ -47,12 +47,19 @@ files:
 - `tools/desk/internal/deskkit/forge_gitlab.go`
 - `tools/desk/internal/deskkit/perf.go`
 - `tools/desk/internal/deskkit/perfcoverage_test.go`
-- `tools/desk/internal/deskkit/perfforge_test.go (planned)`
+- `tools/desk/internal/deskkit/forgeobserve.go`, `forgepoints.go`, and `forgeobserve_test.go`
 - `tools/desk/cmd/deskboard/readcost.go`
 - `tools/desk/cmd/desktoken/` (existing direct authentication HTTP; future credential provider integration belongs to /62)
 - `docs/telemetry.md`
 - `tools/desk/README.md`
-- `changelog/perf-v3-forge-cost.md (planned)`
+- `changelog/perf-v3-forge-cost.md`
+
+Implementation pickup: authentication HTTP still resides in `cmd/desktoken`;
+the future `/58` provider has not replaced it. The supported explicit observer,
+public-schema cost qualification, caller gaps, rollback and measured overhead
+are recorded in [Own provider observations](../../provider-performance.md).
+Shared `/63` and `/64` are consumed as real dependency merges; their acceptance
+and this brief's independent Verify evidence remain separate.
 
 facts (source and date in frontmatter):
 - The counting transport at 2e02111ed counts attempts but does not time or inspect bodies. deskkit PerfRun observes it as a lower-bound http counter.

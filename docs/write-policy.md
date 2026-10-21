@@ -1,22 +1,21 @@
 # Shared write policy and the writeguard adapter
 
-**Status:** proposed implementation contract, 2026-10-18. This amendment does not
-change installed hooks or approve weaker controls. Delivery owner: desktools-v2/66;
-managed workspace integration and qualification have separate consumer obligations.
-**Inspected source:** public Assay `c3d073572f41e09bedcac05944f9a202c3267353`.
+**Status:** source implementation contract, 2026-10-20, approved for bounded
+extraction in [#3752](https://github.com/medici-finance/assay/issues/3752#issuecomment-6299695731).
+Installed hooks, publication and managed qualification remain separate gates.
+The exact source/API/profile/build handoff is in [the census](write-policy-consumers.md).
 
 ## Outcome and ownership
 
-One importable evaluator owns write-isolation decisions. The proposed package is
+One importable evaluator owns write-isolation decisions. The package is
 `github.com/medici-finance/assay/deskcore/writepolicy`, inside the existing pure
 `deskcore` module. It is separate from `deskcore/policy`'s approved role/forge grants:
 local workspace isolation cannot grant forge authority. Publish compatible module
 versions and qualify actual external consumers; a repository-relative replace is
 source integration, not release proof. Do not create a second shared-core module.
 
-The proposed `S-write-policy` extraction in [contracts.md](contracts.md) records
-the current command-local implementation; /66 registers its source-gated row,
-marker baseline and consumer checks together. `S-worktree` remains allocation, identity and lifecycle;
+The `S-write-policy` row in [contracts.md](contracts.md) records the core owner;
+its marker baseline and checked consumers move with the implementation. `S-worktree` remains allocation, identity and lifecycle;
 process leases, scratch preservation, push authorization and credentials keep their
 existing owners. A workspace allocation grants no additional permission.
 Existing authorized Git effects may need allocation-specific administration/object/ref
@@ -29,24 +28,24 @@ Git work impossible by declaring the entire common directory unwritable.
 
 | Layer | Owns | Forbidden capability |
 |---|---|---|
-| `deskcore/writepolicy` (proposed) | Typed operation/path checks, pure shell-command classification, exemption rules, sentinel protection and structured outcomes/reasons | Reading environment/config/files, resolving symlinks through I/O, Git, clocks, process/callout execution, network or credentials |
+| `deskcore/writepolicy` | Typed operation/path checks, pure shell-command classification, exemption rules, sentinel protection and structured outcomes/reasons | Reading environment/config/files, resolving symlinks through I/O, Git, clocks, process/callout execution, network or credentials |
 | `cmd/writeguard` | Existing stdin/JSON hook protocol; configuration and activation; trusted Git/path/claim observations; optional callout execution; mapping outcomes to harness responses | A second policy implementation or new authority source |
 | Managed launcher/harness adapter | Map validated allocation, repository, generation, session and sandbox roots into evaluator inputs | Inferring an allocation from cwd, path prefix or an agent-supplied identifier; widening sandbox roots to satisfy a hook |
 | Harness/container | Actual write-access confinement | Treating a library verdict as a filesystem sandbox |
 
-Proposed API names are `Classify` (command plus lexical context to candidate write
-operations and unresolved expressions) and `Evaluate` (explicit observations and
-policy to a verdict). Settle exact types/schema at implementation, with versioned
-fixtures. Inputs include tool/operation, command or target, effective cwd, protected
-roots and carve-outs, resolved path/ancestor observations, path-platform semantics,
-exemption evidence with observation time/expiry, sentinel identity, and supplied
-callout result. Managed context additionally binds allocation/generation, repository,
-owner/session and supported profile. These values are observations, never authority
-minted by the evaluator. Do not import `workspace`, desk internals or commands into
-the pure package; adapters map the workspace owner's validated record into values.
+`Classify(Request, LexicalContext)` freezes explicit lexical context, path-like
+command tokens and literal masking in an immutable classification.
+`Evaluate(Evaluation)` accepts that classification with its ID, protected roots,
+explicit path/claim/context/callout observations, and the named profile. It returns
+`Outcome` with decision, reason, schema revision, details and outstanding observation
+requests. [policy.go](../deskcore/writepolicy/policy.go) is the exact Go surface;
+[census and handoff](write-policy-consumers.md#implemented-api-and-profile-handoff)
+describes the request/observation round trip and versions.
+No `workspace`, desk-internal or command import enters the core. Adapters map a
+validated workspace record to values; the values do not authenticate themselves.
 
 Classification cannot observe the filesystem or execute a shell to resolve an
-expression. The adapter resolves candidate paths (including nearest existing
+expression. The adapter resolves the requested paths (including nearest existing
 ancestors for new files), supplies those observations, and reports failed or dynamic
 resolution explicitly. Independent tests must cover this round trip, not just a
 lexical path comparison. Revalidate relevant identity at the effect boundary;
@@ -70,11 +69,11 @@ adapter owns protocol mapping, so extraction preserves these existing distinctio
 - Managed admission requires independently validated allocation/session/repository
   identity and compatible versions. Missing or conflicting mandatory evidence holds
   that managed operation with a reason; it never falls back to legacy permission.
-  This is a proposed managed profile, not a silent change to the legacy hook.
+  This source profile is not a qualified or activated managed deployment.
 
 A deny from the core cannot be cleared by a callout or adapter. Keep existing hook
-JSON/exit/stdout behavior, including structured JSON denial on exit zero. Proposed
-managed decisions do not replace OS/harness confinement or operator activation gates.
+JSON/exit/stdout behavior, including structured JSON denial on exit zero. Managed
+decisions do not replace OS/harness confinement or operator activation gates.
 
 ## Consumers and migration
 
@@ -90,7 +89,7 @@ managed decisions do not replace OS/harness confinement or operator activation g
 
 The implementation census includes current and planned consumers, source/query
 revisions, exclusions, adapter owner and retirement condition. It lives at the
-proposed `docs/write-policy-consumers.md`; it is a checked inventory of sites, not
+`docs/write-policy-consumers.md`; it is a checked inventory of sites, not
 another semantic-owner registry. Public census/contracts contain neutral source
 locators only. Coordinated consumers require exact producer API/profile versions;
 installed hook/pin activation follows separate adopter review.

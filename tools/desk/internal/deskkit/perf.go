@@ -154,7 +154,9 @@ func PerfRunResolved(tool string, verbs []string, args []string, run func([]stri
 
 // PerfRunMeasured supplies the invocation's optional session to the actual parser callback.
 // Select its context before effects to admit typed provider observations. No ambient sink.
-func PerfRunMeasured(tool string, verbs []string, args []string, run func([]string, *perfrec.Session) (int, perfrec.Context)) int {
+// Optional phases are a fixed tool-owned roster, bounded by perfrec; existing callers keep
+// their empty roster and unchanged measurement boundary.
+func PerfRunMeasured(tool string, verbs []string, args []string, run func([]string, *perfrec.Session) (int, perfrec.Context), phases ...string) int {
 	if !PerfEnabled() {
 		code, _ := run(args, nil)
 		return code
@@ -163,7 +165,7 @@ func PerfRunMeasured(tool string, verbs []string, args []string, run func([]stri
 	perfSelectedVerb.Store(nil)
 	perfActive.Store(true)
 	defer perfActive.Store(false)
-	sess := perfrec.Begin(perfProbe(), perfEntry(), nil)
+	sess := perfrec.Begin(perfProbe(), perfEntry(), phases)
 	code, ctx := run(args, sess)
 	sess.SelectContext(ctx)
 	children, childWall, forge := PerfCounters()

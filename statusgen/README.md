@@ -218,6 +218,17 @@ detector's, not this one's. A partial claim whose alias cannot be resolved here
 (unknown, withheld, or no registry) makes the brief `unknown` and refuses
 `--apply`.
 
+Evidence-only and status-only PRs are excluded by the same diff classifier the
+approval/provenance resolver uses (`evidenceshape.go`): Evidence sections,
+verify-outcome records and status cells are bookkeeping, not implementation.
+A potentially Evidence-shaped change whose patch or head could not be read makes
+the brief `unknown` and refuses `--apply`. Every requested derived row passes
+admission, including completed rows in full audits and the drift comparator.
+Trailer-only apply explicitly scopes its observations to movable rows (below).
+File lists and additional shape reads are cached per
+PR for the run and shared with backfill. Ordinary code PRs and declared partials
+need no additional shape read. A VERIFY FAIL alone never removes a delivery.
+
 ```bash
 # Online: read the repo's PRs over the REST API and derive.
 statusgen reconcile --root . --repo medici-finance/assay --json
@@ -294,7 +305,21 @@ an absent `wouldApply` is not zero rows.
 
 `--apply` WITHOUT `--backfill` is trailer-only: it writes only rows witnessed by a
 merged PR's trailer, never a branch or body match — the mode the scheduled
-reconcile job runs. Either way, a row whose move would add a lint PROBLEM (a
+reconcile job runs. This mode requests PR admission and approval reads only for
+the `todo`/`in-progress` rows it can move. All other rows remain in the output as
+`unknown`, with an explicit "outside trailer-writer scope" reason and no witness
+or merged-PR provenance. This deliberate scope exclusion is not a failed read
+in `unread`; an actual failed requested read still holds the whole write. The
+run's `reason` and text output disclose the scope. Read-only reconcile, every
+`--backfill` run (including `--apply` and `--report`), and online regen drift
+continue to classify every derived row. Use those modes for a full audit.
+No persistent verdict cache or token-tier assumption is made: the writer's read
+set grows with eligible rows, not the history of completed rows. The synthetic
+687-candidate regression models 209 upstream requests for the writer and 1,589
+for the full audit, including their shared pull/issue pages; it is a fixture
+bound, not a universal API-budget guarantee or a live corpus measurement.
+
+Either way, a row whose move would add a lint PROBLEM (a
 risk-gated brief with no design record, say) is held: listed under `held` with the
 PROBLEM it would cause, never written. The read-only form reports the same `held`
 rows, decided the same way with nothing written. When the pulls cannot be read,

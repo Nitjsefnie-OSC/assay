@@ -57,7 +57,7 @@ func TestPerfV3LauncherChildFlow(t *testing.T) {
 			defer wg.Done()
 			// The explicit flag preserves originating attribution while the operational
 			// child loop remains independently selected by its launcher.
-			results[i] = Run(ToolCall{Name: bin, Args: []string{"list", "--perf-desk-role=worker-desk"}, Env: env, Dir: home, Context: WithPerfContext(context.Background(), c)})
+			results[i] = Run(ToolCall{Name: bin, Args: []string{"list", "--perf-loop-role=worker-desk"}, Env: env, Dir: home, Context: WithPerfContext(context.Background(), c)})
 		}(i, c)
 	}
 	wg.Wait()

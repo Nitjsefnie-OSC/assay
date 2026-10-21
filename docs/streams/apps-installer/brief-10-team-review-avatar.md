@@ -36,8 +36,7 @@ files:
 - `tools/desk/internal/avatar/generate.go` (team case of `specsFor`), its tests.
 - `tools/desk/internal/avatar/avatar_test.go` (`TestGenerateTeamNamesAndCount` asserts exactly 2
   team tiles and the names read/act — update it to 3 and add `-review`).
-- `tools/desk/internal/avatar/testdata/golden/team-20px.png` (the 20 px strip golden `TestGolden20px`
-  compares against; it gains a third tile and must be regenerated).
+- `tools/desk/internal/avatar/testdata/golden/team-20px.png` (the 20 px strip golden `TestGolden20px` compares against; it gains a third tile and must be regenerated).
 - `tools/desk/cmd/deskavatar/main.go` (the `--tier` help text: "team (read+act)").
 - `docs/desk-tools/deskavatar.md` (`--tier team` line); `docs/streams/apps-installer/design.md` §5
   (the Read + Act bullet).

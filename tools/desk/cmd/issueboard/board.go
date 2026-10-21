@@ -183,8 +183,8 @@ type ghIssue struct {
 // querying the forge for closed issues). It reaches the forge through deskkit.ForgeFor's
 // ListOpenIssues (never the `gh` CLI), which returns ISSUES only — a forge that serves
 // issues and changes from one number sequence filters the changes out itself.
-func fetchOpenIssues(repo string) ([]ghIssue, error) {
-	f, fr, err := forgeFor(repo)
+func fetchOpenIssues(repo string, observers ...deskkit.RequestObserver) ([]ghIssue, error) {
+	f, fr, err := forgeFor(repo, observers...)
 	if err != nil {
 		return nil, err
 	}
@@ -221,8 +221,8 @@ func fetchOpenIssues(repo string) ([]ghIssue, error) {
 // limit, a timeout) retired every live placeholder it omitted. A read that fails, or that
 // reports a state other than open/closed, is could-not-check for the whole board (this
 // tool's contract: never a partial board), naming the issue.
-func fetchIssueState(repo string, num int) (state, title string, err error) {
-	f, fr, err := forgeFor(repo)
+func fetchIssueState(repo string, num int, observers ...deskkit.RequestObserver) (state, title string, err error) {
+	f, fr, err := forgeFor(repo, observers...)
 	if err != nil {
 		return "", "", err
 	}
@@ -250,8 +250,8 @@ func fetchIssueState(repo string, num int) (state, title string, err error) {
 // databaseIds (recycled-login defense). An incomplete payload (any connection past
 // first:100) is NOT blessed — fail closed to quarantine. A fetch/parse error is
 // Unverifiable (exit 6): a blessing we cannot verify is never guessed either way.
-func fetchIssueBlessed(repo string, num int) (bool, error) {
-	bodyEdited, events, complete, err := fetchIssueTrustPayload(repo, num)
+func fetchIssueBlessed(repo string, num int, observers ...deskkit.RequestObserver) (bool, error) {
+	bodyEdited, events, complete, err := fetchIssueTrustPayload(repo, num, observers...)
 	if err != nil {
 		return false, err
 	}
@@ -268,8 +268,8 @@ func fetchIssueBlessed(repo string, num int) (bool, error) {
 // clock does NOT route through here: it reads the WHOLE thread (fetchIssueEvents →
 // Forge.IssueContentEvents, paginated) rather than the trust gate's deliberately-bounded
 // single page.
-func fetchIssueTrustPayload(repo string, num int) (bodyEdited time.Time, events []deskkit.ContentEvent, complete bool, err error) {
-	f, fr, ferr := forgeFor(repo)
+func fetchIssueTrustPayload(repo string, num int, observers ...deskkit.RequestObserver) (bodyEdited time.Time, events []deskkit.ContentEvent, complete bool, err error) {
+	f, fr, ferr := forgeFor(repo, observers...)
 	if ferr != nil {
 		return time.Time{}, nil, false, ferr
 	}
@@ -297,8 +297,8 @@ func fetchIssueTrustPayload(repo string, num int) (bodyEdited time.Time, events 
 // thread. The caller then degrades THAT ONE row conservatively (escalate, could-not-check) and
 // renders the rest of the board — an overflowed thread is never read as "no escalation owed",
 // and one long thread never fails the whole board again.
-func fetchIssueEvents(repo string, num int) (events []deskkit.ContentEvent, complete bool, err error) {
-	f, fr, ferr := forgeFor(repo)
+func fetchIssueEvents(repo string, num int, observers ...deskkit.RequestObserver) (events []deskkit.ContentEvent, complete bool, err error) {
+	f, fr, ferr := forgeFor(repo, observers...)
 	if ferr != nil {
 		return nil, false, ferr
 	}
@@ -342,8 +342,8 @@ func labelHistoryHold(h *deskkit.LabelHistory) (held, unverifiable bool, reason 
 // paid ONLY for an issue that would otherwise classify CREATE-PLACEHOLDER. A read error is
 // returned as could-not-check and fails the board as fetchIssueEvents's does; an incomplete
 // history is NOT an error — the caller degrades that one row.
-func fetchLabelHistory(repo string, num int) (*deskkit.LabelHistory, error) {
-	f, fr, ferr := forgeFor(repo)
+func fetchLabelHistory(repo string, num int, observers ...deskkit.RequestObserver) (*deskkit.LabelHistory, error) {
+	f, fr, ferr := forgeFor(repo, observers...)
 	if ferr != nil {
 		return nil, ferr
 	}
@@ -704,10 +704,10 @@ type externalRow struct {
 // toFilter, when non-empty, restricts the issue lane to items addressed to that role
 // (`to:<role>`) — the `issueboard issues --to <role>` desk-inbox view. Empty shows every
 // issue, with `to:*` items rendered ADDRESSED→<role> in their own priority band.
-func computeIssueBoard(root string, now time.Time, slaDays int, toFilter string) ([]issueBoardRow, []externalRow, error) {
-	return computeProjection(root, now, slaDays, toFilter, issueflow.Full)
+func computeIssueBoard(root string, now time.Time, slaDays int, toFilter string, observers ...deskkit.RequestObserver) ([]issueBoardRow, []externalRow, error) {
+	return computeProjection(root, now, slaDays, toFilter, issueflow.Full, observers...)
 }
-func computeProjection(root string, now time.Time, slaDays int, toFilter string, projection issueflow.Projection) ([]issueBoardRow, []externalRow, error) {
+func computeProjection(root string, now time.Time, slaDays int, toFilter string, projection issueflow.Projection, observers ...deskkit.RequestObserver) ([]issueBoardRow, []externalRow, error) {
 	// Fail closed on an EMPTY scan scope BEFORE any read (#777). ownedRepos() is
 	// ScanRepos(): unset ASSAY_SCAN_REPOS yields zero repos, the loop below then runs
 	// zero iterations, makes no gh call, and the empty result renders as "(no open
@@ -732,7 +732,7 @@ func computeProjection(root string, now time.Time, slaDays int, toFilter string,
 	var rows []issueBoardRow
 	var external []externalRow
 	for _, repo := range ownedRepos() {
-		issues, err := fetchOpenIssues(repo)
+		issues, err := fetchOpenIssues(repo, observers...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -767,7 +767,7 @@ func computeProjection(root string, now time.Time, slaDays int, toFilter string,
 			// CURRENT blessing (bless-then-edit aware) → quarantine (visible,
 			// not actionable).
 			if !deskkit.TrustedAuthor(iss.Author.Login) {
-				blessed, cerr := fetchIssueBlessed(repo, iss.Number)
+				blessed, cerr := fetchIssueBlessed(repo, iss.Number, observers...)
 				if cerr != nil {
 					return nil, nil, cerr
 				}
@@ -795,7 +795,7 @@ func computeProjection(root string, now time.Time, slaDays int, toFilter string,
 			var ageDays int
 			var agedPastSLA, addresseeResponded, escalationUnverifiable bool
 			if decisionOwed || addressed {
-				events, complete, everr := fetchIssueEvents(repo, iss.Number)
+				events, complete, everr := fetchIssueEvents(repo, iss.Number, observers...)
 				if everr != nil {
 					// A genuine read failure (transport, permission, a missing issue) is a
 					// real could-not-check for the whole sweep, unchanged.
@@ -839,7 +839,7 @@ func computeProjection(root string, now time.Time, slaDays int, toFilter string,
 			// row into AWAIT. An issue with a placeholder, or already NONE/ESCALATE/ADDRESSED,
 			// pays nothing. A read error fails the board; an incomplete history degrades this row.
 			if action == actCreatePlaceholder {
-				hist, herr := fetchLabelHistory(repo, iss.Number)
+				hist, herr := fetchLabelHistory(repo, iss.Number, observers...)
 				if herr != nil {
 					return nil, nil, herr
 				}
@@ -884,7 +884,7 @@ func computeProjection(root string, now time.Time, slaDays int, toFilter string,
 				rows = append(rows, issueBoardRow{Repo: repo, Number: ph.Issue, Title: "(placeholder already retired)", Action: actNone})
 				continue
 			}
-			state, title, serr := fetchIssueState(repo, ph.Issue)
+			state, title, serr := fetchIssueState(repo, ph.Issue, observers...)
 			if serr != nil {
 				return nil, nil, serr
 			}
@@ -1030,10 +1030,10 @@ func renderIntakeLane(w io.Writer, rows []intakeRow) {
 	}
 }
 
-func cmdBoard(root string, now time.Time, slaDays int) (*Report, error) {
+func cmdBoard(root string, now time.Time, slaDays int, observers ...deskkit.RequestObserver) (*Report, error) {
 	// The full board shows every issue (no --to filter); `to:*` items render in their own
 	// ADDRESSED band.
-	issues, external, err := computeIssueBoard(root, now, slaDays, "")
+	issues, external, err := computeIssueBoard(root, now, slaDays, "", observers...)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,8 +1052,8 @@ func cmdBoard(root string, now time.Time, slaDays int) (*Report, error) {
 	}, nil
 }
 
-func cmdIssues(root string, now time.Time, slaDays int, toFilter string) (*Report, error) {
-	issues, external, err := computeIssueBoard(root, now, slaDays, toFilter)
+func cmdIssues(root string, now time.Time, slaDays int, toFilter string, observers ...deskkit.RequestObserver) (*Report, error) {
+	issues, external, err := computeIssueBoard(root, now, slaDays, toFilter, observers...)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,8 +1126,8 @@ func blessAuthorityName() string {
 
 // cmdProjection shares full-board collection and classification. Successful
 // enumeration is fresh for this run only; degraded histories keep row markers.
-func cmdProjection(root string, now time.Time, slaDays int, to string, p issueflow.Projection) (*Report, error) {
-	rows, external, err := computeProjection(root, now, slaDays, to, p)
+func cmdProjection(root string, now time.Time, slaDays int, to string, p issueflow.Projection, observers ...deskkit.RequestObserver) (*Report, error) {
+	rows, external, err := computeProjection(root, now, slaDays, to, p, observers...)
 	if err != nil {
 		return nil, err
 	}

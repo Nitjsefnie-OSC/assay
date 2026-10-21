@@ -30,19 +30,10 @@ id: 4defb16c-2840-4103-880e-11693f41dc91
 ## Context
 
 files:
-- `tools/desk/cmd/deskpr/deskpr.go`, `tools/desk/cmd/deskpr/exec.go` — `push -u origin <branch>` (literal
-  argv). Migrate to `gitcore.Push` with in-process `BasicAuth`.
-- `tools/desk/cmd/deskreply/deskreply.go`, `tools/desk/cmd/deskreply/exec.go` — the push path. Migrate to
-  `gitcore.Push`.
-- `tools/desk/cmd/verifyloop/durable.go` — the `push HEAD:main` step of the durable-Evidence loop.
-  Migrate the PUSH to `gitcore.Push`. (The `pull --rebase` race resolution is NOT
-  migrated here — go-git supports neither rebase nor non-FF pull; that redesign is the
-  named follow-on, see spec boundaries. Keep the existing race handling around the new
-  push for now.)
-- `tools/desk/internal/deskkit/preflight.go` — DELETE the `push --dry-run --porcelain` transport
-  probe (and its `exec.LookPath("git")`, `GIT_TERMINAL_PROMPT=0`); replace its purpose
-  (prove transport + auth reachability) with `gitcore.List` (ls-remote) using the
-  in-memory token.
+- `tools/desk/cmd/deskpr/deskpr.go`, `tools/desk/cmd/deskpr/exec.go` — `push -u origin <branch>` (literal argv). Migrate to `gitcore.Push` with in-process `BasicAuth`.
+- `tools/desk/cmd/deskreply/deskreply.go`, `tools/desk/cmd/deskreply/exec.go` — the push path. Migrate to `gitcore.Push`.
+- `tools/desk/cmd/verifyloop/durable.go` — the `push HEAD:main` step of the durable-Evidence loop. Migrate the PUSH to `gitcore.Push`. (The `pull --rebase` race resolution is NOT migrated here — go-git supports neither rebase nor non-FF pull; that redesign is the named follow-on, see spec boundaries. Keep the existing race handling around the new push for now.)
+- `tools/desk/internal/deskkit/preflight.go` — DELETE the `push --dry-run --porcelain` transport probe (and its `exec.LookPath("git")`, `GIT_TERMINAL_PROMPT=0`); replace its purpose (prove transport + auth reachability) with `gitcore.List` (ls-remote) using the in-memory token.
 - `docs/streams/desktools-go-git/inventory.md` (planned) — tick op families 2 and 3.
 
 facts:

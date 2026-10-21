@@ -277,7 +277,10 @@ func TestCommandColumnLiftsViaLift(t *testing.T) {
 		}
 	}
 	sort.Strings(sites)
-	for _, want := range []string{"cmd/verifyloop/verifyrows.go:parseVerifyRowsIn", "cmd/deskrebaseline/brief.go:parseVerifyRows"} {
+	// The integer execution and exact scheduling entrypoints now share this
+	// command-column reader. Keep the positive control on the actual leaf; the
+	// repo-wide Lift and raw CommentLed assertions above remain unchanged.
+	for _, want := range []string{"cmd/verifyloop/verifyrows.go:parseVerifyRowsMode", "cmd/deskrebaseline/brief.go:parseVerifyRows"} {
 		if _, ok := found[want]; !ok {
 			t.Errorf("positive control: the walker no longer finds %s (found %v) — the guard is blind", want, sites)
 		}

@@ -36,10 +36,7 @@ id: e4824b70-a2fc-4469-a929-b783a3ec7086
 
 ## Context
 
-files: `statusgen/contexthandoff/` (planned) (resolve, recheck and amend files plus tests; the package
-exists after statusgen/19), `statusgen/context.go` (planned) (new CLI adapter), `statusgen/main.go`
-(subcommand dispatch), `statusgen/testdata/contexthandoff/journeys/` (planned),
-`docs/context-handoff.md` (planned), `changelog/statusgen-20-offline-context-resolver.md` (planned).
+files: `statusgen/contexthandoff/` (planned) (resolve, recheck and amend files plus tests; the package exists after statusgen/19), `statusgen/context.go` (planned) (new CLI adapter), `statusgen/main.go` (subcommand dispatch), `statusgen/testdata/contexthandoff/journeys/` (planned), `docs/context-handoff.md` (planned), `changelog/statusgen-20-offline-context-resolver.md` (planned).
 
 facts (a435badbd, 2026-10-13):
 - statusgen dispatches positional subcommands from `main.go` (for example `verifyrun`,

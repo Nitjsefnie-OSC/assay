@@ -48,18 +48,9 @@ consumers:
 ## Context
 
 files:
-- `tools/desk/cmd/cellctl/` — the Go launcher that now carries this brief's behaviour
-  (`loadCell` kind switch, `cmdNew`, `cmdCheck`, `cmdDesk`, `cmdSmoke`, `cmdStatus`,
-  `cmdDown`); the bash implementation this brief landed (`load_cell` kind switch, a fourth
-  kind `scrubbed`; `cmd_new --kind scrubbed`; `check_scrubbed`; the scrubbed arm of
-  `cmd_desk`; two new verbs `smoke` and `status`; the session lock; `cmd_down` on a scrubbed
-  cell) is kept as the parity oracle at `tools/cellctl/testdata/cellctl-shell-oracle.sh`
-  (moved there in #1739).
-- `tools/cellctl/tests/scrubbed-cell.test.sh` (planned) — the fixture suite, `--case <name>`
-  selectable; every Verify row below names its case.
-- `docs/cellctl.md` — new section *Scrubbed cells — `--kind scrubbed`* placed between *House
-  cells* and *Container cells*; `smoke` and `status` added to the header usage block and the
-  verb walk-through; the stricter rows appended to the `check` tables.
+- `tools/desk/cmd/cellctl/` — the Go launcher that now carries this brief's behaviour (`loadCell` kind switch, `cmdNew`, `cmdCheck`, `cmdDesk`, `cmdSmoke`, `cmdStatus`, `cmdDown`); the bash implementation this brief landed (`load_cell` kind switch, a fourth kind `scrubbed`; `cmd_new --kind scrubbed`; `check_scrubbed`; the scrubbed arm of `cmd_desk`; two new verbs `smoke` and `status`; the session lock; `cmd_down` on a scrubbed cell) is kept as the parity oracle at `tools/cellctl/testdata/cellctl-shell-oracle.sh` (moved there in #1739).
+- `tools/cellctl/tests/scrubbed-cell.test.sh` (planned) — the fixture suite, `--case <name>` selectable; every Verify row below names its case.
+- `docs/cellctl.md` — new section *Scrubbed cells — `--kind scrubbed`* placed between *House cells* and *Container cells*; `smoke` and `status` added to the header usage block and the verb walk-through; the stricter rows appended to the `check` tables.
 - `changelog/desk-containers-09-scrubbed-cell.md` (planned) — one `### Added` bullet.
 
 facts:

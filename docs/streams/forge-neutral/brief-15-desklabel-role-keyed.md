@@ -144,12 +144,9 @@ label in isolation before. Before this brief, correcting it took a raw, unscoped
 and the verbs must refuse rather than fall back to a raw call"*).
 
 files:
-- `tools/desk/cmd/desklabel/` (new) — `main.go`, `verbs.go` (`add`/`rm`), `vocabulary.go` (the
-  role-ownership table), `forge.go` (session-role custody wiring, the deskclose/deskfile
-  precedent).
+- `tools/desk/cmd/desklabel/` (new) — `main.go`, `verbs.go` (`add`/`rm`), `vocabulary.go` (the role-ownership table), `forge.go` (session-role custody wiring, the deskclose/deskfile precedent).
 - `tools/desk/internal/deskkit/forge.go` — `ApplyIssueLabels`, the one op this brief adds.
-- `tools/desk/internal/deskkit/forge_github.go`, `forge_gitlab.go` — both backends implement
-  it.
+- `tools/desk/internal/deskkit/forge_github.go`, `forge_gitlab.go` — both backends implement it.
 - `docs/streams/forge-gitlab/inventory.md` — row 38.
 - `tools/desk/README.md` — the Tool reference table, `desklabel`'s row.
 
