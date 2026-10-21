@@ -461,6 +461,8 @@ TO, never superseding the flag day. **MIGRATION STILL NOT RUN HERE — pin bump 
   hashes to the manifest entry AND the pin line (`b2f926cd…04fa1`), self-reports `v1.0.6`, and
   `statusgen --root . --lint` with it → **exit 0, `LINT: PASS`**, NOTICEs only, no `PROBLEM` line.
 
+### Non-implementer re-wake verify pass — 2026-10-20 (verify-desk dispatch, claude-opus-5-5, strong tier), gate:human Evidence-only
+
 | # | Command | Result | Output | Date | Runner |
 |---|---------|--------|--------|------|--------|
 | 1 | `cd statusgen && go test . -run Migrate -count=1` | pass exit=0 sandbox=container-netns | sha256:7b05e0c519f0 | 2026-10-20 | assay-verifier-app[bot] @ 578a9f39d73e (on-behalf-of human:ian) (forge-identity) |
@@ -534,7 +536,7 @@ RISK-VALUE: NAMED, NOT DERIVED — StatusgenBinEnv = `"STATUSGEN_BIN"` @ tools/d
 
 Verification-Attestation: medici-finance/assay#3678 run=35c119f92c34a8e93ad49285330412d96704da8f33aa8ff68445e70db57d9d5c source=578a9f39d73ec48bdc07fbdfd3938edb463e7b9b brief=docs/streams/derived-board/brief-06-v1-migration-and-cut.md model=claude-opus-5-5 tier=strong
 
-**VERIFY: BLOCKED** — no deliverable obligation was observed failing, but rows 6, 7 and 9 cannot pass as written at current main (stale `--root` invocation after #3248, a `1.0.0` literal superseded by #814, and row 5 mutating row 9's input), so the Verify table needs a definition repair before a human sign-off.
+**VERIFY: BLOCKED** — no deliverable obligation was observed failing, but rows 6, 7 and 9 cannot pass as written at current main (stale `--root` invocation after #3248, a `1.0.0` literal superseded by #814, and row 5 mutating row 9's input), so the Verify table needs a definition repair before a human sign-off. Blocker filed: #3838 (row-definition repair for rows 4b, 6, 7 and 9). The `outcome: blocked` receipt follows from the fresh verify that #3838 names.
 
 ## Review
 Gate: human (from frontmatter). The human records the ruling after running rows 3 and 9
