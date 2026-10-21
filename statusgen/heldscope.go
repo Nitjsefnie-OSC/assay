@@ -239,6 +239,13 @@ func heldCloseRun(line string, from, n int) int {
 	return -1
 }
 
+// heldCommentIndent reports whether lead, the whitespace before "<!--", lets
+// the line open an HTML comment block: three spaces or fewer and no tab. More
+// is indented code, which renders what follows.
+func heldCommentIndent(lead string) bool {
+	return len(lead) <= 3 && !strings.Contains(lead, "\t")
+}
+
 // The kinds of line heldHTMLLines tells apart.
 const (
 	heldNotHTML     = iota
@@ -249,8 +256,12 @@ const (
 // heldHTMLLines classifies each line by the HTML block it sits in (rule 3b):
 // a comment line is one whose every byte lies inside the comment; a line of
 // any other HTML block, or a comment's line with text after its end, is
-// heldHTMLOther. A block that ends on its own line is read as running to the
-// next blank line unless it is a comment: the stricter choice.
+// heldHTMLOther. A comment is read only where the renderer opens one: "<!--"
+// at three spaces of indentation or fewer and no tab (heldCommentIndent), and
+// its end is the first "-->" counted from the opener's first byte, so
+// "<!-->" and "<!--->" close on their own line. Any other "<!--" line opens a
+// block that is not a comment. A block that ends on its own line is read as
+// running to the next blank line unless it is a comment: the stricter choice.
 func heldHTMLLines(lines []string, inFence []bool) []int {
 	kind := make([]int, len(lines))
 	end, open, comment := "", false, false
@@ -285,10 +296,14 @@ func heldHTMLLines(lines []string, inFence []bool) []int {
 		}
 		kind[i] = heldHTMLOther
 		if t := strings.TrimLeft(lower, " \t"); strings.HasPrefix(t, "<!--") {
+			if !heldCommentIndent(lower[:len(lower)-len(t)]) {
+				end = "-->" // indented code, not a comment: read as another block
+				continue
+			}
 			kind[i] = heldHTMLComment
-			if e != "" {
-				end, comment = e, true
-			} else if j := strings.Index(t[4:], "-->"); strings.TrimSpace(t[4+j+3:]) != "" {
+			if j := strings.Index(t, "-->"); j < 0 {
+				end, comment = "-->", true
+			} else if strings.TrimSpace(t[j+3:]) != "" {
 				kind[i] = heldHTMLOther
 			}
 			continue

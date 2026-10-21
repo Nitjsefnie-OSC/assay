@@ -398,6 +398,30 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		// Refused: a hold inside an HTML block that is not a comment.
 		{"text after a comment's end",
 			two("<!-- note --> row 3 HELD — runner offline") + rerun2, true},
+		// Refused: an opener the renderer does not read as an open comment —
+		// "<!-->" and "<!--->" close on their own line, and an opener indented
+		// four spaces or by a tab is indented code — so what follows renders.
+		{"empty comment, pipeless table after",
+			two("<!-->\n\nRow | Result\n--|--\n3 | HELD runner offline\n\n-->") + rerun2, true},
+		// The correctness review's Q4, Q10, Q11, Q12: a GFM table set off by
+		// blank lines after an opener the renderer does not hold open, then a
+		// later end marker; Q13 is the control, a comment closed on its line.
+		{"Q4: indented opener, GFM table",
+			two("    <!--\n\n| Check | State |\n|---|---|\n| drill | HELD |\n\n-->") + rerun2, true},
+		{"Q10: <!--> then GFM table",
+			two("<!-->\n\n| Check | State |\n|---|---|\n| drill | HELD |\n\n-->") + rerun2, true},
+		{"Q11: <!---> then GFM table",
+			two("<!--->\n\n| Check | State |\n|---|---|\n| drill | HELD |\n\n-->") + rerun2, true},
+		{"Q12: tab opener, GFM table",
+			two("\t<!--\n\n| Check | State |\n|---|---|\n| drill | HELD |\n\n-->") + rerun2, true},
+		{"Q13: closed comment, GFM table",
+			two("<!-- note -->\n\n| Check | State |\n|---|---|\n| drill | HELD |\n\n-->") + rerun2, true},
+		{"indented opener, pipeless table",
+			two("    <!--\n\nRow | Result\n--|--\n3 | HELD runner offline\n\n    -->") + rerun2, true},
+		{"tab-indented opener, pipeless table",
+			two("\t<!--\n\nRow | Result\n--|--\n3 | HELD runner offline\n\n\t-->") + rerun2, true},
+		{"empty comment, prose hold",
+			two("<!-->\n\nRow | Result\n--|--\n3 | exit 2\n\n- row 3 could-not-check.\n\n-->") + rerun2, true},
 		{"hold in an HTML details block",
 			two("<details>\nrow 3 HELD — runner offline\n</details>") + rerun2, true},
 	})

@@ -100,7 +100,7 @@
     {
       "name": "#3841: text after a comment's end counts as inside the comment",
       "file": "heldscope.go",
-      "old": "} else if j := strings.Index(t[4:], \"-->\"); strings.TrimSpace(t[4+j+3:]) != \"\" {",
+      "old": "} else if strings.TrimSpace(t[j+3:]) != \"\" {",
       "new": "} else if false {"
     },
     {
@@ -330,6 +330,42 @@
       "file": "heldscope.go",
       "old": "\tcell = heldStrikeRe.ReplaceAllString(cell, \"\")\n",
       "new": "\tcell = strikethroughRe.ReplaceAllString(cell, \"\")\n"
+    },
+    {
+      "name": "#3841: an opener at any indentation opens a comment",
+      "file": "heldscope.go",
+      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
+      "new": "return true"
+    },
+    {
+      "name": "#3841: a tab-indented opener opens a comment",
+      "file": "heldscope.go",
+      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
+      "new": "return len(lead) <= 3"
+    },
+    {
+      "name": "#3841: an opener indented four spaces opens a comment",
+      "file": "heldscope.go",
+      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
+      "new": "return !strings.Contains(lead, \"\\t\")"
+    },
+    {
+      "name": "#3841: a comment's end is searched after the four-byte opener (<!--> stays open)",
+      "file": "heldscope.go",
+      "old": "if j := strings.Index(t, \"-->\"); j < 0 {",
+      "new": "if j := strings.Index(t[4:], \"-->\"); j < 0 {"
+    },
+    {
+      "name": "#3841: a comment's end is searched past the opener's first dash (<!--> stays open; Q10)",
+      "file": "heldscope.go",
+      "old": "if j := strings.Index(t, \"-->\"); j < 0 {",
+      "new": "if j := strings.Index(t[3:], \"-->\"); j < 0 {"
+    },
+    {
+      "name": "#3841: the indent limit admits four spaces (Q4)",
+      "file": "heldscope.go",
+      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
+      "new": "return len(lead) <= 4 && !strings.Contains(lead, \"\\t\")"
     }
   ]
 }
