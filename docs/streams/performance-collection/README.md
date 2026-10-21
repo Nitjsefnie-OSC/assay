@@ -18,7 +18,8 @@ owns delivery of optional collection/storage plumbing; it does not replace the s
 owners of work, runner accounting, measurement definitions or continuing outcomes.
 The driver asked on 18 October 2026 for this stream to be unparked. Activation applies to the
 whole stream on the board: once it is active, any brief whose `depends:` are met can appear in
-Next-up and be dispatched. That includes the remote-path briefs: /03 and /05 depend only on /01.
+Next-up and be dispatched. That includes the remote-path briefs: /03 and /05 depend only on /01, while /02 also waits on
+desktools-v2/63–65.
 The delivery priority is the local-first path /01 → /02 → /07 → /08. The remote path keeps its
 separate scope and gates. Brief dependencies, verification and human gates stay in force. All
 existing todo states stay todo. Activation does not enable collection, transmission, deployment
@@ -351,7 +352,7 @@ availability explicitly; do not fabricate comparable zeroes or additive nested t
 
 [The attributed local contract](../../performance-attribution-spec.md) supersedes v2-only
 future instrument intent. Main 2e02111ed has perf-v2 (/61 implemented); no v3/perfdata is
-claimed. The preceding dated reuse schedule is historical. This stream stays parked.
+claimed. The preceding dated reuse schedule is historical. This amendment does not change the stream's admission state.
 
 /01 freezes collection meanings independently; /02 imports all three local instrument versions
 after /63–65, using the existing source/epoch alias mapper. Local identifiable workflow v3 is

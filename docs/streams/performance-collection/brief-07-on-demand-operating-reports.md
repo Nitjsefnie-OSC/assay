@@ -128,7 +128,7 @@ separate from sample version; upgrading to v1.0.49 cannot relabel #3353's v1.0.4
 
 Use saved local observations with DB/API absent. Missing phase/correlation data is could-not-check,
 never proof of faster startup. This reports the existing launch owner's result; it introduces
-neither a latency SLO nor another runtime owner and does not activate this parked stream.
+neither a latency SLO nor another runtime owner and does not change this stream's admission state.
 
 ## Verify
 
