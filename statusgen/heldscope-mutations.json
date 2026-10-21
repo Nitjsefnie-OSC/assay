@@ -26,52 +26,46 @@
       "new": "return strings.HasPrefix(t, \"#\")"
     },
     {
-      "name": "S1: an earlier hold is dropped whether or not the last entry re-ran its row",
+      "name": "S1: an earlier keyed hold is dropped whether or not the last entry re-ran its row",
       "file": "heldscope.go",
-      "old": "\t\t\tif !s.covered[read.key] {\n\t\t\t\treturn false",
-      "new": "\t\t\tif false {\n\t\t\t\treturn false"
+      "old": "if read.key != \"\" && s.covered[read.key] {",
+      "new": "if read.key != \"\" {"
     },
     {
-      "name": "S1: an earlier hold with no row key or row cover (prose, misaligned row) is dropped",
+      "name": "#3841: an earlier held line is dropped without whole coverage",
       "file": "heldscope.go",
-      "old": "if len(read.cover) == 0 {\n\t\t\treturn false",
-      "new": "if len(read.cover) == 0 {\n\t\t\tcontinue"
+      "old": "if s.whole && read.whole {",
+      "new": "if read.whole {"
     },
     {
-      "name": "#3841: a prose line's cover is only the rows it names (an unnamed row of its entry is left out)",
+      "name": "#3841: whole coverage drops a hold in an earlier table of another shape",
       "file": "heldscope.go",
-      "old": "return append(named, keys...)",
-      "new": "return named"
+      "old": "if s.whole && read.whole {",
+      "new": "if s.whole {"
     },
     {
-      "name": "#3841: a prose line is dropped whether or not the last entry re-ran its cover",
+      "name": "#3841: an earlier key the last entry did not re-run still allows whole supersession",
       "file": "heldscope.go",
-      "old": "for _, k := range read.cover {\n\t\t\tif !s.covered[k] {",
-      "new": "for _, k := range read.cover {\n\t\t\tif false && !s.covered[k] {"
+      "old": "if !covered[k] {\n\t\t\t\treturn false",
+      "new": "if false && !covered[k] {\n\t\t\t\treturn false"
     },
     {
-      "name": "#3841: a named number that is not a row of the entry is ignored",
+      "name": "#3841: an earlier misaligned or unkeyed results row still allows whole supersession",
       "file": "heldscope.go",
-      "old": "return nil // a number that is not a row of this entry",
-      "new": "continue // a number that is not a row of this entry"
+      "old": "if !aligned[e] {\n\t\t\treturn false",
+      "new": "if false {\n\t\t\treturn false"
     },
     {
-      "name": "#3841: a row word with no number list after it is ignored",
+      "name": "#3841: earlier entries with no keyed row are superseded as wholes",
       "file": "heldscope.go",
-      "old": "if m == nil {\n\t\t\treturn nil, false",
-      "new": "if m == nil {\n\t\t\tcontinue"
+      "old": "return n > 0",
+      "new": "return true"
     },
     {
-      "name": "#3841: prose naming no row stands for every row of its entry",
+      "name": "#3841: every earlier line is droppable, unkeyed table lines too",
       "file": "heldscope.go",
-      "old": "if len(words) == 0 {\n\t\treturn nil, false",
-      "new": "if len(words) == 0 {\n\t\treturn nil, true"
-    },
-    {
-      "name": "#3841: an entry with a misaligned or unkeyed row still covers its prose",
-      "file": "heldscope.go",
-      "old": "if !aligned || len(keys) == 0 {",
-      "new": "if len(keys) == 0 {"
+      "old": "out[i].whole = inFence[i] || !heldTableLine(lines[i]) || out[i].key != \"\"",
+      "new": "out[i].whole = true"
     },
     {
       "name": "S1: a covering row needs no result",
