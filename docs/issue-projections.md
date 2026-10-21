@@ -86,3 +86,59 @@ desk-tools/38 verification prerequisite is retained: source tests here do not
 certify it or authorize runtime activation, releases, installations or pin changes.
 
 Flow-only shell modes (`--flow`, including `--html`) read existing flow emitters and perform no issue discovery, producer capability probe or issue query. They therefore need no loop identity or reader selection. Shell discovery modes return 6 before any read when auto has no loop identity; select `ASSAY_INBOX_READER=legacy` explicitly for ambient discovery.
+
+
+## Repository-scoped reader setup
+
+Each issueboard collection resolves one authenticated, wrapped reader for each
+repository it visits. Full, work-ready, intake and addressed-inbox views all use
+that same collection path. The reader owns only the existing read operations;
+selection and classification remain with their existing policy owners.
+
+The reader shares client and credential setup within that repository's current
+invocation. It does not cache issue observations, cross repository boundaries,
+keep a process-global client or reuse success in a later invocation. Every
+selected trust, complete-comment, label-history and positive-closure read still
+runs in its original order through the original wrapped forge. Outbound checks,
+transport errors, pagination caps, quarantine and row-level degradation retain
+their existing behavior. An expired or rejected credential stays a read failure;
+there is no alternate identity or transparent retry path.
+
+This follows the already-delivered desk-tools/42 projections. The older full
+forms and the compatibility/rollback matrix above remain applicable. No selector,
+capability, credential owner, service, runtime store, release or consumer pin is
+added. Deskinbox and statusgen's separate online deskread bridge remain unchanged;
+the pure issueflow selection contract is unchanged for future library consumers.
+
+`TestCollectionScopedReader` checks repository setup counts, ordered provider
+reads and fresh collection across two actual invocations of all four views.
+`TestCollectionResolutionFailureIsFresh` rejects reuse after a later resolution
+failure. Their fixture also runs against the immutable pre-change source; the
+setup-count assertion fails there. Existing projection, trust, identity,
+escalation, closure and actual-recorder tests remain in place.
+
+The requested perf-v4 before/after qualification is pending the canonical codec
+and producer. The baseline source is
+`116a2f1494fca6c97209f10883861467f729216d`; that source has perf-v3 integration
+but no perf-v4 codec or producer. The merged perf-v4 transition design is not a
+shipped producer. Resolver-count regressions are not perf-v4 measurements or a
+production latency/CPU/quota savings estimate. No v3 record is relabeled, no
+second recorder is introduced, and this source qualification grants no new
+collection consent or operational activation.
+
+
+The matched synthetic fixture has fourteen repositories, one populated. Per
+invocation, the pre-change and candidate setup counts are:
+
+| View | Resolutions before | Resolutions after | Provider operations, both |
+|---|---:|---:|---:|
+| Full | 22 | 14 | 22 |
+| Work-ready | 18 | 14 | 18 |
+| Intake | 22 | 14 | 22 |
+| Addressed inbox | 15 | 14 | 15 |
+
+Each variant runs twice and repeats its ordered provider operations. These counts
+include empty repositories and depend on the fixture's population. They do not
+measure elapsed time, process startup, token-mint subprocesses, provider latency,
+GraphQL points or production savings. Credential resolution may itself reuse an
+existing custody token; fewer resolutions do not imply fewer minted credentials.
