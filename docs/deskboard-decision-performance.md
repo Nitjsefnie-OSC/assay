@@ -73,7 +73,7 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`093503fdf65bebb7a54d8532d683727601100638`. Subsequent report and mutation-anchor commits leave the measured Go source unchanged. This cohort
+`093503fdf65bebb7a54d8532d683727601100638`. Subsequent test, report and mutation-anchor commits leave the measured production Go source and performance harness unchanged. This cohort
 includes the independent review repairs for exact spelling, typed selective lookup,
 classified safe diagnostics and stable GitHub paging.
 Both local test binaries carry their respective source stamp. Five independent
@@ -140,11 +140,11 @@ cd tools/desk
 go run ./cmd/muhar -j 2 -spec cmd/deskboard/decision-admission-mutations.json
 ```
 
-The repaired source qualifies twenty-six mutations: a healthy pristine baseline and
-positive control, twenty-six caught faults, zero survivors and zero could-not-mutate.
+The repaired source qualifies twenty-seven mutations: a healthy pristine baseline and
+positive control, twenty-seven caught faults, zero survivors and zero could-not-mutate.
 Cross-project aliases, lost diagnostic class, raw provider-detail leakage,
 GitHub syntax sent to GitLab, unstable paging, local-refusal/page-bound labels,
-quote/backslash rejection, shared/selective validation parity, all four native missing-token origins and their safe label are included explicitly.
+quote/backslash rejection, shared/selective validation parity, all four native missing-token origins, their safe label and the preserved unverifiable cause chain are included explicitly.
 
 Existing review snapshots, conditional transports, per-PR reuse, quota floors,
 root resolution, queue semantics, trust controls and perf-v3 observation machinery

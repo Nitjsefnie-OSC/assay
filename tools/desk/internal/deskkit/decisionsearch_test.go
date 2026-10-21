@@ -284,7 +284,7 @@ func TestDecisionForgeTokenMissingOrigins(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.read()
-			if ExitCodeOf(err) != ExitUnverifiable || !errors.Is(err, errForgeTokenMissing) {
+			if ExitCodeOf(err) != ExitUnverifiable || !IsUnverifiable(err) || !errors.Is(err, errForgeTokenMissing) {
 				t.Fatalf("missing token lost exit/cause: %v", err)
 			}
 		})

@@ -162,6 +162,12 @@
       "file": "internal/deskkit/decisionsearch.go",
       "old": "case errors.Is(err, errForgeTokenMissing):",
       "new": "case false && errors.Is(err, errForgeTokenMissing):"
+    },
+    {
+      "name": "missing-token wrapper drops its unverifiable cause chain",
+      "file": "internal/deskkit/forge.go",
+      "old": "func (e *forgeTokenMissingError) Unwrap() error        { return e.DeskError }",
+      "new": "func (e *forgeTokenMissingError) Unwrap() error        { return nil }"
     }
   ]
 }
