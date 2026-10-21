@@ -1,0 +1,1 @@
+- Batch pending-Evidence attestation observations through the existing GitHub Forge transport and production validator, retaining ordered body/current-state/stamp checks and fresh dispatch/publication admission. Other forges and unsupported decorators retain their existing per-target reads.

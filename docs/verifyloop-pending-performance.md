@@ -103,7 +103,9 @@ stalls is unresolved. No HTTP protocol or transport default is changed by this P
 
 The optimization reduces the repeated work rather than introducing parallel provider
 traffic. Remaining distinct attestation/trust/stamp reads and distinct pending changes
-retain their existing semantics. Conditional transport, batching and served observations
+retain their existing semantics. The subsequent [ordered attestation batching
+change](verifyloop-attestation-batching.md) consolidates those distinct reads while
+retaining their four observation boundaries. Conditional transport and served observations
 remain separate work in the parent specification.
 
 ## Reproduction and safety controls
