@@ -1,5 +1,5 @@
 {
-  "test": "go test . -run 'TestDoraJSON|TestChangeFailureRate' -count=1 -timeout 120s",
+  "test": "go test . -run 'TestDoraJSON|TestChangeFailureRate|TestCFR' -count=1 -timeout 120s",
   "control": {
     "name": "CONTROL — an uncomputed metric serializes a fabricated 0 instead of null (the headline honesty invariant: a blank DORA number must never publish as a measured zero)",
     "file": "dorajson.go",
