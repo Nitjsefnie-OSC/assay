@@ -374,6 +374,10 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("- row 3 could-not-check.\n\n<div title=\"a\">note</div>") + rerun2, false},
 		{"inline tag in a list item",
 			two("- row 3 could-not-check.\n- <b>x</b> done") + rerun2, false},
+		{"attribute closed in its own block",
+			two("- row 3 could-not-check.\n\n<div title=\"\nx\" y>") + rerun2, false},
+		{"div block runs past a closed tag",
+			two("- row 3 could-not-check.\n\n<div>a</div> <b title=\"\nx\" y>") + rerun2, false},
 		{"fenced table, row in prose",
 			eight("```\n| # | Result |\n|---|---|\n| 9 | exit 2 |\n```\n\n- row 9 could-not-check.") + final, false},
 		{"pipe in a code span, prose hold", two("- `a | b` could-not-check: runner offline.") + rerun2, false},
@@ -428,6 +432,38 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("- row 3 could-not-check.\n\n<div title='>") + rerun2, true},
 		{"attribute closed in a later block",
 			two("- row 3 could-not-check.\n\n<div title=\"") + rerun2 + "<p>\"</p>\n", true},
+		// The page ends an HTML block before the next blank line when the
+		// opener meets its end condition on its own line, or when a line
+		// leaves the blockquote or list item the block sits in. What follows
+		// is Markdown there, so a later quote closes nothing on the page.
+		{"comment closed on the opener line",
+			two("- row 3 could-not-check.\n\n<!-- a --> <div title=\"\nx\" y>") + rerun2, true},
+		{"<!--> closes on the opener line",
+			two("- row 3 could-not-check.\n\n<!--> <b title=\"\nx\" y>") + rerun2, true},
+		{"<pre> closed on the opener line",
+			two("- row 3 could-not-check.\n\n<pre>a</pre> <b title=\"\nx\" y>") + rerun2, true},
+		{"blockquote left on the next line",
+			two("- row 3 could-not-check.\n\n> <div title=\"\nx\" y>") + rerun2, true},
+		{"blockquote ended by a > line",
+			two("- row 3 could-not-check.\n\n> <div title=\"\n>\n> x\" y>") + rerun2, true},
+		{"inner blockquote left",
+			two("- row 3 could-not-check.\n\n> > <div title=\"\n> x\" y>") + rerun2, true},
+		{"list item left on the next line",
+			two("- row 3 could-not-check.\n\n- <div title=\"\nx\" y>") + rerun2, true},
+		{"ordered list item left",
+			two("- row 3 could-not-check.\n\n1) <div title=\"\nx\" y>") + rerun2, true},
+		{"list item by indent left",
+			two("- row 3 could-not-check.\n\n  <div title=\"\nx\" y>") + rerun2, true},
+		// A carriage return with no line feed after it ends a line on the
+		// page but not in the scan's split, so the scan and the page can
+		// disagree on fences and HTML blocks: nothing is superseded.
+		{"> line ends a tag on the page",
+			two("- row 3 could-not-check.\n\n<div\n> <!-- a> b") + rerun2, true},
+		{"bare CR ends a fence",
+			two("- row 3 could-not-check.\n\n```\nx\r```\n\n"+
+				"<table><tr><td>3</td><td>exit 2</td></tr></table>\n\n```\nz\r```") + rerun2, true},
+		{"bare CR opens an HTML block",
+			two("- row 3 could-not-check.\n\nx\r<div title=\"") + rerun2, true},
 		// Refused: a hold inside an HTML block that is not a comment.
 		{"text after a comment's end",
 			two("<!-- note --> row 3 HELD — runner offline") + rerun2, true},
