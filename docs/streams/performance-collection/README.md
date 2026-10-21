@@ -22,7 +22,7 @@ owners of work, runner accounting, measurement definitions or continuing outcome
 The driver asked on 18 October 2026 for this stream to be unparked, and the approval ruling
 above admits the whole stream. Every brief is dispatchable once its `depends:` are met, the
 remote-path briefs /03, /04, /05 and /06 included; no brief is held for a later ruling.
-/03 and /05 depend only on /01, while /02 also waits on desktools-v2/63–65.
+The `depends:` of /03 and /05 name only /01; those of /02 also name desktools-v2/63, /64 and /65.
 The delivery priority is the local-first path /01 → /02 → /07 → /08. The remote path keeps its
 separate scope and gates. Brief dependencies, verification and human gates stay in force. All
 existing todo states stay todo. Activation does not enable collection, transmission, deployment
