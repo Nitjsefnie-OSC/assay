@@ -18,8 +18,13 @@ set and current brief obligations was read at source
 merge set. Full body hashes identify the source bodies; only the necessary exact
 scope excerpts and matcher lines are published. `body_lines` are original
 one-based line locations. `brief_sha256` binds the entire source brief before this
-repair; `obligations` retains its Task/Definition-of-Done blocks. The statusgen/26
-byte check permits only the declared entry and version increment.
+repair; `obligations` retains its Task/Definition-of-Done blocks. `delivery_repair`
+contains exact statusgen/26 before/after blobs from base `5dcdff9fb` and delivery
+`92315c7fa`; the byte check permits only the declared entry and version increment
+between those immutable snapshots, preserving their Task/Verify/Evidence bytes.
+It does not hash or freeze the living brief. Current declarations still pass
+through the real readers; a positive control permits later comment, version,
+Evidence and additional-partial maintenance without changing #3759's meaning.
 
 The existing ten-row review dispositions are independently retained here:
 
@@ -59,6 +64,14 @@ real [2295](https://github.com/medici-finance/assay/pull/2295) identity is combi
 with the existing exact-path/patch `evidence2295.json` seam: it must be excluded
 while 1196 survives a later synthetic partial and VERIFY FAIL.
 
+The other members are also bounded projections, not complete candidate histories.
+The full pickup collection's merged trailers include contributor-trust/09
+[980, 949, 941], desk-tools/27 [2295, 1196, 1062, 1052], and desk-tools/37
+[3768, 3331]. This fixture omits 949, 941, 1052 and 3768; 1062 is comparison-only
+and 2295 is a separate Evidence control. The coverage join certifies the fixed
+board pairs and supplied controls, not those members' full histories. This
+limitation is separate from the complete statusgen/26 projection below.
+
 ## Current eligibility and collection receipt
 
 The pickup REST collection walked every `state=all` page to exhaustion: 2,020
@@ -94,7 +107,9 @@ python3 statusgen/testdata/witness-admission/mutate-board-cohort.test.py
 ```
 
 Run the mutation script in a disposable owned checkout. It records a green
-baseline, removes only the source entry temporarily, observes both the named
+baseline, runs every cohort test against temporary live-source comment/version/
+Evidence/additional-partial maintenance, then removes only the source entry,
+observes both the named
 coverage failure and the real false implemented witness, and restores exact
 source bytes. The second-site plant is synthetic apps-installer/10 PR 97, older
 than the reviewed witnesses and absent from both dispositions and declarations.
@@ -102,7 +117,10 @@ Disabling the test-only coverage join must make its control fail. Go overlays
 also disable the existing write-refusal and Evidence-exclusion boundaries to
 prove those controls discriminate. They never edit production Go bytes. The
 script ends with a restored green run and byte-identity checks. Private raw logs
-stay outside the repository; the script prints their location.
+stay outside the repository; the script prints their location. Child Go tests
+receive an explicit build/runtime environment allow-list, with Go environment-file
+loading and downloads disabled; forge-token variables and arbitrary caller Go
+flags are not forwarded. Local fake-server listeners remain part of the tests.
 
 `cohortRoot` copies the real statusgen/26 source and uses the existing minimal
 model-gate template for the other rows. The latter avoids unrelated evolving

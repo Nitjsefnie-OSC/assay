@@ -35,6 +35,7 @@ type cohortRecord struct {
 	BodySHA      string   `json:"body_sha256"`
 }
 type cohortFixture struct {
+	Repair     struct{ Base, Delivery, Before, After string } `json:"delivery_repair"`
 	Source     string
 	BoardBase  string `json:"board_base"`
 	BoardHead  string `json:"board_head"`
@@ -529,7 +530,31 @@ func cohortPath(f cohortFixture, id string) string {
 	return ""
 }
 func cohortOmit(s string) string {
-	return strings.Replace(s, "delivery:\n  - {in: \"assay#3759\", covers: partial, note: \"sub-split (a); snapshot reuse, workloads and Verify 2 remain owed\"}\n", "", 1)
+	s = strings.Replace(s, "  - {in: \"assay#3759\", covers: partial, note: \"sub-split (a); snapshot reuse, workloads and Verify 2 remain owed\"}\n", "", 1)
+	// Remove an empty delivery block, but retain later entries regardless of order.
+	return regexp.MustCompile(`(?m)^delivery:\n([^ \t\n])`).ReplaceAllString(s, "$1")
+}
+
+// Only the immutable delivery snapshots carry the metadata-only byte proof.
+// Live brief maintenance is tested separately through the production readers.
+func cohortRepairEvidence(f cohortFixture) error {
+	if f.Repair.Base != f.Source || f.Repair.Delivery != "92315c7fa0f0b1e9a5e66a3c6dfdabc8a1d0cde7" {
+		return fmt.Errorf("delivery snapshot revision mismatch")
+	}
+	for _, v := range f.Dispositions {
+		if v.Brief != "statusgen/26" {
+			continue
+		}
+		if cohortHash(f.Repair.Before) != v.BriefSHA || !strings.Contains(f.Repair.Before, v.Obligations) {
+			return fmt.Errorf("delivery snapshot obligations mismatch")
+		}
+		normalized := strings.Replace(cohortOmit(f.Repair.After), "version: 3\n", "version: 2\n", 1)
+		if normalized != f.Repair.Before {
+			return fmt.Errorf("delivery-time repair changed bytes outside declaration/version")
+		}
+		return nil
+	}
+	return fmt.Errorf("missing statusgen/26 delivery evidence")
 }
 
 // regression: #2703
@@ -584,14 +609,43 @@ func TestBoardCohortFloors(t *testing.T) {
 			}
 		})
 	}
-	// Metadata-only repair preserves every source byte outside the entry/version.
-	raw := cohortRead(t, filepath.Join("..", cohortPath(f, "statusgen/26")))
-	normalized := strings.Replace(cohortOmit(raw), "version: 3\n", "version: 2\n", 1)
-	for _, v := range f.Dispositions {
-		if v.Brief == "statusgen/26" && cohortHash(normalized) != v.BriefSHA {
-			t.Fatal("statusgen/26 obligations or other metadata changed")
+	// The delivery-time byte invariant belongs to immutable evidence, not the
+	// living brief. Current declarations still run through the real readers.
+	t.Run("delivery-snapshot", func(t *testing.T) {
+		if err := cohortRepairEvidence(f); err != nil {
+			t.Fatal(err)
 		}
-	}
+		changed := f
+		changed.Repair.After += "\nrewritten delivery-time obligation\n"
+		if cohortRepairEvidence(changed) == nil {
+			t.Fatal("changed delivery-time evidence accepted")
+		}
+	})
+	t.Run("later-maintenance", func(t *testing.T) {
+		root := cohortRoot(t, f)
+		path := filepath.Join(root, cohortPath(f, "statusgen/26"))
+		raw := cohortRead(t, path)
+		// Later comment, version, Evidence and another partial entry are legitimate
+		// maintenance. None changes the recorded #3759 delivery's disposition.
+		raw = regexp.MustCompile(`(?m)^version: [0-9]+$`).ReplaceAllString(raw, "version: 100")
+		raw = strings.Replace(raw, "delivery:\n", "delivery:\n  - {in: \"assay#4002\", covers: partial, note: \"later synthetic slice\"}\n", 1)
+		raw = strings.Replace(raw, "## Evidence\n", "## Evidence\n\nLater independent evidence is recorded here.\n", 1)
+		cohortWrite(t, path, raw+"\n<!-- Later maintenance note. -->\n")
+		d := readDeclaredPartials(root, "medici-finance/assay")
+		if !d.partial(3759, "statusgen/26") || !d.partial(4002, "statusgen/26") {
+			t.Fatal("maintenance lost a partial declaration")
+		}
+		prs := prRecordsFromPulls(cohortPulls(f))
+		if err := cohortCoverage(f, prs, d); err != nil {
+			t.Fatal(err)
+		}
+		cohortServer(t, f, nil)
+		in, _, unread := cohortInput(t, f, root)
+		if len(unread) != 0 {
+			t.Fatal(unread)
+		}
+		cohortAssert(t, f, DeriveLifecycle(in))
+	})
 	t.Run("protected", TestApplyReconcileWrites_DoneRowImmutable)
 	t.Run("stamp", TestApplyReconcileWrites_NeverTouchesHumanStamp)
 	t.Run("evidence-unknown", TestEvidenceReadUnknown)

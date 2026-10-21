@@ -7,6 +7,7 @@ sources. Temporary logs are private; only aggregate results go to stdout.
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,9 +15,17 @@ import tempfile
 MODULE = Path(__file__).resolve().parents[2]
 ROOT = MODULE.parent
 BRIEF = next((ROOT / "docs/streams/statusgen").glob("brief-26-*.md"))
-ENTRY = ('delivery:\n  - {in: "assay#3759", covers: partial, note: '
+ENTRY = ('  - {in: "assay#3759", covers: partial, note: '
          '"sub-split (a); snapshot reuse, workloads and Verify 2 remain owed"}\n')
-ENV = dict(os.environ, KUBECONFIG="/dev/null", GOPROXY="off", GOSUMDB="off")
+# Child tests need local build/cache locations, not ambient forge credentials,
+# credential helpers or caller-controlled Go flags. This is test-launcher hygiene;
+# selected Go tests still use loopback fake servers, not a no-sockets guarantee.
+BUILD_ENV = ("PATH", "HOME", "TMPDIR", "TMP", "TEMP", "GOCACHE", "GOPATH",
+             "GOMODCACHE", "GOROOT", "SYSTEMROOT", "WINDIR", "USERPROFILE",
+             "LOCALAPPDATA", "APPDATA", "LANG", "LC_ALL", "TZ")
+ENV = {key: os.environ[key] for key in BUILD_ENV if key in os.environ}
+ENV.update(KUBECONFIG="/dev/null", GOPROXY="off", GOSUMDB="off",
+           GOENV="off", GOTOOLCHAIN="local")
 OUT = Path(tempfile.mkdtemp(prefix="board-cohort-mutations-"))
 
 def run(name, selector, failure=None, overlay=None):
@@ -54,7 +63,15 @@ run("baseline", "^TestBoardCohort")
 try:
     text = original.decode()
     assert text.count(ENTRY) == 1
-    BRIEF.write_text(text.replace(ENTRY, "", 1))
+    # Exercise the SAME live-source path that the whole-file hash froze. Every
+    # cohort test must tolerate ordinary later maintenance, not just a helper.
+    maintained = re.sub(r"(?m)^version: [0-9]+$", "version: 100", text, count=1)
+    maintained = maintained.replace("delivery:\n", 'delivery:\n  - {in: "assay#4001", '
+                                    'covers: partial, note: "later synthetic slice"}\n', 1)
+    maintained = maintained.replace("## Evidence\n", "## Evidence\n\nLater independent evidence.\n", 1)
+    BRIEF.write_text(maintained + "\n<!-- Later maintenance note. -->\n")
+    run("later-maintenance", "^TestBoardCohort")
+    BRIEF.write_text(re.sub(r"(?m)^delivery:\n([^ \t\n])", r"\1", text.replace(ENTRY, "", 1)))
     run("source-omission", "^TestBoardCohortSource$", "PR #3759 (merged 4482989)")
     run("flow-omission", "^TestBoardCohortFlow$", "got implemented want in-progress")
 finally:

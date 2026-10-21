@@ -13,7 +13,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 authored: 2026-10-20 by assay-worker-app
 sources:
   - https://github.com/medici-finance/assay/issues/2703#issuecomment-6302222772
@@ -23,7 +23,7 @@ sources:
   - https://github.com/medici-finance/assay/pull/3745
   - https://github.com/medici-finance/assay/commit/44829891e8f74b1520b64f4180910d96e17be96a
   - docs/contracts.md#semantic-owners
-  - freshness-checked 2026-10-20 @ 5dcdff9fb (main; original audit c8c4020d1 retained)
+  - freshness-checked 2026-10-20 @ cfe5c927e (main; original audit c8c4020d1 retained)
 regression-of: medici-finance/assay#3787
 exec-tier: strong
 exec-tier-why: Cross-consumer delivery meaning and the recurring error-class design require strong execution (questions b and d).
@@ -55,7 +55,7 @@ consumers:
 
 files:
 - `docs/streams/statusgen/brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md`
-- `statusgen/witnessadmission_test.go`
+- `statusgen/witnessadmission_test.go` (read-only existing controls)
 - `statusgen/boardcohort_test.go` (delivered)
 - `tools/desk/internal/deskkit/citrigger_test.go` (source-reader registration)
 - `statusgen/testdata/witness-admission/board-cohort.json` (delivered)
@@ -144,7 +144,7 @@ Run from the repository root. Named tests use hermetic fixtures. Worker receipts
 | 1 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortSource$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortSource' "$o")` | exit 0; exactly ten pairs from the independently pinned board diff and review manifest, not declaration enumeration; source-bound #3759 test is red before metadata and green after; missing/extra pair fails with identity | check:ci +dereference +mutation |
 | 2 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFlow$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFlow' "$o")` | exit 0; actual trailer → admission → lifecycle → drift → isolated apply keeps statusgen/26 in-progress without completion witness or fallback; separate legitimate historical controls exercise backfill; omission mutation catches false implemented; protected cells unchanged | check:ci +flow |
 | 3 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortPlant$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortPlant' "$o")` | exit 0; committed older second-site candidate omitted from both expected/source records fails coverage naming its brief/PR; disabling the join makes the control fail; bypassed guard still leaves the real lower reader enforcing a declared partial | check:ci +mutation |
-| 4 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFloors$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFloors' "$o")` | exit 0; malformed/unresolved declaration, missing file evidence or mismatched provenance cannot produce a clean witness or apply; unknown/refusal and zero writes; source Task/Verify/Evidence bytes and existing delivery declarations unchanged | check:ci +mutation |
+| 4 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFloors$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFloors' "$o")` | exit 0; malformed/unresolved declaration, missing file evidence or mismatched provenance cannot produce a clean witness or apply; unknown/refusal and zero writes; pinned delivery snapshots preserve Task/Verify/Evidence bytes outside the entry/version; current reader accepts later comment/version/Evidence/additional-partial maintenance while retaining #3759 partial | check:ci +mutation |
 | 5 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFull$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFull' "$o")` | exit 0; actual evidenced #1196 full remains implemented despite later partial and VERIFY FAIL; Evidence-only #2295 cannot replace it; all nine bounded full dispositions retain their reviewed meaning and cache behavior | check:ci +neighbour |
 | 6 | `(cd statusgen && for t in TestRolloutSourceAdmission TestCISliceSourceAdmission TestOwedTaskSourceAdmission TestEvidenceAdmission TestAdmissionCacheAndDelivery TestPartialBackfillSkips TestPartialRegenDriftAgrees TestApplyReconcileWrites; do o=$(mktemp); go test . -run "^$t" -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- "--- PASS: $t" "$o"; r=$?; if test "$r" -ne 0; then exit "$r"; fi; done)` | exit 0; existing neighbors pass, including all five apply-prefix tests; no existing partial declaration or protected-cell floor weakened | check:ci +neighbour |
 | 7 | `o=$(mktemp); git diff --name-only 44829891e8f74b1520b64f4180910d96e17be96a^1 44829891e8f74b1520b64f4180910d96e17be96a > "$o" && python3 -c 'import pathlib,sys; actual=set(pathlib.Path(sys.argv[1]).read_text().splitlines()); expected={"changelog/statusgen-26-v3.md","docs/streams/statusgen/README.md","docs/telemetry.md","statusgen/brieffile.go","statusgen/dispatchqueue.go","statusgen/forgeread.go","statusgen/load.go","statusgen/main.go","statusgen/parse.go","statusgen/perfrecord.go","statusgen/perfrecord_test.go"}; assert actual==expected, actual; print("PR 3759: exact eleven delivery paths confirmed")' "$o"` | exit 0; exact confirmation; real Git merge independently corroborates the fixture's delivery paths; semantic completeness still reviewed against the actual brief | check +dereference |
@@ -159,7 +159,8 @@ Run from the repository root. Named tests use hermetic fixtures. Worker receipts
 | Only trailer admission is fixed while backfill/drift/apply promotes the slice | 2 and 6 |
 | A full witness or verification failure is confused with incomplete delivery | 5 and 6 |
 | Missing data or malformed metadata silently defaults to full | 4; lower reader tested with coverage bypassed in 3 |
-| Metadata repair rewrites owed tasks or other protections | 4 byte checks and 6 neighbor controls |
+| Metadata repair rewrites owed tasks or other protections | 4 pinned delivery-time byte checks and 6 neighbor controls; current declaration omission still fails 1/2 |
+| A historical byte proof freezes the living brief | 4 permits later comment/version/Evidence/additional-partial maintenance through current readers |
 | A fixture's semantic disposition is wrong despite valid formatting | review-only: dereference primary scope, obligations and actual files; row 7 independently binds #3759 paths |
 | Ten reviewed rows are mistaken for all history, or source merge for approved board/runtime | review-only: enforce fixed membership and separate producer/trust/review/merge/verifier receipts |
 | Empty selector or skipped qualified row is presented as execution | PASS assertions and explicit nonimplementer command receipts |
