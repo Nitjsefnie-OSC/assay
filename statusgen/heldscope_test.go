@@ -426,6 +426,12 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("<!-- note --!>\n<table><tr><td>3</td><td>HELD runner offline</td></tr></table>\n-->") + rerun2, true},
 		{"--!> end, table, prose hold",
 			two("<!--\n--!>\n<table><tr><td>3</td><td>exit 2</td></tr></table>\n- row 3 could-not-check.\n-->") + rerun2, true},
+		// A tag an earlier HTML block left open swallows a later "<!--" on
+		// the page, so the table after it renders live.
+		{"open <div, then <!--, HTML table",
+			two("<div\n\n<!--\nx>\n<table><tr><td>3</td><td>HELD runner offline</td></tr></table>\n-->") + rerun2, true},
+		{"open <div title=\", <!--, table",
+			two("<div title=\"\n\n<!--\n\">\n<table><tr><td>3</td><td>HELD runner offline</td></tr></table>\n-->") + rerun2, true},
 		{"text after a multi-line comment",
 			two("<!--\nnote\n--> row 3 HELD runner offline") + rerun2, true},
 		{"opener --!> end, hold after",
