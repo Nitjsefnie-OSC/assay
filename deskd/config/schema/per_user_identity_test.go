@@ -2,21 +2,9 @@ package schema
 
 import "testing"
 
-// ── the service contract Task 9 — the per-user-identity ROLLOUT GATE ───────────
-//
-// These tests enforce the configuration half of the per-cell rollout gate:
-//
-//	1. the ENABLE is a NEW explicit per-cell field, `per_user_identity:
-//	   enabled`; ABSENT means OFF. A dev `environments:` declaration is a
-//	   PRECONDITION for setting it and never an enable by itself.
-//	4. cellsvalidate refuses EVERY private-cell opt-in unconditionally,
-//	   except a cell named in the proving-cell allowlist.
-//	5. "private" = any cell without `allow_anonymous_read: true` (the only
-//	   static signal an offline validator has).
-//
-// Every case below is written so the FAIL-CLOSED direction is the one that
-// breaks it: a rule that stopped refusing would fail here, not merely stop
-// being exercised.
+// Per-cell rollout is explicit and fails closed. Development environments are
+// a prerequisite, never an enable signal. The current code-owned private-cell
+// allowlist is exactly assay and house; unknown and near-miss names are denied.
 
 // puiDoc builds a one-cell document with the given cell name, the given extra
 // cell-level lines, and (optionally) a dev environments block.
@@ -39,7 +27,7 @@ cells:
       - name: ` + name + `-dev
         kind: k8s
         tier: dev
-        cluster: fixture-cluster
+        cluster: PFC-Cluster
         namespaces: [example-dev-app]
         access: [read]
         runner_pool: pool-` + name + `
@@ -58,7 +46,6 @@ func TestPerUserIdentity_OptInWithoutDevEnvironmentIsRefused(t *testing.T) {
 }
 
 // (c) The opt-in on a PRIVATE, NON-proving cell is refused unconditionally —
-// the ruling's fail-closed answer to forks 4 and 5. A dev environment does not
 // rescue it: the allowlist is the only exception.
 func TestPerUserIdentity_OptInOnPrivateNonProvingCellIsRefused(t *testing.T) {
 	err := parseErr(t, puiDoc("tracker", "    per_user_identity: enabled\n", true))
@@ -125,24 +112,44 @@ func TestPerUserIdentity_OnlyEnabledIsSpellable(t *testing.T) {
 // If it ever becomes readable from cells.yaml, the same edit that sets the
 // opt-in could also widen the allowlist that is meant to refuse it — a
 // self-authorizing config. This asserts the shape as well as the contents.
+// regression: #3669
 func TestPerUserIdentity_ProvingCellAllowlistIsSmallAndClosed(t *testing.T) {
-	if len(ProvingCells) != 1 || !ProvingCells["assay"] {
-		t.Fatalf("ProvingCells = %v, want exactly {assay} — widening it is a reviewed CODE change (relayed direction, toolkit 1963 fork 3)", ProvingCells)
+	if len(ProvingCells) != 2 || !ProvingCells["assay"] || !ProvingCells["house"] {
+		t.Fatalf("ProvingCells = %v, want exactly {assay, house} — any further widening is a reviewed code change past the human gate", ProvingCells)
 	}
-	if !IsProvingCell("assay") || IsProvingCell("tracker") || IsProvingCell("") {
-		t.Fatal("IsProvingCell must name exactly the proving cell and fail closed on everything else")
+	if !IsProvingCell("assay") || !IsProvingCell("house") || IsProvingCell("tracker") || IsProvingCell("") {
+		t.Fatal("IsProvingCell must name exactly the proving cells and fail closed on everything else")
 	}
 }
 
-// The adopter-specific real-config assertion remains enforced in its original
-// source repository. It is outside this reusable module: no adopter cells.yaml
-// is transferred. The private handoff pins the retained function and its hash.
+// Names resembling house are not authorized by the exact allowlist.
+// regression: #3669
+func TestPerUserIdentity_HouseNearMissNamesStayRefused(t *testing.T) {
+	for _, name := range []string{"houses", "house2", "household", "House", "HOUSE"} {
+		err := parseErr(t, puiDoc(name, "    per_user_identity: enabled\n", true))
+		assertMentions(t, err, "per_user_identity")
+		assertMentions(t, err, name)
+	}
+}
+
+// The exact house cell may opt in when its development precondition holds.
+// regression: #3669
+func TestPerUserIdentity_OptInOnHouseCellWithDevEnvironmentPasses(t *testing.T) {
+	f, err := Parse([]byte(puiDoc("house", "    per_user_identity: enabled\n", true)))
+	if err != nil {
+		t.Fatalf("the house cell with a dev environment must validate under the current policy: %v", err)
+	}
+	if !f.Cells[0].PerUserIdentityEnabled() {
+		t.Fatal("the house cell opted in with a dev environment must resolve ENABLED")
+	}
+}
 
 // The committed fixtures are the ones Verify 12/12b run cellsvalidate over.
 // Asserting them here keeps them red (and the green one green) on every CI
 // run, so a row that says "cellsvalidate exits non-zero on this file" is
 // backed by a file that is still refused rather than one that quietly started
 // passing.
+// regression: #3669
 func TestPerUserIdentity_CommittedFixturesKeepTheirVerdicts(t *testing.T) {
 	for _, name := range []string{"private-cell-opt-in", "opt-in-without-dev-environment"} {
 		if _, err := Load("../testdata/peruseridentity/" + name + ".yaml"); err == nil {
@@ -162,11 +169,20 @@ func TestPerUserIdentity_CommittedFixturesKeepTheirVerdicts(t *testing.T) {
 	if f.Cells[1].PerUserIdentityEnabled() {
 		t.Error("the second cell in the fixture must resolve OFF — that difference is what row 12 proves")
 	}
+	// The synthetic house fixture carries explicit opt-in and a dev environment.
+	hf, err := Load("../testdata/peruseridentity/house-cell-opt-in.yaml")
+	if err != nil {
+		t.Fatalf("house-cell-opt-in.yaml must validate under the current policy: %v", err)
+	}
+	if len(hf.Cells) != 1 || hf.Cells[0].Name != "house" || !hf.Cells[0].PerUserIdentityEnabled() {
+		t.Error("the house cell in the fixture must resolve ENABLED")
+	}
 }
 
 // PerUserIdentityEnabled is the RUNTIME predicate deskd fails closed on. It
 // must re-derive all three conditions itself rather than trusting that the
 // document was validated: deskd is a second layer, on its own signal.
+// regression: #3669
 func TestPerUserIdentity_RuntimePredicateReDerivesEveryCondition(t *testing.T) {
 	dev := []Environment{{Name: "e", Kind: EnvKindK8s, Tier: EnvTierDev,
 		Namespaces: []string{"example-dev-app"}, Access: []AccessLevel{AccessRead}, RunnerPool: "p"}}
@@ -176,6 +192,8 @@ func TestPerUserIdentity_RuntimePredicateReDerivesEveryCondition(t *testing.T) {
 		want bool
 	}{
 		{"proving cell, opted in, dev env", Cell{Name: "assay", PerUserIdentity: PerUserIdentityEnabled, Environments: dev}, true},
+		{"house cell, opted in, dev env", Cell{Name: "house", PerUserIdentity: PerUserIdentityEnabled, Environments: dev}, true},
+		{"house near-miss name, opted in, dev env", Cell{Name: "household", PerUserIdentity: PerUserIdentityEnabled, Environments: dev}, false},
 		{"no opt-in", Cell{Name: "assay", Environments: dev}, false},
 		{"opt-in, no environments at all", Cell{Name: "assay", PerUserIdentity: PerUserIdentityEnabled}, false},
 		{"opt-in, private, not the proving cell", Cell{Name: "tracker", PerUserIdentity: PerUserIdentityEnabled, Environments: dev}, false},

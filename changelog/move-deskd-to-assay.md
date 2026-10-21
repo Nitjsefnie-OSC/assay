@@ -10,7 +10,8 @@ empty selection disables those operations; invalid selection refuses startup.
 The non-secret identity policy freezes once, while credentials remain scoped to
 individual requests. Existing deployments must explicitly select their prior
 principal. Per-cell, origin, capability, namespace and MCP custody restrictions
-remain in place. Synthetic fixtures replace adopter identifiers.
+remain in place. The current fixed proving-cell allowlist is exactly `assay` and
+`house`, with near-miss refusals; this does not edit deployed opt-ins. Synthetic fixtures replace adopter identifiers.
 
 Two adopter-configuration guards remain enforced at their original home and
 are excluded from this reusable module; every generic control stays included.

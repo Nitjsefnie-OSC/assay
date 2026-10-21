@@ -43,7 +43,7 @@ var githubLoginRE = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9])*$`)
 //	        which has nothing to do with viewer identity, and reading that
 //	        declaration as an enable would switch a sensitive path on for a
 //	        private cell the moment this landed.
-//	fork 3  the `assay` cell is the PROVING cell and MAY carry the opt-in.
+//	fork 3  exactly `assay` and `house` are proving cells and MAY opt in.
 //	fork 4  every OTHER private cell's opt-in is refused UNCONDITIONALLY —
 //	        there is no in-config "dev-cell evidence has landed" marker for
 //	        an offline validator to read, so the fail-closed reading is the
@@ -66,20 +66,13 @@ type PerUserIdentity string
 // PerUserIdentityEnabled is the only value the field admits. Absence is OFF.
 const PerUserIdentityEnabled PerUserIdentity = "enabled"
 
-// ProvingCells is the allowlist of PRIVATE cells that may carry the opt-in —
-// the "dev cell that can afford a mistake" the #1963 ruling proves the five
-// gate-why properties on, before they ever guard a cell that cannot.
-//
-// It is a COMPILE-TIME CONSTANT, not a cells.yaml field, and that is the
-// whole point: an allowlist that lived in the file it guards could be widened
-// by the very edit it exists to refuse — one commit adding both
-// `per_user_identity: enabled` and the cell's own name to `proving_cells:` is
-// a config that authorizes itself, i.e. no gate at all. Here, enabling the
-// PROVING cell stays the one-line config edit Task 9 says it must be, while
-// widening the allowlist to any other private cell is a reviewed CODE change
-// that goes past the human gate on the service contract. Smallest fail-closed
-// shape that can express the ruling: one name, in code.
-var ProvingCells = map[string]bool{"assay": true}
+// ProvingCells is the fixed code-owned allowlist of PRIVATE cells that may
+// opt in to per-user identity. The current policy admits exactly assay and
+// house. All other private cells fail closed, including spelling near misses.
+// It is deliberately not a cells.yaml field: a config cannot authorize its
+// own opt-in by widening the list it is checked against. Further changes to
+// this list require code review and the human authority gate.
+var ProvingCells = map[string]bool{"assay": true, "house": true}
 
 // IsProvingCell reports whether a cell name is on the proving allowlist. It
 // fails closed on anything else, the empty name included.
@@ -857,7 +850,7 @@ func (c *Cell) validatePerUserIdentity() error {
 	}
 	if c.IsPrivate() && !IsProvingCell(c.Name) {
 		return fmt.Errorf(
-			"cell %q sets per_user_identity: %s but is PRIVATE (no allow_anonymous_read: true) and is not the proving cell — a private cell may not enable the per-user identity path before the dev-cell rows are proved on the proving cell (the service contract Verify 12b, the authorization contract). The proving allowlist is a compile-time constant in config/schema/cells.go, deliberately not a field of this file: widening it is a reviewed code change past the brief's human gate",
+			"cell %q sets per_user_identity: %s but is PRIVATE (no allow_anonymous_read: true) and is not on the proving-cell allowlist — a private cell may not enable the per-user identity path before the dev-cell rows are proved on a proving cell (the service contract Verify 12b, the authorization contract). The proving allowlist is a compile-time constant in config/schema/cells.go, deliberately not a field of this file: widening it is a reviewed code change past the brief's human gate",
 			c.Name, PerUserIdentityEnabled)
 	}
 	return nil

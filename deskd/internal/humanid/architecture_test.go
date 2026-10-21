@@ -74,6 +74,26 @@ func TestOnlyCommandStartupInitializesPolicy(t *testing.T) {
 			return nil
 		}
 		for _, decl := range f.Decls {
+			// The checked initializer must be a direct startup statement, not
+			// a closure that could later run from a request or lazy callback.
+			direct := map[*ast.SelectorExpr]bool{}
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
+				for _, stmt := range fn.Body.List {
+					check, ok := stmt.(*ast.IfStmt)
+					if !ok || check.Init == nil {
+						continue
+					}
+					ast.Inspect(check.Init, func(n ast.Node) bool {
+						if _, nested := n.(*ast.FuncLit); nested {
+							return false
+						}
+						if sel, ok := n.(*ast.SelectorExpr); ok {
+							direct[sel] = true
+						}
+						return true
+					})
+				}
+			}
 			ast.Inspect(decl, func(n ast.Node) bool {
 				sel, ok := n.(*ast.SelectorExpr)
 				if !ok || sel.Sel.Name != "Configure" {
@@ -85,7 +105,7 @@ func TestOnlyCommandStartupInitializesPolicy(t *testing.T) {
 				}
 				count++
 				fn, ok := decl.(*ast.FuncDecl)
-				if filepath.ToSlash(path) != "../../cmd/deskd/main.go" || !ok || fn.Name.Name != "main" {
+				if filepath.ToSlash(path) != "../../cmd/deskd/main.go" || !ok || fn.Name.Name != "main" || !direct[sel] {
 					t.Errorf("policy initializer outside command startup: %s", path)
 				}
 				return true

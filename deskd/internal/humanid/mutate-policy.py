@@ -7,6 +7,12 @@ ROOT = Path(__file__).resolve().parents[2]
 ENV = dict(os.environ, GOWORK="off", GOPROXY="off", GOSUMDB="off", GOTOOLCHAIN="local", KUBECONFIG="/dev/null")
 DISABLED = '\tif !humanid.Enabled() {\n\t\treturn humanid.ErrDisabled\n\t}\n'
 CASES = [
+ ("stale-proving-fixture", "config/schema/cells.go", 'map[string]bool{"assay": true, "house": true}', 'map[string]bool{"assay": true}', "./config/schema", "TestPerUserIdentity_CommittedFixturesKeepTheirVerdicts"),
+ ("stale-runtime-policy", "config/schema/cells.go", 'map[string]bool{"assay": true, "house": true}', 'map[string]bool{"assay": true}', "./config/schema", "TestPerUserIdentity_RuntimePredicateReDerivesEveryCondition"),
+ ("nested-init", "cmd/deskd/main.go", "humanid.Configure(*humanLogin)", "func() error { return humanid.Configure(*humanLogin) }()", "./internal/humanid", "TestOnlyCommandStartupInitializesPolicy"),
+ ("stale-proving-policy", "config/schema/cells.go", 'map[string]bool{"assay": true, "house": true}', 'map[string]bool{"assay": true}', "./config/schema", "TestPerUserIdentity_OptInOnHouseCellWithDevEnvironmentPasses"),
+ ("proving-near-miss", "config/schema/cells.go", 'map[string]bool{"assay": true, "house": true}', 'map[string]bool{"assay": true, "house": true, "household": true}', "./config/schema", "TestPerUserIdentity_HouseNearMissNamesStayRefused"),
+ ("proving-extra-cell", "config/schema/cells.go", 'map[string]bool{"assay": true, "house": true}', 'map[string]bool{"assay": true, "house": true, "other": true}', "./config/schema", "TestPerUserIdentity_ProvingCellAllowlistIsSmallAndClosed"),
  ("fixed-principal", "internal/humanid/policy.go", "return startup.get()", 'return "operator"', "./cmd/deskd", "TestHumanPolicySelectedPrincipalFlows"),
  ("reconfigure", "internal/humanid/policy.go", "if p.initialized {", "if false {", "./internal/humanid", "TestStartupPolicy"),
  ("invalid-login", "internal/humanid/policy.go", 'if login != "" && (len(login) > 39 || !loginRE.MatchString(login)) {', "if false {", "./internal/humanid", "TestStartupPolicy"),
