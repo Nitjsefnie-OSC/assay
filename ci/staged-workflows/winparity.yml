@@ -23,7 +23,10 @@ name: winparity
 # nowhere; the staged copy is the reviewable artifact. See ci/staged-workflows/README.md.
 
 on:
+  # push is limited to main: a PR branch is already checked by its pull_request
+  # run, so a push trigger on every branch checked each PR head twice.
   push:
+    branches: [main]
   pull_request:
 
 permissions:

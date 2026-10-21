@@ -12,7 +12,11 @@ name: ci
 #   are plain public HTTPS, so `go build`/`go test` fetch deps normally.
 
 on:
+  # push is limited to main: a PR branch is already built by its pull_request
+  # run, so a push trigger on every branch built each PR head twice. main keeps
+  # its push run (the post-merge build of record).
   push:
+    branches: [main]
   pull_request:
 
 permissions:
