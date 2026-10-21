@@ -294,7 +294,7 @@ Verification-Attestation: medici-finance/assay#3545 run=7b85f0ecf5b4a7cf79d5ea01
 
 **VERIFY: BLOCKED** — rows 1 to 4 pass in the witness and by hand. Row 5, as restored by medici-finance/assay#3508, still exits 2 (could-not-check) on merged main, because the consumers instrument has no delivery diff to read there (class medici-finance/assay#1915). The delivery-pinned diagnostic finds 0 disproved, but a could-not-check is not a pass, so the status does not advance.
 
-Outcome record: owed, not on this branch. This run's receipt (`blocked`, check-definition, medici-finance/assay#1915) holds the full row set, rows 1 to 5, and it lands from a fresh admitted verifier pass. It supersedes `02-20261012T011455Z-0c5b83ba8296`, the newest earlier receipt for this brief, which holds row 5 under the same blocker. All earlier receipts stay unchanged as history.
+Outcome record: owed, not on this branch. The owed receipt is the next admitted verifier pass's own record (`blocked`, check-definition, medici-finance/assay#1915). Per `docs/verify-outcome-rows.md` §"Producer migration: covered rows are not held rows", it carries `rows:[5]` (held rows only), `row_results` for all five rows (rows 1 to 4 `pass`, row 5 `could-not-run`), `rows_passed` 4 and `rows_total` 5. It supersedes `02-20261012T011455Z-0c5b83ba8296`, the newest earlier receipt for this brief, which holds row 5 under the same blocker. All earlier receipts stay unchanged as history.
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
