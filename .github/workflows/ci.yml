@@ -70,7 +70,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          # The one identity whose docs-only PRs skip the heavy jobs. Same
+          # The one identity whose docs-only PRs skip the docs-blind jobs. Same
           # constant changelog-check.yml and evidence-automerge.yml key on.
           VERIFIER_AUTHOR: assay-verifier-app[bot]
         run: |
