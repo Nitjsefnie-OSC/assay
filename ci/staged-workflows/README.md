@@ -57,8 +57,26 @@ reviewable artifact, not a run.
 - `truth-suite.yml` — the standing truth suite (`docs/test-policy.md` § "Standing truth
   suite"): the test corpus plus the release mutation gate, on push to the default branch and
   on a daily schedule, reporting three-state. **Already live** — promoted to
-  `.github/workflows/truth-suite.yml` on 2026-09-10; this directory no longer carries a copy,
-  so a change to it is authored here first and re-promoted by a maintainer commit.
+  `.github/workflows/truth-suite.yml` on 2026-09-10; a change to it is authored here first
+  and re-promoted by a maintainer commit. **Pending promotion (#3292):** the staged twin adds
+  `internal/cellop/mutations.json` (the `cellctl` plan/apply guards) to the `mutation-gate`
+  matrix, which no workflow runs today; it was otherwise byte-identical to the live file when
+  staged, and `truth-suite.yml.pending` classifies the difference. Because a `pending` twin is
+  no longer compared with live by the drift guard, a change made to the live file on main
+  after staging would be silently reverted by a bare copy. So promote it in two steps, in a
+  maintainer-credentialled commit: first review the full `diff -u` against live and confirm it
+  shows only the cellop matrix line and its comment block (anything else is a live change
+  made since; re-base the twin on the live file, three-way, before copying), then copy it
+  over the live one:
+  ```
+  diff -u .github/workflows/truth-suite.yml ci/staged-workflows/truth-suite.yml
+  cp ci/staged-workflows/truth-suite.yml .github/workflows/truth-suite.yml
+  git commit -m "ci: promote truth-suite.yml"
+  git push
+  ```
+  Until then the cellop sweep runs only by hand
+  (`cd tools/desk && go run ./cmd/muhar -j 0 -spec internal/cellop/mutations.json`); its
+  anchors are still dry-run on every PR by the muhar stale-anchor guard.
 - `assay-statusgen.yml` — a STAGED TWIN of the live `.github/workflows/assay-statusgen.yml`
   carrying the decision-gate hold's network layer (`spec/lifecycle-v1.md` §4.5), alongside
   the classified board push (#2910) described below, which `declared-changes.json` classes
