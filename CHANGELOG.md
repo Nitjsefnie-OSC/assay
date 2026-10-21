@@ -23,6 +23,42 @@ Pending notable changes are recorded as one-file-per-PR fragments under
 here at release time. This section is written only by the release workflow;
 do not add highlight bullets to it directly.
 
+## v1.0.54 — 2026-10-21
+
+### Added
+- Plan a bounded source repair and independently evidenced regression for the unfinished statusgen performance delivery, preserving its remaining work and normal board review gates.
+
+### Fixed
+- Brief comms-core/04's declared `files:` entries now parse, so its declared scope can be read for verification.
+- Brief metadata now records the merged partial deliveries of harness-portability/13 (the Cursor protocol and scaffold, with the bundle record and the first live run still owed) and desk-supervision/08 (the kit and run artifacts, with the observer-backed wedge counts and decision still owed). Lifecycle derivation therefore no longer reads either slice as a completed implementation, and a source-bound test pins both claims.
+- Correct the write-policy workflow landing runbook to use an open follow-up PR and the available immutable source module version and checksums.
+- Keep PR #3759's performance-recorder slice in progress for statusgen/26, preserving its owed snapshot reuse and workload work and the nine reviewed full witnesses. Production Go and generated boards are unchanged.
+- Keep completed non-held Verify rows waiting across unchanged planning sweeps; retain exact numeric/suffixed scheduling identities, uncertainty and fresh wake checks without changing perf-v3 observation reuse.
+- Keep the staged release workflow identical to the human-landed deskcore test leg and correct its source handoff documentation.
+- Preserve legacy numeric verdict execution while retaining unsupported scheduling rows as uncertainty; surface malformed latest wake receipts, reject observable held/PASS overlap and clarify partial-run execution.
+- Producer migration required: outcome `rows` must contain held identities, not all covered rows; verified producers omit it and complete coverage stays in `row_results`. Current covered-row payloads can be refused. Follow the documented witnessed-results correction or fresh native-run path; committed records and Evidence are never rewritten. Seed the pending-Evidence wake path with the same exact deferred-row context as the scan.
+- Refuse held rows outside a reported exact or count-only inventory while retaining exact suffix identities and legacy records without a declared total.
+- Require complete exact `row_results` in producer guidance whenever held `rows` is non-empty, including gapped numeric and suffixed inventories; retain the strict writer refusals and pin the first out-of-range boundary.
+- Retain all nonempty scheduling row labels as uncertainty, preserve earlier diagnostic reasons, exclude offline-deferred rows from partial dispatch and refuse row-key casing/count overlap at the writer. Re-anchor the command-reader class guard without removing any assertion.
+- The `deskdispatch` packet tests no longer depend on the length of the host's temp-directory path: three tests that compared a temp path against a value the packet cuts at 240 characters now pass under a long `TMPDIR` too. The cap itself is unchanged.
+- The declared-scope parser behind `deskevidence --outcome-record` now reads an annotation written inside a path's backticks (`` `perfrec/context.go (planned)` ``) the way it already read one outside them, so 22 briefs that were refused for this shape now parse and can get a verify-outcome receipt. A path with any other space inside it is still refused. The advisory write-scope overlap hint uses the same rule.
+- apps-installer/02's `## Context` `files:` block now parses. Its first entry put a `(new)` annotation before a `:` file list and wrapped that list onto two indented lines, so the declared-input-scope parser refused the brief and no verification receipt could be derived for it. Each declaration is now one bullet on one line, and the file inventory moved to a prose paragraph below the block. The declared paths are unchanged, and no `## Verify` or `## Evidence` section changed.
+- statusgen brief 17: the Expect prose of Verify rows 9 and 10 now matches what the re-pinned commands check. Row 9 pins the delivery range, so it exits 0 on merged main; it no longer says "exits 2". Row 10's hash is the current test text, not main at 82caf63b2. Commands, pins and classes are unchanged.
+
+### Changed
+- Add offline compiled startup workloads and production-owner negative controls; filesystem validation remains visible and no persistent startup speedup is claimed.
+- Batch pending-Evidence attestation observations through the existing GitHub Forge transport and production validator, retaining ordered body/current-state/stamp checks and fresh dispatch/publication admission. Other forges and unsupported decorators retain their existing per-target reads.
+- Declare the activation semantic owners and preserve offline build caches across fixture-home isolation; qualify mutation baselines and reject build failures as kills.
+- Decline snapshot reuse when serialization changes parsed bytes, preserving binary YAML keys and raw path diagnostics; pin same-length content edits and source-binding checks with owner mutations.
+- Keep cold activation at one reference traversal by retaining only candidates; every reused return still requires full independent validation, and failed reference reads prevent retention.
+- Missing minted forge tokens keep the existing exit-6 could-not-check guard and now carry a typed diagnostic cause on both native adapters; shared and selective decision reads report credential absence without contacting a provider or falling back to an ambient identity.
+- Pin validation errors independently of content hashing with a real unreadable empty-directory regression and retain explicit skips where permissions cannot be exercised.
+- Plan independent candidate-cohort coverage with measured decoded-response budgets, explicit forge rechecks and hermetic omission controls, preserving production inputs.
+- Reuse parsed activation manifests within one process only after complete membership and content validation, with bounded storage and current configuration/provider evaluation.
+- Share decision-marker discovery and per-issue ruling observations within each `deskboard dispatch`/`throughput` sweep; bound reads with the existing six-worker pool and preserve row ordering, exec-tier holds and explicit could-not-check results. Marker discovery checks complete pagination on both forge adapters; every selected issue still uses the canonical ruling evaluator and a new sweep reads fresh state.
+- `deskdispatch` uses the same typed selective marker lookup, including GitLab description-search syntax and exact brief spellings. Decision-search unknowns now distinguish local refusals, provider failures, incomplete pages and result limits without exposing raw provider details; trust and approval checks are unchanged.
+- `verifyloop plan` reuses exact-commit pending Evidence files and validated attestations within each planning pass, and indexes complete changed-file observations by brief. It retains all provenance checks, current attestation-state reconciliation, fresh pending-PR head checks and independent dispatch admission.
+
 ## v1.0.53 — 2026-10-20
 
 ### Added

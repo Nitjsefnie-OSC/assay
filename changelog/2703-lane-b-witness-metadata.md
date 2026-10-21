@@ -1,2 +1,0 @@
-### Fixed
-- Brief metadata now records the merged partial deliveries of harness-portability/13 (the Cursor protocol and scaffold, with the bundle record and the first live run still owed) and desk-supervision/08 (the kit and run artifacts, with the observer-backed wedge counts and decision still owed). Lifecycle derivation therefore no longer reads either slice as a completed implementation, and a source-bound test pins both claims.
