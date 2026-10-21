@@ -532,6 +532,12 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("    <!--\n\nrow 3 HELD runner offline\n\n    -->") + rerun2, true},
 		{"tab-indented opener, prose hold",
 			two("\t<!--\n\nrow 3 HELD runner offline\n\n\t-->") + rerun2, true},
+		// An indented opener left open now also refuses through the unclosed
+		// HTML check, so these pin the comment indent on a one-line opener.
+		{"indented one-line comment, hold",
+			two("    <!-- row 3 HELD runner offline -->") + rerun2, true},
+		{"tab one-line comment, hold",
+			two("\t<!-- row 3 HELD runner offline -->") + rerun2, true},
 		{"--!> mid-block, hold after",
 			two("<!--\nnote --!>\nrow 3 HELD runner offline\n-->") + rerun2, true},
 	})

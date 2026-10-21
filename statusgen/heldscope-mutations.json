@@ -460,8 +460,50 @@
     {
       "name": "#3841: the tokenizer is checked only at the end",
       "file": "heldscope.go",
-      "old": "if !in && st != 0 {\n\t\t\treturn true",
-      "new": "if !in && st < 0 {\n\t\t\treturn true"
+      "old": "if (!in || nested) && st != 0 {\n\t\t\treturn true",
+      "new": "if (!in || nested) && st < 0 {\n\t\t\treturn true"
+    },
+    {
+      "name": "#3841: an opener-line end is ignored",
+      "file": "heldscope.go",
+      "old": "case closed:\n\t\t\tin = false",
+      "new": "case closed && false:\n\t\t\tin = false"
+    },
+    {
+      "name": "#3841: an opener-line end is never found",
+      "file": "heldscope.go",
+      "old": "closed = strings.Contains(lower, k.end)",
+      "new": "closed = false"
+    },
+    {
+      "name": "#3841: a declaration never ends on its line",
+      "file": "heldscope.go",
+      "old": "\t\t\treturn true, \"\", true\n\t\t}\n\t\treturn true, \">\", false",
+      "new": "\t\t\treturn true, \"\", false\n\t\t}\n\t\treturn true, \">\", false"
+    },
+    {
+      "name": "#3841: a container block is read as top-level",
+      "file": "heldscope.go",
+      "old": "in, end, closed, nested = true, e, c, t != l",
+      "new": "in, end, closed, nested = true, e, c, false"
+    },
+    {
+      "name": "#3841: a container block is checked only at its end",
+      "file": "heldscope.go",
+      "old": "if (!in || nested) && st != 0 {",
+      "new": "if !in && st != 0 {"
+    },
+    {
+      "name": "#3841: a top-level block's later lines are stripped",
+      "file": "heldscope.go",
+      "old": "\t\t\tt = l // a top-level block's later lines reach the page whole",
+      "new": "\t\t\t_ = l"
+    },
+    {
+      "name": "#3841: a bare CR is no render doubt",
+      "file": "heldscope.go",
+      "old": "case hasBareCR(l):\n\t\t\tdoubt = true",
+      "new": "case false && hasBareCR(l):\n\t\t\tdoubt = true"
     }
   ]
 }
