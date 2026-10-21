@@ -949,8 +949,10 @@ func verifyPassHeldContradiction(evidence string) (bool, string) {
 // trackers, so the markdown state the read lines are judged in is the
 // document's own. Every held line is collected; the earlier-entry ones are
 // dropped only when scope.supersedes them all — each a keyed results row the
-// last entry, closing on its own live strict PASS, re-ran to a clean outcome
-// — and otherwise the first held line in the whole section refuses, as before.
+// last entry, closing on its own live strict PASS, re-ran to a clean outcome,
+// or a prose line naming rows of its entry whose every keyed row the last
+// entry re-ran so (#3841) — and otherwise the first held line in the whole
+// section refuses, as before.
 func unroutedHeldLine(evidence string) (bool, string) {
 	inFence := false
 	var codeScan inlineCodeScan
@@ -1729,8 +1731,11 @@ func closeVerifyFlipPlan(root, briefID string, now time.Time) (readme string, up
 // earlier hold is such a row too. A later entry that re-ran nothing, re-ran
 // other rows, or wrote anything but a clean outcome for the held row (a
 // placeholder, a carry-forward, a note after the outcome, a zero count, an
-// expectation in place of a result) replaces nothing; an earlier hold in
-// prose keeps every entry read.
+// expectation in place of a result) replaces nothing. An earlier hold in
+// prose is dropped only when the line names rows ("row 7", "rows 1-6 and 8"),
+// every row it names is a row of its entry's results tables, and the last
+// entry re-ran EVERY keyed row of that entry clean (#3841); prose that names
+// no row, or a row word it cannot parse, keeps every entry read.
 // Inside one entry it is NOT inferred: a
 // HELD/could-not-check row under the same heading stays live after a later
 // table runs that row green, because nothing ties the later row to the earlier

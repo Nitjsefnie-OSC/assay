@@ -252,6 +252,100 @@ func TestHeldScopeSupersededAdmitted(t *testing.T) {
 	})
 }
 
+// proseRun is an entry of rows 1..n under the "#" key, each row's Result cell
+// given by result (an empty result reads "ok"), followed by note — prose of
+// the entry — and verdict. Its table carries no held token of its own.
+func proseRun(title string, n int, result func(int) string, note, verdict string) string {
+	s := "### " + title + "\n\n| # | Command | Exit | Result |\n|---|---|---|---|\n"
+	for r := 1; r <= n; r++ {
+		res := result(r)
+		if res == "" {
+			res = "ok"
+		}
+		s += "| " + strconv.Itoa(r) + " | `tool check " + strconv.Itoa(r) + "` | 0 | " + res + " |\n"
+	}
+	return s + "\n" + note + "\n\n" + verdict + "\n\n"
+}
+
+// rc2 is the Result of an earlier run's row 7: a failure, with no held token.
+func rc2(r int) string {
+	if r == 7 {
+		return "exit 2"
+	}
+	return ""
+}
+
+// allOK re-runs every row clean.
+func allOK(int) string { return "" }
+
+// TestHeldScopeProseCovered: a held token on a prose line of an earlier entry
+// is dropped only when the line names rows of its entry's results table and
+// the last entry re-ran EVERY keyed row of that entry clean (rule 3). Prose
+// that names no row, a row word with no number list, a number that is not a
+// row of its entry, or an entry that cannot be keyed whole keeps it read.
+// regression: #3841
+func TestHeldScopeProseCovered(t *testing.T) {
+	summary := "- BLOCKED. Rows 1-6 and 8 pass; row 7 could-not-check (rc=2)."
+	earlier := proseRun("Run 1 — 2026-10-01", 8, rc2, summary, "**VERIFY: BLOCKED**")
+	final := proseRun("Run 2 — 2026-10-03", 8, allOK, "All eight rows re-run on an online runner.", "**VERIFY: PASS**")
+	runHeldScanCases(t, []heldScanCase{
+		// Admitted: every row the line names, and every row of its entry, re-ran clean.
+		{"named summary, full clean re-run", earlier + final, false},
+		{"held cell and prose naming its row",
+			heldRun + "Row 2 is HELD until a runner is online.\n\n" + passRun("**VERIFY: PASS**"), false},
+		{"row #N form", heldRun + "Row #2 HELD.\n\n" + passRun("**VERIFY: PASS**"), false},
+		{"en dash range", heldRun + "Rows 1–2 HELD.\n\n" + passRun("**VERIFY: PASS**"), false},
+		{"comma and ampersand list", heldRun + "Rows 1, 2 & 2 HELD.\n\n" + passRun("**VERIFY: PASS**"), false},
+		{"two named prose lines",
+			proseRun("Run 1", 8, rc2, summary+"\n- Row 7 HELD pending a runner.", "**VERIFY: BLOCKED**") + final, false},
+		{"three entries, last one passes", earlier + earlier + final, false},
+
+		// Refused: a named row was not re-run clean.
+		{"named row not re-run",
+			earlier + proseRun("Run 2", 8, func(r int) string {
+				if r == 7 {
+					return "—"
+				}
+				return ""
+			}, "Row 7 still offline.", "**VERIFY: PASS**"), true},
+		{"named row re-run to a failure",
+			earlier + proseRun("Run 2", 8, rc2, "Row 7 fails again.", "**VERIFY: PASS**"), true},
+		{"named row missing from the last entry", earlier + proseRun("Run 2", 6, allOK, "", "**VERIFY: PASS**"), true},
+		// Refused: the line names one row, but another row of its entry was not re-run.
+		{"unnamed row of the entry not re-run",
+			heldRun + "Row 2 is HELD until a runner is online.\n\n" +
+				"### Run 2\n\n" + scopeHdr + scopeRow("2", "exit 0", "exit 0, ok") + "\n**VERIFY: PASS**\n", true},
+		// Refused: the line names no row, or a row word the list grammar does not read.
+		{"no row named", heldRun + "The integration run is HELD.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"issue reference, no row word", heldRun + "HELD — see #2.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"all rows", heldRun + "All rows HELD until a runner is online.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"row number in words", heldRun + "Row two is HELD.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"second row word unparsed", heldRun + "Row 2 HELD; the row above too.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"reversed range", heldRun + "Rows 2-1 HELD.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"one of two lines unparsed",
+			proseRun("Run 1", 8, rc2, summary+"\n- Other rows could-not-check too.", "**VERIFY: BLOCKED**") + final, true},
+		// Refused: a named number is not a row of the line's own entry.
+		{"number past the entry's rows", heldRun + "Rows 2 and 9 HELD.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"row of another entry only",
+			heldRun + "### Run 2\n\nRow 2 HELD again.\n\n**VERIFY: BLOCKED**\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"table keyed by command",
+			"### Run 1\n\n| Command | Result |\n|---|---|\n| `tool check` | exit 2 |\n\nRow 1 HELD.\n\n" +
+				"### Run 2\n\n| Command | Result |\n|---|---|\n| `tool check` | ok |\n\n**VERIFY: PASS**\n", true},
+		// Refused: the entry cannot be keyed whole.
+		{"entry with a misaligned row",
+			"### Run 1\n\n" + scopeHdr + scopeRow("1", "exit 0", "ok") +
+				"| 2 | a | b | c | ok | 2026-10-01 | fixture-verifier |\n\nRow 1 HELD.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"entry with an empty key",
+			"### Run 1\n\n" + scopeHdr + scopeRow("1", "exit 0", "ok") + scopeRow("", "exit 0", "ok") +
+				"\nRow 1 HELD.\n\n" + passRun("**VERIFY: PASS**"), true},
+		// Refused: the hold is in the last entry, or wraps off the line that names rows.
+		{"named prose in the last entry",
+			heldRun + passRun("Row 2 was HELD in Run 1.\n\n**VERIFY: PASS**"), true},
+		{"hold wrapped to the next line",
+			proseRun("Run 1", 8, rc2, "- BLOCKED. Rows 1-6 and 8 pass; row 7\n  could-not-check (rc=2).", "**VERIFY: BLOCKED**") + final, true},
+	})
+}
+
 // TestHeldScopeFailClosed: every place the scope cannot positively classify
 // text, it reads it as before.
 func TestHeldScopeFailClosed(t *testing.T) {
@@ -290,8 +384,8 @@ func TestHeldScopeFailClosed(t *testing.T) {
 				"\n**VERIFY: PASS**\n", true},
 		{"later table keyed by command",
 			heldRun + "### Run 2\n\n| Command | Result |\n|---|---|\n| `go test ./integration/...` | ok |\n\n**VERIFY: PASS**\n", true},
-		{"earlier hold in prose",
-			heldRun + "Row 2 is HELD until a runner is online.\n\n" + passRun("**VERIFY: PASS**"), true},
+		{"earlier hold in prose naming no row",
+			heldRun + "The integration run is HELD until a runner is online.\n\n" + passRun("**VERIFY: PASS**"), true},
 		{"earlier held row misaligned",
 			"### Run 1\n\n" + scopeHdr + "| 2 | a | b | c | HELD — offline | 2026-10-01 | fixture-verifier |\n\n" +
 				passRun("**VERIFY: PASS**"), true},

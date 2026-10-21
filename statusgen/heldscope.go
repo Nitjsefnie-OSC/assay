@@ -52,10 +52,20 @@ import (
 //     (heldEntryPass): at column 0, opening its own paragraph, rendered
 //     live, and with no VERIFY token after it anywhere in the entry, quoted
 //     or not;
-//     - every held occurrence in the earlier entries sits in the result cell
-//     of an aligned row of a results table (rule 1) with a non-empty row key
-//     (heldRowKey). One held occurrence anywhere else — prose, a misaligned
-//     row, a table of another shape — leaves every entry read;
+//     - every held occurrence in the earlier entries sits either in the result
+//     cell of an aligned row of a results table (rule 1) with a non-empty row
+//     key (heldRowKey), or on a prose line that names rows (heldProseCover,
+//     #3841). A prose line names rows when every "row"/"rows" word on it is
+//     followed by a row number list ("row 7", "rows 1-6 and 8", "row #2"),
+//     every number it names is the key of a row of its own entry's results
+//     tables, and every data row of those tables is aligned and keyed. Such a
+//     line stands for EVERY keyed row of its entry, not only the rows it
+//     names: a prose verdict ("BLOCKED. Rows 1-6 and 8 pass; row 7
+//     could-not-check") is dropped only when the last entry re-ran the whole
+//     earlier run clean. One held occurrence anywhere else — prose that names
+//     no row, a row word with no number list after it, a number that is not
+//     a row of its entry, a misaligned row, a table of another shape, prose
+//     in an entry with no results table — leaves every entry read;
 //     - the last entry has live results tables (heldCovered) with a row of
 //     the same key (heldRowKey: key-column name and key text) for every one
 //     of those rows, and EVERY row of that key in the last entry is clean:
@@ -88,6 +98,7 @@ type heldLineRead struct {
 	prose bool     // a line outside every table, in an entry with a results table (rule 2)
 	blank [][2]int // byte ranges of the line (cell contents) the scan must not read
 	key   string   // the row key of an aligned results-table data row; "" for any other line
+	cover []string // a prose line that names rows (rule 3, heldProseCover): the row keys that must ALL be re-run clean to drop it; nil otherwise
 }
 
 // heldScope is heldScanScope's decision: what to read of each line, and
@@ -100,8 +111,9 @@ type heldScope struct {
 
 // supersedes reports whether the held occurrences found on the given lines
 // (the scan's hits, in any order) that lie before the last entry are all
-// replaced by it: every one is a keyed results-table row, and the last entry
-// re-ran that key. A single hit it cannot classify keeps every hit read.
+// replaced by it: every one is a keyed results-table row the last entry
+// re-ran, or a prose line naming rows whose every cover key the last entry
+// re-ran. A single hit it cannot classify keeps every hit read.
 func (s heldScope) supersedes(hits []int) bool {
 	if s.from < 0 {
 		return false
@@ -110,11 +122,102 @@ func (s heldScope) supersedes(hits []int) bool {
 		if i >= s.from {
 			continue
 		}
-		if k := s.lines[i].key; k == "" || !s.covered[k] {
+		read := s.lines[i]
+		if read.key != "" {
+			if !s.covered[read.key] {
+				return false
+			}
+			continue
+		}
+		if len(read.cover) == 0 {
 			return false
+		}
+		for _, k := range read.cover {
+			if !s.covered[k] {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+var (
+	// heldRowWordRe is a word that refers to a row by name (heldNamedRows).
+	heldRowWordRe = regexp.MustCompile(`(?i)\brows?\b`)
+	// heldRowListRe is a row word followed by a row number list: "row 7",
+	// "row #2", "rows 1-6 and 8", "rows 2, 4 & 5", "rows 3 to 5".
+	heldRowListRe = regexp.MustCompile(`(?i)^rows?[ \t]*#?[ \t]*(\d+(?:[ \t]*(?:-|–|to|through)[ \t]*\d+)?` +
+		`(?:(?:[ \t]*,[ \t]*(?:and[ \t]+)?|[ \t]+and[ \t]+|[ \t]*&[ \t]*)#?[ \t]*\d+(?:[ \t]*(?:-|–|to|through)[ \t]*\d+)?)*)`)
+	// heldRowItemRe is one item of a row number list: a number or a range.
+	heldRowItemRe = regexp.MustCompile(`(\d+)(?:[ \t]*(?:-|–|to|through)[ \t]*(\d+))?`)
+)
+
+// heldMaxRowRange bounds a named row range ("rows 1-6"); a longer one is not
+// read as a row list.
+const heldMaxRowRange = 1000
+
+// heldNamedRows returns the row numbers line names (rule 3, #3841), and
+// whether every row word on it parsed: each "row"/"rows" word must be
+// followed by a row number list (heldRowListRe). A line with no row word
+// names no rows (ok false); so does a line with any row word that is not
+// followed by a number list ("all rows", "row seven", "the row above"), or a
+// reversed or overlong range. A "#N" with no row word is not a row name (it
+// is usually an issue reference) and is neither read nor refused here.
+func heldNamedRows(line string) (rows []string, ok bool) {
+	words := heldRowWordRe.FindAllStringIndex(line, -1)
+	if len(words) == 0 {
+		return nil, false
+	}
+	for _, w := range words {
+		m := heldRowListRe.FindStringSubmatch(line[w[0]:])
+		if m == nil {
+			return nil, false
+		}
+		for _, it := range heldRowItemRe.FindAllStringSubmatch(m[1], -1) {
+			lo, err := strconv.Atoi(it[1])
+			if err != nil {
+				return nil, false
+			}
+			hi := lo
+			if it[2] != "" {
+				if hi, err = strconv.Atoi(it[2]); err != nil || hi < lo || hi-lo > heldMaxRowRange {
+					return nil, false
+				}
+			}
+			for n := lo; n <= hi; n++ {
+				rows = append(rows, strconv.Itoa(n))
+			}
+		}
+	}
+	return rows, len(rows) > 0
+}
+
+// heldProseCover returns the row keys a prose line of an earlier entry
+// stands for (rule 3, #3841), or nil when the line cannot be dropped. byCell
+// maps each key cell (heldNorm) of the entry's results tables to the row
+// keys that carry it, and keys lists every row key of those tables; aligned
+// is false when any data row of them could not be aligned or has an empty
+// key. The line must name rows (heldNamedRows) and every row it names must
+// be a row of the entry. The cover is then the named rows' keys AND every
+// other key of the entry, so a row the line does not name, or names in a
+// form the list grammar does not read, is never left out of it.
+func heldProseCover(line string, byCell map[string][]string, keys []string, aligned bool) []string {
+	if !aligned || len(keys) == 0 {
+		return nil
+	}
+	rows, ok := heldNamedRows(line)
+	if !ok {
+		return nil
+	}
+	var named []string
+	for _, r := range rows {
+		ks := byCell[r]
+		if len(ks) == 0 {
+			return nil // a number that is not a row of this entry
+		}
+		named = append(named, ks...)
+	}
+	return append(named, keys...)
 }
 
 // heldEntryHeading reports whether line opens an Evidence entry: an ATX
@@ -448,6 +551,10 @@ func heldScanScope(evidence string) heldScope {
 		}
 		// Table blocks: runs of table lines outside fenced code.
 		hasResults := false
+		// The entry's row keys, for its prose lines that name rows (rule 3).
+		byCell := map[string][]string{}
+		var keys []string
+		aligned := true
 		for i := lo; i < hi; {
 			if inFence[i] || !heldTableLine(lines[i]) {
 				i++
@@ -476,6 +583,7 @@ func heldScanScope(evidence string) heldScope {
 					for r := i + 2; r < j; r++ {
 						cells := heldCellRanges(lines[r])
 						if len(cells) != len(header) {
+							aligned = false
 							continue // cannot align: read whole, no key (fail closed)
 						}
 						for c, rg := range cells {
@@ -486,6 +594,13 @@ func heldScanScope(evidence string) heldScope {
 						kc := cells[tb.keyCol]
 						hc := header[tb.keyCol]
 						out[r].key = heldRowKey(lines[i][hc[0]:hc[1]], lines[r][kc[0]:kc[1]])
+						if out[r].key == "" {
+							aligned = false
+							continue
+						}
+						cell := heldNorm(lines[r][kc[0]:kc[1]])
+						byCell[cell] = append(byCell[cell], out[r].key)
+						keys = append(keys, out[r].key)
 					}
 				}
 			}
@@ -497,6 +612,7 @@ func heldScanScope(evidence string) heldScope {
 		for i := lo; i < hi; i++ {
 			if !inFence[i] && !heldTableLine(lines[i]) {
 				out[i].prose = true
+				out[i].cover = heldProseCover(lines[i], byCell, keys, aligned)
 			}
 		}
 	}
