@@ -72,17 +72,18 @@ func exitCodeOf(err error) int {
 
 // verdictRunConfig is the parsed invocation.
 type verdictRunConfig struct {
-	root    string
-	repo    string // owner/name; derived from git origin when empty
-	head    string // commit SHA the rows ran against; derived from git HEAD when empty
-	runner  string // runner identity stamped into provenance (an App bot login)
-	session string // runner session id
-	pem     string // verifier private-key PEM override
-	window  time.Duration
-	dryRun  bool
-	exec    rowExec // nil => shellExec
-	now     func() time.Time
-	out     io.Writer // nil => os.Stdout
+	performance verifyPerformance
+	root        string
+	repo        string // owner/name; derived from git origin when empty
+	head        string // commit SHA the rows ran against; derived from git HEAD when empty
+	runner      string // runner identity stamped into provenance (an App bot login)
+	session     string // runner session id
+	pem         string // verifier private-key PEM override
+	window      time.Duration
+	dryRun      bool
+	exec        rowExec // nil => shellExec
+	now         func() time.Time
+	out         io.Writer // nil => os.Stdout
 
 	// unsignedOut, when set, selects the keyless compose-only mode (--unsigned-out): the
 	// canonical payload is written to this NEW file unsigned and no key is ever resolved.
@@ -118,11 +119,16 @@ func (c verdictRunConfig) emit() io.Writer {
 
 // cmdVerdict parses the `verdict` subcommand flags and runs the deterministic runner.
 func cmdVerdict(args []string) int {
+	return cmdVerdictMeasured(args, verifyPerformance{})
+}
+
+func cmdVerdictMeasured(args []string, performance verifyPerformance) int {
 	cfg, err := parseVerdictFlags(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return deskkit.ExitCodeOf(err)
 	}
+	cfg.performance = performance
 	// Fail-closed: a red envelope (missing/unreadable PEM, an unreadable Awaiting queue, a
 	// signing failure) is reported LOUDLY on stderr — never a silent non-zero exit. The
 	// verdict lane's whole contract is "file nothing, report the envelope error loudly"
@@ -203,7 +209,9 @@ func runVerdict(cfg verdictRunConfig) error {
 
 	repo, head, meta := runIdentity(cfg)
 
+	stopScan := cfg.performance.phase("queue-scan")
 	items, err := scanAwaiting(cfg.root, head)
+	stopScan()
 	if err != nil {
 		return deskkit.Unverifiable("cannot read the Awaiting queue", err)
 	}
@@ -221,7 +229,9 @@ func runVerdict(cfg verdictRunConfig) error {
 		if len(b.rows) == 0 {
 			return nil
 		}
+		stop := cfg.performance.phase("sign")
 		n, err := emitBatch(out, repo, head, cfg.nowFn(), meta, b.rows, pemPath, cfg.dryRun, window)
+		stop()
 		if err != nil {
 			return err
 		}
@@ -231,7 +241,9 @@ func runVerdict(cfg verdictRunConfig) error {
 	}
 
 	for i, it := range items {
+		stop := cfg.performance.phase("rows")
 		rows := runBriefRows(cfg.root, it, execFn)
+		stop()
 		for _, r := range rows {
 			b.add(r, cfg.nowFn())
 		}
@@ -325,14 +337,18 @@ func runVerdictUnsigned(cfg verdictRunConfig) error {
 
 	repo, head, meta := runIdentity(cfg)
 
+	stopScan := cfg.performance.phase("queue-scan")
 	items, err := scanAwaiting(cfg.root, head)
+	stopScan()
 	if err != nil {
 		return deskkit.Unverifiable("cannot read the Awaiting queue", err)
 	}
 	execFn := cfg.execFn()
 	var rows []rowResult
 	for _, it := range items {
+		stop := cfg.performance.phase("rows")
 		rows = append(rows, runBriefRows(cfg.root, it, execFn)...)
+		stop()
 	}
 	out := cfg.emit()
 	if len(rows) == 0 {

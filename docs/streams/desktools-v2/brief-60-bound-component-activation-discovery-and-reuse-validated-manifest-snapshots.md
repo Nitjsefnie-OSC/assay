@@ -11,10 +11,11 @@ risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
 outcome: none
-version: 1
+version: 2
 id: b88b1948-7284-4281-b8a4-e7d128862840
 authored: 2026-10-16 by performance brief authoring
 sources:
+  - "docs/performance-attribution-spec.md — requested perf-v3 amendment, 2026-10-19 @ 2e02111ed"
   - docs/streams/desktools-v2/README.md — Performance delivery priority, 2026-10-16
   - docs/library-first.md
   - docs/streams/desk-tools/brief-25-token-memo-and-cache-before-install-id.md
@@ -24,14 +25,17 @@ exec-tier: strong
 exec-tier-why: Cross-consumer compatibility, concurrency and unavailable-state behavior require negative-path and flow proofs.
 domain: complicated
 consumers:
-  - "tools/desk/internal/deskkit/activation*.go: follow-up desktools-v2/60"
-  - "all tools/desk/cmd entrypoints calling CheckVerbActivation: follow-up desktools-v2/60 (inherit the one discovery implementation; enumerate at pickup)"
-  - "tools/desk/cmd/deskboard, deskdispatch and desktoken: follow-up desktools-v2/60 (compiled startup reference workloads)"
+  - "tools/desk/internal/deskkit/activation.go: fixed-here (reference owner and shared routing)"
+  - "tools/desk/internal/deskkit/activationindex.go: fixed-here (bounded validated slot)"
+  - "tools/desk/internal/deskkit/activationindex_test.go: fixed-here (fresh reference and lower-boundary negative controls)"
+  - "tools/desk/cmd/: out-of-scope (unchanged authority adapters inherit the shared runtime owner; README enumerates all 41 callers and the three named commands have compiled qualification)"
+  - "tools/desk/internal/deskkit/activationstartup_test.go: fixed-here (actual compiled board/dispatch/token startup workloads)"
   - "tools/desk/cmd/deskboard help/version entrypoints: follow-up desktools-v2/20"
   - "tools/desk/cmd/deskdispatch help/version entrypoints: follow-up desktools-v2/21"
   - "tools/desk/cmd/desktoken help/version entrypoints: follow-up desktools-v2/33"
   - "statusgen/: out-of-scope (different stream/brief discovery semantics; reuse perfrec and investigate through statusgen/26, not an import of deskkit activation)"
-  - "tools/desk/README.md and docs/contracts.md: follow-up desktools-v2/60"
+  - "tools/desk/README.md: fixed-here (bounded discovery and measured costs)"
+  - "docs/contracts.md: fixed-here (semantic owner)"
 ---
 
 # Brief 60 — Bound component activation discovery and reuse validated manifest snapshots
@@ -43,6 +47,11 @@ files:
 - `tools/desk/internal/deskkit/activation_test.go`
 - `tools/desk/internal/deskkit/activationindex.go` (planned)
 - `tools/desk/internal/deskkit/activationindex_test.go` (planned)
+- `tools/desk/internal/deskkit/rosterfixture_test.go`
+- `tools/desk/internal/deskkit/activationstartup_test.go`
+- `tools/desk/internal/deskkit/testdata/activation_mutations.py`
+- `tools/desk/internal/arch/arch_test.go`
+- `tools/desk/internal/arch/markers.txt`
 - `tools/desk/cmd/deskboard/main.go`
 - `tools/desk/cmd/deskdispatch/main.go`
 - `tools/desk/cmd/desktoken/main.go`
@@ -128,6 +137,32 @@ break planted, not a duplicate checker.
 
 Scope sufficiency and workload representativeness remain review judgments; publish the
 measured environment and limitations. No fixture success is a live permission or fleet speed claim.
+
+## Perf-v3 consumer routing — 19 October 2026
+
+[The attributed performance contract](../../performance-attribution-spec.md) governs future
+local measurement. Preserve this brief's existing behavior, tests and legacy v1/v2 privacy;
+new qualified work/agent linkage requires the selected v3 workflow profile. /63 owns the
+schema/resolver/readers, /64 the shared CLI/env and launch propagation, /65 own-request
+cost/timing, /62 desk producer qualification and statusgen/26 standalone phase integration.
+Reuse those seams when available and record missing coverage otherwise; no duplicate
+writer/parser, speculative ID inference or additional measurement request. Existing credential,
+cache/discovery and CLI work remains independently deliverable and is not held for v3.
+
+## Implementation choice within the declared fallback
+
+The bounded fallback is process-local reuse of parsed discovery candidates, with one slot and
+1 MiB source/payload limits. Cold discovery retains only the exact parsed observation,
+with no second traversal; any failed read prevents candidate retention. Every reused
+return, including the first attempted reuse, still requires complete membership and
+content-validation traversal; the warm benefit is avoiding YAML parsing and derived
+sorting/deduplication, not eliminating filesystem scans. Persistent startup reuse is
+not qualified. The three compiled synthetic workloads measure external elapsed
+inactive-provider refusals with fresh/reused isolated homes and telemetry off/on;
+these do not qualify successful hotpath or recorder-write overhead (/62). Current
+board/dispatch help is scan-free; token's pre-parser activation remains owned by /33.
+See `tools/desk/README.md` for measured costs and limitations. Existing Verify rows
+and independent Evidence ownership are unchanged.
 
 ## Evidence
 

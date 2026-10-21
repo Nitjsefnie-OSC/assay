@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/packet"
 )
@@ -121,8 +121,11 @@ var worktreeNameRe = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9][A-Za-z0-9._-]{
 var branchNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 type dispatchOpts struct {
-	stampReceipt string
-	stampOnly    bool
+	performanceWorkExplicit bool
+	measurement             *perfrec.Session
+	performance             perfrec.Context
+	stampReceipt            string
+	stampOnly               bool
 	// attestWorker is --attest-worker: a fresh worker dispatch gets a pre-work attestation record
 	// (workerattestation.go) stamped and read back before its prompt is emitted.
 	attestWorker bool
@@ -184,67 +187,17 @@ var (
 	dispatchEntropy io.Reader = rand.Reader
 )
 
-func cmdDispatch(args []string) error {
-	if len(args) > 0 && (args[0] == "--check-verifier" || args[0] == "--attest-verifier") {
-		return cmdVerifierAttestation(args[0], args[1:])
+// executeDispatch receives only parsed, typed options. Domain admission and rollback
+// remain in dispatch, exactly as for direct callers.
+func executeDispatch(o dispatchOpts, override string) error {
+	if strings.TrimSpace(override) != "" {
+		if err := deskkit.ValidateScanOverride(override); err != nil {
+			return err
+		}
 	}
-	if len(args) > 0 && args[0] == "--stamp-only" {
-		return cmdStampOnly(args[1:])
-	}
-	fs := flag.NewFlagSet("deskdispatch", flag.ContinueOnError)
-	fs.SetOutput(new(strings.Builder))
-	tier := fs.String("tier", "any", "execution tier the item demands: strong|any")
-	kit := fs.String("kit", "worker", "prompt kit for the dispatched agent class: "+joinKits())
-	repo := fs.String("repo", "", "owner/name the item belongs to (default: derived from --root's origin)")
-	root := fs.String("root", ".", "the ITEM's own repo root — the checkout the worktree is cut from")
-	claimRoot := fs.String("claim-root", "", "the checkout carrying the consumer claim/decision scripts, when the "+
-		"item's own repo does not (default: --root). The claim still lands in --repo's own ref namespace — this "+
-		"names only where the TOOL lives, never where the worktree is cut from")
-	model := fs.String("model", "", "lowercase slug of the model being launched, for the dispatcher's attestation stamp")
-	branch := fs.String("branch", "", "branch name (fresh: derived from item; resume: must match the forge source branch)")
-	brief := fs.String("brief", "", "path to the item's specification file, for the decision-issue gate and the prompt")
-	gateHuman := fs.Bool("gate-human", false, "the item is human-gated: ensure its decision issue exists before dispatch")
-	pr := fs.Int("pr", 0, "an ALREADY-OPEN PR for this item; enables the roster work entry and the label stamp")
-	promptFile := fs.String("prompt-file", "", "the caller's own prompt/task file path; never written. The assembled prompt goes to a NEW sibling <name>.emitted.md (next to <name>.packet.md) and that path is printed. Default: the prompt is printed to stdout")
-	quiet := fs.Bool("quiet", false, "suppress the per-step OK lines")
-	dryRun := fs.Bool("dry-run", false, "print the plan and the prompt; touch nothing")
-	worktree := fs.String("worktree", "", "with --dry-run ONLY: render the prompt against this operator-stated, "+
-		"already-existing home worktree instead of the not-yet-known placeholder. Refused on a real dispatch")
-	rework := fs.Bool("rework", false, "the row awaits implementer REWORK (implemented, last verdict FAIL): a MERGED PR "+
-		"for the brief makes this a FOLLOW-UP on a new branch, never a resume (worker kit, no --pr)")
-	attestWorker := fs.Bool("attest-worker", false, "fresh worker dispatch only (no --pr; requires --model and --brief or an "+
-		"issue-<N> item): create, stamp, close and read back a dispatcher-authored pre-work attestation record "+
-		"before the prompt is emitted; any failure releases the claim and emits no prompt (exit 6)")
-	crossRepo := fs.Bool("cross-repo", false, "the brief is homed in the tracking repo its item-key prefix or brief-v2 id "+
-		"names, and its deliverable PR opens in --repo (a registered alias, and --root's origin). The PR links the "+
-		"brief with a `Cross-repo-brief: <alias>:<stream>/<NN>` trailer, never `Brief:`")
-	applyOverride, _ := deskkit.RegisterOutboundOverride(fs, "deskdispatch", "dispatch")
-
-	if len(args) == 0 {
-		return deskkit.Refused("deskdispatch requires an <item-key>")
-	}
-	item := args[0]
-	if strings.HasPrefix(item, "-") {
-		return deskkit.Refused("deskdispatch: first argument must be the <item-key>, not a flag (" + item + ")")
-	}
-	if err := fs.Parse(args[1:]); err != nil {
-		return deskkit.Refused("deskdispatch: bad flags: " + err.Error())
-	}
-	deskkit.PerfCommand(perfVerbs, perfKitVerb("dispatch", *kit))
-	if err := applyOverride(); err != nil {
-		return err
-	}
-	if fs.NArg() != 0 {
-		return deskkit.Refused("deskdispatch: unexpected extra arguments after <item-key>: " + strings.Join(fs.Args(), " "))
-	}
-
-	itemAlias, item := splitItemAlias(item)
-	o := dispatchOpts{
-		item: item, itemAlias: itemAlias, rework: *rework, crossRepo: *crossRepo, attestWorker: *attestWorker, tier: *tier, kit: *kit, repo: *repo, root: *root, claimRoot: *claimRoot,
-		model: *model, branch: *branch, brief: *brief, gateHuman: *gateHuman, pr: *pr,
-		promptFile: *promptFile, quiet: *quiet, dryRun: *dryRun, worktree: *worktree,
-		run: &dispatchRun{},
-	}
+	deskkit.SetOutboundContext(deskkit.OutboundContext{Tool: toolName, Verb: "dispatch", OverrideReason: override})
+	o.itemAlias, o.item = splitItemAlias(o.item)
+	o.run = &dispatchRun{}
 	err := dispatch(o)
 	audit(o, err)
 	return err
@@ -273,6 +226,19 @@ func dispatch(o dispatchOpts) error {
 	}
 	repo, branch, wtName := plan.repo, plan.branch, plan.wtName
 	plan.now, plan.entropy = dispatchClock, dispatchEntropy
+	role := "implement"
+	switch o.kit {
+	case "review":
+		role = "review"
+	case "verifier":
+		role = "verify"
+	}
+	// Work is selected explicitly per dispatch; never inherit a standing desk subject.
+	var work []perfrec.WorkRef
+	if o.performanceWorkExplicit {
+		work = o.performance.Data().Work
+	}
+	plan.childPerformance = perfrec.ChildContext(o.performance, role, work, nil)
 
 	if o.dryRun {
 		wtBanner := ""
@@ -574,6 +540,7 @@ func dispatch(o dispatchOpts) error {
 	var perr error
 	if o.kit != "verifier" {
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
 		}
@@ -655,6 +622,7 @@ func dispatch(o dispatchOpts) error {
 		}
 		// The verifier's read-ahead packet is built only after provenance is established.
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
 		}
@@ -697,6 +665,7 @@ func (o dispatchOpts) notLaunched(plan dispatchPlan, repo, home string) {
 // re-derives a value the validation was performed against. Re-deriving is how a check and
 // the thing it checked drift apart.
 type dispatchPlan struct {
+	childPerformance                         perfrec.Context
 	verifierBriefRoot, verifierBriefRevision string
 	resume                                   *resumeSource
 	repo                                     string
@@ -774,6 +743,8 @@ type dispatchPlan struct {
 	// "" when none was (no provider for the kit, --dry-run, or the build did not succeed).
 	// Set once, after the worktree exists; the prompt carries a `Packet:` line iff it is set.
 	packetPath string
+	// Optional attribution stays in an owner-only local sidecar, never prompt logs.
+	performancePath string
 	// workerAttestation is the read-back pre-work worker attestation (--attest-worker), set at
 	// step 5 before the prompt is emitted; nil otherwise, and on a dry run.
 	workerAttestation *deskkit.WorkerReceipt
@@ -1238,6 +1209,29 @@ func stepClaim(o dispatchOpts, repo, script string, isScript bool, auth claimAut
 	case deskkit.ExitRefused:
 		show := runCmdEnv(o.root, auth.env, script, append([]string{"show", claimKey, "--repo", repo}, auth.args...)...)
 		holder := firstLine(show.stdout)
+		// ALIAS-HELD: the key itself reads FREE but another spelling of the same PR is live
+		// (medici-finance/assay#3700). That is a live holder by definition, so it is named as
+		// one and never run through the staleness read below, which would take state/age from
+		// the alias line of a claim the tool already judged live.
+		// Only when the key itself reads FREE: when it is HELD too, its own holder is the one to name
+		// (and to run through the staleness read below), not the alias's.
+		if alias := aliasHolderLine(show.stdout); show.err == nil && alias != "" &&
+			strings.Contains(show.stdout, "FREE "+claimKey) {
+			return deskkit.Refused(fmt.Sprintf(
+				"step %s: %s is already claimed by a LIVE holder under another spelling of the same PR — "+
+					"do not proceed. Existing claim: %s. This verb never steals: breaking a live claim is a "+
+					"deliberate, auditable act with a stated reason, and it belongs to a human or to the claim "+
+					"tool's own steal verb.", stepClaimAcquire, claimKey, alias))
+		}
+		// `show` exits unverifiable when it could not read the claim set or one alias leg: a collision
+		// with another spelling cannot be ruled out, so this is not a claim-acquire error to "fix".
+		if show.err != nil && exitCodeOf(show.err) == deskkit.ExitUnverifiable {
+			return deskkit.Refused(fmt.Sprintf(
+				"step %s: the claim tool refused to acquire %s (%s) and its `show` could not read the claim set or "+
+					"another spelling of the same PR (%s). A collision cannot be ruled out — unverifiable, NOT a "+
+					"key error. Re-run once the forge read recovers.",
+				stepClaimAcquire, claimKey, r.run.Said(), firstLine(show.stderr+show.stdout)))
+		}
 		// A holder was READ: the show verb succeeded, said something, and did not say the
 		// key is FREE. Only this is a collision — but a collision is not the same as a LIVE
 		// holder. The two-phase claim TTL (dispatch-claim.sh: state=claimed→20m,
@@ -2341,4 +2335,15 @@ func audit(o dispatchOpts, err error) {
 	}); lerr != nil {
 		fmt.Fprintf(os.Stderr, "deskdispatch: WARNING: could not write audit line: %v\n", lerr)
 	}
+}
+
+// aliasHolderLine returns the first `ALIAS-HELD <id> — …` line of the claim tool's `show` output,
+// or "" when it printed none.
+func aliasHolderLine(showOut string) string {
+	for _, line := range strings.Split(showOut, "\n") {
+		if strings.Contains(line, "ALIAS-HELD ") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
 }

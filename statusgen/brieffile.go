@@ -473,6 +473,7 @@ func expectedBriefID(path string) (id, num string, ok bool) {
 //
 // Callers MUST test err before ok.
 func parseBriefFile(path string) (*BriefFile, bool, error) {
+	defer perfEnter("parse")() // the read + memo lookup, even when the memo answers
 	// Memo on (path, content-hash). Measured before this cache: one --lint made 3,351
 	// parseBriefFile calls over 172 distinct paths — up to 23 re-parses of a single file —
 	// because the thirty-odd checks that walk the brief tree each walk it independently and

@@ -569,6 +569,7 @@ jobs:
         if: matrix.leg == 'desk-tools'
         run: |
           set -euo pipefail
+          (cd deskcore && GOWORK=off go test -count=1 ./... && go vet ./...)
           cd tools/desk && go test ./... && go vet ./...
 
       - name: Test and vet drainloop (source component, isolated)

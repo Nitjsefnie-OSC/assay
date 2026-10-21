@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/cli"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/medici-finance/assay/tools/desk/internal/gitcore"
@@ -46,12 +47,13 @@ var perfVerbs = []string{"prs", "actions", "queue", "health", "awaiting", "nextu
 
 func main() {
 	args := os.Args[1:]
+	selected := perfrec.ResolveContext(perfrec.ContextInput{})
 	// Keep the registered performance wrapper at the process entrypoint, but call it
 	// only after Cobra selected an execution (help and version never record samples).
 	record := func(run func() int) int {
-		return deskkit.PerfRun("deskboard", perfVerbs, args, func([]string) int { return run() })
+		return deskkit.PerfRunSelected("deskboard", perfVerbs, args, selected, func([]string) int { return run() })
 	}
-	os.Exit(executeRecorded(args, os.Stdout, os.Stderr, startup, record))
+	os.Exit(executeRecorded(args, os.Stdout, os.Stderr, startup, record, func(c perfrec.Context) { selected = c }))
 }
 
 // startup retains the execution-only authority checks. Help and version never enter it.
@@ -120,7 +122,11 @@ func execute(args []string, stdout, stderr io.Writer, pre func(io.Writer) int) i
 	return executeRecorded(args, stdout, stderr, pre, nil)
 }
 
-func executeRecorded(args []string, stdout, stderr io.Writer, pre func(io.Writer) int, record func(func() int) int) int {
+func executeRecorded(args []string, stdout, stderr io.Writer, pre func(io.Writer) int, record func(func() int) int, sinks ...func(perfrec.Context)) int {
+	var sink func(perfrec.Context)
+	if len(sinks) > 0 {
+		sink = sinks[0]
+	}
 	build := func() *cobra.Command {
 		root := cli.NewRoot("deskboard", "read-only cross-repo board")
 		root.Long = "Read-only cross-repo board. Output is JSON except stalled (table by default).\nAll roster, custody, scope, kill-switch and admission checks apply to execution."
@@ -216,7 +222,7 @@ func executeRecorded(args []string, stdout, stderr io.Writer, pre func(io.Writer
 		root.AddCommand(&cobra.Command{Use: "version", Hidden: true, Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { fmt.Fprintln(stdout, versionLine()); return nil }})
 		return root
 	}
-	return cli.Run(build, args, cli.Options{IO: cli.IO{Out: stdout, Err: stderr}, Version: versionLine(), VersionTemplate: "{{.Version}}\n", UsageExit: deskkit.ExitRefused})
+	return cli.Run(build, args, cli.Options{Performance: sink, IO: cli.IO{Out: stdout, Err: stderr}, Version: versionLine(), VersionTemplate: "{{.Version}}\n", UsageExit: deskkit.ExitRefused})
 }
 
 func resolveBoard(set *cli.Set) (boardOptions, error) {

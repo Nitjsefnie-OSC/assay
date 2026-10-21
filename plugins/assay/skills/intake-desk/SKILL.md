@@ -163,7 +163,7 @@ not own.
 ## The board
 
 `issueboard` — read-only, one ACTION per open issue plus the intake lane's untriaged entries,
-age-flagged (`issueboard issues` / `issueboard intake` narrow to one lane). Its scan scope is the
+age-flagged (`issueboard issues --projection intake` / `issueboard intake` narrow to one lane). Its scan scope is the
 roster's, resolved at runtime; an unset/empty scan-repo roster value or a repo the token cannot read
 fails the WHOLE board with exit 6, so the board is never silently partial and an empty sweep is never
 reported as a clean board. A `needs-decision` or `question` issue ages against `--sla-days` (default
@@ -174,8 +174,16 @@ never be able to sink an ESCALATE row beneath a fresher high-impact one. An open
 `to:<role>` (filed by `deskfile new --to <role>`) is a desk-inbox item: it renders `ADDRESSED→<role>`
 in its own priority band, is held OUT of the un-briefed (CREATE-PLACEHOLDER) work — it is that desk's
 item, not free work — and, aged past `--sla-days` with no comment from that role's App, ESCALATES so
-an unread inbox surfaces without the addressee's cooperation. `issueboard issues --to <role>` narrows
+an unread inbox surfaces without the addressee's cooperation. `issueboard issues --projection inbox --to <role>` narrows
 to one desk's inbox.
+
+Use the projected forms only with an `issueboard --version` producer advertising
+`issue-projection-v1`. Older pinned producers retain `issueboard issues` and
+`issueboard issues --to <role>`; select that compatibility path before discovery,
+never as a retry after an incomplete projected read. The intake projection preserves
+the whole issue population, escalation/closure and quarantine; the inbox projection
+covers only the named addressee. Local raw intake remains `issueboard intake`.
+See [producer/plugin compatibility and rollback](https://github.com/medici-finance/assay/blob/main/docs/issue-projections.md).
 
 ## Scored triage — the impact/risk/effort triple at exit
 
@@ -632,3 +640,25 @@ is not enough: an issue with that title from anyone else is ordinary intake. The
 If inspecting raw forge results, keep these records out of intake and work scans; use a
 direct issue read only to audit or recover the exact dispatch. Closing a record attests
 the pre-work stamp, never that the brief was verified or the work was done.
+
+
+## Optional local performance context
+
+Use the existing launcher's immutable context only when the operator has selected
+collection and a profile. Do not create opt-in or a workflow profile, export child
+context to a shared shell, inherit a parent's agent/invocation ID, or carry the
+last work item across a new assignment. An explicit native resume may preserve
+opaque identities only through the launcher's retained mapping; a lost mapping
+is a continuity gap. Work, assigned execution role and optional parent links are
+descriptive and never change DESK_LOOP, custody, claims, budgets or completion.
+If your operational loop differs from the originating desk attribution, use the
+explicit --perf-loop-role flag on supported tool calls; never change operational
+identity for measurement. Keep local workflow references and handoffs private.
+See [desk-shell mechanics](../../references/desk-shell.md#optional-local-performance-context)
+and the [Assay source entrypoint inventory](https://github.com/medici-finance/assay/blob/main/docs/performance-entrypoints.json) for supported boundaries; an
+unsupported boundary stays unknown.
+
+Apply validated handoff entries to each tool call with per-command `env KEY=value
+... tool ...` arguments or that tool's supported `--perf-*` flags. Quote values;
+never evaluate the handoff as shell code or export it into a persistent shell.
+Use `--perf-loop-role` for descriptive desk attribution; never alter `DESK_LOOP`.

@@ -8,6 +8,21 @@
   "exclusion_rules": [
     {
       "class": "test",
+      "pattern": "containers/k8s",
+      "reason": "desk-containers/06 source-only YAML-to-JSON test adapter invoked by the offline packaging checker; Go main is run from the existing desk module, never installed or released as an operator CLI"
+    },
+    {
+      "class": "test",
+      "pattern": "containers/k8s/check.py",
+      "reason": "desk-containers/06 source-only offline render/schema, manifest and credential assertions with hostile controls; invoked by its Verify rows and check.sh, never installed or released as an operator CLI"
+    },
+    {
+      "class": "test",
+      "pattern": "containers/k8s/check.sh",
+      "reason": "desk-containers/06 source-only launcher for the offline packaging verification suite; invoked by its Verify rows and documented pre-install validation, never installed or released as an operator CLI"
+    },
+    {
+      "class": "test",
       "pattern": "docs/streams/desktools-go-git/reproduce-05-counts.bash",
       "reason": "source-only offline verification instrument for issue #3035 and desktools-go-git/05 row 6; runs counters on pinned local Git archives, never installed or released as an operator CLI"
     },
@@ -40,6 +55,11 @@
       "class": "library",
       "pattern": "tools/release/images.py",
       "reason": "internal release image producer imported by fixed workflow Python calls; no shebang, main guard, argument parser or independent operator entrypoint (#3204)"
+    },
+    {
+      "class": "test",
+      "pattern": "images/verify-runner/check.py",
+      "reason": "release-owned in-image Python capability probe invoked only by tools/release/images.py before publication; never installed or exposed as an operator CLI (#3469)"
     },
     {
       "class": "library",
@@ -140,6 +160,11 @@
       "class": "test",
       "pattern": "tools/desk/scripts/forge-ban-probe.sh",
       "reason": "positive control for forge-ban.sh; plants a probe file and asserts the counter moves"
+    },
+    {
+      "class": "test",
+      "pattern": "statusgen/domain/mutate.py",
+      "reason": "source-only offline mutation runner owned by graph-execution/28; copies declared domain sources and fixtures into disposable directories and requires bounded Go tests to fail on planted defects; never installed, packaged or released as an operator CLI"
     },
     {
       "class": "test",
@@ -325,7 +350,8 @@
       "complexity": "simple",
       "basis": "344 LOC, ~0 verbs, ~2 flags at 3ad1ad83c871",
       "owner": "desktools-v2/32",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/32): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "cellctl",
@@ -361,7 +387,8 @@
       "complexity": "simple",
       "basis": "557 LOC, ~1 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/32",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/32): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "commsgw",
@@ -412,7 +439,8 @@
       "complexity": "simple",
       "basis": "191 LOC, ~0 verbs, ~2 flags at 3ad1ad83c871",
       "owner": "desktools-v2/38",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/38): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskadvisory",
@@ -428,7 +456,8 @@
       "complexity": "simple",
       "basis": "781 LOC, ~1 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/39",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/39): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskapps",
@@ -475,7 +504,8 @@
       "complexity": "simple",
       "basis": "1608 LOC, ~0 verbs, ~7 flags at 3ad1ad83c871",
       "owner": "desktools-v2/36",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/36): merge authority becomes a role-bound effect (graph-execution/04, /25); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskavatar",
@@ -490,7 +520,8 @@
       "complexity": "simple",
       "basis": "129 LOC, ~0 verbs, ~5 flags at 3ad1ad83c871",
       "owner": "desktools-v2/39",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/39): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskboard",
@@ -530,7 +561,8 @@
       "complexity": "simple",
       "basis": "1116 LOC, ~0 verbs, ~4 flags at 3ad1ad83c871",
       "owner": "desktools-v2/33",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/33): claims move to PostgreSQL coordination (graph-execution/19, /16) and custody to role executors (forge-neutral/40); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskcalibrate",
@@ -563,7 +595,8 @@
       "complexity": "simple",
       "basis": "686 LOC, ~4 verbs, ~8 flags at 3ad1ad83c871",
       "owner": "desktools-v2/33",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/33): claims move to PostgreSQL coordination (graph-execution/19, /16) and custody to role executors (forge-neutral/40); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskclaim-ref",
@@ -583,7 +616,8 @@
       "complexity": "simple",
       "basis": "1265 LOC, ~6 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/33",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/33): claims move to PostgreSQL coordination (graph-execution/19, /16) and custody to role executors (forge-neutral/40); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskclose",
@@ -603,7 +637,8 @@
       "complexity": "complex",
       "basis": "3703 LOC, ~9 verbs, ~19 flags at 3ad1ad83c871",
       "owner": "desktools-v2/26",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/26): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskcomms",
@@ -638,7 +673,8 @@
       "complexity": "simple",
       "basis": "1753 LOC, ~0 verbs, ~8 flags at 3ad1ad83c871",
       "owner": "desktools-v2/43",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/43): loop launchers move to the one runner lifecycle (graph-execution/26); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskdisable",
@@ -669,11 +705,11 @@
         "plugins/assay/skills/pr-review-desk/SKILL.md",
         "tools/desk/internal/regression/MANIFEST.md"
       ],
-      "parser": "Go flag: FlagSet",
+      "parser": "Cobra via internal/cli; declared Viper bindings",
       "complexity": "complex",
       "basis": "4627 LOC, ~5 verbs, ~15 flags at 3ad1ad83c871",
       "owner": "desktools-v2/21",
-      "state": "pending"
+      "state": "migrated"
     },
     {
       "executable": "deskdisposition",
@@ -692,7 +728,8 @@
       "complexity": "simple",
       "basis": "652 LOC, ~3 verbs, ~13 flags at 3ad1ad83c871",
       "owner": "desktools-v2/39",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/39): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskevidence",
@@ -712,7 +749,8 @@
       "complexity": "simple",
       "basis": "3041 LOC, ~6 verbs, ~8 flags at 3ad1ad83c871",
       "owner": "desktools-v2/37",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/37): the legacy publication path retires at R8 after verifier cutover (graph-execution/25, composability/03); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskfile",
@@ -732,7 +770,8 @@
       "complexity": "simple",
       "basis": "1885 LOC, ~3 verbs, ~16 flags at 3ad1ad83c871",
       "owner": "desktools-v2/39",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/39): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskfleet",
@@ -771,7 +810,8 @@
       "complexity": "simple",
       "basis": "2412 LOC, ~0 verbs, ~4 flags at 3ad1ad83c871",
       "owner": "desktools-v2/37",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/37): the legacy publication path retires at R8 after verifier cutover (graph-execution/25, composability/03); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskgit",
@@ -789,7 +829,8 @@
       "complexity": "simple",
       "basis": "1455 LOC, ~2 verbs, ~5 flags at 3ad1ad83c871",
       "owner": "desktools-v2/34",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/34): preflight and git transport run in-process in the executors (graph-execution/22); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskgitlab",
@@ -861,7 +902,8 @@
       "complexity": "simple",
       "basis": "745 LOC, ~3 verbs, ~2 flags at 3ad1ad83c871",
       "owner": "desktools-v2/38",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/38): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskmanifest",
@@ -896,7 +938,8 @@
       "complexity": "simple",
       "basis": "2072 LOC, ~0 verbs, ~6 flags at 3ad1ad83c871",
       "owner": "desktools-v2/36",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/36): merge authority becomes a role-bound effect (graph-execution/04, /25); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskmigrate",
@@ -929,7 +972,8 @@
       "complexity": "simple",
       "basis": "1225 LOC, ~2 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/41",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/41): scan and monitor loops move to the runner contract (graph-execution/26) and the forge mirror (forge-neutral/37); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskpathguard",
@@ -946,7 +990,8 @@
       "complexity": "simple",
       "basis": "924 LOC, ~5 verbs, ~4 flags at 3ad1ad83c871",
       "owner": "desktools-v2/31",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/31): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskperf",
@@ -1003,7 +1048,8 @@
       "complexity": "complex",
       "basis": "4914 LOC, ~15 verbs, ~9 flags at 3ad1ad83c871",
       "owner": "desktools-v2/27",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/27): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskpr",
@@ -1023,7 +1069,8 @@
       "complexity": "simple",
       "basis": "2741 LOC, ~7 verbs, ~18 flags at 3ad1ad83c871",
       "owner": "desktools-v2/38",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/38): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskpreflight",
@@ -1039,7 +1086,8 @@
       "complexity": "simple",
       "basis": "746 LOC, ~0 verbs, ~2 flags at 3ad1ad83c871",
       "owner": "desktools-v2/34",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/34): preflight and git transport run in-process in the executors (graph-execution/22); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskprovenance",
@@ -1074,7 +1122,8 @@
       "complexity": "simple",
       "basis": "1784 LOC, ~0 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/31",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/31): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskread",
@@ -1164,7 +1213,8 @@
       "complexity": "simple",
       "basis": "1034 LOC, ~0 verbs, ~4 flags at 3ad1ad83c871",
       "owner": "desktools-v2/38",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/38): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskrestamp",
@@ -1179,7 +1229,8 @@
       "complexity": "simple",
       "basis": "684 LOC, ~0 verbs, ~1 flags at 3ad1ad83c871",
       "owner": "desktools-v2/39",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/39): forge writes move to the write-through forge service and role-bound executors (forge-neutral/39-41); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskroster",
@@ -1199,7 +1250,8 @@
       "complexity": "complex",
       "basis": "1725 LOC, ~11 verbs, ~28 flags at 3ad1ad83c871",
       "owner": "desktools-v2/28",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/28): duplicated configuration is retired by the target architecture; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskrun",
@@ -1216,7 +1268,8 @@
       "complexity": "simple",
       "basis": "491 LOC, ~2 verbs, ~5 flags at 3ad1ad83c871",
       "owner": "desktools-v2/34",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/34): preflight and git transport run in-process in the executors (graph-execution/22); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskscanbody",
@@ -1234,7 +1287,8 @@
       "complexity": "simple",
       "basis": "243 LOC, ~5 verbs, ~5 flags at 3ad1ad83c871",
       "owner": "desktools-v2/32",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/32): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskscanuntrusted",
@@ -1252,7 +1306,8 @@
       "complexity": "simple",
       "basis": "320 LOC, ~2 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/32",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/32): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "desksourceguard",
@@ -1271,7 +1326,8 @@
       "complexity": "simple",
       "basis": "308 LOC, ~2 verbs, ~3 flags at 3ad1ad83c871",
       "owner": "desktools-v2/31",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/31): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "desksupervise",
@@ -1291,7 +1347,8 @@
       "complexity": "complex",
       "basis": "2341 LOC, ~8 verbs, ~20 flags at 3ad1ad83c871",
       "owner": "desktools-v2/24",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/24): launch supervision moves to the one runner lifecycle (graph-execution/26); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "desktick",
@@ -1306,7 +1363,8 @@
       "complexity": "simple",
       "basis": "108 LOC, ~3 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/43",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/43): loop launchers move to the one runner lifecycle (graph-execution/26); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "desktoken",
@@ -1326,7 +1384,8 @@
       "complexity": "simple",
       "basis": "2479 LOC, ~2 verbs, ~8 flags at 3ad1ad83c871",
       "owner": "desktools-v2/33",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/33): claims move to PostgreSQL coordination (graph-execution/19, /16) and custody to role executors (forge-neutral/40); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskverdict",
@@ -1341,7 +1400,8 @@
       "complexity": "simple",
       "basis": "568 LOC, ~4 verbs, ~11 flags at 3ad1ad83c871",
       "owner": "desktools-v2/36",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/36): merge authority becomes a role-bound effect (graph-execution/04, /25); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "deskversion",
@@ -1400,7 +1460,8 @@
       "complexity": "simple",
       "basis": "2471 LOC, ~5 verbs, ~3 flags at 3ad1ad83c871",
       "owner": "desktools-v2/43",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/43): loop launchers move to the one runner lifecycle (graph-execution/26); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "issueboard",
@@ -1493,7 +1554,8 @@
       "complexity": "simple",
       "basis": "1062 LOC, ~0 verbs, ~3 flags at 3ad1ad83c871",
       "owner": "desktools-v2/32",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/32): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "reviewloop",
@@ -1513,7 +1575,8 @@
       "complexity": "simple",
       "basis": "1201 LOC, ~1 verbs, ~5 flags at 3ad1ad83c871",
       "owner": "desktools-v2/40",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/40): the verifier loop becomes the R5 verifier use case (graph-execution/21); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "scanloop",
@@ -1532,7 +1595,8 @@
       "complexity": "simple",
       "basis": "3516 LOC, ~7 verbs, ~14 flags at 3ad1ad83c871",
       "owner": "desktools-v2/41",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/41): scan and monitor loops move to the runner contract (graph-execution/26) and the forge mirror (forge-neutral/37); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "untrustcorpus",
@@ -1547,7 +1611,8 @@
       "complexity": "simple",
       "basis": "115 LOC, ~2 verbs, ~1 flags at 3ad1ad83c871",
       "owner": "desktools-v2/34",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/34): preflight and git transport run in-process in the executors (graph-execution/22); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "upgrade-assay",
@@ -1567,7 +1632,8 @@
       "complexity": "simple",
       "basis": "670 LOC, ~0 verbs, ~7 flags at 3ad1ad83c871",
       "owner": "desktools-v2/34",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/34): preflight and git transport run in-process in the executors (graph-execution/22); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "verifyloop",
@@ -1587,7 +1653,8 @@
       "complexity": "simple",
       "basis": "3455 LOC, ~6 verbs, ~11 flags at 3ad1ad83c871",
       "owner": "desktools-v2/40",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/40): the verifier loop becomes the R5 verifier use case (graph-execution/21); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "writeguard",
@@ -1607,7 +1674,8 @@
       "complexity": "simple",
       "basis": "2540 LOC, ~3 verbs, ~0 flags at 3ad1ad83c871",
       "owner": "desktools-v2/31",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/31): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "freshness",
@@ -1977,7 +2045,8 @@
       "complexity": "simple",
       "basis": "485 lines at 3ad1ad83c871",
       "owner": "desktools-v2/41",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/41): scan and monitor loops move to the runner contract (graph-execution/26) and the forge mirror (forge-neutral/37); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "pdfingest.sh",
@@ -2009,7 +2078,8 @@
       "complexity": "simple",
       "basis": "374 lines at 3ad1ad83c871",
       "owner": "desktools-v2/41",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/41): scan and monitor loops move to the runner contract (graph-execution/26) and the forge mirror (forge-neutral/37); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "stamp-plugin-version.sh",
@@ -2043,7 +2113,8 @@
       "complexity": "simple",
       "basis": "184 lines at 3ad1ad83c871",
       "owner": "desktools-v2/43",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/43): loop launchers move to the one runner lifecycle (graph-execution/26); keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "bootstrap-windows.ps1",
@@ -2213,7 +2284,8 @@
       "complexity": "simple",
       "basis": "6 lines at 3ad1ad83c871",
       "owner": "desktools-v2/31",
-      "state": "pending"
+      "state": "exempt",
+      "reason": "parser port withdrawn 2026-10-18 (desktools-v2/31): the guard controls re-home to executor-side checks (forge-neutral/40, graph-execution/04); only the parser port is withdrawn; keeps its current parser until retired, and desktools-v2/17 re-routes it to a bounded owner if its domain survives"
     },
     {
       "executable": "workpad-render",

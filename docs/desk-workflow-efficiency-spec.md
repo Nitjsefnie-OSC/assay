@@ -188,7 +188,9 @@ do not claim a fleet quota guarantee or build another coordinator for this optim
 
 First correct the fixed command/kit vocabulary and missing instrumentation paths in the
 existing local measurement owner. Keep `perf-v1` and its opt-in/field promises compatible.
-Richer records extend the versioned performance-collection contract; do not silently append
+The [perf-v3 contract](performance-attribution-spec.md) now owns the requested local
+attribution/request-cost extension through perfrec and desktools-v2/63–65. Richer collection
+still extends performance-collection's existing aliased event contract; do not silently append
 workflow identifiers to legacy records or treat an existing tool opt-in as workflow consent.
 The [collection design](streams/performance-collection/README.md) owns local retention,
 bounded loss, profiles, optional ingestion and upload. Database/API deployment is not a
@@ -310,3 +312,12 @@ performance-collection and forge-neutral owners. The authoring PR proposes these
 its merge completes routing, not implementation. Preserve completed briefs and Evidence.
 The active CLI ports and pending supervision/improvement proposals have explicit pickup
 checkpoints. No implementation is declared complete by these amendments.
+
+## Proposed verification extension — 20 October 2026
+
+[Verification planning performance and diagnostics](verifyloop-performance-spec.md) proposes
+applying this observation/evaluation and matched-cost method to verification. It reuses the
+existing recorder/provider adapters and separates local read reuse from R5/R6 service work.
+It is a draft extension, not an enlargement of this document's revision-bound approval or
+an amendment to the review-only briefs. The accompanying verifyloop diagnostic integration
+is explicitly requested; behavioral optimizations retain their own approval and qualification.

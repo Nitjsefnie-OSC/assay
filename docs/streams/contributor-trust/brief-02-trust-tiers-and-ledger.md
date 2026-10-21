@@ -57,16 +57,11 @@ version: 1
 ## Context
 
 files:
-- `tools/desk/internal/deskkit/trusttier.go` (new) — the tier type, the ledger reader, and
-  `ResolveTier(repo, login string, id int64) (Tier, Provenance)`; pure over an injected
-  loader so it tests offline.
+- `tools/desk/internal/deskkit/trusttier.go` (new) — the tier type, the ledger reader, and `ResolveTier(repo, login string, id int64) (Tier, Provenance)`; pure over an injected loader so it tests offline.
 - `tools/desk/internal/deskkit/trusttier_test.go` (new).
-- `tools/desk/internal/deskkit/rosterconfig.go` — one new roster key naming the ledger's path;
-  read exactly like every other roster key (environment over roster file, per class).
-- `statusgen/rosterconfig.go` — the documented-duplicate twin gains the same key, and the
-  existing cross-tree coupling test is extended to cover it.
-- `docs/contributor-trust.md` (planned) (new) — the published tier model: the four names, what each
-  unlocks, how an identity moves, and the explicit statement that the rows are not published.
+- `tools/desk/internal/deskkit/rosterconfig.go` — one new roster key naming the ledger's path; read exactly like every other roster key (environment over roster file, per class).
+- `statusgen/rosterconfig.go` — the documented-duplicate twin gains the same key, and the existing cross-tree coupling test is extended to cover it.
+- `docs/contributor-trust.md` (planned) (new) — the published tier model: the four names, what each unlocks, how an identity moves, and the explicit statement that the rows are not published.
 - `changelog/contributor-trust-tiers.md` (new).
 
 single-point-of-failure: the ledger read. Behind it, two independent layers — the resolver's
@@ -176,7 +171,7 @@ Default if no answer: none — blocks until answered. Everything downstream keys
 | 8 | `git -C . grep -n -E 'unknown.*blessed-once.*contributor.*maintainer' -- docs/contributor-trust.md` | exit 0; at least one matching line (the four tiers are named in order in the published model) | check |
 | 9 | `cd tools/desk && GOWORK=off go build ./... && GOWORK=off go vet ./internal/deskkit/` | exit 0 | check:ci |
 | 10 | `cd tools/desk && GOWORK=off go test ./internal/deskkit/ -run 'TrustTierPublishedModelMatchesTable' -count=1 -v` | exit 0; output contains `PASS` (the test parses the tier and capability names out of `docs/contributor-trust.md` (planned) and compares them to the capability table in code, so a published model that claims a capability the code does not grant fails) | check +dereference |
-| 11 | `o=$(statusgen --root . --consumers --brief contributor-trust/02 --delivery 849f93e5f50687aab773330669abaad8f9566bcc --base 0ac980f40ae84ff548da68cf8d492b4b896f0827); s=$?; printf '%s\n' "$o"; test "$s" -eq 0 && case "$o" in *'summary: 5 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing'*) ;; *) exit 1;; esac` | exit 0; exact `summary: 5 corroborated, 0 disproved, 1 unchecked, 0 brief(s) claiming nothing`. Claims are read from the immutable delivered snapshot and compared only with its first-parent diff. The 1 UNCHECKED entries remain individual review obligations; this row does not discharge their truth. | check |
+| 11 | `statusgen --root . --consumers --brief assay:assay:contributor-trust:02` | exit 0; output does not contain `DISPROVED`; output does not contain `COULD-NOT-CHECK`; output contains `corroborated` (the fully-qualified key is required — the short `<stream>/<NN>` form answers `no brief-v1 file` and exits 2, so it can never corroborate anything) | check |
 
 Pre-mortem to detection map. "The ledger is absent on a fresh machine and every external
 identity silently becomes a contributor" is caught by row 2. "A corrupt or half-written ledger

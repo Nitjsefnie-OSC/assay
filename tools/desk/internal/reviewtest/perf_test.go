@@ -280,7 +280,7 @@ func TestPerfCommandKit(t *testing.T) {
 		})
 	}
 	t.Run("mutation_actual_kit_assignment", func(t *testing.T) {
-		mutated := mutationBinary(t, "deskdispatch", "cmd/deskdispatch/dispatch.go", `deskkit.PerfCommand(perfVerbs, perfKitVerb("dispatch", *kit))`, "")
+		mutated := mutationBinary(t, "deskdispatch", "cmd/deskdispatch/cli.go", `deskkit.PerfCommand(perfVerbs, perfKitVerb("dispatch", v.String("kit")))`, "")
 		rec, _, _, _ := perfEntry(t, mutated, "deskdispatch", t.TempDir(), "1", []string{"bad-item", "--kit=review"})
 		if rec.Verb == "dispatch:review" {
 			t.Fatal("oracle accepted removed production kit attribution")
@@ -319,7 +319,7 @@ func TestPerfCoverageFlow(t *testing.T) {
 		})
 	}
 	t.Run("mutation_skips_ordinary_work", func(t *testing.T) {
-		mutated := mutationBinary(t, "issueboard", "internal/deskkit/perf.go", "code := run(args)", "code := 0")
+		mutated := mutationBinary(t, "issueboard", "internal/deskkit/perf.go", "code, ctx := run(args, sess)", "code, ctx := 0, perfrec.ResolveContext(perfrec.ContextInput{})")
 		if err := preservationCase(t, mutated, "issueboard"); err == nil || !strings.Contains(err.Error(), "ordinary intake work missing") {
 			t.Fatalf("skipped production work accepted: %v", err)
 		}
