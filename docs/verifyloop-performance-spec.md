@@ -105,10 +105,15 @@ source-query owner's later work. Build a brief-to-pending-change index once from
 cached file lists, carrying unknown-file-list uncertainty conservatively. Preserve final
 PR-head/state reconciliation and the existing rule that untrusted changes cannot hold work.
 
-Do not batch provider requests until their individual duplication and coverage are known.
-A later typed batch read may replace several reads only with per-target completeness,
-author/stamp/history parity, bounded pagination and actual point-cost comparison on both
-supported forges. A larger GraphQL operation is not automatically cheaper.
+The pending-Evidence profile now identifies four requests per distinct attestation after
+per-pass receipt reuse. The bounded GitHub implementation is described in
+[attestation batching](verifyloop-attestation-batching.md): four ordered bulk observation
+stages, evaluated by the existing validator, with per-target uncertainty, complete native
+pagination fallbacks and measured request/point costs. GitLab and unsupported decorators
+retain their existing per-target reader; a GitLab batch capability remains separate work
+and must demonstrate equivalent native provenance and measured complexity before adoption.
+A larger GraphQL operation is not automatically cheaper. Served observations and
+cross-process caches remain future dependencies, not requirements of this change.
 
 ### Association scan: pass-scoped local observations
 

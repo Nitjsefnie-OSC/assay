@@ -25,10 +25,11 @@ type pendingEvidenceSource interface {
 	PendingEvidence(root, repo string, it loopengine.Item, now time.Time, inputs deskkit.WakeInputs) (string, error)
 }
 type pendingChanges struct {
-	list  *deskkit.ChangeList
-	err   error
-	base  string
-	reads map[int]*pendingRead
+	prepared bool
+	list     *deskkit.ChangeList
+	err      error
+	base     string
+	reads    map[int]*pendingRead
 	// These observations belong to this repository's admitted forge and this
 	// selection only. A new selection drops the whole pendingChanges value.
 	files      map[pendingFileKey]pendingFileRead
@@ -168,23 +169,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 	if err != nil {
 		return "", err
 	}
-	if s.pending == nil {
-		s.pending = map[string]*pendingChanges{}
-	}
-	cache := s.pending[slug]
-	if cache == nil {
-		stop := s.performance.phase("pending-discovery")
-		cache = &pendingChanges{reads: map[int]*pendingRead{}}
-		cache.base, cache.err = f.RepoDefaultBranch(repo)
-		if cache.err == nil && cache.base == "" {
-			cache.err = fmt.Errorf("default branch is unreadable")
-		}
-		if cache.err == nil {
-			cache.list, cache.err = f.ListChanges(repo, deskkit.ChangeStates{Open: true})
-		}
-		s.pending[slug] = cache
-		stop()
-	}
+	cache := s.pendingChanges(f, repo)
 	if cache.err != nil {
 		return "", cache.err
 	}
@@ -194,6 +179,12 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 	verifier, bound := deskkit.RoleAppLogin("verifier")
 	if !bound {
 		return "", fmt.Errorf("verifier role login is unbound; pending Evidence authorship is unknown")
+	}
+	if !cache.prepared {
+		cache.prepared = true
+		if batch := deskkit.VerifierAttestationBatchReader(f); batch != nil && len(s.pendingTargets[slug]) > 0 {
+			s.preparePendingRepository(f, repo, verifier, s.pendingTargets[slug], batch)
+		}
 	}
 	var uncertain error
 	for _, change := range cache.changesFor(it.BriefPath) {
@@ -206,12 +197,7 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 			continue
 		}
 		ref := fmt.Sprintf("#%d", change.Number)
-		read := cache.reads[change.Number]
-		if read == nil {
-			read = &pendingRead{}
-			read.pr, read.files, read.err = deskkit.CompleteChangedFilesOf(f, repo, change.Number)
-			cache.reads[change.Number] = read
-		}
+		read := cache.change(f, repo, change.Number)
 		if read.err != nil {
 			// A verifier-authored change whose files cannot be listed may touch any brief.
 			uncertain = fmt.Errorf("%s changed-file read: %w", ref, read.err)
@@ -229,12 +215,8 @@ func (s *forgeIssueSource) PendingEvidence(root, slug string, it loopengine.Item
 		}
 		// The list read named the verifier; the change read must confirm that identity by
 		// login AND roster-pinned id, and the author must be independent of the implementer.
-		if pr.Author.ID == 0 || !deskkit.SameActor(pr.Author.Login, verifier) || !deskkit.TrustedAuthorID(pr.Author.Login, pr.Author.ID) || (it.Implementer != "" && deskkit.SameActor(it.Implementer, pr.Author.Login)) {
-			uncertain = fmt.Errorf("%s has no independent trusted verifier author", ref)
-			continue
-		}
-		if pr.Number != change.Number || pr.State != "open" || pr.Merged || pr.BaseRef != cache.base || pr.CrossRepo != deskkit.CrossRepoSame || change.CrossRepo != deskkit.CrossRepoSame || change.HeadRepo != slug || change.HeadSHA != pr.HeadSHA || !pendingSHA(pr.HeadSHA) {
-			uncertain = fmt.Errorf("%s has incomplete open-change/source provenance", ref)
+		if err := pendingChangeProvenance(pr, change, cache.base, slug, verifier, it.Implementer); err != nil {
+			uncertain = fmt.Errorf("%s %w", ref, err)
 			continue
 		}
 		file, e := cache.file(f, repo, it.BriefPath, pr.HeadSHA)
@@ -574,4 +556,132 @@ func (offlineScheduling) IssueState(deskkit.BlockerRef) (deskkit.BlockerState, s
 }
 func (offlineScheduling) PendingEvidence(root, repo string, it loopengine.Item, now time.Time, inputs deskkit.WakeInputs) (string, error) {
 	return "", fmt.Errorf("forge reads disabled; pending Evidence could not be checked")
+}
+
+// pendingChanges and change are shared by preparation and lazy evaluation. Neither
+// path treats failed discovery or an incomplete file list as absence.
+func (s *forgeIssueSource) pendingChanges(f deskkit.Forge, repo deskkit.ForgeRepo) *pendingChanges {
+	if s.pending == nil {
+		s.pending = map[string]*pendingChanges{}
+	}
+	cache := s.pending[repo.Slug()]
+	if cache == nil {
+		stop := s.performance.phase("pending-discovery")
+		cache = &pendingChanges{reads: map[int]*pendingRead{}}
+		cache.base, cache.err = f.RepoDefaultBranch(repo)
+		if cache.err == nil && cache.base == "" {
+			cache.err = fmt.Errorf("default branch is unreadable")
+		}
+		if cache.err == nil {
+			cache.list, cache.err = f.ListChanges(repo, deskkit.ChangeStates{Open: true})
+		}
+		s.pending[repo.Slug()] = cache
+		stop()
+	}
+	return cache
+}
+func (c *pendingChanges) change(f deskkit.Forge, repo deskkit.ForgeRepo, number int) *pendingRead {
+	read := c.reads[number]
+	if read == nil {
+		read = &pendingRead{}
+		read.pr, read.files, read.err = deskkit.CompleteChangedFilesOf(f, repo, number)
+		c.reads[number] = read
+	}
+	return read
+}
+func pendingChangeProvenance(pr *deskkit.PullRequest, change deskkit.ChangeRef, base, slug, verifier, implementer string) error {
+	if pr == nil || pr.Author.ID == 0 || !deskkit.SameActor(pr.Author.Login, verifier) || !deskkit.TrustedAuthorID(pr.Author.Login, pr.Author.ID) || (implementer != "" && deskkit.SameActor(implementer, pr.Author.Login)) {
+		return fmt.Errorf("has no independent trusted verifier author")
+	}
+	if pr.Number != change.Number || pr.State != "open" || pr.Merged || pr.BaseRef != base || pr.CrossRepo != deskkit.CrossRepoSame || change.CrossRepo != deskkit.CrossRepoSame || change.HeadRepo != slug || change.HeadSHA != pr.HeadSHA || !pendingSHA(pr.HeadSHA) {
+		return fmt.Errorf("has incomplete open-change/source provenance")
+	}
+	return nil
+}
+
+// preparePendingEvidence changes the join order, not admission. Discover the
+// distinct references in completely listed, relevant verifier PR files once,
+// then bulk-read their observations. Evaluation below still checks each exact
+// binding, outcome, wake inputs and current PR head/state in its original order.
+// Other backends/decorators retain their existing lazy per-target path.
+func (s *forgeIssueSource) preparePendingEvidence(items []loopengine.Item, fallbackRepo string) {
+	byRepo := map[string]map[string][]loopengine.Item{}
+	for _, it := range items {
+		if payloadValue(it, "could_not_check") != "" {
+			continue
+		}
+		slug := payloadValue(it, "repo")
+		if slug == "" {
+			slug = fallbackRepo
+		}
+		if byRepo[slug] == nil {
+			byRepo[slug] = map[string][]loopengine.Item{}
+		}
+		byRepo[slug][it.BriefPath] = append(byRepo[slug][it.BriefPath], it)
+	}
+	s.pendingTargets = byRepo
+}
+func (s *forgeIssueSource) preparePendingRepository(f deskkit.Forge, repo deskkit.ForgeRepo, verifier string, briefs map[string][]loopengine.Item, batch func(deskkit.ForgeRepo, []int) map[int]deskkit.VerifierAttestationResult) {
+	cache := s.pendingChanges(f, repo)
+	if cache.err != nil || cache.list == nil {
+		return
+	}
+	seen := map[int]bool{}
+	var numbers []int
+	for _, change := range cache.list.Changes {
+		if !deskkit.SameActor(change.Author.Login, verifier) {
+			continue
+		}
+		read := cache.change(f, repo, change.Number)
+		if read.err != nil {
+			continue
+		}
+		for _, file := range read.files {
+			if file.Status == "removed" {
+				continue
+			}
+			relevant := false
+			for _, it := range briefs[file.Filename] {
+				if pendingChangeProvenance(read.pr, change, cache.base, repo.Slug(), verifier, it.Implementer) == nil {
+					relevant = true
+					break
+				}
+			}
+			if !relevant {
+				continue
+			}
+			observed, err := cache.file(f, repo, file.Filename, read.pr.HeadSHA)
+			if err != nil {
+				continue
+			}
+			for _, line := range observed.bindings {
+				fields := strings.Fields(line)
+				if len(fields) < 2 {
+					continue
+				}
+				ref, err := deskkit.ParseBlockerRef(fields[1], "", "")
+				if err != nil || ref.Repo() != repo || ref.Kind == "change" || seen[ref.Number] {
+					continue
+				}
+				seen[ref.Number] = true
+				numbers = append(numbers, ref.Number)
+			}
+		}
+	}
+	if len(numbers) == 0 {
+		return
+	}
+	stop := s.performance.phase("attestation")
+	results := batch(repo, numbers)
+	stop()
+	if cache.receipts == nil {
+		cache.receipts = map[pendingAttestationKey]pendingAttestation{}
+	}
+	for _, number := range numbers {
+		result, ok := results[number]
+		if !ok {
+			result.Err = fmt.Errorf("attestation batch returned no observation for target")
+		}
+		cache.receipts[pendingAttestationKey{repo.Slug(), number}] = pendingAttestation{receipt: result.Receipt, err: result.Err}
+	}
 }
