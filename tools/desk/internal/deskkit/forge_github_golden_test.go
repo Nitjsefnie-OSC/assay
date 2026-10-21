@@ -76,6 +76,10 @@ type goldenServer struct {
 	contentsGetStatus int
 	// contentsPut is the Contents-API write response (WriteFile). Served with 201.
 	contentsPut map[string]any
+	// fileEntry is the GraphQL answer to ReadFile's tree-entry lookup (the FileEntryMode
+	// query). When nil, the entry served is a regular file (mode 100644) holding the blob
+	// contentsGet names, so a case that serves a plain file needs no second fixture.
+	fileEntry map[string]any
 	// pullsList is the GET /pulls list response (OpenChangeForBranch's head-filtered read).
 	pullsList []map[string]any
 	// searchIssues is the GET /search/issues response (SearchIssues).
@@ -188,6 +192,14 @@ func (s *goldenServer) handler(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPut && gContents.MatchString(path):
 		w.WriteHeader(http.StatusCreated)
 		enc(s.contentsPut)
+	case r.Method == http.MethodPost && path == "/graphql" && bytes.Contains(body, []byte("query FileEntryMode(")):
+		if s.fileEntry != nil {
+			enc(s.fileEntry)
+			return
+		}
+		sha, _ := s.contentsGet["sha"].(string)
+		enc(map[string]any{"data": map[string]any{"repository": map[string]any{"object": map[string]any{
+			"__typename": "Commit", "file": map[string]any{"mode": 0o100644, "oid": sha}}}}})
 	case r.Method == http.MethodPost && path == "/graphql":
 		enc(s.graphql)
 	case r.Method == http.MethodGet && gTimeline.MatchString(path):

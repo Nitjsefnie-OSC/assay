@@ -627,6 +627,60 @@ Tally: 14 of 16 rows pass (1-10, 13-16). Row 11 exits 0 without running a test. 
 
 Verification-Attestation: medici-finance/assay#3011 run=8bfbf62f9d7f0234acb60382953ea36f8badff1ee55da2bc89f1530010f37c25 source=8efe5579d9253813835db650d45180eea76cf33e brief=docs/streams/desk-tools/brief-21-desk-trace-and-cause-carrying-errors.md model=claude-opus-5-5 tier=any
 
+### Non-implementer verifier re-run: 2026-10-21, assay-verifier-app[bot] (claude-opus-5-5 verifier), merged main 65a6418cd90c921153db509370212b1cdcd4f5e1
+
+Run window: 2026-10-21T17:40Z (admission) to 2026-10-21T18:06Z (last diagnostic finished), UTC.
+Delivering change: PR #729 (squash 1003557e1). Changes since the 2026-10-15 run that touch this
+brief's surface include #3572 (ghu_ and ghr_ added to the GitHub-token pattern).
+
+Admission: `deskdispatch --check-verifier` exit 0 for this detached home at the source above, before
+any row ran. Every row ran by hand, exactly as authored, on darwin/arm64, go1.27.2, git 2.56.0,
+KUBECONFIG=/dev/null, no forge credential in any row's environment. Host load average 22-46 on 16
+cores throughout. The home was clean (git status empty) after every row, including row 16.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0 | exit 0, both silent | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage$' -count=1 && go test ./internal/deskkit/ -run '^TestToolRunFailShapeAndCarriedDetail$' -count=1` | exit 0 | exit 0; `ok .../internal/deskkit 0.457s` and `ok ... 0.468s`, both matched a test | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestReportErrorOffIsByteIdentical$' -count=1 && go test ./internal/deskkit/ -run '^TestReportErrorOnPrintsChainCommandsAndTimings$' -count=1` | exit 0 | exit 0; `ok ... 0.405s` and `ok ... 0.544s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestScrubRedactsEveryTransportShape$' -count=1` | exit 0 | exit 0; `ok ... 0.409s`, matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | exit 0 | exit 0; `ok ... 0.471s`, matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestRefusedWithCauseStaysARefusal$' -count=1 && go test ./internal/deskkit/ -run '^TestTraceEnabledReadsTheEnvSpellings$' -count=1` | exit 0 | exit 0; `ok ... 0.425s` and `ok ... 0.463s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 7 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestClaimAcquireFailureNamesTheClaimToolsOwnMessage$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestGitOutFailureCarriesGitStderr$' -count=1` | exit 0 | exit 0; `ok .../cmd/deskdispatch 0.486s` and `ok ... 0.381s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 8 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestTraceIsOffByDefaultAndOutputIsUnchanged$' -count=1` | exit 0 | exit 0; `ok ... 0.466s` and `ok ... 0.463s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 9 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestRunGitFailureCarriesStderrCommandAndExitStatus$' -count=1 && go test ./cmd/deskwt/ -run '^TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand$' -count=1` | exit 0 | exit 0; `ok .../cmd/deskwt 0.631s` and `ok ... 0.600s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 10 | `cd tools/desk && go test ./cmd/desktoken/ -run '^TestTokenPathNoticeIsPrintedOnStderrNotStdout$' -count=1` | exit 0 | exit 0; `ok .../cmd/desktoken 0.339s`, matched | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 11 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestDedupeSearchOutageNamesTheAPIStatus$' -count=1 && go test ./cmd/deskfile/ -run '^TestGhStderrStripsControlBytes$' -count=1` | exit 0, 401/403/429 tell apart, exit 6 unchanged, strip survived | could-not-check: exit 0 but vacuous, counted as a non-pass. Both runs print `ok .../cmd/deskfile [no tests to run]`; neither named test is declared anywhere in the tree (renamed in #783; check-definition repair open as #1306). Supplemental probe, discharging no row: the two successors in deskfile's trace test file (TestDedupeSearchPropagatesTheForgeDiagnosis with subtests forbidden, rate_limited, bad_credentials; TestDedupeSearchControlBytesStrippedByBackend) exit 0 with `--- PASS` | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 12 | `cd tools/desk && go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | exit 0 | could-not-check: exit 1 from the fixed 300s package budget only, zero `--- FAIL` lines. deskkit and deskwt hit `panic: test timed out after 5m0s`; untrustcorpus ok, deskdispatch ok 157.4s, desktoken ok 25.6s, deskfile ok 8.4s. Supplemental diagnostic, discharging no row: the same two timed-out packages with `-timeout 1200s` exit 0, `ok .../internal/deskkit 654.042s` and `ok .../cmd/deskwt 523.198s`, zero `--- FAIL` | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 13 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | exit 0 | exit 0; `ok ... 34.275s` and `ok ... 4.765s` | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 14 | `cd tools/desk && gofmt -l internal/deskkit/trace.go internal/deskkit/runtool.go internal/deskkit/scrub.go internal/deskkit/exitcodes.go cmd/deskdispatch cmd/deskwt cmd/desktoken cmd/deskfile > /tmp/dt21-fmt.out; test ! -s /tmp/dt21-fmt.out` | exit 0 | exit 0; the listing file is empty | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | 0 | `LINT: PASS` then `0`, NOTICE lines only | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0, every mutation CAUGHT | exit 0; `Harness healthy: baseline GREEN, positive control CAUGHT.` and `Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate.` | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Tally: 14 of 16 rows pass (1-10, 13-16), 0 fail, 2 could-not-check (11, 12).
+
+**Findings**
+
+1. Check-definition, row 11: unchanged since the last run; the named tests do not exist. Repair is
+   tracked on #1306 (open). Successors pass as a supplemental probe only.
+2. Environment, row 12: the fixed `-timeout 300s` budget has no headroom on a loaded shared host.
+   deskkit alone needed 654s and deskwt 523s at load 22-46, with zero assertion failures. This is
+   the second run in a row blocked this way; it needs either an idle host or CI runner, or a
+   reviewed budget repair to the row.
+3. Prior finding resolved: the 2026-10-15 Finding 3 (ghu_ and ghr_ not redacted) is closed by #3572.
+   A supplemental probe on a scratch copy of this commit, outside the home, planted each of ghp_,
+   gho_, ghs_, ghu_, ghr_ and github_pat_ bare in a stderr-shaped line; Scrub replaced every one
+   with the redaction marker.
+
+**VERIFY: BLOCKED** — 14/16 rows pass, 0 fail. Row 11 is a check-definition defect (#1306). Row 12 is environment-blocked (300s budget under host load, zero assertion failures). Status stays implemented.
+
+- RISK-VALUE: DERIVED — RefusedWithCause Code = ExitRefused @ tools/desk/internal/deskkit/exitcodes.go:186, with ExitRefused = 5 @ exitcodes.go:51 — a refusal that gains a cause must keep the code of Refused (exitcodes.go:172) under the brief's ground rule that no exit code changes; 6 would read a fail-closed refusal as retryable. Pinned by row 6 and row 16's soften-to-6 mutation (CAUGHT).
+- RISK-VALUE: DERIVED — reGitHubToken = `(ghp_|github_pat_|ghs_|gho_|ghu_|ghr_)[A-Za-z0-9_]+` @ tools/desk/internal/deskkit/bodycheck.go:16, used by Scrub at scrub.go:75 — the prefix set now matches GitHub's documented token prefixes (personal, OAuth, user-to-server, server-to-server, refresh, fine-grained PAT); the supplemental probe shows each one redacted.
+- RISK-VALUE: NAMED, NOT DERIVED — reURLUserinfo = `://([^:/@\s]+):([^@\s]+)@` @ tools/desk/internal/deskkit/scrub.go:31, with reAuthHeader @ line 36 and reSecretEnvAssign @ lines 42-43 — row 16 shows each shape redacts and that removing one is caught; sufficiency of the three-shape set for every transport form a child can print is not derived (open on #1616).
+- Reversible knobs, ranked last, no derivation owed: traceStepCap = 200 @ trace.go:54; redactedMarker = `<redacted>` @ scrub.go:49; DESK_TRACE truthy spellings `1`/`true`/`yes`/`on` @ trace.go:98, empty and `0` off.
+
+Verification-Attestation: medici-finance/assay#3884 run=2737f291644299251f9038d3088ddbebaf78b7b93f1f0bea93a8f7481cadd5d3 source=65a6418cd90c921153db509370212b1cdcd4f5e1 brief=docs/streams/desk-tools/brief-21-desk-trace-and-cause-carrying-errors.md model=claude-opus-5-5 tier=strong
+
 ## Review
 
 Gate: model (all four risk answers no). Model-gated because the two hazards this change

@@ -4,7 +4,7 @@ title: "Define perf-v3 attribution, profiles and compatible local readers"
 why: "Operators cannot associate current local measurements with a brief, issue or agent. One versioned local contract must add that attribution and forge-cost vocabulary without widening the old records or silently collecting identifiable workflow data."
 wave: 2
 depends: ["desktools-v2/61"]
-unblocks: ["desktools-v2/64", "desktools-v2/65", "desktools-v2/62", "statusgen/26", "performance-collection/02"]
+unblocks: ["desktools-v2/64", "desktools-v2/65", "desktools-v2/62", "statusgen/26", "performance-collection/02", "desktools-v2/67"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}

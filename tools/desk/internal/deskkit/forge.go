@@ -648,7 +648,8 @@ type FileContent struct {
 	// reads Exists, never len(Content).
 	Exists bool
 	// Kind is what the forge says the path holds at the ref: FileKindRegular for an ordinary
-	// file served with its own bytes, FileKindSymlink for a symbolic link (served as its
+	// file served with its own bytes, whose tree entry has a regular-file mode (100644 or
+	// 100755) where the forge exposes one (#3149), FileKindSymlink for a symbolic link (served as its
 	// target's bytes or as nothing), FileKindSubmodule for a submodule, FileKindUnproven when the
 	// bytes served cannot be shown to be the entry's own, or "" when the forge does not say.
 	// A caller that must read a file as a plain record (the decision-gate hold's branch
