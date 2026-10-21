@@ -68,6 +68,30 @@ Author checks on 2026-09-26 (not independent verification):
 
 No verified/done claim. Proposed implementation tests are unrun because their deliverables do not exist yet.
 
+### Independent post-merge verification (2026-10-21)
+
+Verification-Attestation: medici-finance/assay#3870 run=4d459140179f6751fd197938bfa47420d7caab7a31f7728171e74569da1ecdd6 source=d6d2d4b94a613077583aaa051ff7bcaa2908ba7f brief=docs/streams/brief-quality/brief-01-design-contract.md model=claude-opus-5-5 tier=strong
+
+Non-implementer verifier, merged main at the source commit above, run from the repository root.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---|---|---|---|---|
+| 1 | `python3 -c "from pathlib import Path; s=Path('docs/streams/brief-quality/spec.md').read_text(); assert all(x in s for x in ['Work size','Specification completeness','Reasoning difficulty','Coupling','Verification strength','Failure consequence'])"` | exit 0; six named dimensions present; adequacy remains review-only | exit 0; no assertion error; each of the six dimension names found in the spec (Work size twice, the other five once each) | 2026-10-21 | assay-verifier-app[bot] @ d6d2d4b94a613077583aaa051ff7bcaa2908ba7f (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 91 | `python3 -c "from pathlib import Path; assert Path('statusgen/briefv2.go').is_file(); assert 'parseBriefV2Keys' in Path('statusgen/briefv2.go').read_text(); assert Path('qualgen/telemetry/source.go').is_file()"` | exit 0; cited parser and telemetry seams resolve in this checkout; this does not prove document adequacy | exit 0; no assertion error; parseBriefV2Keys is defined at statusgen/briefv2.go line 203; the telemetry source file exists | 2026-10-21 | assay-verifier-app[bot] @ d6d2d4b94a613077583aaa051ff7bcaa2908ba7f (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Rows: 2 of 2 required rows passed; 0 could-not-check.
+
+Supplemental probe (no acceptance credit): parsed the frontmatter of all nine stream briefs; 10 depends edges, every dependency sits in a strictly earlier wave, so the dependency graph is acyclic.
+
+Risk-bearing value. Enumeration covered the delivering change (twelve Markdown files, no code, config or data files) plus this brief's Deliverables. The spec introduces no numeric constant, bound, threshold or timeout; it says outright that no minimum sample size or improvement threshold is set here (spec line 118). The only literals are this brief's own authority bindings: gate = "model" (brief line 9) and exec-tier = "strong" (brief line 17), with wave = 0 (brief line 5) ranked last as an ordering knob. All are reversible by an edit, because the change is document-only and the spec states that nothing in fleet routing or review changes when it merges.
+
+- RISK-VALUE: DERIVED — gate = "model" @ docs/streams/brief-quality/brief-01-design-contract.md:9 — the four risk answers (brief line 10) are all "no", and spec line 44 makes those answers the authority inputs for gate. A proposed, non-enacted design document with no irreversible act therefore does not require the human gate.
+- RISK-VALUE: DERIVED — exec-tier = "strong" @ docs/streams/brief-quality/brief-01-design-contract.md:17 — this is a cross-contract design whose attribution errors survive happy-path tests (exec-tier-why), and spec line 44 keeps strong as a hard lower bound. Strong is the conservative floor, never a relaxation.
+
+Scope note: rows 1 and 91 establish presence only. Semantic adequacy of the contract remains with review, as the Verify preamble states.
+
+**VERIFY: PASS** — 2/2 rows; attested source d6d2d4b94a613077583aaa051ff7bcaa2908ba7f.
+
 ## Review
 
 Gate: model. Reviewer confirms the spec contract and the declared limitations. No hand-authored verified/done claim.
