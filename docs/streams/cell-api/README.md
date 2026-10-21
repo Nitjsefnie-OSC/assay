@@ -42,11 +42,14 @@ here. It does not ratify every mechanism in later draft amendments. The file/pac
 mapping below is the bounded implementation proposal for review; no new custody profile
 or authentication mechanism is selected by authoring it.
 
-The maintainer requested unparking on 20 October 2026. This change makes the existing
-seven-brief stream active under the contract ratified by the merge of
-medici-finance/assay#2890. The controlling amendment now records its approved status.
-Pure interface/fixture work can precede R5/R6 runtime qualification through ordinary
-brief admission; each brief retains its declared dependencies and human gates.
+Unparking requires the existing admission process to record the applicable controlling
+contract and decision provenance. Both are recorded here. Decision provenance:
+the maintainer's own unpark request (20 October 2026): https://github.com/medici-finance/assay/issues/3669#issuecomment-6302690781
+Controlling contract: amendment 21 as ratified by the merge of medici-finance/assay#2890;
+its header now records that approved status. The merge of the change that flipped this
+README to `active` is the scheduling record. Pure interface/fixture work can precede
+R5/R6 runtime qualification only through that process: ordinary brief admission, under
+which each brief retains its declared dependencies and human gates.
 Service activation still requires R5/R6,
 R3/R4 authority and the consuming profile's human acceptance. Agent-execution stays
 parked on its own terms. A recorded dependency or passed unit test cannot lift those gates.
