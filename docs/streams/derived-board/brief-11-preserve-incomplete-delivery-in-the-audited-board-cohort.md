@@ -148,7 +148,7 @@ Run from the repository root. Named tests use hermetic fixtures. Worker receipts
 | 5 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFull$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFull' "$o")` | exit 0; actual evidenced #1196 full remains implemented despite later partial and VERIFY FAIL; Evidence-only #2295 cannot replace it; all nine bounded full dispositions retain their reviewed meaning and cache behavior | check:ci +neighbour |
 | 6 | `(cd statusgen && for t in TestRolloutSourceAdmission TestCISliceSourceAdmission TestOwedTaskSourceAdmission TestEvidenceAdmission TestAdmissionCacheAndDelivery TestPartialBackfillSkips TestPartialRegenDriftAgrees TestApplyReconcileWrites; do o=$(mktemp); go test . -run "^$t" -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- "--- PASS: $t" "$o"; r=$?; if test "$r" -ne 0; then exit "$r"; fi; done)` | exit 0; existing neighbors pass, including all five apply-prefix tests; no existing partial declaration or protected-cell floor weakened | check:ci +neighbour |
 | 7 | `o=$(mktemp); git diff --name-only 44829891e8f74b1520b64f4180910d96e17be96a^1 44829891e8f74b1520b64f4180910d96e17be96a > "$o" && python3 -c 'import pathlib,sys; actual=set(pathlib.Path(sys.argv[1]).read_text().splitlines()); expected={"changelog/statusgen-26-v3.md","docs/streams/statusgen/README.md","docs/telemetry.md","statusgen/brieffile.go","statusgen/dispatchqueue.go","statusgen/forgeread.go","statusgen/load.go","statusgen/main.go","statusgen/parse.go","statusgen/perfrecord.go","statusgen/perfrecord_test.go"}; assert actual==expected, actual; print("PR 3759: exact eleven delivery paths confirmed")' "$o"` | exit 0; exact confirmation; real Git merge independently corroborates the fixture's delivery paths; semantic completeness still reviewed against the actual brief | check +dereference |
-| 8 | `statusgen --root . --consumers --brief derived-board/11 --delivery "$DELIVERY" --base 5dcdff9fb1ec67c0bf80aa60f778da5aef4687b7` | Set DELIVERY to the immutable implementation delivery commit recorded below; exit 0; 4 corroborated, 0 disproved, 13 unchecked. Unchecked scope remains review. For the pre-merge authoring check omit --delivery and compare the working branch against the same base. | check |
+| 8 | `statusgen --root . --consumers --brief derived-board/11 --delivery "$DELIVERY" --base 5dcdff9fb1ec67c0bf80aa60f778da5aef4687b7` | Set DELIVERY to the immutable implementation delivery commit recorded below; exit 0; 4 corroborated, 0 disproved, 13 unchecked. Unchecked scope remains review. For the pre-merge authoring check omit --delivery and compare the complete working branch against refreshed main cfe5c927ec7049728f4b97306beaedf43a444b9f. | check |
 | 9 | `statusgen --root . --lint` | exit 0; LINT PASS; no new PROBLEM or generated-cell write | check |
 
 ## Pre-mortem
@@ -170,22 +170,35 @@ Run from the repository root. Named tests use hermetic fixtures. Worker receipts
 Not executed at authoring. Worker source checks on 2026-10-20 use delivery
 `92315c7fa0f0b1e9a5e66a3c6dfdabc8a1d0cde7` against base
 `5dcdff9fb1ec67c0bf80aa60f778da5aef4687b7`. Set `DELIVERY` to that immutable
-source commit for row 8. The subsequent receipt-only amendment does not change
-that delivery's tests, source declaration or consumer routing.
+source commit for row 8's original delivery check. Review repair
+`85fe816784cb1b75198615824d71de3101d8fa12` follows a normal merge of main
+`cfe5c927ec7049728f4b97306beaedf43a444b9f`; it changes the test proof and fixture
+provenance, not the source declaration or routing. The repaired standing proof
+uses the pinned before/after blobs for delivery-time byte identity, while live
+source readers tolerate subsequent maintenance.
 
 | Rows | Worker observation |
 |---|---|
 | 1–5 | All five named tests print PASS. Initial source test without the declaration fails naming statusgen/26#3759; rerunnable omission also exposes the actual false implemented witness `PR #3759 (merged 4482989)`. Restored declaration gives in-progress and no implementation witness. |
-| 1–5 mutations | Baseline and restored runs PASS. Source omission, flow omission, disabled coverage join, disabled write refusal and disabled Evidence exclusion are all CAUGHT. Exact source restoration and production Go byte identity PASS. |
+| 1–5 mutations | Baseline, full-suite live-source comment/version/Evidence/additional-partial maintenance, and restored runs PASS. Source omission, flow omission, disabled coverage join, disabled write refusal and disabled Evidence exclusion are all CAUGHT. Exact source restoration and production Go byte identity PASS. |
 | 6 | All eight selectors PASS, including all five TestApplyReconcileWrites prefix cases. |
 | 7 | Actual merge independently confirms the exact eleven delivery paths. Named workload files and TestInvocationSnapshotReuseParity remain absent. |
-| 8 | Source-built checker at the pinned delivery/base: 4 corroborated, 0 disproved, 13 unchecked, 0 claimless briefs. The pre-merge authoring check on the working tree reports the same counts. Unchecked entries remain review judgments. |
+| 8 | Original pinned delivery/base and complete current branch against refreshed main: 4 corroborated, 0 disproved, 13 unchecked, 0 claimless briefs. Repair commit 85fe81678 alone against first parent 83e882001 gives 2 corroborated, 2 disproved, 13 unchecked: that delta does not redeliver the existing declaration or registry row. It is not the whole delivery check. A non-first-parent range was could-not-check and is not a pass. Unchecked entries remain review judgments. |
 | 9 | Source-built statusgen reports LINT: PASS. |
 | Supplement | TestCLIInventory PASS; test-departure ledger clean. The two legacy cross-module registry tests SKIP because tools.yml is absent in this published tree: could-not-check, not passes. Direct inspection confirms ci.yml has unfiltered push/pull_request events and runs the full statusgen suite. |
 
+Review C2's harmless-comment reproduction failed before the repair. The full
+standing suite now passes after temporary live-source maintenance, and changed
+pinned delivery evidence is rejected. The omission helper removes the exact entry
+regardless of later-entry order. A1 corrects #3745's original line mapping; A2
+names the other members' omitted trailers; A3 marks the reused test file read-only.
+The mutation launcher now forwards only named build/runtime environment variables;
+Go environment-file loading and downloads are disabled. This does not claim that
+fake-server tests open no sockets.
+
 The mutation entry is `statusgen/testdata/witness-admission/mutate-board-cohort.test.py`.
 A nonimplementer must rerun every applicable row on merged main; these are worker
-checks, not independent verification. Production Go is byte-identical to the base;
+checks, not independent verification. Production Go is byte-identical to refreshed main;
 statusgen/26 permits only its declaration and version increment. No generated
 board, Kubernetes deployment, Linux runtime or Windows qualification is claimed.
 
