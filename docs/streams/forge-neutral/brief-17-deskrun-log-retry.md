@@ -17,7 +17,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 design: DR-forge-neutral-17
 decision-issue: 1557
-ruling: "https://github.com/medici-finance/assay/issues/1557#issuecomment-6324027443"
+ruling: "https://github.com/medici-finance/assay/issues/1557#issuecomment-6326324256"
 issues: []
 schema: brief-v2
 authored: 2026-09-13 by forge-neutral authoring session
