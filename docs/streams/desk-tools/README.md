@@ -306,7 +306,7 @@ whole mirror, a persistent cache, or the future runtime first does not resolve t
 - Wave 5: 44 after 41+42+43.
 
 The richer phase schema, adapters and tool panel amend performance-collection/01, /02,
-/07 (stream remains parked). Future serving amends forge-neutral/37–45; only its /39
+/07. Future serving amends forge-neutral/37–45; only its /39
 public contract mapping waits for desk-tools/39 and /45 qualification for desk-tools/43–44.
 The early lane has no reverse service/DB dependency. Active parser ports #3248/#3302,
 proposed supervision #3325 and generic improvement #3305 are pickup checkpoints, not

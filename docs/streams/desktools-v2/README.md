@@ -327,7 +327,7 @@ Combined desk qualification has both that path and `58 → 59 → 62`; /60 remai
 The next unblocking move for attribution is /63's schema/profile/resolver, verified absent
 at 2e02111ed. /64 and /65 consume its fixtures independently. Final CLI qualification /17
 includes /64; existing CLI migrations adopt shared bindings without duplicating them.
-Collection/02 follows /01 and /63–65 in wave 4; it remains parked and never blocks local v3.
+Collection/02 follows /01 and /63–65 in wave 4; it never blocks local v3.
 The earlier 16 October schedule is historical; these amended dependencies control pickup.
 
 ## Write-policy delivery — 18 October 2026

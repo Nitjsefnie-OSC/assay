@@ -2727,18 +2727,25 @@ type ghContentsWire struct {
 	Path string `json:"path"`
 }
 
-// ghContentsKind maps one Contents-API read of file onto FileContent.Kind. content is the
+// ghKindBlobProven is ghContentsKind's answer for a response whose served bytes are shown
+// to be the served blob. It is NOT a FileContent.Kind and never leaves ReadFile: the blob
+// proof cannot tell a regular file from a symbolic link whose target holds exactly the
+// link's own text, so ReadFile settles it from the tree entry's mode (ghTreeEntryKind).
+const ghKindBlobProven = "blob-proven"
+
+// ghContentsKind maps one Contents-API read of file onto FileContent.Kind, except that it
+// never answers FileKindRegular: only the tree entry's mode proves that. content is the
 // decoded body the caller will hand on.
 //
-// The endpoint is not a record of the entry's own bytes, so a regular file is reported only
-// when the response PROVES the bytes are the entry's blob: type "file", base64-encoded, and
-// the git blob hash of the decoded content equal to the served `sha`. Two real responses
-// fail that proof and are FileKindUnproven rather than regular: a symbolic link to a file
-// (served as the target's bytes under the requested path, with the link's own blob sha) and
-// a file the endpoint serves without its content (a large file arrives with encoding
-// "none" and an empty body, which would read as an empty regular file). A link served
-// under a different path than the one requested is still FileKindSymlink. "" when the
-// response names no type.
+// The endpoint is not a record of the entry's own bytes, so a candidate regular file is
+// reported (ghKindBlobProven) only when the response PROVES the bytes are the entry's blob:
+// type "file", base64-encoded, and the git blob hash of the decoded content equal to the
+// served `sha`. Two real responses fail that proof and are FileKindUnproven: a symbolic link
+// to a file (served as the target's bytes under the requested path, with the link's own
+// blob sha) and a file the endpoint serves without its content (a large file arrives with
+// encoding "none" and an empty body, which would read as an empty regular file). A link
+// served under a different path than the one requested is still FileKindSymlink. "" when
+// the response names no type.
 func ghContentsKind(w ghContentsWire, file string, content []byte) string {
 	switch w.Type {
 	case "":
@@ -2753,13 +2760,103 @@ func ghContentsKind(w ghContentsWire, file string, content []byte) string {
 		if w.Encoding != "base64" || !gitBlobMatches(w.SHA, content) {
 			return FileKindUnproven
 		}
-		return FileKindRegular
+		return ghKindBlobProven
 	case "symlink":
 		return FileKindSymlink
 	case "submodule":
 		return FileKindSubmodule
 	default:
 		return w.Type
+	}
+}
+
+// ghFileEntryQuery reads one path's tree entry (mode and object id) at a revision. Commit.file
+// is the same entry lookup the evidence-landing snapshot uses; a tag name resolves to a tag
+// object first, so the tag's own commit is read through it. Any other object is no entry.
+const ghFileEntryQuery = `query FileEntryMode($owner:String!,$name:String!,$rev:String!,$file:String!){
+ repository(owner:$owner,name:$name){
+  object(expression:$rev){__typename
+   ... on Commit{file(path:$file){mode oid}}
+   ... on Tag{target{__typename ... on Commit{file(path:$file){mode oid}}}}
+  }
+ }
+}`
+
+// The git tree-entry modes, as GitHub's TreeEntry.mode serves them (the octal value as an
+// integer).
+const (
+	gitModeRegular    = 0o100644
+	gitModeExecutable = 0o100755
+	gitModeSymlink    = 0o120000
+	gitModeGitlink    = 0o160000
+)
+
+// ghTreeEntryKind settles a blob-proven Contents-API read from the tree entry at the same ref
+// (#3149). The Contents API cannot tell a regular file from a symbolic link whose target holds
+// exactly the link's own text: both serve bytes that hash to the served sha. The entry's mode
+// can. The entry must also be the blob the Contents API served (oid == sha), so a ref that
+// moved between the two reads describes one entry, never two.
+//
+// FileKindRegular only for a regular or executable file mode on that blob; FileKindSymlink /
+// FileKindSubmodule for those modes. Anything else is FileKindUnproven, and so is a lookup
+// that fails or answers incompletely: the content stays readable to a caller that does not
+// need the kind, while one that needs a plain record treats the read as could-not-check, as
+// it does any unproven read. It never fails the ReadFile.
+func (g *GitHubForge) ghTreeEntryKind(repo ForgeRepo, ref, file, sha string) string {
+	rev := ref
+	if rev == "" {
+		// The Contents API reads the default branch when no ref is given; HEAD is the same
+		// branch to the GraphQL revision parser.
+		rev = "HEAD"
+	}
+	type entry struct {
+		Mode *int
+		OID  string
+	}
+	var env struct {
+		Data struct {
+			Repository *struct {
+				Object *struct {
+					Typename string `json:"__typename"`
+					File     *entry
+					Target   *struct {
+						Typename string `json:"__typename"`
+						File     *entry
+					}
+				}
+			}
+		}
+		Errors []json.RawMessage
+	}
+	in := map[string]any{"query": ghFileEntryQuery, "variables": map[string]any{
+		"owner": repo.Owner, "name": repo.Name, "rev": rev, "file": strings.Trim(file, "/"),
+	}}
+	if err := g.doJSON(http.MethodPost, "/graphql", in, &env); err != nil || len(env.Errors) > 0 {
+		return FileKindUnproven
+	}
+	r := env.Data.Repository
+	if r == nil || r.Object == nil {
+		return FileKindUnproven
+	}
+	var e *entry
+	switch {
+	case r.Object.Typename == "Commit":
+		e = r.Object.File
+	case r.Object.Typename == "Tag" && r.Object.Target != nil && r.Object.Target.Typename == "Commit":
+		e = r.Object.Target.File
+	}
+	if e == nil || e.Mode == nil || e.OID == "" || !strings.EqualFold(e.OID, sha) {
+		return FileKindUnproven
+	}
+	switch *e.Mode {
+	case gitModeRegular, gitModeExecutable:
+		return FileKindRegular
+	case gitModeSymlink:
+		return FileKindSymlink
+	case gitModeGitlink:
+		return FileKindSubmodule
+	default:
+		return FileKindUnproven
 	}
 }
 
@@ -2816,6 +2913,8 @@ func stripBase64Whitespace(s string) string {
 
 // ReadFile reads a file's content at a ref via the Contents API. A 404 propagates as a
 // *ForgeAPIError (IsForgeNotFound true) so a caller can distinguish "absent" from "unreadable".
+// A read whose bytes are shown to be the served blob costs one more request, the tree-entry
+// lookup that decides whether it is a regular file (ghTreeEntryKind).
 func (g *GitHubForge) ReadFile(repo ForgeRepo, in ReadFileInput) (*FileContent, error) {
 	path := fmt.Sprintf("/repos/%s/%s/contents/%s?ref=%s",
 		repo.Owner, repo.Name, in.File, url.QueryEscape(in.Ref))
@@ -2830,7 +2929,11 @@ func (g *GitHubForge) ReadFile(repo ForgeRepo, in ReadFileInput) (*FileContent, 
 	if derr != nil {
 		return nil, Unverifiable("cannot decode base64 content for "+in.File, derr)
 	}
-	return &FileContent{Content: decoded, SHA: w.SHA, Exists: true, Kind: ghContentsKind(w, in.File, decoded)}, nil
+	kind := ghContentsKind(w, in.File, decoded)
+	if kind == ghKindBlobProven {
+		kind = g.ghTreeEntryKind(repo, in.Ref, in.File, w.SHA)
+	}
+	return &FileContent{Content: decoded, SHA: w.SHA, Exists: true, Kind: kind}, nil
 }
 
 // WriteFile writes a file's whole content on a branch via the Contents API, as the minted
