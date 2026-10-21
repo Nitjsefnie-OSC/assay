@@ -168,8 +168,12 @@ func TestActivationSnapshotCorruptionAndBounds(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
+		// Distinct roots force publication as well as concurrent reads. One slot
+		// must not mix source identity, diagnostics or manifests between writers.
+		writerRoot := t.TempDir()
+		writeManifest(t, writerRoot, fmt.Sprintf("test/concurrent-%d", i), nil, nil, nil)
 		wg.Add(1)
-		go func() { defer wg.Done(); snapshotParity(t, root) }()
+		go func() { defer wg.Done(); snapshotParity(t, writerRoot); snapshotParity(t, writerRoot) }()
 	}
 	wg.Wait()
 	nested := filepath.Join(root, "nested")
