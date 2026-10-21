@@ -110,6 +110,25 @@ def cases(clean):
         yield name, mutant
 
 
+# regression: #3857 — a coordinated edit: the same fabricated digest written
+# into the record and into one role's manifest, at every role. The record stays
+# a valid release-images-v1 document and the manifest equals it, so only the
+# pin on the record's own bytes can reject the pair.
+def record_cases(clean, record):
+    for workload in (d for d in clean if d['kind'] == 'StatefulSet'):
+        role = workload['metadata']['name']
+        ref = workload['spec']['template']['spec']['containers'][0]['image']
+        fabricated = ref.split('@')[0] + '@sha256:' + hashlib.sha256(b'fabricated ' + role.encode()).hexdigest()
+        if record.count(ref.encode()) != 1:
+            raise ValueError('record does not hold exactly one reference for ' + role)
+        mutant = copy.deepcopy(clean)
+        target = next(d for d in mutant if d['kind'] == 'StatefulSet'
+                      and d['metadata']['name'] == role)
+        target['spec']['template']['spec']['containers'][0]['image'] = fabricated
+        yield ('image-provenance-' + role + '-fabricated-pair', mutant,
+               record.replace(ref.encode(), fabricated.encode()))
+
+
 # regression: desk-containers/06
 def secret_control(encoded=False):
     # Construct only at test time; no secret-shaped literal or scanner exemption.

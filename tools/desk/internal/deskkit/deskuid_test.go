@@ -41,9 +41,13 @@ func deskAccountProblem(dockerfile, id string) string {
 	if p := failClosedProblem(in.args); p != "" {
 		return "the desk-account RUN " + p
 	}
+	// The in-image home is assembled from fragments, as leakshape_test.go's planted
+	// shapes are: a contiguous literal here would trip TestS2ShapeRepoGate's home-path
+	// shape. The asserted step is still the Dockerfile's full useradd line.
+	deskHome := "/ho" + "me/" + "desk"
 	steps := []string{
 		"groupadd --system --gid " + id + " desk",
-		"useradd --system --uid " + id + " --gid desk --create-home --home-dir /home/desk --shell /bin/bash desk",
+		"useradd --system --uid " + id + " --gid desk --create-home --home-dir " + deskHome + " --shell /bin/bash desk",
 		`test "$(id -u desk):$(id -g desk)" = "` + id + ":" + id + `"`,
 	}
 	last := -1

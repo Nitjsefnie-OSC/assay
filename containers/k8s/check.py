@@ -85,14 +85,26 @@ def safe_file(path, home=HERE):
 
 
 RECORD = HERE / 'release-images.json'
+# The sha256 the selected release's checksums.txt lists for release-images.json.
+# README.md "Image provenance" states the same value; both move together with
+# the record, so a record edit cannot pass without changing this line too.
+RECORD_SHA256 = 'ff9237178e5bbf9523012a83e2366b99d2ff3cd0092c6116ad4c0dee08afdd64'
+RECORD_PIN_MISMATCH = 'release image record is not the pinned release asset'
 
 
-def recorded_images():
+def recorded_images(raw=None):
     # The release build's own image record (release-images-v1), kept verbatim.
     # The release's checksums.txt lists the sha256 of these exact bytes, so the
     # file binds each role digest to the release and source revision that built
     # it. Its contract validator is reused rather than restated here.
-    safe_file(RECORD)
+    if raw is None:
+        safe_file(RECORD)
+        raw = RECORD.read_bytes()
+    need(hashlib.sha256(raw).hexdigest() == RECORD_SHA256, RECORD_PIN_MISMATCH)
+    readme = HERE / 'README.md'
+    safe_file(readme)
+    need(RECORD_SHA256 in readme.read_text(encoding='utf-8'),
+         'README.md does not state the pinned release image record sha256')
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(ROOT / 'tools/release'))
     try:
@@ -100,7 +112,7 @@ def recorded_images():
     finally:
         sys.path.pop(0)
     try:
-        record = json.loads(RECORD.read_bytes())
+        record = json.loads(raw)
         refs = {i['name']: i['ref'] for i in record['images']}
         return validate(record, record['version'], record['source_revision'],
                         refs['verify-runner'] + '\n', 'medici-finance/assay')
@@ -169,9 +181,9 @@ def schema_check(docs):
     return len(docs)
 
 
-def structured(docs):
+def structured(docs, record=None):
     expected = set(roles())
-    recorded = recorded_images()
+    recorded = recorded_images(record)
     need(docs, 'empty render')
     allowed = {'Namespace', 'ServiceAccount', 'StatefulSet', 'NetworkPolicy'}
     seen, workloads, namespaces, accounts, policies = set(), {}, [], [], []
@@ -343,6 +355,18 @@ def main():
                 try:
                     structured(mutant)
                 except Invalid:
+                    print(f'rejected: {name}')
+                    rejected += 1
+                else:
+                    raise Invalid(f'hostile fixture escaped: {name}')
+            # A fabricated digest written into the record AND the manifest agrees
+            # with itself; only the record pin may reject it.
+            from testdata.mutations import record_cases
+            for name, mutant, record in record_cases(docs, RECORD.read_bytes()):
+                try:
+                    structured(mutant, record)
+                except Invalid as err:
+                    need(str(err) == RECORD_PIN_MISMATCH, f'{name} rejected for another reason: {err}')
                     print(f'rejected: {name}')
                     rejected += 1
                 else:

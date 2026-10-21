@@ -134,17 +134,23 @@ asset, kept **byte for byte**: it is the record the release build itself wrote
 naming the umbrella version, the source revision it was built from and the
 registry manifest digest of every image it pushed. Its SHA-256 is the one listed
 for it in that release's `checksums.txt`. Each manifest's `image:` line cites it,
-and `check.sh --base` binds them: it validates the record with the release's own
+and `check.sh --base` binds them: it requires the record's bytes to hash to the
+SHA-256 pinned in `check.py` (`RECORD_SHA256`, the value stated above, which
+this README must also state), validates the record with the release's own
 contract validator (`tools/release/images_contract.py`) and rejects any role
 reference that is not exactly the one the record holds for that role (a digest no
 release recorded, another role's digest, or a recorded digest under another
-tag). `testdata/mutations.py` plants each of those at every role.
+tag). `testdata/mutations.py` plants each of those at every role, plus a
+fabricated digest written into both the record and one manifest, which only the
+pin rejects. The check is offline and never contacts the release: the pin makes
+a record edit change `check.py` and this README too, and a reviewer confirms that
+value against the release's `checksums.txt`.
 
 To update, from one selected release: download its `checksums.txt` and
 `release-images.json`, confirm `sha256sum -c` passes for the record, replace this
 file with the downloaded bytes unchanged, copy the five role references from it
-into the manifests, update the release, SHA-256 and source revision above, and
-repeat both offline checks. Never hand-edit the record: a record that is not the
+into the manifests, update the release, SHA-256 and source revision above and
+`RECORD_SHA256` in `check.py`, and repeat both offline checks. Never hand-edit the record: a record that is not the
 release's own bytes no longer binds anything. No registry lookup occurs inside
 `check.sh`; a well-formed digest is not a fresh image availability proof, and the
 record states integrity and version alignment, not a signed build attestation.
