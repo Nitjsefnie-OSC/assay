@@ -7676,3 +7676,15 @@ validation traversal/read; it is **not** scan-free. Fresh-home outliers and the
 large board variance show why these small samples cannot establish causal
 telemetry overhead or a general latency target. This is an implementation
 measurement, not independently recorded verification Evidence.
+
+Pickup census at the implementation base: 41 command `main.go` files call
+`CheckVerbActivation`: `issueboard`, `writeguard`, `deskclaim`, `fanoutloop`,
+`deskpost`, `deskreconcile`, `deskmonitor`, `deskroster`, `desksupervise`,
+`deskreply`, `deskgit`, `deskboard`, `deskdispatch`, `deskpathguard`,
+`untrustcorpus`, `deskrun`, `deskrelease`, `deskadvisory`, `scanloop`,
+`deskdisposition`, `deskdigest`, `reviewloop`, `deskflip`, `deskevidence`,
+`deskinbox`, `deskrestamp`, `desktoken`, `verifyloop`, `deskboot`, `deskautolane`,
+`deskread`, `deskfile`, `deskmerge`, `deskmigrate`, `deskversion`, `deskpr`,
+`deskcomms`, `desklabel`, `deskwt`, `deskclose` and `deskcalibrate`. They inherit
+the single owner; their custody/stop/command adapters are unchanged. Only the
+three specified commands receive the compiled workload qualification here.

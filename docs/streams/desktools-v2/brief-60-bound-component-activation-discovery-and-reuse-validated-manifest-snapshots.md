@@ -25,14 +25,15 @@ exec-tier: strong
 exec-tier-why: Cross-consumer compatibility, concurrency and unavailable-state behavior require negative-path and flow proofs.
 domain: complicated
 consumers:
-  - "tools/desk/internal/deskkit/activation*.go: follow-up desktools-v2/60"
+  - "tools/desk/internal/deskkit/activation*.go: fixed-here"
   - "all tools/desk/cmd entrypoints calling CheckVerbActivation: follow-up desktools-v2/60 (inherit the one discovery implementation; enumerate at pickup)"
-  - "tools/desk/cmd/deskboard, deskdispatch and desktoken: follow-up desktools-v2/60 (compiled startup reference workloads)"
+  - "tools/desk/internal/deskkit/activationstartup_test.go: fixed-here (actual compiled board/dispatch/token startup workloads)"
   - "tools/desk/cmd/deskboard help/version entrypoints: follow-up desktools-v2/20"
   - "tools/desk/cmd/deskdispatch help/version entrypoints: follow-up desktools-v2/21"
   - "tools/desk/cmd/desktoken help/version entrypoints: follow-up desktools-v2/33"
   - "statusgen/: out-of-scope (different stream/brief discovery semantics; reuse perfrec and investigate through statusgen/26, not an import of deskkit activation)"
-  - "tools/desk/README.md and docs/contracts.md: follow-up desktools-v2/60"
+  - "tools/desk/README.md: fixed-here (bounded discovery and measured costs)"
+  - "docs/contracts.md: fixed-here (semantic owner)"
 ---
 
 # Brief 60 — Bound component activation discovery and reuse validated manifest snapshots
