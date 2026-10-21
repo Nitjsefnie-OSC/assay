@@ -50,7 +50,7 @@ func TestBoundedComparePagination(t *testing.T) {
 			}
 			want := n
 			if want > 1000 {
-				want = 1000
+				want = 100
 			}
 			if len(c.Commits) != want {
 				t.Fatalf("commits=%d want %d", len(c.Commits), want)
@@ -60,7 +60,7 @@ func TestBoundedComparePagination(t *testing.T) {
 				wantCalls = 1
 			}
 			if wantCalls > 10 {
-				wantCalls = 10
+				wantCalls = 1
 			}
 			if calls != wantCalls {
 				t.Fatalf("calls=%d want %d", calls, wantCalls)
@@ -76,7 +76,7 @@ func TestBoundedComparePagination(t *testing.T) {
 }
 
 func TestComparePaginationUncertainty(t *testing.T) {
-	for _, mode := range []string{"missing count", "missing commits", "negative count", "short terminal", "duplicate", "missing identity", "count drift", "status drift", "ahead drift", "behind drift", "overrun", "empty next", "http error", "malformed", "cut body", "mutable refs", "missing next full page", "short next page", "extra next at count"} {
+	for _, mode := range []string{"missing count", "missing commits", "negative count", "short terminal", "duplicate", "missing identity", "count drift", "status drift", "ahead drift", "behind drift", "overrun", "empty next", "http error", "malformed", "cut body", "mutable refs", "missing next full page", "short next page", "extra next at count", "cap continuation"} {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +154,11 @@ func TestComparePaginationUncertainty(t *testing.T) {
 						fmt.Fprint(w, `{}`)
 						return
 					}
+				case "cap continuation":
+					total = 1000
+					ahead = 1000
+					commits = historyChunk((page-1)*100, page*100)
+					w.Header().Set("Link", `<https://untrusted.invalid>; rel="next"`)
 				case "extra next at count":
 					total = 100
 				case "missing next full page":
@@ -170,6 +175,9 @@ func TestComparePaginationUncertainty(t *testing.T) {
 			defer srv.Close()
 			g := &GitHubForge{Token: "stub", BaseURL: srv.URL}
 			base, head := historySHA(0), historySHA(101)
+			if mode == "cap continuation" {
+				head = historySHA(1000)
+			}
 			if mode == "mutable refs" {
 				head = "topic"
 			}
@@ -182,7 +190,7 @@ func TestComparePaginationUncertainty(t *testing.T) {
 			} else if err == nil && c.CommitsComplete {
 				t.Fatalf("uncertainty blessed: %+v", c)
 			}
-			if calls > 2 {
+			if (mode != "cap continuation" && calls > 2) || (mode == "cap continuation" && calls != 10) {
 				t.Fatalf("unexpected extra reads: %d", calls)
 			}
 		})

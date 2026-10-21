@@ -84,6 +84,12 @@
       "file": "internal/deskkit/commithistory.go",
       "old": "return out, nil // budget exhausted; FilesComplete remains false",
       "new": "out.FilesComplete = true\n return out,nil // budget exhausted"
+    },
+    {
+      "name": "waste pages on a declared over-budget interval",
+      "file": "internal/deskkit/commithistory.go",
+      "old": "if *w.TotalCommits > historyMaxPages*historyPerPage {",
+      "new": "if false && *w.TotalCommits > historyMaxPages*historyPerPage {"
     }
   ]
 }

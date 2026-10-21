@@ -134,7 +134,7 @@ func TestHistoryPaginationBoard(t *testing.T) {
 		{"history incomplete", 251, 301, "short history", actReReview, 1},
 		{"file incomplete", 251, 301, "missing files", actReReview, 5},
 		{"later page error", 251, 301, "later error", actReReview, 5},
-		{"history cap", 1001, 2, "clean", actReReview, 10},
+		{"history cap", 1001, 2, "clean", actReReview, 1},
 		{"file cap", 1, 3001, "clean", actReReview, 31},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -208,6 +208,9 @@ func TestHistoryPaginationPerf(t *testing.T) {
 	}
 	if cohort == "repeat8" {
 		sweeps = 8
+	}
+	if cohort == "overbudget" {
+		commits, files = 1001, 2
 	}
 	mode := "clean"
 	srv, requests := paginationServer(t, commits, files, &mode, 8*time.Millisecond)

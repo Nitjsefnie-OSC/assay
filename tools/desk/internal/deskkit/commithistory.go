@@ -108,6 +108,11 @@ func (g *GitHubForge) compareWithHistory(repo ForgeRepo, base, head string) (*Re
 			seen[c.SHA] = true
 			out.Commits = append(out.Commits, c.toRepoCommit())
 		}
+		// A declared interval larger than the whole budget cannot become complete.
+		// Preserve the cheap incomplete result instead of spending nine futile pages.
+		if *w.TotalCommits > historyMaxPages*historyPerPage {
+			return out, nil
+		}
 		if len(out.Commits) > *w.TotalCommits {
 			return nil, Unverifiable("compare pagination exceeded its declared commit count", nil)
 		}
