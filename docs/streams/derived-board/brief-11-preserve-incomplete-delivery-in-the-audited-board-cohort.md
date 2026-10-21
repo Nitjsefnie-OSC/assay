@@ -166,7 +166,27 @@ Run from the repository root. Named tests use hermetic fixtures. Worker receipts
 
 ## Evidence
 
-Not executed at authoring. Worker implementation receipts and immutable delivery pin are recorded after the source commit below. A nonimplementer reruns every applicable row on merged main before verification. The mutation entry is `statusgen/testdata/witness-admission/mutate-board-cohort.test.py`; it checks omission, disabled coverage, write refusal and Evidence exclusion with exact restoration. No generated board, runtime or independent verification is claimed.
+Not executed at authoring. Worker source checks on 2026-10-20 use delivery
+`92315c7fa0f0b1e9a5e66a3c6dfdabc8a1d0cde7` against base
+`5dcdff9fb1ec67c0bf80aa60f778da5aef4687b7`. Set `DELIVERY` to that immutable
+source commit for row 8. The subsequent receipt-only amendment does not change
+that delivery's tests, source declaration or consumer routing.
+
+| Rows | Worker observation |
+|---|---|
+| 1–5 | All five named tests print PASS. Initial source test without the declaration fails naming statusgen/26#3759; rerunnable omission also exposes the actual false implemented witness `PR #3759 (merged 4482989)`. Restored declaration gives in-progress and no implementation witness. |
+| 1–5 mutations | Baseline and restored runs PASS. Source omission, flow omission, disabled coverage join, disabled write refusal and disabled Evidence exclusion are all CAUGHT. Exact source restoration and production Go byte identity PASS. |
+| 6 | All eight selectors PASS, including all five TestApplyReconcileWrites prefix cases. |
+| 7 | Actual merge independently confirms the exact eleven delivery paths. Named workload files and TestInvocationSnapshotReuseParity remain absent. |
+| 8 | Source-built checker at the pinned delivery/base: 4 corroborated, 0 disproved, 13 unchecked, 0 claimless briefs. The pre-merge authoring check on the working tree reports the same counts. Unchecked entries remain review judgments. |
+| 9 | Source-built statusgen reports LINT: PASS. |
+| Supplement | TestCLIInventory PASS; test-departure ledger clean. The two legacy cross-module registry tests SKIP because tools.yml is absent in this published tree: could-not-check, not passes. Direct inspection confirms ci.yml has unfiltered push/pull_request events and runs the full statusgen suite. |
+
+The mutation entry is `statusgen/testdata/witness-admission/mutate-board-cohort.test.py`.
+A nonimplementer must rerun every applicable row on merged main; these are worker
+checks, not independent verification. Production Go is byte-identical to the base;
+statusgen/26 permits only its declaration and version increment. No generated
+board, Kubernetes deployment, Linux runtime or Windows qualification is claimed.
 
 ## Review
 
