@@ -136,6 +136,11 @@ func (v *VerifyLoop) SelectQueue() ([]loopengine.Item, error) {
 	// Both single-root and multi-root consumers pass this join. A source with
 	// no pending-Evidence capability keeps the offline board-only scan.
 	if source, ok := v.Issues.(pendingEvidenceSource); ok {
+		if prepare, ok := v.Issues.(interface {
+			preparePendingEvidence([]loopengine.Item, string)
+		}); ok {
+			prepare.preparePendingEvidence(items, v.RootRepo)
+		}
 		for i, it := range items {
 			if payloadValue(it, "could_not_check") != "" {
 				continue
