@@ -216,8 +216,8 @@ context through launchers and real CLI/env adapters; /65 independently adds actu
 timing/GraphQL point observations. /62 and statusgen/26 qualify production records using
 these owners. Collection/01 defines aliased event meanings independently; /02 consumes
 v1/v2/v3 after /63–65; later storage/transport/reporting preserves their coverage and units.
-A local record/read/report path needs no server or database. Keep collection parked and
-credential work independent; do not reopen /61 or imply deployment/collection activation.
+A local record/read/report path needs no server or database. Leave collection's admission
+state to its own ruling and keep credential work independent; do not reopen /61 or imply deployment/collection activation.
 
 ## Extensible contracts and perf-v4 — requested amendment, 21 October 2026
 
