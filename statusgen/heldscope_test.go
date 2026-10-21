@@ -370,6 +370,10 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		{"hold in a comment ended by --!>",
 			two("<!--\nrow 3 HELD — runner offline\n--!>\n-->") + rerun2, false},
 		{"hold in a fence", two("```\nrow 3 HELD — runner offline\n```") + rerun2, false},
+		{"closed HTML block after a prose hold",
+			two("- row 3 could-not-check.\n\n<div title=\"a\">note</div>") + rerun2, false},
+		{"inline tag in a list item",
+			two("- row 3 could-not-check.\n- <b>x</b> done") + rerun2, false},
 		{"fenced table, row in prose",
 			eight("```\n| # | Result |\n|---|---|\n| 9 | exit 2 |\n```\n\n- row 9 could-not-check.") + final, false},
 		{"pipe in a code span, prose hold", two("- `a | b` could-not-check: runner offline.") + rerun2, false},
@@ -395,6 +399,29 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		{"lazy row after a keyed table",
 			strings.Replace(two(""), "| 2 | `tool check 2` | 0 | ok |\n\n",
 				"| 2 | `tool check 2` | 0 | ok |\n3 HELD — runner offline\n\n", 1) + rerun2, true},
+		// An HTML table nested in a header or keyed-row cell renders live, so
+		// the row it records keeps the prose hold naming that row read.
+		{"HTML table in the header cell",
+			strings.Replace(two("- row 3 could-not-check."), "| Result |",
+				"| Result <table><tr><td>3</td><td>exit 2</td></tr></table> |", 1) + rerun2, true},
+		{"HTML table in a keyed row's cell",
+			strings.Replace(two("- row 3 could-not-check."), "| 0 | ok |",
+				"| 0 | ok <table><tr><td>3</td><td>exit 2</td></tr></table> |", 1) + rerun2, true},
+		// An HTML block that ends inside a tag, a quoted attribute value or a
+		// comment makes the page swallow what follows, the last entry and its
+		// PASS included, while the scan reads that entry live.
+		{"open attribute hides the last entry",
+			two("- row 3 could-not-check.\n\n<div title=\"") + rerun2, true},
+		{"open tag hides the last heading",
+			two("- row 3 could-not-check.\n\n<div") + rerun2, true},
+		{"mid-line <!-- in an HTML block",
+			two("- row 3 could-not-check.\n\n<div> <!--") + rerun2, true},
+		{"open attribute in a list item",
+			two("- row 3 could-not-check.\n\n- <div title=\"") + rerun2, true},
+		{"open attribute in a blockquote",
+			two("- row 3 could-not-check.\n\n> <div title=\"") + rerun2, true},
+		{"open attribute inside <pre>",
+			two("- row 3 could-not-check.\n\n<pre>\n<b title=\"\n</pre>") + rerun2, true},
 		// Refused: a hold inside an HTML block that is not a comment.
 		{"text after a comment's end",
 			two("<!-- note --> row 3 HELD — runner offline") + rerun2, true},
