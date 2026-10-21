@@ -218,8 +218,8 @@ func dayTable(stdout io.Writer, s deskkit.PerfDaySummary, days int, tool, role s
 	}
 	fmt.Fprintln(stdout)
 	skippedLine(stdout, skipped)
-	fmt.Fprintln(stdout, "walls stay per schema group (perf-v1/v2/v3 measure over different boundaries, never mixed); "+
-		"the forge count pools perf-v1 forgeCalls and the perf-v2/perf-v3 http counter as one budget")
+	fmt.Fprintln(stdout, "walls stay per schema group (each schema measures over its own boundary — legacy, perf-v2 and "+
+		"perf-v3 walls are never mixed); the forge count pools legacy forgeCalls and the perf-v2/perf-v3 http counter as one budget")
 
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "DAY\tTOOL\tSCHEMA\tRECORDS\tP50 MS\tP90 MS\tMAX MS\tSUM MS")
@@ -227,7 +227,7 @@ func dayTable(stdout io.Writer, s deskkit.PerfDaySummary, days int, tool, role s
 		for _, g := range []struct {
 			name string
 			w    *deskkit.PerfDayWall
-		}{{"perf-v1", row.PerfV1}, {"perf-v2", row.PerfV2}, {"perf-v3", row.PerfV3}} {
+		}{{perfrec.Schema, row.PerfV1}, {perfrec.SchemaV2, row.PerfV2}, {perfrec.SchemaV3, row.PerfV3}} {
 			if g.w == nil {
 				continue
 			}

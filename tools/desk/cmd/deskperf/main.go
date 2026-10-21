@@ -57,9 +57,10 @@ usage:
       coverage is measured
       --by-day reports the same window as a TIMESERIES instead of the pooled
       tables: one row per tool × UTC day with invocation count, wall p50 / p90 /
-      max per schema group (perf-v1/v2/v3 walls are never mixed), the forge
-      count pooled over every schema (perf-v1 forgeCalls + perf-v2/perf-v3 http),
-      and the day's perf-v3 request rollup per tool
+      max per schema group (legacy, perf-v2 and perf-v3 walls are never mixed),
+      the forge count pooled over every schema (legacy forgeCalls + the
+      perf-v2/perf-v3 http counter), and the day's perf-v3 request rollup per
+      tool
   deskperf boot [--days N] [--role R] [--json]
       deskboot's per-step p50 / p90 / max and the summed boot cost, per role
   deskperf --version      print the build stamp
