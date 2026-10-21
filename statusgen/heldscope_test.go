@@ -422,6 +422,12 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("- row 3 could-not-check.\n\n> <div title=\"") + rerun2, true},
 		{"open attribute inside <pre>",
 			two("- row 3 could-not-check.\n\n<pre>\n<b title=\"\n</pre>") + rerun2, true},
+		{"open attribute holding >",
+			two("- row 3 could-not-check.\n\n<div title=\">") + rerun2, true},
+		{"single-quoted attribute holding >",
+			two("- row 3 could-not-check.\n\n<div title='>") + rerun2, true},
+		{"attribute closed in a later block",
+			two("- row 3 could-not-check.\n\n<div title=\"") + rerun2 + "<p>\"</p>\n", true},
 		// Refused: a hold inside an HTML block that is not a comment.
 		{"text after a comment's end",
 			two("<!-- note --> row 3 HELD — runner offline") + rerun2, true},

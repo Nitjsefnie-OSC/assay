@@ -88,14 +88,14 @@
     {
       "name": "#3841: an HTML table tag is not a table line",
       "file": "heldscope.go",
-      "old": "return heldPipeOutsideCode(line) || heldHTMLTableRe.MatchString(line)",
-      "new": "return heldPipeOutsideCode(line)"
+      "old": "tableish := heldHTMLTableRe.MatchString(lines[i])",
+      "new": "tableish := false"
     },
     {
       "name": "#3841: a table line inside an HTML comment is exempt from the whole-supersession check",
       "file": "heldscope.go",
-      "old": "out[i].key == \"\" && heldTableish(lines[i]) {",
-      "new": "out[i].key == \"\" && html[i] != heldHTMLComment && heldTableish(lines[i]) {"
+      "old": "if !inFence[i] && tableish {",
+      "new": "if !inFence[i] && html[i] != heldHTMLComment && tableish {"
     },
     {
       "name": "#3841: text after a comment's end counts as inside the comment",
@@ -396,6 +396,72 @@
       "file": "heldscope.go",
       "old": "if strings.TrimSpace(lower[j+n:]) != \"\" {",
       "new": "if n < 0 {"
+    },
+    {
+      "name": "#3841: an HTML table in a results table's header is exempt",
+      "file": "heldscope.go",
+      "old": "tableish := heldHTMLTableRe.MatchString(lines[i])",
+      "new": "tableish := !out[i].skip && heldHTMLTableRe.MatchString(lines[i])"
+    },
+    {
+      "name": "#3841: an HTML table in a keyed row is exempt",
+      "file": "heldscope.go",
+      "old": "tableish := heldHTMLTableRe.MatchString(lines[i])",
+      "new": "tableish := out[i].key == \"\" && heldHTMLTableRe.MatchString(lines[i])"
+    },
+    {
+      "name": "#3841: an unclosed HTML block does not stop whole supersession",
+      "file": "heldscope.go",
+      "old": "covered) &&\n\t\t\t\t\t!heldHTMLUnclosed(lines, inFence)",
+      "new": "covered)"
+    },
+    {
+      "name": "#3841: an HTML block inside a container is not seen",
+      "file": "heldscope.go",
+      "old": "t := heldContainerStrip(l)",
+      "new": "t := l"
+    },
+    {
+      "name": "#3841: a list marker is not stripped",
+      "file": "heldscope.go",
+      "old": "case len(t) > 1 && strings.IndexByte(\"-*+\", t[0]) >= 0",
+      "new": "case len(t) < 0 && strings.IndexByte(\"-*+\", t[0]) >= 0"
+    },
+    {
+      "name": "#3841: a blockquote marker is not stripped",
+      "file": "heldscope.go",
+      "old": "case strings.HasPrefix(t, \">\"):",
+      "new": "case strings.HasPrefix(t, \">>>>\"):"
+    },
+    {
+      "name": "#3841: an open tag is text",
+      "file": "heldscope.go",
+      "old": "case isASCIILetter(n) || n == '/' && i+2 < len(line) && isASCIILetter(line[i+2]):\n\t\t\t\tst = 1",
+      "new": "case isASCIILetter(n) || n == '/' && i+2 < len(line) && isASCIILetter(line[i+2]):\n\t\t\t\tst = 0"
+    },
+    {
+      "name": "#3841: a comment opened mid-line is text",
+      "file": "heldscope.go",
+      "old": "st, i = 4, i+3",
+      "new": "st, i = 0, i+3"
+    },
+    {
+      "name": "#3841: a double-quoted attribute value is not tracked",
+      "file": "heldscope.go",
+      "old": "case '\"':\n\t\t\t\tst = 2",
+      "new": "case '\"':\n\t\t\t\tst = 1"
+    },
+    {
+      "name": "#3841: a single-quoted attribute value is not tracked",
+      "file": "heldscope.go",
+      "old": "case '\\'':\n\t\t\t\tst = 3",
+      "new": "case '\\'':\n\t\t\t\tst = 1"
+    },
+    {
+      "name": "#3841: the tokenizer is checked only at the end",
+      "file": "heldscope.go",
+      "old": "if !in && st != 0 {\n\t\t\treturn true",
+      "new": "if !in && st < 0 {\n\t\t\treturn true"
     }
   ]
 }

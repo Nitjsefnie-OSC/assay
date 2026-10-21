@@ -58,17 +58,20 @@ import (
 //     (b) Whole entries (#3841): the last entry covers EVERY row key of
 //     EVERY earlier entry's results tables — rows that held and rows that
 //     did not — there is at least one such key, every data row of those
-//     tables is aligned and keyed, and no earlier entry records a row in a
-//     table the scan cannot key. Then the earlier entries are superseded
+//     tables is aligned and keyed, no earlier entry records a row in a
+//     table the scan cannot key, and no HTML block leaves the page inside a
+//     tag, a quoted attribute value or a comment (heldHTMLUnclosed), which
+//     swallows what follows on the page. Then the earlier entries are superseded
 //     as wholes: their prose, an entry-level verdict such as VERIFY:
 //     BLOCKED, a held or could-not-check note that names no row or names a
 //     row absent from every keyed table, and a hold in fenced code or wholly
 //     inside an HTML comment are all dropped. A hold on any other line of an
 //     HTML block (heldHTMLLines) is still read. A table the scan cannot key
 //     is any line of an earlier entry, outside fenced code (an HTML comment
-//     is no exemption: the page may not read it as one), and not a keyed
-//     results row or its header, that carries an unescaped
-//     "|" outside inline code or an HTML table tag (heldTableish) — a table
+//     is no exemption: the page may not read it as one), that carries an
+//     HTML table tag (heldHTMLTableRe; a keyed row or its header included,
+//     since a cell renders one live) or, other than a keyed results row or
+//     its header, an unescaped "|" outside inline code — a table
 //     of another shape, with no separator row, with no leading pipe, inside
 //     a blockquote, or in HTML — or a non-blank line right after a results
 //     table, which GFM may read as one more row of it. One earlier key the
@@ -189,10 +192,113 @@ func heldTableLine(line string) bool {
 // heldHTMLTableRe is an HTML table tag anywhere on a line.
 var heldHTMLTableRe = regexp.MustCompile(`(?i)</?(?:table|thead|tbody|tfoot|tr|td|th)\b`)
 
-// heldTableish reports whether line may carry a table row the scan cannot
-// key (rule 3b): an unescaped "|" outside inline code, or an HTML table tag.
-func heldTableish(line string) bool {
-	return heldPipeOutsideCode(line) || heldHTMLTableRe.MatchString(line)
+// heldHTMLUnclosed reports whether an HTML block of lines, at the top level
+// or inside a blockquote or list item, ends with the page's HTML tokenizer
+// still inside a tag, a quoted attribute value or a comment. The page then
+// swallows what follows, a later entry and its PASS included, while the scan
+// reads it live, so no entry is superseded whole.
+func heldHTMLUnclosed(lines []string, inFence []bool) bool {
+	st, in, end := 0, false, ""
+	for i, l := range lines {
+		t := heldContainerStrip(l)
+		if !in {
+			h, e := heldHTMLOpen(t)
+			if inFence[i] || !h {
+				continue
+			}
+			in, end = true, e
+		}
+		st = heldTagScan(st, t)
+		if end != "" {
+			in = !strings.Contains(strings.ToLower(l), end)
+		} else {
+			in = !isBlankLine(l)
+		}
+		if !in && st != 0 {
+			return true
+		}
+	}
+	return st != 0
+}
+
+// heldContainerStrip drops the blockquote and list-item markers that open
+// line, so an HTML block inside them is seen.
+func heldContainerStrip(line string) string {
+	for {
+		t := strings.TrimLeft(line, " \t")
+		switch {
+		case strings.HasPrefix(t, ">"):
+			line = t[1:]
+			continue
+		case len(t) > 1 && strings.IndexByte("-*+", t[0]) >= 0 && (t[1] == ' ' || t[1] == '\t'):
+			line = t[2:]
+			continue
+		}
+		n := 0
+		for n < len(t) && n < 9 && t[n] >= '0' && t[n] <= '9' {
+			n++
+		}
+		if n > 0 && n+1 < len(t) && (t[n] == '.' || t[n] == ')') && (t[n+1] == ' ' || t[n+1] == '\t') {
+			line = t[n+2:]
+			continue
+		}
+		return t
+	}
+}
+
+// heldTagScan advances the page's HTML tokenizer over line from state st:
+// 0 text, 1 in a tag, 2 and 3 in a double- or single-quoted attribute value,
+// 4 in a comment, 5 in a bogus comment ("<?", "<!x", "</ "). It returns the
+// state at the line's end; a line break ends none of them.
+func heldTagScan(st int, line string) int {
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch st {
+		case 0:
+			if c != '<' || i+1 >= len(line) {
+				continue
+			}
+			switch n := line[i+1]; {
+			case isASCIILetter(n) || n == '/' && i+2 < len(line) && isASCIILetter(line[i+2]):
+				st = 1
+			case strings.HasPrefix(line[i+1:], "!--"):
+				st, i = 4, i+3
+				if r := line[i+1:]; strings.HasPrefix(r, ">") || strings.HasPrefix(r, "->") {
+					st = 0 // "<!-->" and "<!--->" close at once
+				}
+			case n == '!' || n == '?' || n == '/':
+				st = 5
+			}
+		case 1:
+			switch c {
+			case '"':
+				st = 2
+			case '\'':
+				st = 3
+			case '>':
+				st = 0
+			}
+		case 2:
+			if c == '"' {
+				st = 1
+			}
+		case 3:
+			if c == '\'' {
+				st = 1
+			}
+		case 4:
+			if j, n := heldCommentEnd(line[i:]); j >= 0 {
+				st, i = 0, i+j+n-1
+			} else {
+				i = len(line)
+			}
+		case 5:
+			if c == '>' {
+				st = 0
+			}
+		}
+	}
+	return st
 }
 
 // heldPipeOutsideCode reports whether line holds a "|" that is neither
@@ -714,7 +820,13 @@ func heldScanScope(evidence string) heldScope {
 		}
 		for i := lo; i < hi; i++ {
 			out[i].whole = html[i] != heldHTMLOther
-			if !inFence[i] && !out[i].skip && out[i].key == "" && heldTableish(lines[i]) {
+			// An HTML table renders live in any cell, header and keyed rows
+			// included; only a results table's own pipes are exempt.
+			tableish := heldHTMLTableRe.MatchString(lines[i])
+			if !out[i].skip && out[i].key == "" {
+				tableish = tableish || heldPipeOutsideCode(lines[i])
+			}
+			if !inFence[i] && tableish {
 				aligned[e] = false // a table the scan cannot key
 			}
 		}
@@ -734,7 +846,8 @@ func heldScanScope(evidence string) heldScope {
 		if heldEntryPass(lines, live, last, len(lines)) {
 			if covered := heldCovered(lines, live, out, tables, last); len(covered) > 0 {
 				scope.from, scope.covered = last, covered
-				scope.whole = heldWholeCovered(keys[:len(starts)-1], aligned[:len(starts)-1], covered)
+				scope.whole = heldWholeCovered(keys[:len(starts)-1], aligned[:len(starts)-1], covered) &&
+					!heldHTMLUnclosed(lines, inFence)
 			}
 		}
 	}
