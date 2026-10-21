@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
+	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
 )
 
 // issueSourceFn builds the plan's issue-state source. A package var so a test can install a
@@ -39,20 +40,22 @@ func resolveForge(repo deskkit.ForgeRepo, observer deskkit.RequestObserver) (des
 // forgeIssueSource reads issue state through a per-repo forge, resolving each repo's forge (and
 // so its credential) once per plan pass, and only for a repository in the configured set.
 type forgeIssueSource struct {
-	performance verifyPerformance
-	observer    deskkit.RequestObserver
-	forgeFor    func(deskkit.ForgeRepo) (deskkit.Forge, error)
-	notice      io.Writer // when set, names each repository once, before its first forge contact
-	forges      map[string]deskkit.Forge
-	errs        map[string]error
-	pending     map[string]*pendingChanges
-	blockers    map[blockerObservationKey]blockerObservation
+	performance    verifyPerformance
+	observer       deskkit.RequestObserver
+	forgeFor       func(deskkit.ForgeRepo) (deskkit.Forge, error)
+	notice         io.Writer // when set, names each repository once, before its first forge contact
+	forges         map[string]deskkit.Forge
+	errs           map[string]error
+	pendingTargets map[string]map[string][]loopengine.Item
+	pending        map[string]*pendingChanges
+	blockers       map[blockerObservationKey]blockerObservation
 }
 
 // A source can be used by a loop for multiple selections. Mutable scheduling
 // observations are refreshed at selection entry, never retained into a new pass.
 func (s *forgeIssueSource) beginPlanningPass() {
 	s.blockers, s.pending = nil, nil
+	s.pendingTargets = nil
 	s.forges, s.errs = nil, nil
 }
 
