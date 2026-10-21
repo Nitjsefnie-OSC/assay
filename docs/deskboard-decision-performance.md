@@ -50,8 +50,8 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`b2d0b9355b7b6d07d86c4baa396ff3ea009107df`. Subsequent publication changes to the
-mutation specification and this report do not change either measured path.
+`d0287b5d0b9d414a1fc136bcd3fc53cf193e7bcb`. The later performance-report commit changes documentation only. This cohort
+includes the independent review repair that preserves exact marker spellings.
 Both local test binaries carry their respective source stamp. Five independent
 processes per variant were run in alternating before/after order; `-test.count=5`
 in one process is unsuitable because process-init time would accumulate.
@@ -62,12 +62,12 @@ in one process is unsuitable because process-init time would accumulate.
 | Search attempts, every sample | 12 | 1 |
 | Other REST attempts, every sample | 36 | 24 |
 | GraphQL attempts, every sample | 12 | 12 |
-| Process wall time, ms | 573, 557, 545, 581, 586 | 79, 75, 71, 79, 80 |
-| Median process wall time, ms | 573 | 79 |
-| Own process CPU, ms | 30, 23, 20, 51, 62 | 23, 19, 21, 18, 30 |
-| Median own process CPU, ms | 30 | 21 |
+| Process wall time, ms | 614, 702, 596, 607, 560 | 255, 140, 76, 81, 77 |
+| Median process wall time, ms | 607 | 81 |
+| Own process CPU, ms | 40, 36, 33, 34, 29 | 30, 23, 23, 23, 22 |
+| Median own process CPU, ms | 34 | 23 |
 
-That is **38.3% fewer HTTP attempts** and **86.2% less median elapsed time in this
+That is **38.3% fewer HTTP attempts** and **86.7% less median elapsed time in this
 latency fixture**. It is not a production speedup claim. Small CPU samples and their
 variance do not establish a general CPU improvement. Unique explicit issue references
 save no discovery calls; repositories needing more pages or having many shared
@@ -85,7 +85,7 @@ no operator consent, workflow grouping, audit ledger or live pin changes.
 Binary SHA-256 values:
 
 - Before: `ffebc60bf0fa6f942a0c490d5249903e091169ac8dbc4bcdfae6518341c741a8`
-- After: `ce77f10e89b2c4dc2594a61200228e1bbe9cf2f97a1e0380c296c19036b20f28`
+- After: `ea118c2895d9be24efd9b695f3a6258d5ab68765723f45ecdd46d9995aaa87f4`
 
 To reproduce from each respective source tree with the same test file:
 
@@ -115,6 +115,10 @@ The dedicated classic mutation harness is:
 cd tools/desk
 go run ./cmd/muhar -j 2 -spec cmd/deskboard/decision-admission-mutations.json
 ```
+
+The repaired source qualifies twelve mutations: a healthy pristine baseline and
+positive control, twelve caught faults, zero survivors and zero could-not-mutate.
+The cross-project alias fault is included explicitly.
 
 Existing review snapshots, conditional transports, per-PR reuse, quota floors,
 root resolution, queue semantics, trust controls and perf-v3 observation machinery
