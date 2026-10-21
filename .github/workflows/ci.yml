@@ -34,12 +34,48 @@ env:
   GO_VERSION: "1.27.2"
 
 jobs:
+  # Cross-compiles tools/desk for windows/amd64 and darwin/arm64. Not a required
+  # check. On pull_request it runs only when the change set can alter what it
+  # compiles (the scope step below); on push to main it always runs. When the
+  # scope step skips the compile the job still concludes success, with the reason
+  # printed in its log.
   desk-platform-compile:
     runs-on: medici-builder-public
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # pull_request checks out the PR merge commit; depth 2 also fetches its
+          # parents, so HEAD^1 is the base tip and HEAD^1..HEAD is the PR's change
+          # set. push keeps the default depth of 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+
+      - name: Scope — does the change set touch what this job compiles?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Default-run: every path that does not positively prove the change set
+          # misses the compiled surface leaves run=true.
+          run=true
+          # The compiled surface: the tools/desk module (its go.mod/go.sum
+          # included), the sibling modules it pulls in through replace directives
+          # in tools/desk/go.mod, any go.work, and this workflow.
+          scope_re='^(tools/desk|comms|forgeread|perfrec|gitquiet|deskcore)/|(^|/)go\.work(\.sum)?$|^\.github/workflows/ci\.yml$'
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "event '$EVENT': always compile"
+          elif ! files="$(git diff --no-renames --name-only HEAD^1 HEAD)"; then
+            echo "could-not-check: the PR change set could not be read; compiling"
+          elif printf '%s\n' "$files" | grep -q -E "$scope_re"; then
+            echo "change set touches the compiled surface; compiling"
+          else
+            run=false
+            echo "change set does not touch tools/desk, its replaced modules, go.work or ci.yml; compile skipped"
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
 
       - name: Install Go
+        if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
           url="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
@@ -50,6 +86,7 @@ jobs:
           echo "${HOME}/go-toolchain/go/bin" >> "${GITHUB_PATH}"
 
       - name: Compile desk platform code and test binaries
+        if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
           cd tools/desk
