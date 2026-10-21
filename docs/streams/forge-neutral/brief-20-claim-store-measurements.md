@@ -456,6 +456,34 @@ Execution witness for this run (statusgen verifyrun v1.0.42, non-dry, 2026-10-15
 Verification-Attestation: medici-finance/assay#3034 run=5c1b334b8826c487b37440b216d6835d7e65acd1391fbf104b906f0d0e4c9411 source=bbf8e351624538c2a03159cd5a58116fb97fc293 brief=docs/streams/forge-neutral/brief-20-claim-store-measurements.md model=claude-opus-5-5 tier=any
 
 
+### Non-implementer verifier re-run — VERIFY: FAIL — 2026-10-21 assay-verifier-app[bot]
+
+Runner is not the implementer. Documents-only brief, run non-hermetically on darwin (go1.27.2 darwin/arm64) at merged main 844b7807847c25e5c96979e10dd85fccb08dcbf1, offline (KUBECONFIG=/dev/null, GOPROXY=off), admitted by the dispatcher's pre-work check (binding below). This is the first run against the widened row 4 and row 5 greps (2026-10-18). Rows 4 and 5 have prose Expect cells, so each was decided by a mechanical membership check of the printed file list against the spec's section 3.1a / 3.1b text (lines 84-153 and 154-202 at this commit), not by exit status. The spec file hashes sha256 fcf1328a801d…. File paths below are relative to tools/desk.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `grep -c -e '^. S2 . ' -e '^. S4 . ' docs/streams/forge-neutral/reviewer-write-boundary.md` | `2`, both work-list rows still present | PASS: exit 0; printed `2` | 2026-10-21 | assay-verifier-app[bot] @ 844b7807847c25e5c96979e10dd85fccb08dcbf1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `grep -e '^. S2 . ' -e '^. S4 . ' docs/streams/forge-neutral/reviewer-write-boundary.md > /tmp/fn20-rows.txt && ! grep -v -e 'of [0-9][0-9]* succeeded' -e 'determined' -e 'COULD-NOT-CHECK' /tmp/fn20-rows.txt` | exit 0 and no line printed | PASS: exit 0; no line printed. The S2 row carries "1 of 16 succeeded" and COULD-NOT-CHECK for the network filesystem; the S4 row carries "determined" | 2026-10-21 | assay-verifier-app[bot] @ 844b7807847c25e5c96979e10dd85fccb08dcbf1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/... -run '^TestAcquireConcurrentExactlyOneWinner$' -count=1 -v` | exactly one of N succeeded | PASS: exit 0; `--- PASS: TestAcquireConcurrentExactlyOneWinner (0.16s)`, deskkit package ok. 16 racers (claim_test.go:22) and the `wins != 1` assertion (claim_test.go:53) held, so exactly 1 of 16 succeeded. The Verify cell is prose; this is the command recorded in the spec's S2 row, run as recorded | 2026-10-21 | assay-verifier-app[bot] @ 844b7807847c25e5c96979e10dd85fccb08dcbf1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd tools/desk && grep -rln -e 'ForgeFor(.*"reviewer")' -e 'ReviewDispatcherRole' -e 'forgeForReviewer' -e 'stampRoleForKit' -e 'SessionTokenRole' -e 'TokenRoleForLoop' -e 'mintedRole' -e 'RequireRole(' --include='*.go' cmd internal \| grep -v _test.go \| sort` | every file listed appears in the reviewer write inventory | PASS: exit 0; 58 files (output sha256:b6c32cab3368), all 58 found in section 3.1a | 2026-10-21 | assay-verifier-app[bot] @ 844b7807847c25e5c96979e10dd85fccb08dcbf1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `cd tools/desk && grep -rln -e 'ClaimRefsPrefix' -e 'ClaimRefPath' -e 'refs/dispatch' -e 'DispatchClaimActiveRefsPrefix' -e 'ReadReviewClaims' -e 'ReviewClaimFamil' --include='*.go' cmd internal \| grep -v _test.go \| sort` | every file listed appears in the claim reader inventory or is the claim tool itself | FAIL: exit 0; 21 files (output sha256:25b148b9a1bf); 19 found in section 3.1b, 1 is the claim tool itself (cmd/deskclaim-ref/alias.go, under the cmd/deskclaim-ref directory 3.1b names as the claim tool), and 1 is absent: internal/gitmaintenance/inventory.go. Expected condition not met | 2026-10-21 | assay-verifier-app[bot] @ 844b7807847c25e5c96979e10dd85fccb08dcbf1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Held rows and notes:
+
+- Row 5 (FAIL). internal/gitmaintenance/inventory.go:77 lists the local repository's refs and keeps every name under refs/dispatch/ or refs/heads/dispatch/ as DispatchRefs. cmd/deskwt/objectmaintenance.go:120-121 prints each one as "claim held: <ref> (claim protocol owns release)". This is a real local-git claim read outside the claim tool; on an empty namespace it lists nothing and prints no claim lines. The file arrived on 2026-10-19 (medici-finance/assay#2525, commit 6c79ace7be7e), one day after the 2026-10-18 re-read of section 3.1b at a724e99d and 8d368648. So this is inventory drift again, not a wrong widening: the widened grep caught a new reader, as designed. The same class is tracked by medici-finance/assay#1606, which is still OPEN (read from the forge 2026-10-21).
+- Row 4 (PASS). The widening resolved the 2026-10-15 drift. packet_review.go and reviewroundread.go now appear in section 3.1a, and so do the push verbs deskgit/deskgit.go and deskpr/push.go.
+- Row 2 was run verbatim, writing its row file to the shared tmp dir, and that file was removed afterwards.
+
+Risk-bearing values. Enumeration covered this brief's Deliverables and diff (documents only: spec sections 3.1a, 3.1b and 3.3, the Verify row widening, and Evidence), plus the shipped primitive the measured control exercises. It found two literals, both unchanged since 2026-09-24:
+
+RISK-VALUE: DERIVED — wins != 1 (winners = 1) @ tools/desk/internal/deskkit/claim_test.go:53 — the shipped primitive creates the claim with os.O_CREATE|os.O_EXCL (tools/desk/internal/deskkit/claim.go:273) under one directory lock. That admits exactly one creator, and every other racer gets EEXIST. So exactly one of N succeeds by construction, whatever N is, which is the brief's "exactly one is the only passing count".
+
+Ranked last, no verdict line: racers = 16 @ tools/desk/internal/deskkit/claim_test.go:22. It is a reversible test knob that sets only how hard the concurrency exercise pushes.
+
+**VERIFY: FAIL** — row 5 (section 3.1b omits internal/gitmaintenance/inventory.go, a local-git claim reader added 2026-10-19 by medici-finance/assay#2525; check-definition/inventory staleness, medici-finance/assay#1606 open); rows 1–4 PASS; 4/5 pass, 0 could-not-check, 1 fail; status stays implemented.
+
+Verification-Attestation: medici-finance/assay#3897 run=04c98ba6c3a26002441f5ac9760ea8847664c94eab0eed9c6b05b7e6dcf2d062 source=844b7807847c25e5c96979e10dd85fccb08dcbf1 brief=docs/streams/forge-neutral/brief-20-claim-store-measurements.md model=claude-opus-5-5 tier=strong
+
 ## Review
 Gate: **model** (from frontmatter — all four risk answers no; documents only). Reviewer records
 verdict + date in the stream README table.
