@@ -140,7 +140,7 @@ exit code and output line, and every forge or file write, driven through its ent
 Reads, from the repository root: `grep -n '^| S-' docs/contracts.md | grep -F '<module>'` for
 the owner; then for a library `go -C <owner package> doc -all .`, and for a command
 `go -C <module> doc -cmd -u -all .` (its usage, exit codes and entry functions) and
-`git grep -nE '\.(Bool|Duration|Float64|Int|Int64|String|Uint|Uint64)(Var)?\(|\.(BoolFunc|Func|TextVar|Var)\(' -- '<module>/*.go' ':!<module>/*_test.go'`
+`git grep -nE '\.(Bool|Duration|Float64|Int|Int64|String|Uint|Uint64|BoolFunc|Func)\("|\.(Bool|Duration|Float64|Int|Int64|String|Text|Uint|Uint64)?Var\([^,]+, *"' -- '<module>/*.go' ':!<module>/*_test.go'`
 (its flags). Each test carries, directly above its declaration,
 `// characterization: <module> <oracle-file>`, two fields, so the test ledger can list it.
 A replay corpus for the module, where one exists, may be cited here as a source.
