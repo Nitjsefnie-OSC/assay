@@ -58,10 +58,12 @@ owners and completed evidence. Stop at implemented; independent verification own
 | 2 | `statusgen --root . --lint` | exit 0; no new lint failures |
 | 3 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:loopadmin/runner/request.go` | exit 0; DecodeRequest separates strict core from ext, and CheckCapabilities refuses unsupported require entries, corroborating the census precedent |
 | 4 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:tools/desk/cmd/opmetrics/emit.go` | exit 0; SchemaVersion comment explicitly permits additive fields, disproving a blanket claim that all JSON is closed |
-| 5 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:perfrec/v3.go` | exit 0; V3Data matches all mapped payload members, including requestDrops and nullable query, with no invented queryCoverage field |
+| 5 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:perfrec/v3.go` | exit 0; V3Data matches all mapped payload members, including requestDrops and nullable query, with no invented queryCoverage field; validV3 requires tool role none and workflow role equality, and query observations only apply to client/handler kinds |
+| 6 | `git show af897c3c112bd426cbbc794839dca6d41df911d6:tools/desk/internal/deskkit/perfread.go` | exit 0; FilterPerf explicitly excludes v3 from the legacy desk-role filter, corroborating the retained distinction from workflow assigned-role filtering |
 
 Pre-mortem: falsely describing every decoder as closed is caught by rows 3–4;
-losing requestDrops or fabricating query coverage is caught by row 5. Adequacy of
+losing requestDrops or fabricating query coverage is caught by row 5; conflating
+legacy desk role with assigned role is caught by rows 5–6. Adequacy of
 family grouping, future authority boundaries and consumer migration is review-only:
 reviewers must challenge the source witnesses and retained dependency obligations,
 not accept section presence as architectural conformance.

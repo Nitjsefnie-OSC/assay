@@ -298,14 +298,21 @@ this design and the architecture census, not the runtime changes.
 ### Stable core and extension roster
 
 The core marker is `schema: "perf-v4"`. Keep existing JSON spellings and semantics
-for `ts`, `tool`, `verb`, `role`, `boundary`, `wallMs`, `cpu`, optional `cpuMs`,
+for `ts`, `tool`, `verb`, `boundary`, `wallMs`, `cpu`, optional `cpuMs`,
 `exit`, `result`, `sourceSHA`, `install`. Add mandatory `profile` (`tool` or
 `workflow`), `observationKind` (the existing four-kind roster), `invocationId`
 (the existing random ID grammar), and `extensions` (an object). All core fields
 except `cpuMs` are required, exact-case and non-null; keep existing field-specific
 validation. v1 process-lifetime CPU and v2 interval CPU retain separate meanings.
-Core role remains the existing tool-role label; assigned workflow role belongs in
-attribution. No extension may change timing units, process boundaries or identity.
+Core `role` is mandatory and follows v3 assigned-execution semantics, not the v1/v2 desk-role meaning:
+tool profile requires the literal `none`; workflow profile carries the validated
+assigned execution role (`coordinate`, `implement`, `review`, `verify`, `triage`,
+`investigate`, `other`), or `none` when no assigned role is present. With supported
+attribution version 1, its assigned `role` must equal the core value; an absent
+attribution role requires core `none`. `deskRole` remains a distinct attribution
+field and is never emitted by a tool-profile writer. An absent or unsupported
+attribution extension cannot supply workflow filtering coverage from the core
+role alone. No extension may change timing units, process boundaries or identity.
 
 Each extension is `{ "version": 1, "data": { ... } }`. Exact registered names and
 version-1 payloads are:
@@ -322,8 +329,14 @@ pinned v3/v2 reference structs and validation tables; this prose does not author
 inventing a second observation model or weakening a field's constraints. Share the
 canonical observation/reduction types and validation with historical decoders.
 
-The selected writer always emits `process`, `requests` and `query` version 1,
-including explicit unavailable coverage when a seam cannot measure. It emits
+The selected writer always emits `process` and `requests` version 1, retaining
+their explicit unavailable coverage when a seam cannot measure. It also emits
+`query` version 1: a `query` observation is permitted only for service-client and
+service-handler kinds. For process-summary and provider-work, an empty query
+extension payload means **not applicable**; for a client or handler, the absence
+of a query observation means **unavailable**, never an observed zero. The reader
+uses the core observation kind to distinguish these cases; there is no invented
+query coverage field and no fabricated observation to populate the extension. It emits
 `attribution` version 1 only for workflow profile. A tool-profile writer has no
 workflow linkage payload. Version-1 attribution must not repeat invocationId or
 supply another profile. Every returned record remains per-process; the same
@@ -378,6 +391,15 @@ v4 observations are present. Mixed-history totals must not double-count process,
 client, handler, provider or boot-step observations. An attribution filter requires
 supported matching attribution; unavailable context cannot match or leak values.
 Explicitly test conflict handling and same-install/invocation duplicate identities.
+
+Legacy `--role` keeps its v1/v2 desk-role meaning and excludes all v3/v4 records,
+including a v4 record whose core role happens to equal the filter. `--assigned-role`
+uses the workflow-aware v3/v4 reducers and requires supported matching attribution
+under workflow-profile permission; it never reinterprets a legacy desk role or
+matches a v4 core role without usable attribution. A supplied legacy `--role`
+therefore excludes v4 even when combined with `--assigned-role`. Mixed-history
+fixtures must exercise both filters, both profiles, missing/unsupported attribution
+and query not-applicable/unavailable cases without changing old report meanings.
 
 First land the reader. Then qualify desktoken and verifyloop, the two tools observed
 with retained local v3 records, through their real compiled producer/report paths.
