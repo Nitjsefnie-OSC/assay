@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""Offline production-owner mutants. Run from tools/desk; always restore source."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+cases = [
+    ("membership shortcut", "internal/deskkit/activationindex.go",
+     'source.digest() == cached.source', 'true /* planted HEAD-only equivalent */',
+     'TestActivationSnapshotMatchesFreshDiscovery'),
+    ("cached acceptance", "internal/deskkit/activation.go",
+     'results := ComputeActivation(manifests, cfg.Ext, cfg.Configured())',
+     'results := ComputeActivation(manifests, nil, true); _ = cfg',
+     'TestActivationSnapshotIsNotAuthority'),
+    ("corrupt index accepted", "internal/deskkit/activationindex.go",
+     'sha256.Sum256(cached.payload) == cached.checksum', 'true /* planted corrupt acceptance */',
+     'TestActivationSnapshotCorruptionAndBounds'),
+    ("pre-parser startup scan", "cmd/deskboard/main.go", 'args := os.Args[1:]',
+     'args := os.Args[1:]; _ = deskkit.VerbActivationRefusal(".")',
+     'TestCompiledStartupDiscoveryWorkload'),
+]
+selected = sys.argv[1:]
+env = dict(os.environ, GOWORK='off', GOPROXY='off', KUBECONFIG='/dev/null')
+for name, target, old, new, test in cases:
+    if selected and name not in selected:
+        continue
+    path = Path(target)
+    original = path.read_text()
+    if original.count(old) != 1:
+        raise SystemExit(f'could-not-check: {name}: expected one production site')
+    try:
+        path.write_text(original.replace(old, new, 1))
+        result = subprocess.run(['go', 'test', './internal/deskkit', '-run', '^'+test+'$',
+                                 '-count=1', '-timeout=180s', '-v'], env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # A build failure is not a killed behavior mutant.
+        if result.returncode == 0 or '--- FAIL: '+test not in result.stdout:
+            print(result.stdout)
+            raise SystemExit(f'FAILED TO KILL: {name}')
+        failures = [line.strip() for line in result.stdout.splitlines()
+                    if '--- FAIL:' in line or '.go:' in line]
+        print('KILLED:', name, '\n'+'\n'.join(failures[:6]), flush=True)
+    finally:
+        path.write_text(original)

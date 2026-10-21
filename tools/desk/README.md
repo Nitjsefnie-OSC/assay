@@ -7603,3 +7603,76 @@ reached the remote per repository per rolling hour. `update` and `edit` do not
 consume that counter. All three still share the aggregate 100-write/hour limit,
 and updates/edits retain their per-PR budgets. Existing-PR no-ops do not consume
 creation capacity. Missing or unknown legacy audit verbs count conservatively.
+
+## Activation discovery snapshots
+
+`DiscoverManifests` remains the reference full enumerator and YAML parser;
+`ComputeActivation` remains the activation evaluator. `VerbActivationRefusal` uses
+one process-local discovery slot in `internal/deskkit/activationindex.go`. Every
+`CheckVerbActivation` consumer inherits that owner. Configuration, trust and provider
+requirements are evaluated again on every call, including direct lower API calls.
+The slot contains no activation decision and grants no permission.
+
+Reuse validates the root spelling and filesystem identity, derivation revision,
+complete current membership and every readable manifest byte, plus the stored
+payload checksum/revision. Reference enumeration and validation share the same
+membership traversal: `.git` is excluded, nested checkouts carrying a `.git` file
+or directory are excluded and diagnosed, and ignored/untracked paths are included.
+A hit still traverses the entire tree and reads/hashes every manifest. It saves
+YAML parsing, sorting and duplicate derivation only. HEAD, directory mtimes, TTLs
+and the previously read file list are insufficient evidence of membership.
+
+The slot is serialized under a mutex, published as a complete immutable payload,
+and limited to one root and 1 MiB of payload/source input. Readers decode fresh
+values so callers cannot mutate the slot. A miss evicts the previous slot and
+uses reference discovery, followed by an independent observation before admitting
+reuse. Missing, unreadable, oversized, corrupt, unsupported or changed inputs
+fall back to the reference; they never accept a partial cached list. The original
+reference's error/skip policy remains authoritative. No persistent file, watcher,
+service, CLI flag or new dependency is added. This deliberately does **not** offer
+a cross-process startup cache: portable filesystem metadata cannot qualify such a
+shortcut for arbitrary dirty/ignored inputs. Concurrent source edits have the
+same non-atomic observation limitation as fresh reference enumeration.
+
+`TestCompiledStartupDiscoveryWorkload` builds the actual `deskboard`,
+`deskdispatch` and `desktoken` packages. An observer-only build counts reference
+traversal, validation traversal, reads and parses, including pre-recorder startup;
+separate ordinary builds measure external elapsed time. Fixtures use isolated
+homes, 4/256 ordinary directories and one manifest; the execution ends at a
+synthetic missing-provider refusal without reaching credentials or the forge.
+Each telemetry setting has six samples with fresh homes and six with a reused
+home; OS/filesystem caches are uncontrolled. Reported p50 is the lower median
+and p95 the maximum of six samples. These are startup/refusal switch costs, not
+recorder-write overhead or a successful operation benchmark. The matched successful
+hotpath and v3 attribution belong to desktools-v2/62.
+
+Board and dispatch help/version keep their execution-only activation ownership.
+Token still checks activation before parsing; its help/version migration belongs
+to desktools-v2/33. The compiled test asserts these current boundaries and catches
+a planted scan before the parser/recorder. Run the reproducible production-owner
+negative controls from `tools/desk` with
+`python3 internal/deskkit/testdata/activation_mutations.py`. Each mutant must fail
+its named behavior test, not merely fail to compile; the script restores source.
+
+Observed 20 October 2026 with Go 1.27.2, darwin/arm64, six ordinary-build
+samples per cell (milliseconds, p50/p95). “Fresh” and “reused” refer to isolated
+home state, **not** a cold disk or a reusable snapshot across processes:
+
+| Command | Ordinary dirs | Fresh home, telemetry off | Reused home, off | Fresh home, on | Reused home, on |
+|---|---:|---:|---:|---:|---:|
+| deskboard | 4 | 14.71 / 259.22 | 14.07 / 15.54 | 14.30 / 14.78 | 13.30 / 14.30 |
+| deskboard | 256 | 49.92 / 83.25 | 84.64 / 150.88 | 39.99 / 63.19 | 37.94 / 38.43 |
+| deskdispatch | 4 | 14.37 / 287.87 | 13.82 / 20.61 | 14.10 / 14.88 | 14.02 / 15.00 |
+| deskdispatch | 256 | 41.42 / 47.61 | 41.52 / 42.92 | 40.97 / 42.30 | 40.77 / 43.76 |
+| desktoken | 4 | 11.73 / 157.97 | 12.43 / 12.66 | 12.93 / 13.14 | 12.55 / 13.42 |
+| desktoken | 256 | 39.23 / 42.60 | 38.31 / 40.15 | 37.46 / 40.49 | 39.86 / 40.89 |
+
+The observer runs counted 7/259 visited directories per reference pass and the
+same 7/259 per admission-validation pass (root, `.git`, manifest directory and
+ordinary directories), one parsed manifest, one validation read, and zero reuse
+per invocation. The unchanged in-process fixture separately proves the second
+call performs zero additional reference parses/enumerations and one complete
+validation traversal/read; it is **not** scan-free. Fresh-home outliers and the
+large board variance show why these small samples cannot establish causal
+telemetry overhead or a general latency target. This is an implementation
+measurement, not independently recorded verification Evidence.

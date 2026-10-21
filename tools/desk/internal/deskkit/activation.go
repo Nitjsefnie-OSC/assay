@@ -33,7 +33,6 @@ package deskkit
 import (
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,7 +84,12 @@ type manifestInjectKey struct {
 // one at the lexicographically first path is kept and every later one is
 // named in skipped as a duplicate (`deskmanifest lint` reports the duplicate
 // as a problem; activation must still not depend on walk or sort order).
-func DiscoverManifests(root string) (manifests []componentManifest, skipped []string, err error) {
+func DiscoverManifests(root string) ([]componentManifest, []string, error) {
+	return discoverManifests(root, nil)
+}
+
+func discoverManifests(root string, source *manifestSource) (manifests []componentManifest, skipped []string, err error) {
+	activationWork("enumeration")
 	info, statErr := os.Stat(root)
 	if statErr != nil {
 		return nil, nil, statErr
@@ -93,21 +97,12 @@ func DiscoverManifests(root string) (manifests []componentManifest, skipped []st
 	if !info.IsDir() {
 		return nil, nil, fmt.Errorf("root %s is not a directory", root)
 	}
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, werr error) error {
-		if werr != nil {
-			return werr
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
-				return filepath.SkipDir
+	walkErr := walkManifestTree(root, "reference-directory", func(path string, nested bool) error {
+		if nested {
+			skipped = append(skipped, relSlash(root, path)+": nested checkout (carries .git), not this tree")
+			if source != nil {
+				source.add("nested", relSlash(root, path), nil)
 			}
-			if path != root && hasGitEntry(path) {
-				skipped = append(skipped, relSlash(root, path)+": nested checkout (carries .git), not this tree")
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.Name() != "component.yaml" {
 			return nil
 		}
 		data, rerr := os.ReadFile(path)
@@ -115,6 +110,10 @@ func DiscoverManifests(root string) (manifests []componentManifest, skipped []st
 			skipped = append(skipped, path+": unreadable: "+rerr.Error())
 			return nil
 		}
+		if source != nil {
+			source.add("manifest", relSlash(root, path), data)
+		}
+		activationWork("parse")
 		var m componentManifest
 		if yerr := yaml.Unmarshal(data, &m); yerr != nil {
 			skipped = append(skipped, path+": unparseable: "+yerr.Error())
@@ -328,7 +327,7 @@ func VerbComponent(manifests []componentManifest) string {
 // `assay/` printed `assay/assay/desk-tools`, and would mislabel a component
 // from any other namespace.
 func VerbActivationRefusal(root string) string {
-	manifests, _, err := DiscoverManifests(root)
+	manifests, _, err := activationManifests(root)
 	if err != nil || len(manifests) == 0 {
 		return ""
 	}

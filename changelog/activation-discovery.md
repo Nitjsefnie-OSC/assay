@@ -1,0 +1,2 @@
+- Reuse parsed activation manifests within one process only after complete membership and content validation, with bounded storage and current configuration/provider evaluation.
+- Add offline compiled startup workloads and production-owner negative controls; filesystem validation remains visible and no persistent startup speedup is claimed.
