@@ -58,7 +58,7 @@ retired — see desk-supervision/24's Task step 8). Either shape's content is ex
 | `verifier_tier` | `any` or `strong` — the tier the run was admitted at; never a vendor or model name. Must equal the admitted binding's tier when it carries one |
 | `started`, `finished` | RFC3339 UTC; `started <= finished <= ts` |
 | `rows_passed`, `rows_total` | how many Verify rows passed, out of how many the brief has |
-| `row_results` | optional list of `{row, result}` (`pass` / `fail` / `could-not-run` / `deferred`) covering ALL `rows_total` rows; its length equals `rows_total` and its `pass` count equals `rows_passed` |
+| `row_results` | optional in the wire schema; [new producers](../../verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows) require it whenever `rows` is non-empty. List of `{row, result}` (`pass` / `fail` / `could-not-run` / `deferred`) covering ALL `rows_total` rows; its length equals `rows_total` and its `pass` count equals `rows_passed` |
 | `dispatch_ref` | optional `<claim_key>@<YYYYMMDDTHHMMSSZ>.<12 lowercase hex>` (prefix 1-226 printable ASCII bytes, no `@`). **Self-reported and stays so** — the writer checks the shape, never that the dispatch happened |
 | `dispatch_ref_sha256` | written by the writer only, on a private register, in place of `dispatch_ref`; never valid input |
 
@@ -190,6 +190,18 @@ Invariants the tests pin (`tools/desk/cmd/verifyloop/wake_test.go`, `tools/desk/
   Older binaries that cannot decode suffixed IDs need the upgraded reader; no
   compatibility downgrade may strip suffixes. This scheduling addition does not
   change the separate integer-only signed `verdict-v1` execution schema.
+  Its historical `Atoi` numeric execution lexemes remain supported separately.
+  Every nonempty noncanonical cell in the scheduling inventory is retained and makes
+  partial reuse could-not-check; it is never omitted to manufacture full coverage.
+  A malformed latest wake-v1 receipt stays visibly could-not-check for its brief;
+  it cannot disappear into an unclassified run or an older hold. The writer also
+  refuses noncanonical casing of row-list keys, exact held/PASS overlap, and counts
+  exceeding the non-held inventory. When an inventory is reported, held IDs must
+  appear in the exact `row_results`, or lie within the count-only numeric range
+  `1..rows_total`. Legacy receipts without either inventory remain readable.
+  An earlier source or clock uncertainty retains
+  its original reason. Rows deferred by the current offline envelope stay explicitly
+  unrun and are excluded from newly runnable identities; exclusion never marks them PASS.
 
 - A duplicate `receipt_id` (the latest record per brief wins — the newest `ts`, never file or
   line position) does not create another event.
