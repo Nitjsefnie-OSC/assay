@@ -5,6 +5,14 @@
 [medici-finance/assay#3763](https://github.com/medici-finance/assay/pull/3763) proposes
 and qualifies bounded local association, blocker and wake-input reuse, plus skipping work
 for roots rejected by preflight. Its merge is the acceptance point for that local code.
+The next bounded slice, pending-Evidence joins and scheduling attestation reuse, is
+qualified in [verifyloop-pending-performance.md](verifyloop-pending-performance.md).
+Its acceptance remains normal code review and human merge.
+The subsequent GitHub batching slice is qualified in
+[verifyloop-attestation-batching.md](verifyloop-attestation-batching.md) and proposed in
+[medici-finance/assay#3808](https://github.com/medici-finance/assay/pull/3808).
+Its acceptance point is independent review, required checks and human merge of that PR;
+the PR records the reversible GitHub-first scope decision. GitLab batching remains proposed.
 The broader extension to [desk-workflow-efficiency-spec.md](desk-workflow-efficiency-spec.md)
 remains proposed; its source's approval does not approve this extension. No runtime,
 cache service, collection, credentials, release or consumer cutover is activated.
@@ -102,10 +110,15 @@ source-query owner's later work. Build a brief-to-pending-change index once from
 cached file lists, carrying unknown-file-list uncertainty conservatively. Preserve final
 PR-head/state reconciliation and the existing rule that untrusted changes cannot hold work.
 
-Do not batch provider requests until their individual duplication and coverage are known.
-A later typed batch read may replace several reads only with per-target completeness,
-author/stamp/history parity, bounded pagination and actual point-cost comparison on both
-supported forges. A larger GraphQL operation is not automatically cheaper.
+The pending-Evidence profile now identifies four requests per distinct attestation after
+per-pass receipt reuse. The bounded GitHub implementation is described in
+[attestation batching](verifyloop-attestation-batching.md): four ordered bulk observation
+stages, evaluated by the existing validator, with per-target uncertainty, complete native
+pagination fallbacks and measured request/point costs. GitLab and unsupported decorators
+retain their existing per-target reader; a GitLab batch capability remains separate work
+and must demonstrate equivalent native provenance and measured complexity before adoption.
+A larger GraphQL operation is not automatically cheaper. Served observations and
+cross-process caches remain future dependencies, not requirements of this change.
 
 ### Association scan: pass-scoped local observations
 
@@ -242,7 +255,9 @@ remain unchanged. The instrumentation is not a performance optimization or relea
 This is scope routing, not an executable wave plan or approval of changed briefs. Author
 citing briefs with the existing author-brief process after the design is approved; preserve
 active checkpoints and completed Task/Verify/Evidence. Diagnostics are already merged; PR #3763 proposes and qualifies the bounded local
-algorithm changes named above. Attestation consolidation, pending joins, shared conditional
+algorithm changes named above. The pending-Evidence follow-on qualifies pass-local file and
+receipt reuse and an indexed join. It retains a consequential attestation current-state
+read, all body/stamp history checks and fresh PR-head reconciliation. Shared conditional
 transport and future service adoption remain proposals under their existing owners.
 
 ## 6. Future-state dependencies
@@ -304,7 +319,9 @@ Diagnostics are merged. The bounded local code in PR #3763 is proposed for norma
 and human merge: no persistent mutable cache, no added upstream concurrency and no
 preflight bypass. Its qualification is in the linked report. Review shared conditional
 transport, attestation consolidation and other provider changes separately when their
-scope contracts and matched results are concrete. The broader design remains a draft.
+scope contracts and matched results are concrete. The pending-Evidence report supplies
+that bounded follow-on's qualification; it does not approve conditional transport or the
+future service. The broader design remains a draft.
 
 Release the diagnostic producer with the existing desk/perf dependency closure; adopt normal
 consumer pins and independently verify the installed binary. New phase/verb labels do not

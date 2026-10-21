@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,17 @@ func (f *fakeDecisionForge) GetIssue(_ deskkit.ForgeRepo, n int) (*deskkit.Issue
 
 func (f *fakeDecisionForge) SearchIssues(_ deskkit.ForgeRepo, in deskkit.SearchIssuesInput) ([]deskkit.IssueSearchResult, error) {
 	f.reads = append(f.reads, "search")
-	return f.search[in.Query], nil
+	key := in.Query
+	if in.DecisionGateMarkers {
+		key = fmt.Sprintf("%q in:body", deskkit.DecisionGateMarkerPrefix+": "+in.DecisionGateBrief)
+	}
+	hits := append([]deskkit.IssueSearchResult(nil), f.search[key]...)
+	for i := range hits {
+		if item := f.issues[hits[i].Number]; item != nil {
+			hits[i].Body = item.Body
+		}
+	}
+	return hits, nil
 }
 
 func (f *fakeDecisionForge) ListIssueLabelEvents(_ deskkit.ForgeRepo, n int) ([]deskkit.LabelEvent, error) {

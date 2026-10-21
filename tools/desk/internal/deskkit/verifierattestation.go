@@ -499,6 +499,19 @@ func IsVerifierAttestation(title, author string) bool {
 // and dispatcher stamp gates as execution and Evidence admission; this is never
 // authority to execute rows, land Evidence, or advance lifecycle.
 func ReadVerifierAttestation(f Forge, repo ForgeRepo, n int) (VerifierReceipt, error) {
+	return readVerifierAttestation(f, repo, n)
+}
+
+// The shared validator can consume only these read capabilities. Extending it
+// requires an explicit adapter change at compile time, rather than a nil-Forge
+// panic or an accidental live request from a prepared observation.
+type verifierAttestationReader interface {
+	attestationRecordReader
+	issueLabelEventReader
+	GetIssueTyped(ForgeRepo, int, TargetKind) (*Issue, error)
+}
+
+func readVerifierAttestation(f verifierAttestationReader, repo ForgeRepo, n int) (VerifierReceipt, error) {
 	r := VerifierReceipt{Issue: n}
 	if n <= 0 {
 		return r, Refused("verifier attestation number must be positive")
@@ -544,14 +557,29 @@ func ReadVerifierAttestation(f Forge, repo ForgeRepo, n int) (VerifierReceipt, e
 	if _, err := parseVerifierCheckout(b.Checkout); err != nil {
 		return r, err
 	}
-	issue, err = attestationRecord(f, repo, n, VerifierAttestationTitle+b.Run, verifierBody(b), verifierAuthority, "verifier")
+	title, body := VerifierAttestationTitle+b.Run, verifierBody(b)
+	issue, err = attestationRecordObserved(f, repo, n, issue, title, body, verifierAuthority, "verifier")
 	if err != nil {
 		return r, err
 	}
 	if issue.State != "closed" {
 		return r, Refused("verifier pre-work attestation has not completed")
 	}
-	tl, err := StampTimelineFor(f, repo, n, TargetIssue)
+	// Keep a consequential current-state read AFTER body provenance. Reusing
+	// the initial issue is not permission to admit an edited/reopened record or
+	// moved labels. As in StampTimelineFor, current labels are read BEFORE their
+	// history. Dispatch and Evidence admission retain their independent reads.
+	issue, err = f.GetIssueTyped(repo, n, TargetIssue)
+	if err != nil {
+		return r, Unverifiable("cannot reconcile verifier attestation", err)
+	}
+	if err := attestationTarget(issue, title, body, verifierAuthority, "verifier"); err != nil {
+		return r, err
+	}
+	if issue.State != "closed" {
+		return r, Refused("verifier pre-work attestation has not completed")
+	}
+	tl, err := stampTimelineForIssue(f, repo, n, issue)
 	if err != nil {
 		return r, err
 	}
