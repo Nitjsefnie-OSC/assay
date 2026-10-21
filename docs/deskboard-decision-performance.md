@@ -73,7 +73,7 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`c8b32a625e21b8dbce8d910a05723d2f091eb449`. The later performance-report commit changes documentation only. This cohort
+`5dbb13492f647046617200026225ce4ab957a2b2`. The later performance-report commit changes documentation only. This cohort
 includes the independent review repairs for exact spelling, typed selective lookup,
 classified safe diagnostics and stable GitHub paging.
 Both local test binaries carry their respective source stamp. Five independent
@@ -86,12 +86,12 @@ in one process is unsuitable because process-init time would accumulate.
 | Search attempts, every sample | 12 | 1 |
 | Other REST attempts, every sample | 36 | 24 |
 | GraphQL attempts, every sample | 12 | 12 |
-| Process wall time, ms | 574, 553, 550, 576, 553 | 72, 158, 74, 72, 73 |
-| Median process wall time, ms | 553 | 73 |
-| Own process CPU, ms | 32, 28, 31, 33, 30 | 28, 42, 25, 24, 25 |
-| Median own process CPU, ms | 31 | 25 |
+| Process wall time, ms | 573, 548, 555, 565, 568 | 107, 88, 73, 76, 72 |
+| Median process wall time, ms | 565 | 76 |
+| Own process CPU, ms | 42, 28, 30, 42, 41 | 28, 27, 21, 25, 18 |
+| Median own process CPU, ms | 41 | 25 |
 
-That is **38.3% fewer HTTP attempts** and **86.8% less median elapsed time in this
+That is **38.3% fewer HTTP attempts** and **86.5% less median elapsed time in this
 latency fixture**. It is not a production speedup claim. Small CPU samples and their
 variance do not establish a general CPU improvement. Unique explicit issue references
 save no discovery calls; repositories needing more pages or having many shared
@@ -109,7 +109,7 @@ no operator consent, workflow grouping, audit ledger or live pin changes.
 Binary SHA-256 values:
 
 - Before: `ffebc60bf0fa6f942a0c490d5249903e091169ac8dbc4bcdfae6518341c741a8`
-- After: `06d5ae98c02cdf7ee82363a1d6c44f42e0ce40a99812f2e21796a622dca5bf1c`
+- After: `b7e886a49074d224d537e2b74a2d06866b455282f14e4e135918bdef2cab70c6`
 
 To reproduce from each respective source tree with the same test file:
 
