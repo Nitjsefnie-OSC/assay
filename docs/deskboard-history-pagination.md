@@ -10,7 +10,8 @@ review classifier or observation store.
 `GitHubForge.CompareRefs` collects up to ten numeric pages of 100 commits. A stable,
 nonnegative declared total, unique commit identities, matching status/divergence
 metadata and terminal pagination evidence are required for `CommitsComplete`.
-Further pages require both requested endpoints to be immutable commit identifiers;
+A declared total above 1000 fails incomplete after the first response: reading
+more pages cannot prove completeness within this budget. Further pages require both requested endpoints to be immutable commit identifiers;
 shared callers passing moving branch names retain a conservative incomplete result.
 Only the first page's aggregate file window is projected into `RefComparison.Files`:
 that existing field is not newly claimed to be complete.
@@ -61,13 +62,13 @@ renames, duplicate/missing entries, changing refs, malformed/cut responses, late
 errors and bounded exhaustion. Native deskboard regressions exercise first-parent
 classification and complete-only interval reuse, including retry after partial data.
 The dedicated mutation spec qualifies with a green baseline, caught positive control,
-13 caught faults, zero survivors and zero unmutatable faults. All seven shared adapter
-and consumer suites pass (deskkit 419.611s, deskboard 23.532s, deskdispatch 78.407s,
-deskevidence 85.295s, deskpost 8.281s, deskflip 1.012s, deskautolane 0.512s). Focused race,
+14 caught faults, zero survivors and zero unmutatable faults. All seven shared adapter
+and consumer suites pass (deskkit 462.946s, deskboard 41.808s, deskdispatch 169.802s,
+deskevidence 173.221s, deskpost 19.844s, deskflip 2.239s, deskautolane 1.078s). Focused race,
 vet, source lint, mutation-anchor and committed test-ledger checks pass. No original
-test or control is retired. Full suites exercised identical production bytes before
-the final measurement-only fixture extension; that extension was exercised in the
-paired processes and focused race run.
+test or control is retired. The final fail-fast behavior and all consumer suites were run at the measured
+source below. Earlier measurements, binaries and qualification remain preserved
+as the initial revision; no prior evidence is relabeled as a repeated run.
 
 Matched measurement uses the actual native adapter, first-parent reader and shared
 `PerfRunMeasured` writer/reader with only remote HTTP replaced by a fixture. Fixture
@@ -86,9 +87,10 @@ Matched runs (five fresh processes per variant/cohort, alternating order):
 
 | Interval fixture | HTTP before → after | Median wall ms | Observed nearest-rank p95 wall ms | Median own CPU ms | Evidence |
 |---|---:|---:|---:|---:|---|
-| Small cold: 1 commit, 2 files | 2 → 2 | 47 → 44 | 396 → 186 | 14 → 15 | complete → complete |
-| Large cold: 251 commits, 301 files | 1 → 7 | 66 → 83 | 91 → 85 | 16 → 21 | incomplete → complete |
-| Eight unchanged large-interval sweeps | 8 → 7 | 130 → 96 | 536 → 208 | 35 → 26 | incomplete → complete |
+| Small cold: 1 commit, 2 files | 2 → 2 | 87 → 71 | 394 → 146 | 15 → 15 | complete → complete |
+| Large cold: 251 commits, 301 files | 1 → 7 | 44 → 139 | 277 → 219 | 18 → 21 | incomplete → complete |
+| Eight unchanged large-interval sweeps | 8 → 7 | 459 → 140 | 633 → 428 | 39 → 27 | incomplete → complete |
+| Declared over budget: 1001 commits | 1 → 1 | 70 → 63 | 143 → 90 | 16 → 14 | incomplete → incomplete |
 
 The repeat cohort replays one unchanged externally observed PR key through actual
 fact-store save/load. All five request-count repetitions agree. It saves one interval
@@ -96,14 +98,14 @@ request across eight such sweeps (12.5%) and recovers complete evidence on all e
 repo snapshots, checks/reviews and consequential rechecks remain outside this interval
 fixture. There is no whole-board, reviewer-cost, fleet, rate-limit-point or production
 speedup claim. The large cold cohort does additional work, not equivalent cheaper work.
-Host scheduling was noisy (small-before wall samples span 34–396 ms);
+Host scheduling was noisy (small-before wall samples span 33–394 ms);
 these five-sample quantiles describe only the observations, not a latency guarantee.
 CPU values and unsupported/unknown point coverage are retained without a general savings claim.
 
 Baseline production: `917772b3ee4709bc47e5d0888cb5cc698444b13e`.
-After source and identical fixture: `7c0b4a1608c8d99ae15ff947dfdb81fd588e7814`.
-Before binary SHA256: `efe0ab2870a7ba33f411a57ff6350c06b69802d6c619a674fdd45cebbb86898f`.
-After binary SHA256: `6b1d09b1bd44d24d00575fe8bf9163c465021eeabb53ddf0c56e9314f9b83855`.
+After source and identical fixture: `f7224bd1a1b66493b27dc6fab2cb3764828787ef`.
+Before binary SHA256: `cac3ac37de2b33704be3d7e9ab0ad2461e9ca0865a5ebba224874217439a8621`.
+After binary SHA256: `edbb9fc33c24abdb50c5c61ab6b93da1db766c9663645934d6c5a964346adf68`.
 Each record's native HTTP attempts matched a separate fixture-server witness. No
 historical record was relabeled and no v4 or repeated mutation/performance run is invented.
 
