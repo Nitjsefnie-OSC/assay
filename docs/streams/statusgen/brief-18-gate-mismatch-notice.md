@@ -44,13 +44,10 @@ consumers:
 ## Context
 
 files:
-- `statusgen/scanissues.go` — in `planScan`, the comparison at the existing-placeholder skip
-  and the notice it appends.
+- `statusgen/scanissues.go` — in `planScan`, the comparison at the existing-placeholder skip and the notice it appends.
 - `statusgen/scanissues_test.go` — the two new tests named in Verify.
-- `plugins/assay/skills/intake-desk/SKILL.md` — two sentences appended to one bullet in the
-  scored-triage section.
-- `docs/streams/statusgen/brief-18-gate-mismatch-notice.md` — this brief's two `follow-up`
-  routings (Task 6).
+- `plugins/assay/skills/intake-desk/SKILL.md` — two sentences appended to one bullet in the scored-triage section.
+- `docs/streams/statusgen/brief-18-gate-mismatch-notice.md` — this brief's two `follow-up` routings (Task 6).
 - `changelog/<branch-slug>.md` — the per-PR fragment this repo enforces.
 
 single-point-of-failure: a person reading the notice and editing the placeholder. The notice

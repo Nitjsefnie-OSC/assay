@@ -262,6 +262,23 @@ func ciCrossModuleRegistry() []ciEntry {
 	}
 
 	registry := []ciEntry{
+		{
+			test: "statusgen/boardcohort_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"docs/streams", "statusgen/testdata/witness-admission"},
+			runInvokes: []string{"cd statusgen && go test ./... && go vet ./..."},
+			why:        "the source-bound board cohort reads current delivery declarations and alias registry; unfiltered push and pull_request run the statusgen suite even on metadata-only changes",
+		},
+
+		{test: "tools/desk/cmd/writeguard/policy_consumers_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"deskcore/", "docs/write-policy-consumers.md", "docs/contracts.md", "tools/desk/internal/arch/markers.txt", "Dockerfile", "images/assay-harness/Dockerfile", "**/*.go"},
+			runInvokes: []string{`*/tools/desk|tools/desk) extra="go test ./..."`, `eval "$extra"`},
+			why:        "the write-policy census scans production Go declarations across the source tree and packages deskcore for an offline external consumer; the source workflow is unfiltered"},
+		{test: "tools/desk/cmd/writeguard/policy_parity_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"deskcore/"},
+			runInvokes: []string{`*/tools/desk|tools/desk) extra="go test ./..."`, `eval "$extra"`},
+			why:        "the actual built writeguard hook is compared with the core, then uses disposable mutated copies of that producer; deskcore-only edits must rerun parity"},
+
 		{test: "tools/desk/internal/reviewtest/observation_boundary_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
 			reads:      []string{"schemas/review-observation-v1.json"},
 			runInvokes: []string{"*/tools/desk|tools/desk) extra=\"go test ./...\"", "eval \"$extra\""},

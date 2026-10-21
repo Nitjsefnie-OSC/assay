@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestPerfV3CLIContextPrecedence(t *testing.T) {
 		profile             perfrec.Profile
 	}{
 		{"inherited", nil, "implement", strings.Repeat("a", 32), "worker-desk", 0, perfrec.ProfileWorkflow},
-		{"override", []string{"--perf-role", "review", "--perf-session-id", "", "--perf-agent-id", strings.Repeat("e", 32), "--perf-parent-agent-id", "", "--perf-parent-invocation-id", "", "--perf-desk-role", "pr-review-desk", "--perf-work", issue}, "review", "", "pr-review-desk", 2, perfrec.ProfileWorkflow},
+		{"override", []string{"--perf-role", "review", "--perf-session-id", "", "--perf-agent-id", strings.Repeat("e", 32), "--perf-parent-agent-id", "", "--perf-parent-invocation-id", "", "--perf-loop-role", "pr-review-desk", "--perf-work", issue}, "review", "", "pr-review-desk", 2, perfrec.ProfileWorkflow},
 		{"clear", []string{"--perf-role=", "--perf-work="}, "", strings.Repeat("a", 32), "worker-desk", 0, perfrec.ProfileWorkflow},
 		{"invalid", []string{"--perf-role=invalid metadata must stay private", "--perf-session-id=private text"}, "", "", "worker-desk", 0, perfrec.ProfileWorkflow},
 		{"tool", []string{"--perf-profile=tool"}, "", "", "", 0, perfrec.ProfileTool},
@@ -82,9 +83,115 @@ func TestPerfV3CLIContextPrecedence(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"deskclaim", "deskclaim-ref", "deskboot", "desktoken", "deskread", "deskgitlab"} {
+	for _, name := range recorderBinaries(t) {
 		t.Run(name, func(t *testing.T) { checkCurrentParser(t, name, issue) })
 	}
+}
+
+// perfInventoryPath is the maintained-entrypoint inventory desktools-v2/64 records.
+const perfInventoryPath = "docs/performance-entrypoints.json"
+
+// perfEntrypoint is one inventory row. Unknown keys are refused, so a renamed key
+// cannot silently drop a binary from the exercised set.
+type perfEntrypoint struct {
+	Executable  string `json:"executable"`
+	Path        string `json:"path"`
+	Module      string `json:"module"`
+	ParserOwner string `json:"parser_owner"`
+	ParserState string `json:"parser_state"`
+	Context     string `json:"context"`
+	Owner       string `json:"owner"`
+	Gap         string `json:"gap,omitempty"`
+}
+
+// parserArgs are the offline operations each exercised binary runs. They are
+// fixtures only: the exercised set comes from the inventory and the registry,
+// and a key that set does not name, or a named binary with no key, fails.
+var parserArgs = map[string][]string{
+	"cellctl":       {"show", "nosuchcell"},
+	"deskboard":     {"nextup"},
+	"deskboot":      {"worker-desk", "--dry-run"},
+	"deskclaim":     {"list"},
+	"deskclaim-ref": {"list"},
+	"deskdispatch":  nil,
+	"deskgitlab":    {"create"},
+	"deskread":      {"issues", "--repo", "example/project"},
+	"desktoken":     {"coverage", "invalid-role"},
+}
+
+// recorderBinaries derives the binaries whose parsed context reaches the
+// recorder from the inventory, and fails when a row's parser owner or state
+// (its parser exemption) disagrees with the CLI migration registry, or when
+// registry validation reports a problem naming an exercised row or its owner.
+func recorderBinaries(t *testing.T) []string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(RegistryPath)))
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	reg := decode(t, raw)
+	inv, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(perfInventoryPath)))
+	if err != nil {
+		t.Fatalf("inventory: %v", err)
+	}
+	var doc struct {
+		Schema      string            `json:"schema"`
+		Source      string            `json:"source"`
+		Scope       string            `json:"scope"`
+		Entrypoints []perfEntrypoint  `json:"entrypoints"`
+		Runtime     []json.RawMessage `json:"runtime"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(inv))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&doc); err != nil || doc.Schema != "performance-entrypoints/v1" {
+		t.Fatalf("inventory %s: schema %q: %v", perfInventoryPath, doc.Schema, err)
+	}
+	rows := map[string]*Entry{}
+	for i := range reg.Entrypoints {
+		rows[reg.Entrypoints[i].Path] = &reg.Entrypoints[i]
+	}
+	var names, touched []string
+	for _, p := range doc.Entrypoints {
+		if p.Context != "parsed-to-recorder" {
+			continue
+		}
+		e := rows[p.Path]
+		switch {
+		case e == nil:
+			t.Errorf("inventory %s has no registry row", p.Path)
+			continue
+		case e.Executable != p.Executable || e.Owner != p.ParserOwner || e.State != p.ParserState:
+			t.Errorf("inventory %s parser %s/%s disagrees with registry %s/%s", p.Path, p.ParserOwner, p.ParserState, e.Owner, e.State)
+		case p.Module != "tools/desk" || p.Path != "tools/desk/cmd/"+p.Executable:
+			t.Errorf("inventory %s has no desk build route", p.Path)
+		}
+		if _, ok := parserArgs[p.Executable]; !ok {
+			t.Errorf("inventory %s has no offline fixture", p.Path)
+		}
+		names = append(names, p.Executable)
+		touched = append(touched, p.Path, e.Owner)
+	}
+	for name := range parserArgs {
+		if !contains(names, name) {
+			t.Errorf("fixture %s names no parsed-to-recorder inventory row", name)
+		}
+	}
+	for _, problem := range Validate(os.DirFS(repoRoot), reg) {
+		for _, key := range touched {
+			if namesPath(problem, key) {
+				t.Errorf("registry problem on an exercised row: %s", problem)
+				break
+			}
+		}
+	}
+	if len(names) == 0 {
+		t.Error("inventory names no parsed-to-recorder entrypoint")
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+	sort.Strings(names)
+	return names
 }
 
 func checkCurrentParser(t *testing.T, name, work string) {
@@ -97,7 +204,7 @@ func checkCurrentParser(t *testing.T, name, work string) {
 	}
 	home := t.TempDir()
 	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "USERPROFILE=" + home, "KUBECONFIG=/dev/null", "DESK_LOOP=worker-desk", "ASSAY_TELEMETRY=1", "ASSAY_PERF_PROFILE=workflow", "ASSAY_PERF_ROLE=implement", "ASSAY_PERF_SESSION_ID=" + strings.Repeat("a", 32), "ASSAY_PERF_AGENT_ID=" + strings.Repeat("b", 32), "ASSAY_PERF_PARENT_AGENT_ID=" + strings.Repeat("c", 32), "ASSAY_PERF_PARENT_INVOCATION_ID=" + strings.Repeat("d", 32), `ASSAY_PERF_WORK=[{"kind":"brief","repo":"example/project","brief":"example:project:work:1","primary":true}]`}
-	args := map[string][]string{"deskclaim": {"list"}, "deskclaim-ref": {"list"}, "deskboot": {"worker-desk", "--dry-run"}, "desktoken": {"coverage", "invalid-role"}, "deskread": {"issues", "--repo", "example/project"}, "deskgitlab": {"create"}}[name]
+	args := parserArgs[name]
 	run := func(extra ...string) ([]byte, int) {
 		cmd := exec.Command(bin, append(append([]string(nil), args...), extra...)...)
 		cmd.Dir = home
@@ -109,7 +216,7 @@ func checkCurrentParser(t *testing.T, name, work string) {
 		return out, cmd.ProcessState.ExitCode()
 	}
 	baseline, code := run()
-	changed, got := run("--perf-role=review", "--perf-desk-role=pr-review-desk", "--perf-session-id=", "--perf-work="+work)
+	changed, got := run("--perf-role=review", "--perf-loop-role=pr-review-desk", "--perf-session-id=", "--perf-work="+work)
 	if got != code || string(changed) != string(baseline) {
 		t.Fatalf("optional flags changed current-parser output/exit: %d/%d\n%s\n%s", code, got, baseline, changed)
 	}

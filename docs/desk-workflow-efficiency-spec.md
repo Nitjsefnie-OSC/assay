@@ -312,3 +312,12 @@ performance-collection and forge-neutral owners. The authoring PR proposes these
 its merge completes routing, not implementation. Preserve completed briefs and Evidence.
 The active CLI ports and pending supervision/improvement proposals have explicit pickup
 checkpoints. No implementation is declared complete by these amendments.
+
+## Proposed verification extension — 20 October 2026
+
+[Verification planning performance and diagnostics](verifyloop-performance-spec.md) proposes
+applying this observation/evaluation and matched-cost method to verification. It reuses the
+existing recorder/provider adapters and separates local read reuse from R5/R6 service work.
+It is a draft extension, not an enlargement of this document's revision-bound approval or
+an amendment to the review-only briefs. The accompanying verifyloop diagnostic integration
+is explicitly requested; behavioral optimizations retain their own approval and qualification.

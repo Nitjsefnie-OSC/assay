@@ -41,15 +41,10 @@ version: 2
 ## Context
 
 files:
-- `tools/desk/internal/deskkit/reviewlanes.go` (new) — `LanesFor(tier) []Lane`, pure, table-
-  driven from the per-tier capability table, plus the claims-extraction helper the fact-check
-  lane is dispatched with.
+- `tools/desk/internal/deskkit/reviewlanes.go` (new) — `LanesFor(tier) []Lane`, pure, table- driven from the per-tier capability table, plus the claims-extraction helper the fact-check lane is dispatched with.
 - `tools/desk/internal/deskkit/reviewlanes_test.go` (new).
-- `tools/desk/cmd/deskdispatch/references/review-lanes.md` (new) — the lane set per tier and
-  the fact-check lane's output contract, as a dispatch reference.
-- `plugins/assay/skills/pr-review-desk/SKILL.md` — one paragraph: lane depth is tier-keyed;
-  the tier source is a project-layer value the neutral body resolves, not a value inlined
-  here.
+- `tools/desk/cmd/deskdispatch/references/review-lanes.md` (new) — the lane set per tier and the fact-check lane's output contract, as a dispatch reference.
+- `plugins/assay/skills/pr-review-desk/SKILL.md` — one paragraph: lane depth is tier-keyed; the tier source is a project-layer value the neutral body resolves, not a value inlined here.
 - `changelog/contributor-trust-review-depth.md` (new).
 
 facts:

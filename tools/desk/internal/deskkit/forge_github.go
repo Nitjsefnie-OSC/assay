@@ -96,8 +96,8 @@ func (g *GitHubForge) baseURL() string {
 // token to the real API host and to a test server, but never to an unrelated host.
 func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {
 	if g.Token == "" {
-		return nil, Unverifiable("refusing to reach the GitHub forge without an explicitly minted token — "+
-			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", nil)
+		return nil, missingForgeToken("refusing to reach the GitHub forge without an explicitly minted token — " +
+			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity")
 	}
 	if g.rc != nil {
 		return g.rc, nil
@@ -682,6 +682,15 @@ func (g *GitHubForge) OpenChangeForBranch(repo ForgeRepo, branch string) (*PullR
 // prefixed with `repo:{o}/{r} is:issue`, so the caller supplies free text and the backend owns
 // the scope qualifiers — the closed-surface property (no caller-supplied search syntax).
 func (g *GitHubForge) SearchIssues(repo ForgeRepo, in SearchIssuesInput) ([]IssueSearchResult, error) {
+	if in.DecisionGateMarkers {
+		if err := validateDecisionSearch(in); err != nil {
+			return nil, err
+		}
+		return g.searchDecisionMarkers(repo, in.DecisionGateBrief)
+	}
+	if in.DecisionGateBrief != "" {
+		return nil, Refused("decision-marker brief requires marker discovery mode")
+	}
 	q := strings.TrimSpace(fmt.Sprintf("repo:%s is:issue %s", repo.Slug(), strings.TrimSpace(in.Query)))
 	path := fmt.Sprintf("/search/issues?q=%s&per_page=%d", url.QueryEscape(q), forgeSearchPerPage)
 	var w ghIssueSearchWire
@@ -2347,8 +2356,8 @@ func (g *GitHubForge) ListWorkflowFiles(repo ForgeRepo, ref string) ([]string, e
 // second auth path or ambient-identity fallback is introduced.
 func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {
 	if g.Token == "" {
-		return "", Unverifiable("refusing to reach the GitHub forge without an explicitly minted token — "+
-			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", nil)
+		return "", missingForgeToken("refusing to reach the GitHub forge without an explicitly minted token — " +
+			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity")
 	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", repo.Owner, repo.Name, number)
 	req, rerr := http.NewRequest(http.MethodGet, g.baseURL()+path, nil)

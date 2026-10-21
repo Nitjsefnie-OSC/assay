@@ -57,8 +57,7 @@ None.
 
 files:
 - `tools/desk/cmd/deskboard/board.go` (`classifyPR` — the predicate swap is removed)
-- `tools/desk/internal/deskkit/trust.go` (`TrustedPublicAuthor` retired; `TrustedHumanAuthor`'s
-  doc comment rewritten to define its own excluded set)
+- `tools/desk/internal/deskkit/trust.go` (`TrustedPublicAuthor` retired; `TrustedHumanAuthor`'s doc comment rewritten to define its own excluded set)
 - `tools/desk/internal/deskkit/trustpublic_test.go` (re-pinned to the new bar, or replaced)
 - `tools/desk/cmd/deskboard/publicauthorgate_test.go` (re-pinned; the negative control stays)
 - `tools/desk/README.md` (§ trust gate — the "PUBLIC repos have a higher author bar" text)

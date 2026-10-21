@@ -25,8 +25,9 @@ import (
 // NOT cryptographic un-forgeability. A holder of signing material can still forge; the close
 // is author!=approver between distinct Apps + branch protection, which is out of scope here.
 type VerifyLoop struct {
-	attested verifierRuns
-	Attest   func(loopengine.Item, string, string) (deskkit.VerifierReceipt, error)
+	performance verifyPerformance // optional invocation diagnostics; never scheduling authority
+	attested    verifierRuns
+	Attest      func(loopengine.Item, string, string) (deskkit.VerifierReceipt, error)
 
 	Root      string // repo root the Awaiting scan runs against
 	TargetSHA string // merged-main SHA verifiers run against (stamped onto every Item)
@@ -115,20 +116,31 @@ func (v *VerifyLoop) Name() string { return "verify-desk" }
 // (implemented + empty Evidence) before tier-2 (free-closes / Evidence-present), oldest-first
 // within class. See briefscan.go.
 func (v *VerifyLoop) SelectQueue() ([]loopengine.Item, error) {
+	if source, ok := v.Issues.(interface{ beginPlanningPass() }); ok {
+		source.beginPlanningPass()
+	}
 	now := v.wakeNow()
 	var items []loopengine.Item
 	var err error
+	stopScan := v.performance.phase("queue-scan")
+	pass := deskkit.NewVerifierAssociationPass(v.performance.session)
 	if len(v.Roots) > 0 {
-		items, err = scanAwaitingRoots(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now)
+		items, err = scanAwaitingRootsPass(v.Roots, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
 	} else {
-		items, err = scanAwaitingIn(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now)
+		items, err = scanAwaitingPass(deskkit.RootConfig{Path: v.Root}, v.RootRepo, v.TargetSHA, v.WakeReader, v.Issues, now, pass)
 	}
+	stopScan()
 	if err != nil {
 		return nil, err
 	}
 	// Both single-root and multi-root consumers pass this join. A source with
 	// no pending-Evidence capability keeps the offline board-only scan.
 	if source, ok := v.Issues.(pendingEvidenceSource); ok {
+		if prepare, ok := v.Issues.(interface {
+			preparePendingEvidence([]loopengine.Item, string)
+		}); ok {
+			prepare.preparePendingEvidence(items, v.RootRepo)
+		}
 		for i, it := range items {
 			if payloadValue(it, "could_not_check") != "" {
 				continue

@@ -52,8 +52,7 @@ evidence. This brief adds a floor; the failure message must say so.
 
 files:
 - `statusgen/registerentries.go` (implementation home) — the findings entry schema.
-- `statusgen/findingcontrol.go` — the severity path for a recurring-class finding, which this
-  brief extends from "a control landed" to "a control was shown to fire".
+- `statusgen/findingcontrol.go` — the severity path for a recurring-class finding, which this brief extends from "a control landed" to "a control was shown to fire".
 - `docs/registers.md` — the schema documentation for the new keys.
 
 facts:

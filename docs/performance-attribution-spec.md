@@ -94,7 +94,7 @@ deskkit stays internal. The shared CLI adapter binds values; it does not own the
 | `--perf-agent-id` | `ASSAY_PERF_AGENT_ID` |
 | `--perf-parent-agent-id` | `ASSAY_PERF_PARENT_AGENT_ID` |
 | `--perf-parent-invocation-id` | `ASSAY_PERF_PARENT_INVOCATION_ID` |
-| `--perf-desk-role` | existing `DESK_LOOP` (attribution only; a flag never changes authorization role) |
+| `--perf-loop-role` | existing `DESK_LOOP` (attribution only; a flag never changes authorization role) |
 | `--perf-role` | `ASSAY_PERF_ROLE` |
 | repeatable `--perf-work` | `ASSAY_PERF_WORK`, one bounded JSON array of the same typed references |
 

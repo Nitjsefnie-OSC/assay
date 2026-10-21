@@ -59,12 +59,12 @@ id: be893ed6-782f-4000-9675-c03ddff205b2
 
 files:
 - `tools/desk/internal/deskkit/outbound.go` (planned) — created by `desktools-v2/10`; this brief adds the consult step.
-- NEW `tools/desk/internal/deskkit/outboundcallout.go` (planned) + `_test.go`.
+- `tools/desk/internal/deskkit/outboundcallout.go` (planned) (new) + `tools/desk/internal/deskkit/outboundcallout_test.go` (planned) (new).
 - `tools/desk/internal/deskkit/callout.go` — an explicit-environment option.
 - `tools/desk/internal/deskkit/rosterconfig.go` — the new keys in the known set and the P3 echo.
 - `tools/desk/internal/deskkit/testdata/outbound-callout/` (planned) — stub executables.
 - `tools/desk/README.md` — the contract.
-- `changelog/<branch>.md` — the per-PR fragment this repository requires.
+- `changelog/feat-desktools-v2-11.md` — the per-PR fragment this repository requires (the name the delivering change used).
 
 single-point-of-failure: for a deployment's own vocabulary the ONE control is this callout — by
 design nothing compiled knows those words. Two layers stand behind it. The compiled layer of
@@ -106,8 +106,8 @@ facts:
 - **Timeout: 5 s default, up to 60 s by configuration.** Measured, not assumed: a compiled
   token-map sweep over a 16 KiB body took 0.01 s, so the shared 5 s default has three orders of
   magnitude of headroom for body-sized text and stays the default. The `file` kind on the push
-  path can carry a multi-megabyte diff (the same sweeper over a whole repository of about 2,800
-  files took 11.8 s), and an interpreter-based or multi-engine sweeper was
+  path can carry a multi-megabyte diff (the same sweeper over a whole repository of about 2,800 files
+  took 11.8 s), and an interpreter-based or multi-engine sweeper was
   could-not-check, so the bound is configurable up to 60 s (the inbound scan's own ceiling, well
   under an agent watchdog) rather than raised for everyone. A timeout is a refusal.
 - **The callout receives text and nothing else.** It runs with an explicit environment —

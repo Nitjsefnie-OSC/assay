@@ -35,10 +35,7 @@ id: ce32913b-bf75-409f-8781-6fe845260a68
 
 ## Context
 
-files: `spec/context-handoff-v1.md` (planned), `schemas/context-handoff-v1.json` (planned),
-`schemas/amendment-manifest-v1.json` (planned), `statusgen/contexthandoff/` (planned) (new pure package and
-tests), `statusgen/testdata/contexthandoff/` (planned), `docs/contracts.md` (one new owner row),
-`changelog/statusgen-19-context-handoff-contracts.md` (planned).
+files: `spec/context-handoff-v1.md` (planned), `schemas/context-handoff-v1.json` (planned), `schemas/amendment-manifest-v1.json` (planned), `statusgen/contexthandoff/` (planned) (new pure package and tests), `statusgen/testdata/contexthandoff/` (planned), `docs/contracts.md` (one new owner row), `changelog/statusgen-19-context-handoff-contracts.md` (planned).
 
 facts (a435badbd, 2026-10-13):
 - The handoff records named by the ratified target are: target and intent, discovery receipt,
