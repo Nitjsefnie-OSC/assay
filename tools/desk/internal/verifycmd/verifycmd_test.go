@@ -155,7 +155,7 @@ func cellVerdict(why string) string {
 // match the shared table on every cell, and the table holds the executors to
 // statusgen verdict for verdict: lift parity, so a cell statusgen runs is the
 // same command here and a cell statusgen refuses is never run here (#3147).
-// regression: #3147
+// regression: #2684, #3147
 func TestCommentCellSharedVectors(t *testing.T) {
 	for _, v := range loadCommentCells(t) {
 		if got := firstSpan(v.Cell); got != v.FirstSpan {
