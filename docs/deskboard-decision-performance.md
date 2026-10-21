@@ -44,8 +44,11 @@ parity and retain GitLab's refusal when an issue and merge request share a numbe
 No live GitLab execution is claimed.
 
 Discovery failures carry closed diagnostic categories: result/page limit,
-incomplete response/pagination, rate limit, authentication/authorization, or other
-transport/response failure. Raw provider bodies and locators are not rendered in
+incomplete response/pagination, local query refusal, rate limit,
+authentication/authorization, or other transport/response failure. A GitHub
+short-page overrun is incomplete rather than a result-cap failure. Both shared
+and selective paths validate opaque tokens before provider work, including
+embedded quote/backslash and Unicode whitespace/control rejection. Raw provider bodies and locators are not rendered in
 row reasons. A failure remains unknown rather than an empty healthy queue.
 
 Scope remains the measured repeated-read regression. `throughput` still needs the
@@ -70,7 +73,7 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`c36cf0e757b7aad9098415cd13b40893bef7459a`. The later performance-report commit changes documentation only. This cohort
+`c8b32a625e21b8dbce8d910a05723d2f091eb449`. The later performance-report commit changes documentation only. This cohort
 includes the independent review repairs for exact spelling, typed selective lookup,
 classified safe diagnostics and stable GitHub paging.
 Both local test binaries carry their respective source stamp. Five independent
@@ -83,12 +86,12 @@ in one process is unsuitable because process-init time would accumulate.
 | Search attempts, every sample | 12 | 1 |
 | Other REST attempts, every sample | 36 | 24 |
 | GraphQL attempts, every sample | 12 | 12 |
-| Process wall time, ms | 573, 554, 549, 568, 580 | 73, 71, 74, 74, 83 |
-| Median process wall time, ms | 568 | 74 |
-| Own process CPU, ms | 33, 25, 24, 40, 47 | 23, 21, 19, 17, 24 |
-| Median own process CPU, ms | 33 | 21 |
+| Process wall time, ms | 574, 553, 550, 576, 553 | 72, 158, 74, 72, 73 |
+| Median process wall time, ms | 553 | 73 |
+| Own process CPU, ms | 32, 28, 31, 33, 30 | 28, 42, 25, 24, 25 |
+| Median own process CPU, ms | 31 | 25 |
 
-That is **38.3% fewer HTTP attempts** and **87.0% less median elapsed time in this
+That is **38.3% fewer HTTP attempts** and **86.8% less median elapsed time in this
 latency fixture**. It is not a production speedup claim. Small CPU samples and their
 variance do not establish a general CPU improvement. Unique explicit issue references
 save no discovery calls; repositories needing more pages or having many shared
@@ -106,7 +109,7 @@ no operator consent, workflow grouping, audit ledger or live pin changes.
 Binary SHA-256 values:
 
 - Before: `ffebc60bf0fa6f942a0c490d5249903e091169ac8dbc4bcdfae6518341c741a8`
-- After: `4d6025fcb15063b7ce8c930baabd27faf8824e9f197e7bc9dd30eaa8919e2d1f`
+- After: `06d5ae98c02cdf7ee82363a1d6c44f42e0ce40a99812f2e21796a622dca5bf1c`
 
 To reproduce from each respective source tree with the same test file:
 
@@ -137,10 +140,11 @@ cd tools/desk
 go run ./cmd/muhar -j 2 -spec cmd/deskboard/decision-admission-mutations.json
 ```
 
-The repaired source qualifies sixteen mutations: a healthy pristine baseline and
-positive control, sixteen caught faults, zero survivors and zero could-not-mutate.
+The repaired source qualifies twenty-one mutations: a healthy pristine baseline and
+positive control, twenty-one caught faults, zero survivors and zero could-not-mutate.
 Cross-project aliases, lost diagnostic class, raw provider-detail leakage,
-GitHub syntax sent to GitLab and unstable paging are included explicitly.
+GitHub syntax sent to GitLab, unstable paging, local-refusal/page-bound labels,
+quote/backslash rejection and shared/selective validation parity are included explicitly.
 
 Existing review snapshots, conditional transports, per-PR reuse, quota floors,
 root resolution, queue semantics, trust controls and perf-v3 observation machinery
