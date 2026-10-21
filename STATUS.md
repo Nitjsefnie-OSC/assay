@@ -126,7 +126,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 63b43bb0 2026-10-21T22:39:30Z_
+_last regen: 8cbb7c97 2026-10-21T22:46:08Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +147,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 63b43bb0 2026-10-21T22:39:30Z_
+_last regen: 8cbb7c97 2026-10-21T22:46:08Z_
 
 **Progress:** 34/86 brief items done.
 
@@ -231,7 +231,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | windows-port | 03 [exec:strong] | implemented | 3000 | 4 | — | driver | sign off the PASS verdict (no sign-off card is raised for this brief) | — | — |
 | forge-neutral | 09 [exec:strong] | implemented | 2500 | 1 | — | driver | resolve the recorded blocker before sign-off: hold (check-definition), cite medici-finance/assay#1281 | — | — |
 | forge-neutral | 13 [exec:strong] | implemented | 2500 | 1 | — | driver | resolve the recorded blocker before sign-off: hold (environment), cite medici-finance/assay#1800 | — | — |
-| apps-installer | 08 [exec:strong] | implemented | 2000 | 0 | — | driver | close the sign-off card | — | — |
+| apps-installer | 08 [exec:strong] | implemented | 2010 | 0 | — | driver | close the sign-off card | — | — |
 | forge-neutral | 11 [exec:strong] | implemented | 2000 | 0 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#1554 | — | — |
 | forge-neutral | 19 [exec:strong] | implemented | 2000 | 0 | — | driver | human action, cite medici-finance/assay#997 | — | — |
 | windows-port | 08 [exec:strong] | implemented | 2000 | 2 | — | driver | resolve the recorded blocker before sign-off: hold (human-action), cite medici-finance/assay#1795 — rows 3-14, 16, 17 mis-specified for the execution witness; row 18 vacuous on merged main; row 17 live human run and the NAMED, NOT DERIVED 365-day --pat-expiry-days ceiling (provision.go:88) await the human gate | — | — |
@@ -264,7 +264,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-supervision | 28 [exec:strong] | implemented | 8000 | 14 | — | worker | fix, cite medici-finance/assay#3386 | — | — |
 | forge-neutral | 20 [exec:strong] | implemented | 7000 | 10 | — | worker | fix, cite medici-finance/assay#1606 | — | — |
 | desk-containers | 17 [exec:strong] | implemented | 6000 | 10 | — | worker | fix, cite medici-finance/assay#1927 | — | — |
-| apps-installer | 02 [exec:strong] | implemented | 4500 | 5 | — | worker | fix, cite medici-finance/assay#2810 | — | — |
+| apps-installer | 02 [exec:strong] | implemented | 4510 | 5 | — | worker | fix, cite medici-finance/assay#2810 | — | — |
 | derived-board | 03 [exec:strong] | implemented | 4500 | 5 | — | worker | fix, cite medici-finance/assay#1909 | — | — |
 | forge-neutral | 04 [exec:strong] | implemented | 3500 | 3 | — | worker | fix, cite medici-finance/assay#1281 | — | — |
 | measured-status | 03 [exec:strong] | implemented | 2200 | 0 | — | worker | fix, cite #1915 | — | — |
@@ -339,7 +339,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | build-less-brittle | 11 [exec:strong] | verified | 4010 | 2 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ ecb8c74a4ae8 (claude-opus-5-5) | — |
 | statusgen | 22 [exec:strong] | verified | 4000 | 6 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | harness-portability | 06 [exec:strong] | verified | 3500 | 5 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-04 assay-verifier-app[bot] @ bed1a31ba875 (claude-opus-5-5) | — |
-| apps-installer | 10 | implemented | 3000 | 2 | — | verify runner | none | — | — |
+| apps-installer | 10 | implemented | 3010 | 2 | — | verify runner | none | — | — |
 | statusgen | 19 [exec:strong] | verified | 3000 | 4 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | desktools-v2 | 60 [exec:strong] | implemented | 2500 | 3 | — | verify runner | none | — | — |
 | statusgen | 20 [exec:strong] | implemented | 2500 | 3 | — | verify runner | none | — | — |
