@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 )
 
@@ -136,11 +137,10 @@ func activationManifests(root string) ([]componentManifest, []string, error) {
 	if cached := activationIndex.slot; cached != nil && cached.root == root && os.SameFile(info, cached.identity) {
 		source, err := validateManifests(root)
 		if err == nil && source.valid && source.digest() == cached.source && len(cached.payload) <= manifestLimit && sha256.Sum256(cached.payload) == cached.checksum {
-			var data manifestPayload
-			if json.Unmarshal(cached.payload, &data) == nil && data.Revision == manifestRevision {
+			data, decodeOK := decodeManifestPayload(cached.payload)
+			if decodeOK {
 				var manifests []componentManifest
 				for _, m := range data.Manifests {
-					m.Manifest.path = m.Path
 					manifests = append(manifests, m.Manifest)
 				}
 				activationWork("reuse")
@@ -165,8 +165,26 @@ func activationManifests(root string) ([]componentManifest, []string, error) {
 		data.Manifests = append(data.Manifests, manifestWire{m.path, m})
 	}
 	payload, encodeErr := json.Marshal(data)
-	if encodeErr == nil && len(payload) <= manifestLimit {
+	if encodeErr != nil || len(payload) > manifestLimit {
+		return manifests, skipped, err
+	}
+	decoded, decodeOK := decodeManifestPayload(payload)
+	// JSON replaces invalid UTF-8 in every string, including YAML !!binary keys
+	// and filesystem names. Admit only an exactly lossless round trip over the
+	// entire parsed value, not a whitelist of fields that could miss a new one.
+	if decodeOK && reflect.DeepEqual(data, decoded) {
 		activationIndex.slot = &manifestSnapshot{root, info, source.digest(), payload, sha256.Sum256(payload)}
 	}
 	return manifests, skipped, err
+}
+
+func decodeManifestPayload(payload []byte) (manifestPayload, bool) {
+	var data manifestPayload
+	if json.Unmarshal(payload, &data) != nil || data.Revision != manifestRevision {
+		return data, false
+	}
+	for i := range data.Manifests {
+		data.Manifests[i].Manifest.path = data.Manifests[i].Path
+	}
+	return data, true
 }

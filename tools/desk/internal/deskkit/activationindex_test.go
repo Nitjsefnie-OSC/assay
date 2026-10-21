@@ -73,7 +73,10 @@ func TestActivationSnapshotMatchesFreshDiscovery(t *testing.T) {
 		{"dirty", func() {
 			snapshotFile(t, filepath.Join(root, "test-verbs", "component.yaml"), "component: test/edited\n")
 		}},
-		{"duplicate", func() { snapshotFile(t, filepath.Join(root, "a", "component.yaml"), "component: test/edited\n") }},
+		{"same length dirty", func() {
+			snapshotFile(t, filepath.Join(root, "test-verbs", "component.yaml"), "component: test/change\n")
+		}},
+		{"duplicate", func() { snapshotFile(t, filepath.Join(root, "a", "component.yaml"), "component: test/change\n") }},
 		{"malformed", func() { snapshotFile(t, filepath.Join(root, "bad", "component.yaml"), "not: [valid: yaml") }},
 		{"missing name", func() { snapshotFile(t, filepath.Join(root, "empty", "component.yaml"), "provides: []\n") }},
 		{"removal", func() {
@@ -202,4 +205,106 @@ func TestActivationSnapshotCorruptionAndBounds(t *testing.T) {
 	if activationIndex.slot != nil {
 		t.Fatal("oversized source retained")
 	}
+}
+
+// regression: F-snapshot-byte-parity
+func TestSnapshotByteParity(t *testing.T) {
+	snapshotObserver(t)
+	t.Run("binary keys", func(t *testing.T) {
+		root := t.TempDir()
+		snapshotFile(t, filepath.Join(root, "verbs", "component.yaml"), "component: test/verbs\nprovides: [assay.desk.verbs]\ninject:\n  required: [{key: !!binary bmVlZP8=}]\n")
+		snapshotFile(t, filepath.Join(root, "provider", "component.yaml"), "component: test/provider\nprovides: [!!binary bmVlZP4=]\n")
+		first := VerbActivationRefusal(root)
+		if !strings.Contains(first, "inactive") {
+			t.Fatalf("reference precondition: %q", first)
+		}
+		if second := VerbActivationRefusal(root); second != first {
+			t.Fatalf("reused binary keys changed refusal: first=%q second=%q", first, second)
+		}
+		snapshotParity(t, root)
+	})
+	t.Run("binary component", func(t *testing.T) {
+		root := t.TempDir()
+		snapshotFile(t, filepath.Join(root, "component.yaml"), "component: !!binary eP8=\nprovides: [!!binary bmVlZP8=]\ninject:\n  optional: [{key: !!binary bmVlZP4=}]\n")
+		snapshotParity(t, root)
+		snapshotParity(t, root)
+	})
+	// A second instance outside activation keys: raw pathname and skipped diagnostic
+	// bytes must not be silently rewritten by any snapshot representation.
+	t.Run("raw paths", func(t *testing.T) {
+		rawRoot := t.TempDir()
+		raw := filepath.Join(rawRoot, string([]byte{'x', 255}), "component.yaml")
+		if err := os.MkdirAll(filepath.Dir(raw), 0700); err != nil {
+			t.Skipf("filesystem does not admit raw path: %v", err)
+		}
+		if err := os.WriteFile(raw, []byte("component: test/raw\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		snapshotParity(t, rawRoot)
+		snapshotParity(t, rawRoot)
+		snapshotFile(t, raw, "not: [valid: yaml")
+		snapshotParity(t, rawRoot)
+		snapshotParity(t, rawRoot)
+	})
+}
+
+// regression: F-snapshot-source-binding
+func TestSnapshotSourceBinding(t *testing.T) {
+	count := snapshotObserver(t)
+	a, b := t.TempDir(), t.TempDir()
+	for _, root := range []string{a, b} {
+		snapshotFile(t, filepath.Join(root, "component.yaml"), "component: test/same\n")
+	}
+	for _, root := range []string{a, b, b + string(os.PathSeparator) + "."} {
+		before := count("enumeration")
+		if _, _, err := activationManifests(root); err != nil {
+			t.Fatal(err)
+		}
+		if count("enumeration") != before+1 {
+			t.Fatal("reused discovery across root/alias binding")
+		}
+	}
+	// Keep content and spelling identical while changing the actual directory.
+	if _, _, err := activationManifests(b); err != nil {
+		t.Fatal(err)
+	}
+	old := b + "-old"
+	if err := os.Rename(b, old); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(old) })
+	snapshotFile(t, filepath.Join(b, "component.yaml"), "component: test/same\n")
+	before := count("enumeration")
+	if _, _, err := activationManifests(b); err != nil {
+		t.Fatal(err)
+	}
+	if count("enumeration") != before+1 {
+		t.Fatal("same-content root identity replacement reused discovery")
+	}
+}
+
+// regression: F-snapshot-admission-recheck
+func TestSnapshotAdmissionRecheck(t *testing.T) {
+	snapshotObserver(t)
+	root := t.TempDir()
+	path := filepath.Join(root, "component.yaml")
+	snapshotFile(t, path, "component: test/before\n")
+	observer := activationWork
+	changed := false
+	activationWork = func(event string) {
+		observer(event)
+		if event == "validation-directory" && !changed {
+			changed = true
+			if err := os.WriteFile(path, []byte("component: test/afterx\n"), 0600); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	if _, _, err := activationManifests(root); err != nil {
+		t.Fatal(err)
+	}
+	if !changed || activationIndex.slot != nil {
+		t.Fatal("changed-during-discovery snapshot was admitted")
+	}
+	snapshotParity(t, root)
 }

@@ -7624,7 +7624,10 @@ and the previously read file list are insufficient evidence of membership.
 
 The slot is serialized under a mutex, published as a complete immutable payload,
 and limited to one root and 1 MiB of payload/source input. Readers decode fresh
-values so callers cannot mutate the slot. A miss evicts the previous slot and
+values so callers cannot mutate the slot. Admission additionally compares the complete
+round-tripped parsed value with the reference value. JSON cannot preserve arbitrary
+bytes in YAML `!!binary` strings or filesystem names: any lossy round trip declines
+reuse and retains exact reference behavior, including inactive refusals and diagnostics. A miss evicts the previous slot and
 uses reference discovery, followed by an independent observation before admitting
 reuse. Missing, unreadable, oversized, corrupt, unsupported or changed inputs
 fall back to the reference; they never accept a partial cached list. The original
@@ -7654,7 +7657,8 @@ negative controls from `tools/desk` with
 `python3 internal/deskkit/testdata/activation_mutations.py`. Each mutant must fail
 its named behavior test, not merely fail to compile; the script restores source.
 
-Observed 20 October 2026 with Go 1.27.2, darwin/arm64, six ordinary-build
+Observed 20 October 2026 at source `30197bda7` (before the lossless-admission
+correction), with Go 1.27.2, darwin/arm64, six ordinary-build
 samples per cell (milliseconds, p50/p95). “Fresh” and “reused” refer to isolated
 home state, **not** a cold disk or a reusable snapshot across processes:
 
@@ -7688,3 +7692,18 @@ Pickup census at the implementation base: 41 command `main.go` files call
 `deskcomms`, `desklabel`, `deskwt`, `deskclose` and `deskcalibrate`. They inherit
 the single owner; their custody/stop/command adapters are unchanged. Only the
 three specified commands receive the compiled workload qualification here.
+
+Security follow-up for the snapshot representation: the byte-parity regression
+exercises different invalid-UTF-8 required/provided keys through the production
+owner and separately plants raw filesystem names/diagnostics. The same-length dirty
+edit pins content hashing independently of path/length. Additional owner mutations
+pin root spelling, same-content filesystem identity replacement and the admission
+recheck under a deterministic edit between discovery and validation. The validation
+error predicate on reuse remains a defense-in-depth check without a separately
+killed error-only mutant: ordinary partial-read errors also change the digest.
+This is retained as an explicit test-coverage limit, not an asserted proof.
+
+The raw-filename subcase could not run on the measured darwin filesystem, which
+rejects invalid UTF-8 path bytes; it reports SKIP rather than pass. A separate
+YAML binary component-id/optional-key fixture proves lossless handling at a second
+parsed site on this platform. Linux raw-path execution remains CI coverage.

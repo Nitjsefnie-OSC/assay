@@ -6,6 +6,20 @@ import subprocess
 import sys
 
 cases = [
+    ("lossy payload admission", "internal/deskkit/activationindex.go",
+     'reflect.DeepEqual(data, decoded)', 'reflect.DeepEqual(decoded, decoded)',
+     'TestSnapshotByteParity'),
+    ("content bytes not hashed", "internal/deskkit/activationindex.go",
+     '_, _ = s.hash.Write(data)', '_ = data',
+     'TestActivationSnapshotMatchesFreshDiscovery'),
+    ("root spelling not bound", "internal/deskkit/activationindex.go",
+     'cached.root == root && ', '', 'TestSnapshotSourceBinding'),
+    ("root identity not bound", "internal/deskkit/activationindex.go",
+     ' && os.SameFile(info, cached.identity)', '', 'TestSnapshotSourceBinding'),
+    ("admission recheck ignored", "internal/deskkit/activationindex.go",
+     'if checkErr != nil || !checked.valid || checked.digest() != source.digest() {',
+     'if false && (checkErr != nil || !checked.valid || checked.digest() != source.digest()) {',
+     'TestSnapshotAdmissionRecheck'),
     ("membership shortcut", "internal/deskkit/activationindex.go",
      'source.digest() == cached.source', 'true /* planted HEAD-only equivalent */',
      'TestActivationSnapshotMatchesFreshDiscovery'),
@@ -33,7 +47,7 @@ for name, target, old, new, test in cases:
         path.write_text(original.replace(old, new, 1))
         result = subprocess.run(['go', 'test', './internal/deskkit', '-run', '^'+test+'$',
                                  '-count=1', '-timeout=180s', '-v'], env=env,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="backslashreplace")
         # A build failure is not a killed behavior mutant.
         if result.returncode == 0 or '--- FAIL: '+test not in result.stdout:
             print(result.stdout)
