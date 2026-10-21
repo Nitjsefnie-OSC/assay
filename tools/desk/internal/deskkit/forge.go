@@ -29,6 +29,20 @@ import (
 	"time"
 )
 
+// errForgeTokenMissing identifies local credential absence without changing the
+// existing Unverifiable contract or enabling an ambient identity fallback.
+var errForgeTokenMissing = errors.New("explicitly minted forge token missing")
+
+// Keep the existing error text and DeskError code intact; the typed marker is
+// available through errors.Is without appending another user-visible cause.
+type forgeTokenMissingError struct{ *DeskError }
+
+func (e *forgeTokenMissingError) Is(target error) bool { return target == errForgeTokenMissing }
+func (e *forgeTokenMissingError) Unwrap() error        { return e.DeskError }
+func missingForgeToken(msg string) error {
+	return &forgeTokenMissingError{Unverifiable(msg, nil)}
+}
+
 // GitHubAPIBase is the single home of the GitHub REST/GraphQL host literal. Desk commands
 // that keep a package-level test hook (`var apiBaseURL = GitHubAPIBase`) source their
 // default from here so the literal is constructed in exactly one place — the forge module —

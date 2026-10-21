@@ -44,9 +44,12 @@ parity and retain GitLab's refusal when an issue and merge request share a numbe
 No live GitLab execution is claimed.
 
 Discovery failures carry closed diagnostic categories: result/page limit,
-incomplete response/pagination, rate limit, authentication/authorization, or other
-transport/response failure. Raw provider bodies and locators are not rendered in
-row reasons. A failure remains unknown rather than an empty healthy queue.
+incomplete response/pagination, local query refusal, missing minted credential, rate limit,
+authentication/authorization, or other transport/response failure. A GitHub
+short-page overrun is incomplete rather than a result-cap failure. Both shared
+and selective paths validate opaque tokens before provider work, including
+embedded quote/backslash and Unicode whitespace/control rejection. Raw provider bodies and locators are not rendered in
+row reasons. A failure remains unknown rather than an empty healthy queue. Missing-token guards on both adapters retain their existing exit-6 `Unverifiable` contract and no-network/no-ambient-fallback behavior. A typed cause supplies the safe credential-absence label; it grants no identity and mints no token.
 
 Scope remains the measured repeated-read regression. `throughput` still needs the
 canonical state/label/history/ruling checks to determine its decision-hold count;
@@ -70,7 +73,7 @@ latency per HTTP request. All twelve rows must remain held with zero unknowns.
 
 The baseline is production source `cfe5c927ec7049728f4b97306beaedf43a444b9f` with only
 the identical test harness added. The repaired production source and harness are
-`c36cf0e757b7aad9098415cd13b40893bef7459a`. The later performance-report commit changes documentation only. This cohort
+`093503fdf65bebb7a54d8532d683727601100638`. Subsequent test, report and mutation-anchor commits leave the measured production Go source and performance harness unchanged. This cohort
 includes the independent review repairs for exact spelling, typed selective lookup,
 classified safe diagnostics and stable GitHub paging.
 Both local test binaries carry their respective source stamp. Five independent
@@ -83,10 +86,10 @@ in one process is unsuitable because process-init time would accumulate.
 | Search attempts, every sample | 12 | 1 |
 | Other REST attempts, every sample | 36 | 24 |
 | GraphQL attempts, every sample | 12 | 12 |
-| Process wall time, ms | 573, 554, 549, 568, 580 | 73, 71, 74, 74, 83 |
-| Median process wall time, ms | 568 | 74 |
-| Own process CPU, ms | 33, 25, 24, 40, 47 | 23, 21, 19, 17, 24 |
-| Median own process CPU, ms | 33 | 21 |
+| Process wall time, ms | 593, 694, 734, 590, 599 | 82, 93, 75, 78, 74 |
+| Median process wall time, ms | 599 | 78 |
+| Own process CPU, ms | 31, 35, 40, 30, 34 | 26, 24, 22, 23, 25 |
+| Median own process CPU, ms | 34 | 24 |
 
 That is **38.3% fewer HTTP attempts** and **87.0% less median elapsed time in this
 latency fixture**. It is not a production speedup claim. Small CPU samples and their
@@ -106,7 +109,7 @@ no operator consent, workflow grouping, audit ledger or live pin changes.
 Binary SHA-256 values:
 
 - Before: `ffebc60bf0fa6f942a0c490d5249903e091169ac8dbc4bcdfae6518341c741a8`
-- After: `4d6025fcb15063b7ce8c930baabd27faf8824e9f197e7bc9dd30eaa8919e2d1f`
+- After: `1dc9c24512914ae7ed40c5997ce5bc91a2c75286394eef93523ca3db6cf4e0d4`
 
 To reproduce from each respective source tree with the same test file:
 
@@ -137,10 +140,11 @@ cd tools/desk
 go run ./cmd/muhar -j 2 -spec cmd/deskboard/decision-admission-mutations.json
 ```
 
-The repaired source qualifies sixteen mutations: a healthy pristine baseline and
-positive control, sixteen caught faults, zero survivors and zero could-not-mutate.
+The repaired source qualifies twenty-seven mutations: a healthy pristine baseline and
+positive control, twenty-seven caught faults, zero survivors and zero could-not-mutate.
 Cross-project aliases, lost diagnostic class, raw provider-detail leakage,
-GitHub syntax sent to GitLab and unstable paging are included explicitly.
+GitHub syntax sent to GitLab, unstable paging, local-refusal/page-bound labels,
+quote/backslash rejection, shared/selective validation parity, all four native missing-token origins, their safe label and the preserved unverifiable cause chain are included explicitly.
 
 Existing review snapshots, conditional transports, per-PR reuse, quota floors,
 root resolution, queue semantics, trust controls and perf-v3 observation machinery

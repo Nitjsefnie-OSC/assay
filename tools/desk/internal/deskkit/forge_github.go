@@ -96,8 +96,8 @@ func (g *GitHubForge) baseURL() string {
 // token to the real API host and to a test server, but never to an unrelated host.
 func (g *GitHubForge) restClient() (*ghapi.RESTClient, error) {
 	if g.Token == "" {
-		return nil, Unverifiable("refusing to reach the GitHub forge without an explicitly minted token — "+
-			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", nil)
+		return nil, missingForgeToken("refusing to reach the GitHub forge without an explicitly minted token — " +
+			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity")
 	}
 	if g.rc != nil {
 		return g.rc, nil
@@ -2356,8 +2356,8 @@ func (g *GitHubForge) ListWorkflowFiles(repo ForgeRepo, ref string) ([]string, e
 // second auth path or ambient-identity fallback is introduced.
 func (g *GitHubForge) ChangeDiff(repo ForgeRepo, number int) (string, error) {
 	if g.Token == "" {
-		return "", Unverifiable("refusing to reach the GitHub forge without an explicitly minted token — "+
-			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity", nil)
+		return "", missingForgeToken("refusing to reach the GitHub forge without an explicitly minted token — " +
+			"the go-gh backend never falls back to an ambient gh-CLI keyring/config identity")
 	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", repo.Owner, repo.Name, number)
 	req, rerr := http.NewRequest(http.MethodGet, g.baseURL()+path, nil)
