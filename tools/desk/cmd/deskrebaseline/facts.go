@@ -86,10 +86,11 @@ func gatherRowFacts(repoRoot string, row verifyRow, riskBearing bool, riskReason
 
 	// Behaviour probe only when there is no stale-path question to answer first.
 	if f.PathRef == "" || f.PathExists {
-		// A command that is only a shell comment runs nothing and exits 0 (#2684): the
-		// probe would read that as "the row still passes", so it is not probed. The
-		// raw cell's verdict is used when the row was parsed from one (review S1).
-		if row.Command != "" && row.CommentLed == "" && !verifycmd.CommentOnly(row.Command) {
+		// A shell comment or no-op runs nothing and exits 0 (#2684, #3147): the probe
+		// would read that as "the row still passes", so it is not probed, nor is a
+		// prose mention or a blank lift. The raw cell's verdict is used when the row
+		// was parsed from one (review S1); the lift itself is judged otherwise.
+		if row.Refused == "" && verifycmd.CommandRefused(row.Command) == "" {
 			ran, rc := runCommand(repoRoot, row.Command)
 			f.CommandProbed = true
 			f.CommandRan = ran
