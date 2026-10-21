@@ -63,8 +63,8 @@ decision so the refactor codes against the reconciled reading, not either docume
   investigation template's §Reuse and revalidation). A printed path makes each conclusion that
   rests on it `revalidate`: supersede the investigation, or record the revalidation here.
 
-Record each revalidation as one line, `revalidated: <path> @ <revision> — <basis>`, naming the
-conclusions re-checked and the result. Unknown applicability is not a basis, and cannot satisfy
+Record each revalidation as one line, `revalidated: <path> @ <merge-base> — <basis>` (the
+revision acceptance row 1 diffs to), naming the conclusions re-checked and the result. Unknown applicability is not a basis, and cannot satisfy
 a `keep` row that rests on the conclusion.
 
 **Worked example.** At `pinned-source` r10. The investigation `2026-01-21-cmd-example.md`
@@ -78,17 +78,21 @@ it when rotation is signalled (A3: the signal precedes revocation, rests on
 
 ### Intervening-change example
 
-Two commits land between assembly and the candidate: r11, an API change in
+Two commits land on main between assembly and the candidate: r11, an API change in
 `internal/credhelper/rotate.go` (`OnRotate` now fires after the old token is revoked, not
-before); r12, an edit to `cmd/example/help.go` that rewords the help text. Acceptance row 1
-printed only `SOURCES-READ` at r10. At `candidate-source` r13 its diff names both paths, and
-before any revalidation is recorded it prints:
+before); r12, an edit to `cmd/example/help.go` that rewords the help text. The refactor PR
+branches from r12 (its `<merge-base>`), and its own commit r13 is the `candidate-source`.
+Acceptance row 1 printed only `SOURCES-READ` at r10. At r13 its diff, r10 to the merge-base
+r12, names both paths, and before any revalidation is recorded it prints:
 
 ```
-UNREVALIDATED internal/credhelper/rotate.go
 UNREVALIDATED cmd/example/help.go
+UNREVALIDATED internal/credhelper/rotate.go
 SOURCES-READ
 ```
+
+The refactor's own edits to `cmd/example` in r13 are not in that diff: they are the change
+rows 3 to 5 judge, not an input to revalidate.
 
 Nothing that ran at r10 is carried forward: evidence names r13 and is re-run there. r11 is
 relevant: A3 fails, so the reconciled intent no longer settles when the copy is dropped, and
@@ -97,7 +101,7 @@ amendment) reads the new signal order. No `revalidated:` line can be written for
 keeps refusing on `internal/credhelper/rotate.go` until then. r12 is reused, with its basis
 recorded as one line in this section:
 
-revalidated: cmd/example/help.go @ r13 — help text only; no conclusion and no §3 row asserts the help output (checked: every row's test name and reason); semantic relevance is the review's judgement, no command proves it.
+revalidated: cmd/example/help.go @ r12 — help text only; no conclusion and no §3 row asserts the help output (checked: every row's test name and reason); semantic relevance is the review's judgement, no command proves it.
 
 That last clause is the rule: the diff proves which paths changed; whether a change matters is
 judged at review, and a reviewer may reject the basis.
@@ -129,10 +133,15 @@ its `// regression:` tag) before the refactor, never after.
 ## 3. Current behaviour
 
 Source: the owner package the `S-` row names. Generate characterization tests over its public
-surface: every exported function and method, one test per observable behaviour, asserting what
-the code does today, not what it should (Feathers). Reads:
-`grep -n '^| S-' docs/contracts.md | grep -F '<module>'` for the owner, then `go doc -all ./<owner package>`
-for the surface. Each test carries, directly above its declaration,
+surface, one test per observable behaviour, asserting what the code does today, not what it
+should (Feathers). For a library package the surface is every exported function and method.
+A command (`cmd/<verb>`, package `main`) exports nothing; its surface is its CLI: every flag,
+exit code and output line, and every forge or file write, driven through its entry function.
+Reads, from the repository root: `grep -n '^| S-' docs/contracts.md | grep -F '<module>'` for
+the owner; then for a library `go -C <owner package> doc -all .`, and for a command
+`go -C <module> doc -cmd -u -all .` (its usage, exit codes and entry functions) and
+`git grep -nE '\.(Bool|Duration|Int|String|Var)\("' -- '<module>/*.go' ':!<module>/*_test.go'`
+(its flags). Each test carries, directly above its declaration,
 `// characterization: <module> <oracle-file>`, two fields, so the test ledger can list it.
 A replay corpus for the module, where one exists, may be cited here as a source.
 
@@ -148,7 +157,7 @@ The test cell is the bare function name. The verdict is one of exactly three wor
 Nothing else is a verdict, and `unknown` is never rewritten to land: an oracle with an
 `unknown` row cannot pass row 3.
 
-**Worked example.** Four characterization tests over `cmd/example` at r10:
+**Worked example.** Four characterization tests over the `cmd/example` CLI at r10:
 
 | test | verdict | reason | maps to |
 |---|---|---|---|
@@ -178,15 +187,16 @@ every added verb, flag or refusal is argued in the design brief's `design-fit:`.
 
 The refactor lands only when all five rows hold at `candidate-source`. The design brief copies
 them into its Verify table with the placeholders filled; `<merge-base>` is the refactor PR's
-merge-base and `<N>` its number.
+merge-base and `<N>` its number. Every row runs from the repository root and none changes the
+shell's directory: Go commands name their directory with `go -C`.
 
 | # | Command | Expect |
 |---|---------|--------|
-| 1 | `a=$(grep -m1 '^divergence:' <investigation>) && b=$(grep -m1 '^divergence:' <oracle-file>) && test "$a" = "$b" && d=$(git diff --name-only <pinned-source> <candidate-source> -- <module> <dependency-references>) && printf '%s\n' "$d" \| while read -r p; do test -z "$p" \|\| grep -qF "revalidated: $p @ <candidate-source>" <oracle-file> \|\| echo "UNREVALIDATED $p"; done && echo SOURCES-READ` | exactly one line, `SOURCES-READ`: both files carry the same `divergence:` line, both sources resolve, and every path changed between them has a `revalidated:` line in §1 at `<candidate-source>`. An `UNREVALIDATED` line refuses (the intent is not current); so does a missing `SOURCES-READ` (a `divergence:` line missing or differing, or a source that does not resolve) |
+| 1 | `a=$(grep -m1 '^divergence:' <investigation>) && b=$(grep -m1 '^divergence:' <oracle-file>) && test "$a" = "$b" && d=$(git diff --name-only <pinned-source> <merge-base> -- <module> <dependency-references>) && printf '%s\n' "$d" \| while read -r p; do test -z "$p" \|\| grep -qF "revalidated: $p @ <merge-base>" <oracle-file> \|\| echo "UNREVALIDATED $p"; done && echo SOURCES-READ` | exactly one line, `SOURCES-READ`: both files carry the same `divergence:` line, both revisions resolve, and every path that changed on main between assembly and the candidate's merge-base (never the refactor's own edits) has a `revalidated:` line in §1 at `<merge-base>`. An `UNREVALIDATED` line refuses (the intent is not current); so does a missing `SOURCES-READ` (a `divergence:` line missing or differing, or a source that does not resolve) |
 | 2 | `sed -n '/^## 2\. Failure modes/,/^## 3\./p' <oracle-file> \| grep -E '^[\|] *(#\|F-\|class #)' \| awk -F'\|' '{t=$4; gsub(/[ ]/,"",t); print (t == "" ? "EMPTY-TEST " $2 : t)}'` | no `EMPTY-TEST` line; each printed test is tagged and passes in row 4 |
 | 3 | `sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test' \| awk -F'\|' '{gsub(/ /,"",$3); print $3}' \| sort \| uniq -c && o=$(sed -n '/^## 3\. Current behaviour/,/^## 4\./p' <oracle-file> \| grep -E '^[\|] *Test') && p=$(gh pr view <N> --json body --jq .body \| tr -d '\r' \| sed -n '/^## Oracle$/,/^## /p' \| grep -E '^[\|] *Test') && test "$o" = "$p" && echo ORACLE-VERBATIM` | only `keep` and `drop` counted, then `ORACLE-VERBATIM` (the PR body's `## Oracle` section carries the §3 triage rows byte for byte); any `unknown`, any other word, or a missing or differing table refuses |
-| 4 | `go test ./<module>/... -count=1 -v 2>&1 \| grep -cE '^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'; cd tools/desk && go test ./internal/testledger/ -run TestReportTestLedger -count=1 -v -args -base=<merge-base> -head=<candidate-source> 2>&1 \| grep -E 'untrailed\|characterization-untriaged\|could-not-check\|retired-trailed\|^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'` | `0`, then only `retired-trailed` lines, each `drop` test named in one whose quoted reason is `accident per oracle §3`: every `keep` and failure-mode test passes, and every `drop` left with the trailer. An `untrailed`, `characterization-untriaged`, `could-not-check`, `SKIP` or `FAIL` line refuses (a skipped or unreadable report is never clean) |
-| 5 | `cd tools/desk && go test ./internal/arch/ -count=1 && cd - >/dev/null && git grep -c '// semantic: <s-row>' <candidate-source> -- <owner path>` | `ok`, then ≥ `1` (the invariants hold and the owner is still declared) |
+| 4 | `go -C <module> test ./... -count=1 -v 2>&1 \| grep -cE '^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'; go -C tools/desk test ./internal/testledger/ -run TestReportTestLedger -count=1 -v -args -base=<merge-base> -head=<candidate-source> 2>&1 \| grep -E 'untrailed\|characterization-untriaged\|could-not-check\|retired-trailed\|^[[:space:]]*--- (FAIL\|SKIP)\|^FAIL'` | `0`, then only `retired-trailed` lines, each `drop` test named in one whose quoted reason is `accident per oracle §3`: every `keep` and failure-mode test passes, and every `drop` left with the trailer. An `untrailed`, `characterization-untriaged`, `could-not-check`, `SKIP` or `FAIL` line refuses (a skipped or unreadable report is never clean) |
+| 5 | `go -C tools/desk test ./internal/arch/ -count=1 && git grep -c '// semantic: <s-row>' <candidate-source> -- <owner path>` | `ok`, then ≥ `1` (the invariants hold and the owner is still declared) |
 
 **Worked example.** At r10, before the intervening change:
 
