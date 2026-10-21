@@ -275,4 +275,4 @@ nothing off.
 
 Verification-Attestation: medici-finance/assay#3691 run=4e2866e2f4a7ea348d928acfe3004ba660e3f8e85e84d9e487eb1d29030ceddd source=a477d1dce0c1fcd124f29ab9b6fc04557992d2eb brief=docs/streams/desk-tools/brief-17-one-trust-bar-public-authors.md model=claude-opus-5-5 tier=strong
 
-**VERIFY: FAIL** — row 7: the retired TrustedPublicAuthor function is still defined in deskkit/trust.go and is named in a deskboard test comment (3 grep matches). Rows 1-5, 8 and 9 pass. Row 6 passes by hand, and its container failure is environment-only.
+**VERIFY: FAIL** — row 7: the retired TrustedPublicAuthor function is still defined in deskkit/trust.go and is named in a deskboard test comment (3 grep matches). Rows 1-5, 8 and 9 pass. Row 6 passes by hand, and its container failure is environment-only. Bug filed: #3837 (row 7 defect, with the stale-prose scope outside `tools/`). The verify-fail receipt is owed from a fresh admission at a source that has the joined Context `files:` block (this source still wraps it), and #3837 tracks it.
