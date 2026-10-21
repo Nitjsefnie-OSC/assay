@@ -543,6 +543,114 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 	})
 }
 
+// TestHeldScopeContainerDoubt: an HTML opener in a container (a blockquote,
+// a list item, an indented line), a fence in one, or an opener after a
+// paragraph or a closed construct, can end where the scan does not expect,
+// so the page swallows the last entry. Whole supersession is off for each.
+func TestHeldScopeContainerDoubt(t *testing.T) {
+	blocked := "**VERIFY: BLOCKED** — could-not-check, see the note above."
+	rerun2 := proseRun("Run 2", 2, allOK, "", "**VERIFY: PASS**")
+	two := func(x string) string {
+		return proseRun("Run 1", 2, allOK, "- row 3 could-not-check.\n\n"+x, blocked) + rerun2
+	}
+	runHeldScanCases(t, []heldScanCase{
+		// Admitted controls: a top-level HTML block or fence the page reads
+		// the way the scan does.
+		{"C1: attribute closed in block", two("<div title=\"\nx\" y>"), false},
+		{"C2: paragraph, div block", two("<3\n<div title=\"\nx\" y>"), false},
+		{"top-level fence holds a tag", two("```\n<div title=\"\n```"), false},
+		{"top-level fence holds a table",
+			two("```\n<table><tr><td>3</td><td>exit 2</td></tr></table>\n```"), false},
+		{"top-level fence, indented tag", two("```\n  <div title=\"\n```"), false},
+		// A comment or declaration that ends on its own line leaves the next
+		// line a paragraph, where an unfinished tag is plain text.
+		{"comment closed, paragraph tag", two("<!-- a -->\na <b title=\""), false},
+		{"declaration, paragraph tag", two("<!DOCTYPE html>\na <b title=\""), false},
+		// Refused: an opener after a paragraph, in a container, or sharing
+		// its line with a closed construct.
+		{"paragraph, quoted div", two("<3\n> <div title=\"\nx\" y>"), true},
+		{"paragraph, comment then div", two("<3\n<!-- a --> <div title=\"\nx\" y>"), true},
+		{"inline tag line, listed div", two("<b>x</b> text\n- <div title=\"\nx\" y>"), true},
+		{"paragraph, closed pre then b", two("<3\n<pre>a</pre> <b title=\"\nx\" y>"), true},
+		{"link line, quoted div", two("<a href=\"u\">log</a> shows\n> <div title=\"\nx\" y>"), true},
+		{"paragraph, pre block open attr", two("<3\n<pre>\n<b title=\"\n</pre>\nx\" y>"), true},
+		// A <pre> after a paragraph runs past blank lines to its end tag.
+		{"paragraph, pre past a blank", two("<3\n<pre>\n\na <b title=\"\n</pre>\nx\" y>"), true},
+		{"paragraph, pre holds a hold", two("<3\n<pre>\n\nrow 3 HELD runner offline\n</pre>"), true},
+		{"div block, pre line, open attr", two("<div>\n<pre>\n<b title=\"\n\nx\" y>\n</pre>"), true},
+		{"paragraph, pre holds a heading",
+			proseRun("Run 1", 2, allOK, "- row 3 could-not-check.", blocked) + "<3\n<pre>\n\n" +
+				proseRun("Run 2", 2, allOK, "</pre>", "**VERIFY: PASS**"), true},
+		{"paragraph, pre holds last entry",
+			proseRun("Run 1", 2, allOK, "- row 3 could-not-check.\n\n<3\n<pre>", blocked) + rerun2 + "</pre>\n", true},
+		// Refused: a fence in a list item ends with the item on the page.
+		{"list fence, open attribute", two("- a\n  ```\n<div title=\"\n```"), true},
+		{"list fence, HTML table",
+			two("- a\n  ```\n<table><tr><td>3</td><td>exit 2</td></tr></table>\n```"), true},
+		{"ordered list tilde fence", two("1. a\n   ~~~\n<div title=\"\n~~~"), true},
+		{"list fence, blank before close", two("- a\n  ```\n<div title=\"\n\n```"), true},
+		{"marker fence, open attribute", two("- ```\n<div title=\"\n```"), true},
+		// Refused by design (over-refusal): any fence in a container.
+		{"quoted fence, no tag", two("> ```\n> x\n> ```"), true},
+	})
+}
+
+// TestHeldScopeReaderPath runs the held scan on Evidence read the way the
+// production consumers read it: a whole brief file through
+// parseBriefFileBytes (and briefSectionsOf, which must agree), which rewrite
+// CRLF to LF before the scan sees the text. A carriage return with no line
+// feed after it in the file ends a line on the page but not in the scan's
+// split, so it must survive the rewrite and turn whole supersession off.
+func TestHeldScopeReaderPath(t *testing.T) {
+	blocked := "**VERIFY: BLOCKED** — could-not-check, see the note above."
+	rerun2 := proseRun("Run 2", 2, allOK, "", "**VERIFY: PASS**")
+	cr, lf, crlf := "\r", "\n", "\r\n"
+	// Line endings built from CR and LF. The first two hold no stray CR;
+	// each other one holds at least one CR with no LF straight after it.
+	seps := []struct{ name, s string }{
+		{"LF", lf}, {"CRLF", crlf},
+		{"stray CR 1", cr}, {"stray CR 2", cr + cr}, {"stray CR 3", cr + crlf},
+		{"stray CR 4", crlf + cr}, {"stray CR 5", cr + cr + crlf}, {"stray CR 6", lf + cr},
+	}
+	shapes := []struct{ name, a, b string }{
+		{"attribute", "<div title=\"", "x\" y>"},
+		{"prose", "Runner notes follow.", "Nothing else."},
+	}
+	for _, eol := range []struct{ name, s string }{{"LF file", lf}, {"CRLF file", crlf}} {
+		var cases []heldScanCase
+		for _, sh := range shapes {
+			for _, sp := range seps {
+				name := eol.name + ", " + sh.name + ", " + sp.name
+				ev := proseRun("Run 1", 2, allOK, "- row 3 could-not-check.\n\n"+sh.a+"\x00"+sh.b, blocked) + rerun2
+				file := validBriefFM + "\n## Evidence\n\n" + ev
+				file = strings.ReplaceAll(strings.ReplaceAll(file, lf, eol.s), "\x00", sp.s)
+				bf, ok, err := parseBriefFileBytes("x.md", []byte(file))
+				if err != nil || !ok || bf == nil {
+					t.Fatalf("%s: parse ok=%v err=%v", name, ok, err)
+				}
+				if _, ev2 := briefSectionsOf(file); ev2 != bf.Evidence {
+					t.Errorf("%s: briefSectionsOf Evidence differs from the brief reader's", name)
+				}
+				dir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(dir, "brief-01.md"), []byte(file), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, _, aev, _ := awaitInputs(&Stream{Name: "x", Dir: dir, Root: dir}, &Brief{Num: "01"}); aev.Text != bf.Evidence {
+					t.Errorf("%s: awaitInputs Evidence differs from the brief reader's", name)
+				}
+				// Refused exactly when the separator holds a stray CR, which
+				// must still be in the Evidence the scan reads.
+				stray := strings.Contains(strings.ReplaceAll(sp.s, crlf, ""), cr)
+				if stray != strings.Contains(bf.Evidence, cr) {
+					t.Errorf("%s: stray CR in file=%v, CR in Evidence=%v", name, stray, !stray)
+				}
+				cases = append(cases, heldScanCase{name, bf.Evidence, stray})
+			}
+		}
+		runHeldScanCases(t, cases)
+	}
+}
+
 // TestHeldScopeFailClosed: every place the scope cannot positively classify
 // text, it reads it as before.
 func TestHeldScopeFailClosed(t *testing.T) {
