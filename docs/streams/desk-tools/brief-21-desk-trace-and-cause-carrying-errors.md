@@ -681,6 +681,66 @@ Tally: 14 of 16 rows pass (1-10, 13-16), 0 fail, 2 could-not-check (11, 12).
 
 Verification-Attestation: medici-finance/assay#3884 run=2737f291644299251f9038d3088ddbebaf78b7b93f1f0bea93a8f7481cadd5d3 source=65a6418cd90c921153db509370212b1cdcd4f5e1 brief=docs/streams/desk-tools/brief-21-desk-trace-and-cause-carrying-errors.md model=claude-opus-5-5 tier=strong
 
+### Non-implementer verifier re-run: 2026-10-21 (container), assay-verifier-app[bot] (claude-opus-5-5 verifier), merged main 88ff45841dd7410e580b90f27d8ae7a32c26441d
+
+Run window: 2026-10-21T20:47Z (admission) to 2026-10-21T21:20Z (last supplemental probe finished), UTC.
+Delivering change: PR #729 (squash 1003557e1). git diff 65a6418cd..88ff45841 is empty over this brief's four deskkit files, bodycheck.go,
+the mutation spec and the four retrofitted cmd packages.
+
+Admission: `deskdispatch --check-verifier` exit 0 for this detached home at the source above, before
+any row ran, and again before this section was written. Every row ran exactly as authored, one
+container per row, in the assay-verify:go1.27-py image (go1.27.2 linux/arm64, git 2.47.3) with
+`--network none`, a non-root uid that has a passwd entry, GOPROXY=off, GOTOOLCHAIN=local,
+KUBECONFIG=/dev/null, a tmpfs HOME and /tmp, and a module cache downloaded before the run and
+mounted read-only. No forge credential was in any container. The home was mounted read-only for
+every row except row 16. muhar mutates files in place and restores them, so on a read-only
+mount it reported `HARNESS BROKEN` (read-only file system). That run was discarded, and row 16
+ran again with the home mounted writable. git status in the home was empty afterwards. Row 15 reads the
+write-class roster, so a 0600 copy of the house roster was mounted read-only as the container
+HOME's config. Row 12's first attempt was SIGKILLed (exit 137) by another session's
+`docker kill` of every container from this image. A second attempt used a host-bind-mounted /tmp
+and its lock and case-variant tests failed. Both are discarded; the attempt recorded below used tmpfs /tmp.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `cd tools/desk && go build ./... && go vet ./...` | exit 0 | exit 0, both silent | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestToolRunSaidSkipsPreambleAndCarriesTheToolsOwnMessage$' -count=1 && go test ./internal/deskkit/ -run '^TestToolRunFailShapeAndCarriedDetail$' -count=1` | exit 0 | exit 0; `ok .../internal/deskkit 0.070s` and `ok ... 0.040s`, both matched a test | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestReportErrorOffIsByteIdentical$' -count=1 && go test ./internal/deskkit/ -run '^TestReportErrorOnPrintsChainCommandsAndTimings$' -count=1` | exit 0 | exit 0; `ok ... 0.064s` and `ok ... 0.077s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestScrubRedactsEveryTransportShape$' -count=1` | exit 0 | exit 0; `ok ... 0.033s`, matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestTraceNeverPrintsACredential$' -count=1` | exit 0 | exit 0; `ok ... 0.057s`, matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 6 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestRefusedWithCauseStaysARefusal$' -count=1 && go test ./internal/deskkit/ -run '^TestTraceEnabledReadsTheEnvSpellings$' -count=1` | exit 0 | exit 0; `ok ... 0.038s` and `ok ... 0.027s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 7 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestClaimAcquireFailureNamesTheClaimToolsOwnMessage$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestGitOutFailureCarriesGitStderr$' -count=1` | exit 0 | exit 0; `ok .../cmd/deskdispatch 0.038s` and `ok ... 0.024s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 8 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestWorktreeCreateFailureCarriesDeskwtStderrAndTheCommandLine$' -count=1 && go test ./cmd/deskdispatch/ -run '^TestTraceIsOffByDefaultAndOutputIsUnchanged$' -count=1` | exit 0 | exit 0; `ok ... 0.032s` and `ok ... 0.032s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 9 | `cd tools/desk && go test ./cmd/deskwt/ -run '^TestRunGitFailureCarriesStderrCommandAndExitStatus$' -count=1 && go test ./cmd/deskwt/ -run '^TestDeskwtTraceOffIsByteIdenticalAndOnCarriesTheCommand$' -count=1` | exit 0 | exit 0; `ok .../cmd/deskwt 0.040s` and `ok ... 0.053s`, both matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 10 | `cd tools/desk && go test ./cmd/desktoken/ -run '^TestTokenPathNoticeIsPrintedOnStderrNotStdout$' -count=1` | exit 0 | exit 0; `ok .../cmd/desktoken 0.050s`, matched | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 11 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestDedupeSearchOutageNamesTheAPIStatus$' -count=1 && go test ./cmd/deskfile/ -run '^TestGhStderrStripsControlBytes$' -count=1` | exit 0, 401/403/429 tell apart, exit 6 unchanged, strip survived | could-not-check: exit 0 but vacuous, counted as a non-pass. Both runs print `ok .../cmd/deskfile [no tests to run]`. Neither named test is declared in the tree; they were renamed in #783, and the check-definition repair is still open as #1306. The lint's id-dereference notices name both | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 12 | `cd tools/desk && go test -timeout 300s ./internal/deskkit/... ./cmd/deskdispatch/... ./cmd/deskwt/... ./cmd/desktoken/... ./cmd/deskfile/... -count=1` | exit 0 | could-not-check: exit 1 from the container's git, not from this brief's code. deskkit ok 218.4s, untrustcorpus ok, deskdispatch ok 31.0s, desktoken ok 4.7s, deskfile ok 0.8s. deskwt FAIL 30.7s: 12 maintenance and legacy-custody tests fail with `git said: error: unknown subcommand: 'list'`, because the image's git 2.47.3 has no native `git hook list`. None of those tests is this brief's. Supplemental host probe (git 2.56.0), discharging no row: the same deskwt TestMaintenance and TestLegacy tests exit 0 with 31 `--- PASS`. The full row on the host, at load 28-33, hit the 300s budget in deskkit and deskwt with zero `--- FAIL`, as on 2026-10-15 and earlier on 2026-10-21 | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 13 | `cd tools/desk && go test ./internal/deskkit/ -run 'TestS2' -count=1 && go test ./internal/deskkit/ -run 'TestCorpus' -count=1` | exit 0 | exit 0; `ok ... 34.739s` and `ok ... 4.152s` | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 14 | `cd tools/desk && gofmt -l internal/deskkit/trace.go internal/deskkit/runtool.go internal/deskkit/scrub.go internal/deskkit/exitcodes.go cmd/deskdispatch cmd/deskwt cmd/desktoken cmd/deskfile > /tmp/dt21-fmt.out; test ! -s /tmp/dt21-fmt.out` | exit 0 | exit 0; the listing file is empty (container tmpfs /tmp) | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 15 | `cd statusgen && go run . --root .. --lint; echo $?` | 0 | `LINT: PASS` then `0`, with NOTICE lines only | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 16 | `cd tools/desk && go run ./cmd/muhar -spec internal/deskkit/trace-mutations.json` | exit 0, every mutation CAUGHT | exit 0; `Harness healthy: baseline GREEN, positive control CAUGHT.` and `Totals: 10 caught, 0 NOT CAUGHT, 0 could-not-mutate.` (home mounted writable; home clean afterwards) | 2026-10-21 | assay-verifier-app[bot] @ 88ff45841dd7410e580b90f27d8ae7a32c26441d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Tally: 14 of 16 rows pass (1-10, 13-16), 0 fail, 2 could-not-check (11, 12).
+
+**Findings**
+
+1. Check-definition, row 11: unchanged; the named tests do not exist. Repair tracked on #1306 (open).
+2. Environment, row 12: in the network-off verify container the row cannot go green, because the image's
+   git 2.47.3 lacks `git hook list`, which twelve deskwt maintenance tests outside this brief need. On the
+   host (git 2.56.0) those tests pass, but the fixed 300s budget runs out under shared-host load. That is
+   the third run in a row with this blocker. It needs either a verify image with a newer git or an idle CI-class runner.
+3. Row 16 cannot run on a read-only source mount (muhar edits in place). That is expected of the harness
+   and is recorded here so the next container run mounts the home writable for that row.
+
+**VERIFY: BLOCKED** — 14/16 rows pass, 0 fail. Row 11 is a check-definition defect (#1306). Row 12 is environment-blocked: the container's git 2.47.3 has no git hook list, and on the host the 300s budget runs out under load, with zero assertion failures in this brief's packages. Status stays implemented.
+
+- RISK-VALUE: DERIVED — RefusedWithCause Code = ExitRefused @ tools/desk/internal/deskkit/exitcodes.go:186, with ExitRefused = 5 @ exitcodes.go:51 — a refusal that gains a cause must keep the code of Refused under the brief's ground rule that no exit code changes; 6 would read a fail-closed refusal as retryable. Pinned by row 6 and row 16's soften-to-6 mutation (CAUGHT).
+- RISK-VALUE: DERIVED — reGitHubToken = `(ghp_|github_pat_|ghs_|gho_|ghu_|ghr_)[A-Za-z0-9_]+` @ tools/desk/internal/deskkit/bodycheck.go:16, used by Scrub — the prefix set matches GitHub's documented token prefixes (personal, OAuth, user-to-server, server-to-server, refresh, fine-grained PAT). Unchanged since the 65a6418cd run, which probed each prefix.
+- RISK-VALUE: NAMED, NOT DERIVED — reURLUserinfo = `://([^:/@\s]+):([^@\s]+)@` @ tools/desk/internal/deskkit/scrub.go:31, with reAuthHeader @ line 36 and reSecretEnvAssign @ line 42 — row 16 shows each shape redacts and that removing any one is caught. Sufficiency of the three-shape set is not derived (open on #1616).
+- Reversible knobs, ranked last, no derivation owed: traceStepCap = 200 @ trace.go:54 (#1240); redactedMarker = `<redacted>` @ scrub.go:49; DESK_TRACE truthy spellings `1`/`true`/`yes`/`on` @ trace.go:98, with empty and `0` off.
+
+Verification-Attestation: medici-finance/assay#3978 run=ca90491f4ebc235a5032788212fef72f39fc865f81303e0ba9fd45d61732fdfd source=88ff45841dd7410e580b90f27d8ae7a32c26441d brief=docs/streams/desk-tools/brief-21-desk-trace-and-cause-carrying-errors.md model=claude-opus-5-5 tier=strong
+
 ## Review
 
 Gate: model (all four risk answers no). Model-gated because the two hazards this change
