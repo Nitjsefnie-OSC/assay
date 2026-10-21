@@ -166,6 +166,24 @@ artifacts; executable results and report stay together.
 
 <!-- Independent verifier records each row, exact source revision, command, exit and observed result. -->
 
+Verification-Attestation: medici-finance/assay#3862 run=524386b83e92546447a90179cf2476d1a138bd8c320f7209d646166240913a69 source=e16c3ed49c1ea518b5c131335dc5d926505410a2 brief=docs/streams/graph-execution/brief-32-investigate-criterion-level-evidence-freshness.md model=claude-opus-5-5 tier=strong
+
+Run against merged main at the attested source, offline (KUBECONFIG=/dev/null), go1.27.2 darwin/arm64, python3; replay scratch under the runner's TMPDIR, outside the worktree.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---|---|---|---|---|
+| 1 | `python3 docs/research/criterion-evidence-freshness/replay.py --check` | exit 0; fresh actual baseline replay matches committed results for every declared case; report-only predictions distinguishable | exit 0; "CLI JSON byte commitments: 17/42 identical; semantic replay matches"; "14 declared cases executed; original witnesses retain their subjects"; validate() enforces source revision, one executed verifyrun witness per case and kind=report-only for every experimental_prediction; unavailable case reports numeric=could-not-check | 2026-10-21 | assay-verifier-app[bot] @ e16c3ed49c1ea518b5c131335dc5d926505410a2 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `python3 docs/research/criterion-evidence-freshness/replay.py --self-test` | exit 0; nonzero rejection of tampered observations, skipped cases and fabricated execution; unavailable source stays unknown | exit 0; "identical-observations: accepted exit=0"; 8 planted controls each "rejected exit=1": tampered-observation, skipped-case, duplicate-case, fabricated-execution, unknown-as-pass ("unavailable governing source is not current acceptance"), prediction-as-measured, wrong-raw-commitment, changed-decoded-value | 2026-10-21 | assay-verifier-app[bot] @ e16c3ed49c1ea518b5c131335dc5d926505410a2 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `(cd statusgen && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestCoverageAcceptanceDigestChanged$' . > "$out" && GOWORK=off go test -count=1 -v -run '^TestCoverageExpectChangedSinceWitnessRan$' . >> "$out" && grep -F -- '--- PASS: TestCoverageAcceptanceDigestChanged ' "$out" && grep -F -- '--- PASS: TestCoverageExpectChangedSinceWitnessRan ' "$out")` | exit 0; both baseline controls run and pass; report credits existing protection | exit 0; "--- PASS: TestCoverageAcceptanceDigestChanged (0.02s)"; "--- PASS: TestCoverageExpectChangedSinceWitnessRan (0.45s)"; research README section "Source inventory and the actual chain" credits these as the brief's row-3 existing controls, not a new mechanism | 2026-10-21 | assay-verifier-app[bot] @ e16c3ed49c1ea518b5c131335dc5d926505410a2 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Rows: 3/3 passed, 0 could-not-check.
+
+Risk-bearing value enumeration (delivering change: the research commit for this brief, merged via PR #3307; scope = the five research/changelog files it added). Literals introduced: minimum case count 12 (replay.py line 473); JSON captures per case 3 (replay.py line 363); subprocess timeouts 60 / 30 / 120 / 10 seconds (replay.py lines 126, 332, 338, 447 and 455); pinned study source commit (cases.json line 3, an ancestor of the verified head). Ranked: all are reversible research-harness knobs; no runtime code, schema, gate or authority is changed (design-fit weight 0, risk all "no", not irreversible). Top entry derived:
+
+RISK-VALUE: DERIVED — minimum declared cases = 12 @ docs/research/criterion-evidence-freshness/replay.py:473 — Task 2 of this brief enumerates exactly twelve mandatory case kinds (tightening, new, wording, reorder, split/merge, retirement, inherited, Command, Expect, weakened test, unrelated, unavailable), so 12 is the contract floor; the frozen set has 14 distinct ids, and 3 captures per case at line 363 matches the three statusgen --json calls each case issues (42 = 3 x 14 observed in row 1).
+
+**VERIFY: PASS** — 3/3 rows at the attested source
+
 ## Review
 
 Gate: model; synthetic research and a recommendation only. Prioritize contradictions and
