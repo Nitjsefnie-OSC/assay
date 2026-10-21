@@ -372,8 +372,6 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		{"hold in a fence", two("```\nrow 3 HELD — runner offline\n```") + rerun2, false},
 		{"fenced table, row in prose",
 			eight("```\n| # | Result |\n|---|---|\n| 9 | exit 2 |\n```\n\n- row 9 could-not-check.") + final, false},
-		{"table in an HTML comment",
-			two("<!--\n| Check | State |\n|---|---|\n| restore drill | HELD — runner offline |\n-->") + rerun2, false},
 		{"pipe in a code span, prose hold", two("- `a | b` could-not-check: runner offline.") + rerun2, false},
 		{"escaped pipe, prose hold", two("- a \\| b could-not-check: runner offline.") + rerun2, false},
 
@@ -432,6 +430,11 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("<div\n\n<!--\nx>\n<table><tr><td>3</td><td>HELD runner offline</td></tr></table>\n-->") + rerun2, true},
 		{"open <div title=\", <!--, table",
 			two("<div title=\"\n\n<!--\n\">\n<table><tr><td>3</td><td>HELD runner offline</td></tr></table>\n-->") + rerun2, true},
+		// Refused, fail-closed: a table line inside a comment still turns
+		// whole supersession off, since the page may not read the comment as
+		// one (the two cases above). Round 3 had admitted this shape.
+		{"table in a comment, now refused",
+			two("<!--\n| Check | State |\n|---|---|\n| restore drill | HELD — runner offline |\n-->") + rerun2, true},
 		{"text after a multi-line comment",
 			two("<!--\nnote\n--> row 3 HELD runner offline") + rerun2, true},
 		{"opener --!> end, hold after",
@@ -446,6 +449,16 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			two("<!-->\n\nRow | Result\n--|--\n3 | exit 2\n\n- row 3 could-not-check.\n\n-->") + rerun2, true},
 		{"hold in an HTML details block",
 			two("<details>\nrow 3 HELD — runner offline\n</details>") + rerun2, true},
+		// Prose holds, no table: a mis-read comment would drop them, so these
+		// pin the comment boundary now that a table refuses either way.
+		{"hold on a details opener line",
+			two("<details>row 3 HELD runner offline</details>") + rerun2, true},
+		{"indented opener, prose hold",
+			two("    <!--\n\nrow 3 HELD runner offline\n\n    -->") + rerun2, true},
+		{"tab-indented opener, prose hold",
+			two("\t<!--\n\nrow 3 HELD runner offline\n\n\t-->") + rerun2, true},
+		{"--!> mid-block, hold after",
+			two("<!--\nnote --!>\nrow 3 HELD runner offline\n-->") + rerun2, true},
 	})
 }
 

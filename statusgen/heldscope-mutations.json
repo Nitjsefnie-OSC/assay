@@ -65,7 +65,7 @@
       "name": "#3841: a hold in a non-comment HTML block is droppable",
       "file": "heldscope.go",
       "old": "out[i].whole = html[i] != heldHTMLOther",
-      "new": "out[i].whole = true"
+      "new": "out[i].whole = len(html) > 0"
     },
     {
       "name": "#3841: a table the scan cannot key still allows whole supersession",
@@ -92,10 +92,10 @@
       "new": "return heldPipeOutsideCode(line)"
     },
     {
-      "name": "#3841: a table line inside an HTML comment turns whole supersession off",
+      "name": "#3841: a table line inside an HTML comment is exempt from the whole-supersession check",
       "file": "heldscope.go",
-      "old": "html[i] != heldHTMLComment && heldTableish(lines[i])",
-      "new": "heldTableish(lines[i])"
+      "old": "out[i].key == \"\" && heldTableish(lines[i]) {",
+      "new": "out[i].key == \"\" && html[i] != heldHTMLComment && heldTableish(lines[i]) {"
     },
     {
       "name": "#3841: text after a comment's end counts as inside the comment",

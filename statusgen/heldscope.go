@@ -65,8 +65,9 @@ import (
 //     row absent from every keyed table, and a hold in fenced code or wholly
 //     inside an HTML comment are all dropped. A hold on any other line of an
 //     HTML block (heldHTMLLines) is still read. A table the scan cannot key
-//     is any line of an earlier entry, outside fenced code and HTML comments
-//     and not a keyed results row or its header, that carries an unescaped
+//     is any line of an earlier entry, outside fenced code (an HTML comment
+//     is no exemption: the page may not read it as one), and not a keyed
+//     results row or its header, that carries an unescaped
 //     "|" outside inline code or an HTML table tag (heldTableish) — a table
 //     of another shape, with no separator row, with no leading pipe, inside
 //     a blockquote, or in HTML — or a non-blank line right after a results
@@ -713,7 +714,7 @@ func heldScanScope(evidence string) heldScope {
 		}
 		for i := lo; i < hi; i++ {
 			out[i].whole = html[i] != heldHTMLOther
-			if !inFence[i] && !out[i].skip && out[i].key == "" && html[i] != heldHTMLComment && heldTableish(lines[i]) {
+			if !inFence[i] && !out[i].skip && out[i].key == "" && heldTableish(lines[i]) {
 				aligned[e] = false // a table the scan cannot key
 			}
 		}
