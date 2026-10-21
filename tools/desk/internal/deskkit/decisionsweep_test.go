@@ -155,7 +155,7 @@ func TestDecisionSweepMarkerMembership(t *testing.T) {
 	// fresh body determines the match, rather than its discovery position.
 	f.issues[1].Body = "<!-- decision-gate: s/09 -->"
 	f.issues[2].Body = "<!-- decision-gate: s/01 -->"
-	if got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(BriefAdmission{ID: "s/01"}); got.Issue != 2 || got.Waiting {
+	if got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(BriefAdmission{ID: "assay:tracker:s:01"}); got.Issue != 2 || got.Waiting {
 		t.Fatal("search body became authority", got)
 	}
 	f.failed = "search"
@@ -164,6 +164,40 @@ func TestDecisionSweepMarkerMembership(t *testing.T) {
 	}
 	if got := NewDecisionSweep(f, forgeTestRepo, nil).Wait(BriefAdmission{DecisionIssue: 1}); got.Unknown == "" || got.Waiting {
 		t.Fatal("missing ratifier treated as a ruling", got)
+	}
+}
+
+// regression: medici-finance/assay#3373
+func TestDecisionSweepCandidateSpellingParity(t *testing.T) {
+	for _, id := range []string{"s/01", "assay:tracker:s:01"} {
+		for _, foreignClosed := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/foreignClosed=%v", id, foreignClosed), func(t *testing.T) {
+				f := newDecisionSweepFixture()
+				foreign := "<!-- decision-gate: assay:otherproj:s:01 -->"
+				own := "<!-- decision-gate: " + id + " -->"
+				f.search = []IssueSearchResult{{Number: 1, Body: foreign}, {Number: 2, Body: own}}
+				f.issues[1].Body, f.issues[2].Body = foreign, own
+				f.trust[2] = &TrustPayload{Complete: true}
+				if foreignClosed {
+					f.issues[1].State = "closed"
+				} else {
+					f.issues[2].State = "closed"
+				}
+				b := BriefAdmission{ID: id}
+				want := BriefDecisionWait(f, forgeTestRepo, b, sweepRatifier)
+				got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(b)
+				if got != want || got.Issue != 2 || got.Waiting != foreignClosed || got.Unknown != "" {
+					t.Fatalf("foreign project altered candidate: shared=%+v dispatcher=%+v", got, want)
+				}
+			})
+		}
+	}
+	// A legacy brief searches only its literal slash spelling. A colon marker
+	// must not become a reverse alias that the per-brief reader never queried.
+	f := newDecisionSweepFixture()
+	f.search = []IssueSearchResult{{Number: 1, Body: "<!-- decision-gate: assay:tracker:s:01 -->"}}
+	if got := NewDecisionSweep(f, forgeTestRepo, sweepRatifier).Wait(BriefAdmission{ID: "s/01"}); got != (DecisionWait{}) {
+		t.Fatal("legacy id gained an unqueried reverse alias", got)
 	}
 }
 

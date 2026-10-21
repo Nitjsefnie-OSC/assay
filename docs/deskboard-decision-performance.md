@@ -12,7 +12,9 @@ deploy a shared service.
 3. Lazily discover decision markers once per repository, through a fixed typed mode of
    `SearchIssues`. Walk complete pages or report unknown. Include closed and decided
    issues: the lowest matching issue must retain its existing meaning.
-4. Index discovered marker bodies by normalized brief identity. Reconfirm membership
+4. Index discovered marker bodies by exact spelling. A brief selects its literal id
+   plus the same optional legacy spelling that `deskdispatch` searches; another
+   project's colon marker is not an alias. Reconfirm membership
    using fresh `GetIssue` observations and the same lowest-numbered-candidate helper
    as `deskdispatch`. A search body's marker alone cannot hold a row.
 5. Share each issue observation and canonical `BriefDecisionWait` result within this

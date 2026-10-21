@@ -54,7 +54,10 @@ func (s *DecisionSweep) Wait(b BriefAdmission) DecisionWait {
 			}
 			for _, hit := range hits {
 				for _, m := range decisionMarkerRe.FindAllStringSubmatch(hit.Body, -1) {
-					key := normalizeDecisionBriefID(m[1])
+					// Discovery must preserve the spelling filter used by the
+					// dispatcher's per-brief search. Normalizing here would admit
+					// another project's colon id with the same stream and number.
+					key := m[1]
 					s.markers[key] = append(s.markers[key], hit.Number)
 				}
 			}
@@ -62,8 +65,21 @@ func (s *DecisionSweep) Wait(b BriefAdmission) DecisionWait {
 		if s.discoveryErr != nil {
 			return DecisionWait{Unknown: fmt.Sprintf("the search for %s's decision issue on %s could not run", id, s.repo.Slug())}
 		}
-		// Copy before sorting: concurrent briefs may share this index entry.
-		candidates := append([]int(nil), s.markers[normalizeDecisionBriefID(id)]...)
+		spellings := []string{id}
+		if alt := otherDecisionBriefSpelling(id); alt != "" {
+			spellings = append(spellings, alt)
+		}
+		// Copy before sorting: concurrent briefs may share index entries.
+		var candidates []int
+		seen := map[int]bool{}
+		for _, spelling := range spellings {
+			for _, n := range s.markers[spelling] {
+				if !seen[n] {
+					seen[n] = true
+					candidates = append(candidates, n)
+				}
+			}
+		}
 		var why string
 		n, why = decisionIssueFromCandidates(s, s.repo, id, candidates)
 		if why != "" {
