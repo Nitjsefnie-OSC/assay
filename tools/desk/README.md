@@ -7725,6 +7725,19 @@ The production predicate is unchanged. A host running as root, or a filesystem t
 ignores the mode change, reports could-not-check/SKIP rather than a permission-test
 pass; the mutation runner reports that case as unqualified, never killed.
 
+The compiled-workload test resolves the existing Go module/build caches before
+TestMain redirects HOME to its isolated roster fixture. Only the build child
+receives those absolute cache locations; its proxy is off, its go-env file is
+disabled, and runtime command children retain their private HOME and minimal
+environment. An offline CI-like reproduction supplies caches only through the
+original HOME's go-env file with GOMODCACHE/GOPATH/GOENV/GOFLAGS unset; the old
+child build fails there and the corrected workload passes there. Full ordinary
+package coverage also passes with explicit existing caches. The mutation runner first requires an unmodified passing
+baseline for every selected discriminator and rejects nested build/tool failures
+as unqualified (exit 6) rather than behavioral kills. A real undefined-symbol
+child build after a passing baseline was rejected, as was an unmodified baseline
+with an intentionally empty offline module cache; neither was counted as killed.
+
 The raw-filename subcase could not run on the measured darwin filesystem, which
 rejects invalid UTF-8 path bytes; it reports SKIP rather than pass. A separate
 YAML binary component-id/optional-key fixture proves lossless handling at a second

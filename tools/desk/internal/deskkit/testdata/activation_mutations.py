@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline production-owner mutants. Run from tools/desk; always restore source."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -44,18 +45,43 @@ cases = [
 ]
 selected = sys.argv[1:]
 env = dict(os.environ, GOWORK='off', GOPROXY='off', KUBECONFIG='/dev/null')
+def run(test):
+    return subprocess.run(['go', 'test', './internal/deskkit', '-run', '^'+test+'$',
+                           '-count=1', '-timeout=180s', '-v'], env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, errors="backslashreplace")
+
+def nondiscriminating(output):
+    return (re.search(r'build \S+:', output) or '[build failed]' in output
+            or 'module lookup disabled' in output or 'panic:' in output
+            or 'cannot run' in output or 'exec format error' in output
+            or 'fork/exec' in output or 'executable file not found' in output
+            or 'context deadline exceeded' in output or 'signal: killed' in output)
+
+# Qualify every discriminator on unmodified source before planting anything.
+for test in dict.fromkeys(case[4] for case in cases if not selected or case[0] in selected):
+    baseline = run(test)
+    if baseline.returncode or f"--- SKIP: {test} (" in baseline.stdout or nondiscriminating(baseline.stdout):
+        print(baseline.stdout)
+        print('COULD-NOT-CHECK: unmutated baseline did not qualify: '+test)
+        raise SystemExit(6)
+    print('BASELINE PASS:', test, flush=True)
+
 for name, target, old, new, test in cases:
     if selected and name not in selected:
         continue
     path = Path(target)
     original = path.read_text()
     if original.count(old) != 1:
-        raise SystemExit(f'could-not-check: {name}: expected one production site')
+        print(f'COULD-NOT-CHECK: {name}: expected one production site')
+        raise SystemExit(6)
     try:
         path.write_text(original.replace(old, new, 1))
-        result = subprocess.run(['go', 'test', './internal/deskkit', '-run', '^'+test+'$',
-                                 '-count=1', '-timeout=180s', '-v'], env=env,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="backslashreplace")
+        result = run(test)
+        if nondiscriminating(result.stdout):
+            print(result.stdout)
+            print('COULD-NOT-CHECK: build/tool failure, not a behavioral kill: '+name)
+            raise SystemExit(6)
         if f"--- SKIP: {test} (" in result.stdout:
             print(result.stdout)
             print(f'COULD-NOT-CHECK: {name}: required fixture did not execute')

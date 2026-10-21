@@ -88,6 +88,7 @@ func DiscoverManifests(root string) ([]componentManifest, []string, error) {
 	return discoverManifests(root, nil)
 }
 
+// semantic: S-component-activation
 func discoverManifests(root string, source *manifestSource) (manifests []componentManifest, skipped []string, err error) {
 	activationWork("enumeration")
 	info, statErr := os.Stat(root)
@@ -206,6 +207,8 @@ type ActivationResult struct {
 //     checkResolution is what should have caught that as a problem before
 //     this ever runs in production, but this file fails closed on it
 //     regardless of whether the lint ran.
+//
+// semantic: S-component-activation
 func ComputeActivation(manifests []componentManifest, ext map[string]ExtKeyResult, trustConfigured bool) map[string]ActivationResult {
 	providers := map[string]string{} // key -> the FIRST component that provides it
 	for _, m := range manifests {

@@ -47,6 +47,11 @@ files:
 - `tools/desk/internal/deskkit/activation_test.go`
 - `tools/desk/internal/deskkit/activationindex.go` (planned)
 - `tools/desk/internal/deskkit/activationindex_test.go` (planned)
+- `tools/desk/internal/deskkit/rosterfixture_test.go`
+- `tools/desk/internal/deskkit/activationstartup_test.go`
+- `tools/desk/internal/deskkit/testdata/activation_mutations.py`
+- `tools/desk/internal/arch/arch_test.go`
+- `tools/desk/internal/arch/markers.txt`
 - `tools/desk/cmd/deskboard/main.go`
 - `tools/desk/cmd/deskdispatch/main.go`
 - `tools/desk/cmd/desktoken/main.go`
