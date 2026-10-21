@@ -60,8 +60,12 @@ import (
 //     did not — there is at least one such key, every data row of those
 //     tables is aligned and keyed, no earlier entry records a row in a
 //     table the scan cannot key, and no HTML block leaves the page inside a
-//     tag, a quoted attribute value or a comment (heldHTMLUnclosed), which
-//     swallows what follows on the page. Then the earlier entries are superseded
+//     tag, a quoted attribute value or a comment (heldHTMLUnclosed, which
+//     never reads a block as ending later than the page does), which
+//     swallows what follows on the page. A carriage return with no line feed
+//     after it ends a line on the page but not in the scan's split, so from
+//     such a line on nothing is live (heldRender) and no entry is superseded
+//     whole. Then the earlier entries are superseded
 //     as wholes: their prose, an entry-level verdict such as VERIFY:
 //     BLOCKED, a held or could-not-check note that names no row or names a
 //     row absent from every keyed table, and a hold in fenced code or wholly
@@ -196,25 +200,37 @@ var heldHTMLTableRe = regexp.MustCompile(`(?i)</?(?:table|thead|tbody|tfoot|tr|t
 // or inside a blockquote or list item, ends with the page's HTML tokenizer
 // still inside a tag, a quoted attribute value or a comment. The page then
 // swallows what follows, a later entry and its PASS included, while the scan
-// reads it live, so no entry is superseded whole.
+// reads it live, so no entry is superseded whole. The block is never read as
+// ending later than the page ends it: a block whose opener meets its end
+// condition on its own line ends there (heldHTMLOpenEnd), and a block inside
+// a container or under any indentation may end at any line the page reads
+// as leaving it, so the state is checked at the end of each of its lines.
+// Only such a block's lines are read with their container markers dropped;
+// a top-level block's later lines are read whole, as the page reads them.
 func heldHTMLUnclosed(lines []string, inFence []bool) bool {
-	st, in, end := 0, false, ""
+	st, in, end, nested := 0, false, "", false
 	for i, l := range lines {
 		t := heldContainerStrip(l)
+		closed := false
 		if !in {
-			h, e := heldHTMLOpen(t)
+			h, e, c := heldHTMLOpenEnd(t)
 			if inFence[i] || !h {
 				continue
 			}
-			in, end = true, e
+			in, end, closed, nested = true, e, c, t != l
+		} else if !nested {
+			t = l // a top-level block's later lines reach the page whole
 		}
 		st = heldTagScan(st, t)
-		if end != "" {
-			in = !strings.Contains(strings.ToLower(l), end)
-		} else {
-			in = !isBlankLine(l)
+		switch {
+		case closed:
+			in = false
+		case end != "":
+			in = !strings.Contains(strings.ToLower(t), end)
+		default:
+			in = !isBlankLine(t)
 		}
-		if !in && st != 0 {
+		if (!in || nested) && st != 0 {
 			return true
 		}
 	}
@@ -494,9 +510,19 @@ func heldFenceOpens(line string) (heldFence, bool) {
 // (htmlBlockEnds, a declaration), the end marker still to come: "" when the
 // block ends at the next blank line or already ended on this line.
 func heldHTMLOpen(line string) (html bool, end string) {
+	html, end, _ = heldHTMLOpenEnd(line)
+	return html, end
+}
+
+// heldHTMLOpenEnd is heldHTMLOpen, also reporting closed: the block is of a
+// kind that runs to an end marker and the line already holds it, searched
+// from the opener's first byte as the page does ("<!-->" ends at once). The
+// page ends such a block on this line; heldHTMLOpen reads it as running on
+// to the next blank line, the stricter choice for what it reads.
+func heldHTMLOpenEnd(line string) (html bool, end string, closed bool) {
 	t := strings.TrimLeft(line, " \t")
 	if !strings.HasPrefix(t, "<") {
-		return false, ""
+		return false, "", false
 	}
 	lower := strings.ToLower(t)
 	for _, k := range htmlBlockEnds {
@@ -508,18 +534,19 @@ func heldHTMLOpen(line string) (html bool, end string) {
 				continue
 			}
 		}
+		closed = strings.Contains(lower, k.end)
 		if strings.Contains(lower[len(k.open):], k.end) {
-			return true, ""
+			return true, "", closed
 		}
-		return true, k.end
+		return true, k.end, closed
 	}
 	if len(t) > 2 && t[1] == '!' && isASCIILetter(t[2]) { // a declaration, type 4
 		if strings.Contains(t[2:], ">") {
-			return true, ""
+			return true, "", true
 		}
-		return true, ">"
+		return true, ">", false
 	}
-	return true, "" // types 6 and 7, or a paragraph that starts with "<": ends at a blank line
+	return true, "", false // types 6 and 7, or a paragraph that starts with "<": ends at a blank line
 }
 
 // heldRender classifies the lines of evidence for the structural reads rule 3
@@ -535,7 +562,10 @@ func heldHTMLOpen(line string) (html bool, end string) {
 //     after it up to the next blank line, is not live; a block that runs
 //     across blank lines (a comment, <pre>, …) is not live up to its end
 //     marker, and a fence line inside any HTML block is a disagreement;
-//   - a blank line is not live.
+//   - a blank line is not live;
+//   - a carriage return with no line feed after it (hasBareCR) ends a line on
+//     the page that the scan's split on "\n" does not see, so from the first
+//     such line no line is live.
 //
 // Paragraph-level contexts (a blockquote's lazy continuation, a code span or
 // strike running across lines) are judged by the callers, which accept a
@@ -552,6 +582,9 @@ func heldRender(lines []string) []bool {
 		toggle := heldFenceToggle(l)
 		switch {
 		case doubt:
+			continue
+		case hasBareCR(l):
+			doubt = true // the page ends a line here, the split does not
 			continue
 		case htmlEnd != "":
 			if toggle {
