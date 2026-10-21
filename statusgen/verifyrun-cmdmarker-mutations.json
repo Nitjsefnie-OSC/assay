@@ -256,8 +256,8 @@
     {
       "name": "#2684: the comment-only arm is dropped (an inline `## Coverage` heading lifts as the command and passes empty)",
       "file": "verifyrows.go",
-      "old": "\tif lifted := verifyCommand(cell); shellCommentOnly(lifted) {",
-      "new": "\tif lifted := verifyCommand(cell); false && shellCommentOnly(lifted) {"
+      "old": "\tif shellCommentOnly(lifted) {",
+      "new": "\tif false && shellCommentOnly(lifted) {"
     },
     {
       "name": "#2684: shellCommentOnly never matches (the shared comment vectors stop holding)",
