@@ -9,7 +9,8 @@ licenses. The original source checkout is unchanged.
 
 From this directory, `GOWORK=off go build ./cmd/deskd` builds the service without
 a workspace or a reference to the former checkout. `cmd/openapigen` retains the
-wire-schema generator. No image, release, installation or runtime is activated
+wire-schema generator, and `cmd/cellsvalidate` retains the offline schema validator
+used by the mutation harnesses. No image, release, installation or runtime is activated
 by this source placement.
 
 ## Architecture pickup
@@ -95,8 +96,8 @@ separate bearer-authentication boundary and its own qualification.
 | Legacy CLI, desktop client and browser integrations | Retained at their current home; no cutover or deletion | Source consumer owner and cell-api/04, then /07 |
 | Image, installer, operator integration and pins | Retained at their current home | cell-api/05–07; no new image or runtime authority here |
 | Adopter configuration, identities and trust enrollment | Excluded; an empty trust-anchor example enrolls nobody | Existing configuration/credential owner |
-| Adopter-specific config tests | Two real-config guards remain unchanged at the source; excluded from this reusable module | Source owner retains enforcement; migrate their schema consumer before source retirement |
-| Active source tasks, claims, open changes and verification obligations | Not closed or assumed empty; forge freshness and full private inventory remain unknown | Source owner receipt before any retirement |
+| Adopter-specific config tests | Three real-config guards remain unchanged at the source; excluded from this reusable module | Source owner retains enforcement; migrate their schema consumer before source retirement |
+| Active source tasks, claims, open changes and verification obligations | Not closed or assumed empty; a current source snapshot is checked, while full active-obligation inventory remains a retirement gate | Source owner receipt before any retirement |
 
 ## Validation and limits
 
@@ -111,12 +112,18 @@ The initial schema run retained two tests of the source owner's real
 The same source schema suite passes in its original checkout. Those two
 adopter-only guards remain unchanged at that source home, pinned by function
 hashes in the private handoff, and are excluded from this reusable closure.
-Every generic validation/identity test remains; the final reusable schema suite
+The validator command also retains its three generic tests; its separate real-configuration
+CLI guard remains unchanged at the source owner. Every generic validation/identity test remains; the final reusable schema suite
 passes. No synthetic replacement or new skip masks the initial two failures.
 The source owner must migrate those guards onto the qualified public schema
 before retiring their current consumer. Existing Docker integration skips and
 the absent legacy client-host check remain could-not-check. Linux
 cross-compilation is not Linux execution or Kubernetes qualification.
+
+The executed mutation receipt covers the new 21-case policy harness. Retained
+legacy mutation scripts are separate checks; their presence does not imply
+qualification of every historical mutation. In particular, the attach harness
+contains a pod-import mutation whose source driver is intentionally excluded.
 
 Assay's current CI discovers new tracked modules for build and vet, but executes
 full tests only for named modules. The private handoff includes the exact

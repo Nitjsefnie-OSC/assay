@@ -1,7 +1,7 @@
 # Move deskd into Assay
 
 Add a standalone Apache-2.0 `deskd` module with the existing command, adapters,
-index, contract generator, authorization controls, embedded web view and tests.
+index, contract generator, offline schema validator, authorization controls, embedded web view and tests.
 The source checkout and existing deployments remain unchanged; no runtime
 activation, release, image or consumer retirement is included.
 
@@ -13,6 +13,6 @@ principal. Per-cell, origin, capability, namespace and MCP custody restrictions
 remain in place. The current fixed proving-cell allowlist is exactly `assay` and
 `house`, with near-miss refusals; this does not edit deployed opt-ins. Synthetic fixtures replace adopter identifiers.
 
-Two adopter-configuration guards remain enforced at their original home and
+Three adopter-configuration guards remain enforced at their original home and
 are excluded from this reusable module; every generic control stays included.
 Consumer migration and the cell-api refactor/qualification remain separate.

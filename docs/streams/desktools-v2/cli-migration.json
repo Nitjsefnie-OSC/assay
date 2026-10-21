@@ -330,6 +330,23 @@
       "reason": "Compatibility relocation retains the legacy parser until cell-api/02 composes the target public service; cell-api/04 owns client migration and cell-api/07 qualifies retirement. No target brief is completed by this placement."
     },
     {
+      "executable": "cellsvalidate",
+      "path": "deskd/cmd/cellsvalidate",
+      "kind": "go",
+      "module": "deskd",
+      "release": "source-only validation helper; never installed or released",
+      "consumers": [
+        "deskd/config/schema/mutate-env-rules.sh",
+        "deskd/internal/chat/mutate-chat-controls.sh"
+      ],
+      "parser": "Go os.Args positional paths",
+      "complexity": "simple",
+      "basis": "retained schema validation helper and three generic command tests required by mutation harness closure",
+      "owner": "cell-api/02",
+      "state": "exempt",
+      "reason": "Compatibility relocation preserves the existing offline validator used by schema and chat control harnesses; target CLI composition remains cell-api/02 work."
+    },
+    {
       "executable": "openapigen",
       "path": "deskd/cmd/openapigen",
       "kind": "go",
