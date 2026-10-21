@@ -58,7 +58,7 @@ retired — see desk-supervision/24's Task step 8). Either shape's content is ex
 | `verifier_tier` | `any` or `strong` — the tier the run was admitted at; never a vendor or model name. Must equal the admitted binding's tier when it carries one |
 | `started`, `finished` | RFC3339 UTC; `started <= finished <= ts` |
 | `rows_passed`, `rows_total` | how many Verify rows passed, out of how many the brief has |
-| `row_results` | optional list of `{row, result}` (`pass` / `fail` / `could-not-run` / `deferred`) covering ALL `rows_total` rows; its length equals `rows_total` and its `pass` count equals `rows_passed` |
+| `row_results` | optional in the wire schema; [new producers](../../verify-outcome-rows.md#producer-migration-covered-rows-are-not-held-rows) require it whenever `rows` is non-empty. List of `{row, result}` (`pass` / `fail` / `could-not-run` / `deferred`) covering ALL `rows_total` rows; its length equals `rows_total` and its `pass` count equals `rows_passed` |
 | `dispatch_ref` | optional `<claim_key>@<YYYYMMDDTHHMMSSZ>.<12 lowercase hex>` (prefix 1-226 printable ASCII bytes, no `@`). **Self-reported and stays so** — the writer checks the shape, never that the dispatch happened |
 | `dispatch_ref_sha256` | written by the writer only, on a private register, in place of `dispatch_ref`; never valid input |
 
