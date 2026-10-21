@@ -262,6 +262,14 @@ func ciCrossModuleRegistry() []ciEntry {
 	}
 
 	registry := []ciEntry{
+		{
+			test: "statusgen/boardcohort_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"docs/streams", "statusgen/testdata/witness-admission"},
+			runInvokes: []string{"cd statusgen && go test ./... && go vet ./..."},
+			why:        "the source-bound board cohort reads current delivery declarations and alias registry; unfiltered push and pull_request run the statusgen suite even on metadata-only changes",
+		},
+
 		{test: "tools/desk/cmd/writeguard/policy_consumers_test.go", module: "tools/desk", workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
 			reads:      []string{"deskcore/", "docs/write-policy-consumers.md", "docs/contracts.md", "tools/desk/internal/arch/markers.txt", "Dockerfile", "images/assay-harness/Dockerfile", "**/*.go"},
 			runInvokes: []string{`*/tools/desk|tools/desk) extra="go test ./..."`, `eval "$extra"`},
