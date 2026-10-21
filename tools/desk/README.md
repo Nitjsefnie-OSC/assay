@@ -7706,4 +7706,4 @@ This is retained as an explicit test-coverage limit, not an asserted proof.
 The raw-filename subcase could not run on the measured darwin filesystem, which
 rejects invalid UTF-8 path bytes; it reports SKIP rather than pass. A separate
 YAML binary component-id/optional-key fixture proves lossless handling at a second
-parsed site on this platform. Linux raw-path execution remains CI coverage.
+parsed site on this platform. Linux raw-path execution is unobserved here; no Linux pass or CI execution is claimed.
