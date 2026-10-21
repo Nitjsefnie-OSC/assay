@@ -1,0 +1,77 @@
+{
+  "test": "go test ./contexthandoff/ . -run '^(TestContextResolverWithheldConsumers|TestContextRecheckUnrelatedEdit|TestContextRecheckNewConsumerOutsideReadSet|TestContextMissingInputScoped|TestContextAmendmentPreservesDatedSources|TestContextActiveWorkerRefusesSilentRebind|TestContextCompetingProposals|TestContextDeliveredBriefRoutesFollowOn|TestContextCLIDiscoverRoundTrip|TestContextArchitectureCoverageNotProductAlignment|TestPickupContextRecheck)$' -count=1 -timeout 300s",
+  "control": {
+    "name": "CONTROL: claims ignored by the amendment check",
+    "file": "contexthandoff/check.go",
+    "old": "\tfor _, c := range ix.s.Claims {\n",
+    "new": "\tfor _, c := range ix.s.Claims[:0] {\n"
+  },
+  "mutations": [
+    {
+      "name": "row1-typed-edges-only",
+      "file": "contexthandoff/discover.go",
+      "old": "\tqueries := []Query{capped(QueryDeclaredEdge, map[string]string{\"source\": \"snapshot\"}, res, max)}\n",
+      "new": "\tqueries := []Query{capped(QueryDeclaredEdge, map[string]string{\"source\": \"snapshot\"}, res, max)}\n\toffer = func(candidate) {}\n"
+    },
+    {
+      "name": "row2-invalidate-all",
+      "file": "contexthandoff/recheck.go",
+      "old": "\t\tc.add(\"file:\"+loc, FindingPreserved, \"unrelated edit: no conclusion depends on it\")\n",
+      "new": "\t\tc.add(\"file:\"+loc, FindingReconcile, \"any edit\")\n\t\tfor _, im := range c.fresh.Impacts {\n\t\t\tc.touched[im.Subject] = true\n\t\t}\n"
+    },
+    {
+      "name": "row3-prior-hashes-only",
+      "file": "contexthandoff/recheck.go",
+      "old": "\t\tcase !inPrior:\n",
+      "new": "\t\tcase !inPrior && false:\n"
+    },
+    {
+      "name": "row4-unavailable-as-empty",
+      "file": "contexthandoff/snapshot.go",
+      "old": "\t\t\tsrc.Unavailable, src.Files = true, nil\n",
+      "new": "\t\t\tsrc.Unavailable, src.Files = false, map[string][]byte{}\n"
+    },
+    {
+      "name": "row5-apply-only",
+      "file": "contexthandoff/check.go",
+      "old": "\tif r := rewrites(b, res); r != \"\" {\n",
+      "new": "\tif r := rewrites(b, res); r != \"\" && false {\n"
+    },
+    {
+      "name": "row6-ignore-claims",
+      "file": "contexthandoff/check.go",
+      "old": "\tfor _, c := range ix.s.Claims {\n",
+      "new": "\tfor _, c := range ix.s.Claims[:0] {\n"
+    },
+    {
+      "name": "row7-textual-merge",
+      "file": "contexthandoff/check.go",
+      "old": "\tif r := ix.rivalConflict(a, hd); r != \"\" {\n",
+      "new": "\tif r := ix.rivalConflict(a, hd); r != \"\" && false {\n"
+    },
+    {
+      "name": "row8-patch-delivered",
+      "file": "contexthandoff/check.go",
+      "old": "\tif b.delivered() {\n",
+      "new": "\tif b.delivered() && false {\n"
+    },
+    {
+      "name": "row10-product-aligned",
+      "file": "contexthandoff/discover.go",
+      "old": "map[string]string{\"scope\": \"architecture\", \"product-alignment\": \"unchecked\"}",
+      "new": "map[string]string{\"scope\": \"architecture\", \"product-alignment\": \"aligned\"}"
+    },
+    {
+      "name": "row11-ignore-guideline",
+      "file": "contexthandoff/recheck.go",
+      "old": "\t\t\tif rule == QueryGuidelines && c.inUnavailable(k) {\n",
+      "new": "\t\t\tif rule == QueryGuidelines {\n"
+    },
+    {
+      "name": "row11-ignore-replacement",
+      "file": "contexthandoff/recheck.go",
+      "old": "\t\tsubj, _, _ := strings.Cut(r, \";\")\n",
+      "new": "\t\tsubj, _, _ := strings.Cut(r, \";\")\n\t\tif strings.Contains(r, \";replaces;\") {\n\t\t\tcontinue\n\t\t}\n"
+    }
+  ]
+}
