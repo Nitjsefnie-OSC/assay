@@ -22,7 +22,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [desk-supervision](docs/streams/desk-supervision/README.md) | P2 | active | 8/35 | 2026-10-21 |  |
 | [desk-tools](docs/streams/desk-tools/README.md) | P2 | active | 14/52 | 2026-10-20 |  |
 | [desktools-go-git](docs/streams/desktools-go-git/README.md) | P2 | active | 5/8 | 2026-10-20 |  |
-| [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/50 | 2026-10-20 | 15 withdrawn |
+| [desktools-v2](docs/streams/desktools-v2/README.md) | P2 | active | 3/50 | 2026-10-21 | 15 withdrawn |
 | [forge-gitlab](docs/streams/forge-gitlab/README.md) | P2 | active | 12/18 | 2026-10-20 |  |
 | [forge-neutral](docs/streams/forge-neutral/README.md) | P1 | active | 5/43 | 2026-10-20 |  |
 | [graph-execution](docs/streams/graph-execution/README.md) | P1 | active | 2/32 | 2026-10-20 |  |
@@ -95,9 +95,9 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **COULD NOT CHECK — main-red arm could not check — no `--main-health` input was supplied, so whether main is red is unknown here (statusgen does not read live CI). A main-red fix cannot be lifted into the critical tier on this run; this is not a reading that main is green.**
 
-_Next-up: 20 of 61 eligible — 41 held back (17 by per-stream caps, 24 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 20 of 60 eligible — 40 held back (16 by per-stream caps, 24 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
-_Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. By stream: desktools-v2 (17). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
+_Held by per-stream caps: 16 brief(s) across 1 stream(s) — top: desktools-v2. By stream: desktools-v2 (16). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
 | Stream | Brief | Wave | Score |
 |---|---|---|---|
@@ -109,7 +109,6 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 | desk-containers | 16 — Interim mechanism for the runner-lifecycle `pause` transition — cell-scoped stop flags `STOP.cell.<cell>[.<loop>]`, honoured by the Guard for any session carrying the cell marker [exec:strong] | 7 | 6500 |
 | desk-containers | 06 — Kubernetes manifests for the five desks [exec:strong] | 3 | 6000 |
 | comms-core | 01 — Extract the comms contract and isolate Assay policy [exec:strong] | 0 | 4500 |
-| desktools-v2 | 60 — Bound component activation discovery and reuse validated manifest snapshots [exec:strong] | 1 | 2500 + 1500 (drive:desktools-v2) |
 | desk-tools | 45 — Expose the canonical verification queue to its consumers [exec:strong] | 1 | 3000 |
 | statusgen | 28 — Separate frozen historical notices from actionable lint findings [exec:strong] | 1 | 3000 |
 | composability | 02 — Install ledger, paired inverses, and the `disable` verb | 1 | 2500 |
@@ -117,6 +116,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 | statusgen | 20 — Offline future-state resolver with receipt and amendment validation [exec:strong] | 2 | 2500 |
 | statusgen | 27 — Reject newly introduced actionable lint notices on changed briefs [exec:strong] | 1 | 2500 |
 | build-less-brittle | 12 — The refactor oracle: what a redesign is coded against — intent, failure modes, triaged characterization tests, invariants, and an acceptance rule [exec:strong] | 5 | 3500 + 1500 (drive:build-less-brittle) |
+| desktools-v2 | 30 — Port the GitLab fleet provisioner to a Go command [exec:strong] | 3 | 2000 + 1500 (drive:desktools-v2) |
 | apps-installer | 10 — `deskavatar --tier team` emits a third tile for `<org>-review`, proofed at 20 px against read and act | 0 | 3000 |
 | forge-neutral | 18 — statusgen off gh — one desk-tools read verb on the seam, offline lint by default, one git walk [exec:strong] | 5 | 3000 |
 | graph-execution | 11 — Optional pinned Laya provider with explicit CPU and GPU profiles [exec:strong] | 1 | 2500 |
@@ -126,7 +126,7 @@ _Held by per-stream caps: 17 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 64bd753d 2026-10-21T02:32:13Z_
+_last regen: 8121208a 2026-10-21T02:33:56Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -147,7 +147,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 64bd753d 2026-10-21T02:32:13Z_
+_last regen: 8121208a 2026-10-21T02:33:56Z_
 
 **Progress:** 34/83 brief items done.
 
@@ -166,6 +166,7 @@ _last regen: 64bd753d 2026-10-21T02:32:13Z_
 - desktools-v2/20
 - desktools-v2/21
 - desktools-v2/45
+- desktools-v2/60
 - desktools-v2/63
 - desktools-v2/64
 - desktools-v2/65
@@ -195,7 +196,6 @@ _last regen: 64bd753d 2026-10-21T02:32:13Z_
 - desktools-v2/56
 - desktools-v2/57
 - desktools-v2/58
-- desktools-v2/60
 - desktools-v2/66
 
 
@@ -204,7 +204,7 @@ _last regen: 64bd753d 2026-10-21T02:32:13Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (8 for the desk · 39 for the driver · 31 for workers · 19 for an operator · 30 runner-pending — of 130 total; 3 could-not-check)
+## Awaiting verification / review (8 for the desk · 39 for the driver · 31 for workers · 19 for an operator · 31 runner-pending — of 131 total; 3 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
@@ -314,7 +314,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-tools | 19 [exec:strong] | implemented | 1000 | 0 | — | operator | `cd tools/desk && go build ./... && go vet ./...` | — | — |
 | desktools-v2 | 13 [exec:strong] | implemented | 1000 | 0 | — | operator | environment blocker, cite #1631 | — | — |
 
-### Runner-pending (30)
+### Runner-pending (31)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -336,6 +336,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | statusgen | 22 [exec:strong] | verified | 4000 | 6 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | harness-portability | 06 [exec:strong] | verified | 3500 | 5 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-04 assay-verifier-app[bot] @ bed1a31ba875 (claude-opus-5-5) | — |
 | statusgen | 19 [exec:strong] | verified | 3000 | 4 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
+| desktools-v2 | 60 [exec:strong] | implemented | 2500 | 3 | — | verify runner | none | — | — |
 | contributor-trust | 04 [exec:strong] | verified | 2000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 2f44050f8a70 (claude-opus-5-5) | — |
 | desk-supervision | 17 [exec:strong] | verified | 1500 | 1 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 2f44050f8a70 (claude-opus-5-5) | — |
 | desk-supervision | 19 [exec:strong] | verified | 1500 | 1 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-04 assay-verifier-app[bot] @ 70deba75a577 (claude-opus-5-5) | — |
@@ -694,7 +695,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 57 Migrate intake-eval to Cobra and Viper — todo (wave 3)
 - 58 Extract the role credential provider and retire internal desktoken callouts — todo (wave 1)
 - 59 Share concurrent credential lookups and bound reuse by credential expiry — todo (wave 2)
-- 60 Bound component activation discovery and reuse validated manifest snapshots — todo (wave 1)
+- 60 Bound component activation discovery and reuse validated manifest snapshots — implemented (wave 1)
 - 61 Version shared performance boundaries and keep legacy reports comparable — verified (wave 1)
 - 62 Instrument desk hot paths and qualify credential and startup savings — todo (wave 4)
 - 63 Define perf-v3 attribution, profiles and compatible local readers — implemented (wave 2)
