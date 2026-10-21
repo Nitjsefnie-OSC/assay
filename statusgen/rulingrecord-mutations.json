@@ -1,0 +1,35 @@
+{
+  "test": "go test . -run 'TestRulingRecord_' -count=1 -timeout 120s",
+  "control": {
+    "name": "CONTROL — every resolved outcome reads as corroborated; TestRulingRecord_RefusesWrongAuthor must go red",
+    "file": "rulingrecord.go",
+    "old": "\tcase o.Present && o.Reason == rulingOK:",
+    "new": "\tcase true:"
+  },
+  "mutations": [
+    {
+      "name": "a forge read that failed is reported as a refusal, not a could-not-check; TestRulingRecord_ForgeErrorCouldNotCheck must go red",
+      "file": "rulingrecord.go",
+      "old": "\tcase o.Reason == rulingUnresolvable:",
+      "new": "\tcase false:"
+    },
+    {
+      "name": "the decision-record path check is dropped; TestRulingRecord_UsageAndRepo must go red",
+      "file": "rulingrecord.go",
+      "old": "\tif !isDecisionRecordPath(rel) {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "an undeterminable repository is no longer a could-not-check; TestRulingRecord_UsageAndRepo must go red",
+      "file": "rulingrecord.go",
+      "old": "\tif repo == \"\" {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "the forge client seam is bypassed (no client); TestRulingRecord_Corroborates must go red",
+      "file": "rulingrecord.go",
+      "old": "resolveDecisionRulings(rulingRecordClientFn(), root,",
+      "new": "resolveDecisionRulings(nil, root,"
+    }
+  ]
+}

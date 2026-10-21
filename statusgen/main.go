@@ -1820,6 +1820,7 @@ func main() {
 	consumersBrief := flag.String("brief", "", "--consumers: check only this brief (<stream>/<NN>); default = every brief file in the diff")
 	corroborateMode := flag.Bool("corroborate", false, "check human:<name> stamps against PR reviews/comments for corroboration (requires --pr)")
 	corroboratePRs := flag.String("pr", "", "comma-separated PR numbers (required with --corroborate; with --decision-gate, the PRs to judge)")
+	corroborateRecord := flag.String("ruling-record", "", "with --corroborate instead of --pr: corroborate ONE decision record (repo-relative docs/streams/decisions/<name>.md) through its ruling: link, outside any PR (exit 0 = corroborated, 1 = not, 2 = could-not-check)")
 	decisionGateMode := flag.Bool("decision-gate", false, "the decision-gate hold, both layers (lifecycle-v1 §4.5): refuse a gate: human brief moved to implemented/verified/done, relabelled, or dropped without a human ruling on its decision issue. Needs --pr <N> or --decision-gate-base <rev>")
 	decisionGateBase := flag.String("decision-gate-base", "", "with --decision-gate: judge the working tree against this local revision (e.g. HEAD, for an uncommitted landing) instead of a PR's merge-base")
 	// Daily factory-floor bottleneck report: per-stage
@@ -2238,6 +2239,13 @@ func main() {
 	}
 	if *decisionGateMode {
 		exitProcess(runDecisionGate(*root, *corroboratePRs, *decisionGateBase))
+	}
+	if *corroborateRecord != "" {
+		if !*corroborateMode || strings.TrimSpace(*corroboratePRs) != "" {
+			fmt.Fprintln(os.Stderr, "statusgen: --ruling-record needs --corroborate and no --pr (it corroborates one record outside any PR)")
+			exitProcess(2)
+		}
+		exitProcess(runCorroborateRecord(*root, *corroborateRecord))
 	}
 	if *corroborateMode {
 		exitProcess(runCorroborate(*corroboratePRs))

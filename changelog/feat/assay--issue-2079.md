@@ -1,0 +1,3 @@
+### Added
+- `deskdispatch --gate-human` accepts a brief whose human has already ruled: a `**Ruling (<date>): option <N>.**` line linking a decision record under `docs/streams/decisions/` passes the decision gate once the record exists and its ruling corroborates through the new `statusgen --corroborate --ruling-record <path>`; any other shape refuses before the claim, naming the line it could not accept (#2079).
+- `statusgen --corroborate --ruling-record <path>` corroborates one decision record's ruling outside any pull request, through the same forge check the PR lane applies (exit 0 corroborated, 1 not, 2 could-not-check).
