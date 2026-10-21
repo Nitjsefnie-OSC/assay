@@ -491,15 +491,19 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		}
 		// Drive-plan honesty: PROBLEM a drive-plan .md whose
 		// snapshot region has drifted from a fresh render, or that has no manifest
-		// beside it. --lint only (the PR gate); STATUS.md-free and offline. Absent
-		// docs/roadmap/drives ⇒ inert.
+		// beside it. --lint only (the PR gate); STATUS.md-free. Its claim read is
+		// this run's own (lintClaims), so without --forge it reads none and stays
+		// offline (#3323). Absent docs/roadmap/drives ⇒ inert.
+		lintClaimRead := func(r string, s []*Stream) (map[string]bool, ClaimSource) {
+			return lintClaims(r, mode, s)
+		}
 		var dp, dn []string
 		if effScope == "" {
-			dp, dn = driveRegionLintFromBoard(root, streams, nowFunc())
+			dp, dn = driveRegionLintProblems(root, streams, lintClaimRead, nowFunc())
 		} else {
 			// Snapshot frontiers use the full board, including rows outside
 			// the product-scoped checks above. Hydrate those once per sweep.
-			dp, dn = driveRegionLintProblems(root, nowFunc())
+			dp, dn = driveRegionLintProblems(root, nil, lintClaimRead, nowFunc())
 		}
 		problems = append(problems, dp...)
 		notices = append(notices, dn...)

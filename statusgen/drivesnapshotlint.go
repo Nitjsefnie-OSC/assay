@@ -28,23 +28,34 @@ import (
 // the byte-identical baseline every drive check preserves. Run in --lint only
 // (the PR gate); the STATUS.md write path never reads these files.
 
-// driveRegionLintProblems checks every drive-plan .md under root. It never reads
-// or writes STATUS.md and takes no live infrastructure.
-func driveRegionLintProblems(root string, now time.Time) (problems, notices []string) {
-	return driveRegionLintWithContext(root, &driveLintCtx{root: root}, now)
-}
-
-// driveRegionLintFromBoard reuses the full board already hydrated by run().
-// Scoped validation must use the ordinary loader instead: rows outside that
-// scope have not had their frontmatter attached yet.
-func driveRegionLintFromBoard(root string, streams []*Stream, now time.Time) (problems, notices []string) {
-	return driveRegionLintWithContext(root, &driveLintCtx{
-		root: root, loaded: true, streams: streams,
-	}, now)
-}
-
-func driveRegionLintWithContext(root string, ctx *driveLintCtx, now time.Time) (problems, notices []string) {
-	return driveRegionLint(root, func(slug string) (string, int) { return driveLintSection(ctx, slug, now) })
+// driveRegionLintProblems checks every drive-plan .md under root.
+//
+// readClaims is the claim read the fresh render may make. run()'s --lint passes
+// its own (lintClaims for the run's mode), so a plain --lint reads no claims
+// here either: no remote branch list, no dead-claim decay (#3323,
+// docs/statusgen-lint-reach.md). With no claim set read, a region's In-flight
+// list is compared by assuming the claims it implies, and a region that matches
+// only that way is a could-not-check NOTICE naming them — never drift decided
+// on claims nobody read, and never a pass: a region no claim set explains is
+// still drift.
+//
+// nil readClaims is the live read (resolveClaims, as --drive-snapshot renders)
+// with nothing assumed: the reconcile lint hold's form, kept identical to its
+// incremental evaluation (driveIncremental), which renders the same way.
+//
+// streams, when non-nil, is the full board the caller already hydrated; nil
+// loads it (a product-scoped run hydrated only its scope).
+func driveRegionLintProblems(root string, streams []*Stream, readClaims claimReader, now time.Time) (problems, notices []string) {
+	ctx := &driveLintCtx{root: root, readClaims: readClaims}
+	if streams != nil {
+		ctx.loaded, ctx.streams = true, streams
+	}
+	if readClaims == nil {
+		return driveRegionLint(root, func(slug string) (string, int) { return driveLintSection(ctx, slug, now) })
+	}
+	return driveRegionLintAssuming(root, func(slug, region string) (string, int, []string) {
+		return driveLintRender(ctx, slug, region, now)
+	})
 }
 
 // driveRegionLint is driveRegionLintProblems with the fresh render supplied by
@@ -52,6 +63,17 @@ func driveRegionLintWithContext(root string, ctx *driveLintCtx, now time.Time) (
 // slug, now) would. The reconcile lint hold supplies one that reuses a single
 // board load across the rows it evaluates (reconcileholdinc.go).
 func driveRegionLint(root string, section func(slug string) (string, int)) (problems, notices []string) {
+	return driveRegionLintAssuming(root, func(slug, _ string) (string, int, []string) {
+		fresh, rc := section(slug)
+		return fresh, rc, nil
+	})
+}
+
+// driveRegionLintAssuming is driveRegionLint with a render that also sees the
+// plan file's current region and returns the claims it had to assume rather
+// than read (driveLintRender). A region that matches only under assumed claims
+// is a could-not-check NOTICE naming them; a region no render matches is drift.
+func driveRegionLintAssuming(root string, render func(slug, region string) (fresh string, rc int, assumed []string)) (problems, notices []string) {
 	dir := filepath.Join(root, "docs", "roadmap", "drives")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -111,14 +133,15 @@ func driveRegionLint(root string, section func(slug string) (string, int)) (prob
 			notices = append(notices, fmt.Sprintf("drive-region-drift: docs/roadmap/drives/%s unreadable (%v) — could-not-check", e.Name(), readErr))
 			continue
 		}
-		if _, ok := extractDriveRegion(string(content), slug); !ok {
+		region, ok := extractDriveRegion(string(content), slug)
+		if !ok {
 			// A plan file with a manifest but no snapshot region yet: could-not-
 			// check, not drift. The pen holder splices one with
 			// `statusgen --drive-snapshot <slug>`.
 			notices = append(notices, fmt.Sprintf("drive-region-drift: docs/roadmap/drives/%s carries no drive-snapshot:begin region — could-not-check (splice one with `statusgen --drive-snapshot %s`)", e.Name(), slug))
 			continue
 		}
-		fresh, rc := section(slug)
+		fresh, rc, assumed := render(slug, region)
 		if rc != 0 {
 			// Manifest present but not active/in-window/resolvable: the region
 			// cannot be freshly rendered to compare. Three-state NOTICE.
@@ -127,6 +150,12 @@ func driveRegionLint(root string, section func(slug string) (string, int)) (prob
 		}
 		if driveRegionVerdict(fresh, string(content), slug) == 1 {
 			problems = append(problems, driveRegionDriftProblem(e.Name(), slug))
+			continue
+		}
+		if len(assumed) > 0 {
+			notices = append(notices, fmt.Sprintf(
+				"drive-region-drift: docs/roadmap/drives/%s matches a fresh render only if %s %s claimed by an open branch; this run did not read the claim set, so that was assumed, not checked — could-not-check (the claim-filtering notice says why)",
+				e.Name(), strings.Join(assumed, ", "), map[bool]string{true: "is", false: "are"}[len(assumed) == 1]))
 		}
 	}
 	return problems, notices
