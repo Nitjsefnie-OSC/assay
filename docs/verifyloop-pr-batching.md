@@ -79,3 +79,50 @@ CLI identity and credential-child traffic separately before totaling them. Retai
 partial/unsupported cost coverage, verify complete root admission and unchanged
 root contents, and compare scheduling outputs and uncertainty. A drained live queue
 cannot replace the fixed busy population or qualify a universal speedup claim.
+
+## Qualification results (2026-10-21)
+
+Matched source parent `aec9230c02756c7eccfbf61ddde66709dc4397c7` and
+implementation `a4a2e58e63c0d6327b908dc6054ec858d1670f8b` were built with the
+same Go toolchain and default transport. Four frozen root HEADs were admitted by
+normal preflight on every run; tracked root contents remained unchanged. The run
+order was parent, batch, batch, parent. All four complete JSON plans were exactly
+equal: 266 awaiting, 84 dispatchable, 2 Evidence-only, 180 bucketed, including the
+same 24 uncertain items. No execution or publication was performed.
+
+| Run | Wall seconds | Total GitHub requests | Native REST | Native GraphQL |
+| --- | ---: | ---: | ---: | ---: |
+| baseline-a | 31.478 | 53 | 38 | 7 |
+| subject-a | 16.319 | 25 | 8 | 9 |
+| subject-b | 15.217 | 25 | 8 | 9 |
+| baseline-b | 27.256 | 53 | 38 | 7 |
+
+Total counts include four Git preflight advertisements and four CLI identity
+probes per run. Credential children succeeded from cached credentials with zero
+HTTP requests; native provider attempts matched independently counted physical
+HTTP/2 sends, with zero recorder drops and only successful provider responses.
+Debug headers and bodies were consumed in memory and discarded; only aggregate
+counts and normal safe diagnostics were retained.
+
+Mean wall time fell from **29.367 s to 15.768 s** (46.3% shorter, 1.86x), and total
+requests from **53 to 25** (52.8% fewer). These are two observations per source,
+not a latency guarantee: provider state and machine/network load vary. Per-phase
+wall observations can overlap and must not be added together. Measured same-query
+GraphQL points were 7 before and 9 after; REST point coverage is unsupported, so
+this is not evidence of lower total rate-limit points. Both measured sources
+actually emitted **perf-v3**, not perf-v4.
+
+The offline benchmark ran five repetitions of three iterations per case:
+
+| Verifier PRs | Per-target requests | Selected reader requests | Median before ms | Median after ms |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 2 | 2 | 2.855 | 2.892 |
+| 32 | 64 | 2 | 87.763 | 4.052 |
+| 65 | 130 | 6 | 221.058 | 15.521 |
+
+The singleton result is unchanged within timing noise. Busy-population timings
+reflect the explicit local 1 ms delay and isolate PR-discovery scaling; they must
+not be presented as production end-to-end speedups. The benchmark asserts budgets
+on every iteration. Full verifyloop/deskkit suites, focused race tests, vet and
+documentation lint passed. The mutation harness had a green baseline, caught its
+fresh-head positive control and caught all eight declared mutations.
