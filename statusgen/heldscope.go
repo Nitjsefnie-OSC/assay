@@ -463,6 +463,11 @@ func heldElementDoubt(lines []string, inFence []bool, starts []int) bool {
 	return false
 }
 
+// heldElementCheck is heldElementDoubt as heldScanScope calls it. It is a
+// variable only so the tests can turn it off and show that every earlier
+// rule still refuses on its own: the rules are layers, not one check.
+var heldElementCheck = heldElementDoubt
+
 // heldElementName returns the tag name the page's HTML tokenizer reads at
 // the start of s (after "<"), ASCII-lowercased: up to whitespace, "/" or ">".
 func heldElementName(s string) string {
@@ -1172,7 +1177,7 @@ func heldScanScope(evidence string) heldScope {
 				scope.from, scope.covered = last, covered
 				scope.whole = heldWholeCovered(keys[:len(starts)-1], aligned[:len(starts)-1], covered) &&
 					!heldHTMLUnclosed(lines, inFence) && !heldContainerDoubt(lines, inFence) &&
-					!heldElementDoubt(lines, inFence, starts)
+					!heldElementCheck(lines, inFence, starts)
 			}
 		}
 	}

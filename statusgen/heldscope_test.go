@@ -105,7 +105,7 @@ func TestHeldScopeCoverWholeCell(t *testing.T) {
 			heldRun + coverTable("| # | Command | Exit | Result |",
 				"| 2 | `go test ./integration/...` | 0 | ok |", "| 2 | `a | b` | — | skipped |"), true},
 	)
-	runHeldScanCases(t, cases)
+	runHeldLayerCases(t, cases)
 }
 
 // TestHeldScopeCoverOutcome: a covering row 2 re-runs the earlier HELD row
@@ -149,7 +149,7 @@ func TestHeldScopeCoverOutcome(t *testing.T) {
 		heldScanCase{"bold PASS with detail", heldRun + coverRun("0", "**PASS**: 12 tests"), false},
 		heldScanCase{"exit 0 and passed", heldRun + coverRun("exit 0", "passed (12 tests)"), false},
 	)
-	runHeldScanCases(t, cases)
+	runHeldLayerCases(t, cases)
 }
 
 // expectHdrRun is a later run whose results table carries one extra header
@@ -189,13 +189,13 @@ func TestHeldScopeExpectHeaderExact(t *testing.T) {
 		cases = append(cases, heldScanCase{h + " column is skipped",
 			heldRun + expectHdrRun(h, "0", "ok", "exit 0"), false})
 	}
-	runHeldScanCases(t, cases)
+	runHeldLayerCases(t, cases)
 }
 
 // TestHeldScopeCurrentHeldRefuses: a genuine held row in the current entry
 // still refuses, whatever the scope rules admit around it.
 func TestHeldScopeCurrentHeldRefuses(t *testing.T) {
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		{"held result cell in the only entry",
 			"**VERIFY: PASS**\n\n" + scopeHdr + scopeRow("1", "exit 0", "HELD — no runner online"), true},
 		{"held result cell in the latest entry",
@@ -214,7 +214,7 @@ func TestHeldScopeCurrentHeldRefuses(t *testing.T) {
 // TestHeldScopeExpectCellAdmitted: a held word in a row's Expect or Command
 // cell names the behaviour under test, not the row's disposition.
 func TestHeldScopeExpectCellAdmitted(t *testing.T) {
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		{"could-not-check in Expect",
 			"**VERIFY: PASS**\n\n" + scopeHdr +
 				scopeRow("4", "unreadable diff → could-not-check exit 6, never clean", "exit 0 PASS"), false},
@@ -233,7 +233,7 @@ func TestHeldScopeExpectCellAdmitted(t *testing.T) {
 // once the last entry re-runs that row in a results table of its own and
 // records its own strict PASS.
 func TestHeldScopeSupersededAdmitted(t *testing.T) {
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		{"held row in an earlier entry",
 			heldRun + passRun("**VERIFY: PASS**"), false},
 		{"held row in the preamble table",
@@ -306,7 +306,7 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 	eight := func(extra string) string { return proseRun("Run 1", 8, allOK, extra, blocked) }
 	handTable := "### Run 2\n\n| # | Result |\n|---|---|\n" +
 		"| 1 | ok |\n| 2 | ok |\n| 3 | ok |\n| 4 | ok |\n| 5 | ok |\n| 6 | ok |\n| 7 | ok |\n| 8 | ok |\n\n**VERIFY: PASS**\n"
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		// (1) Full coverage: the earlier entries drop as wholes.
 		{"BLOCKED verdict and row-less note, full re-run", earlier + final, false},
 		{"summary naming rows, full re-run",
@@ -556,7 +556,7 @@ func TestHeldScopeContainerDoubt(t *testing.T) {
 	two := func(x string) string {
 		return proseRun("Run 1", 2, allOK, "- row 3 could-not-check.\n\n"+x, blocked) + rerun2
 	}
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		// Admitted controls: a top-level HTML block or fence the page reads
 		// the way the scan does.
 		{"C1: attribute closed in block", two("<div title=\"\nx\" y>\n</div>"), false},
@@ -565,13 +565,6 @@ func TestHeldScopeContainerDoubt(t *testing.T) {
 		{"top-level fence holds a table",
 			two("```\n<table><tr><td>3</td><td>exit 2</td></tr></table>\n```"), false},
 		{"top-level fence, indented tag", two("```\n  <div title=\"\n```"), false},
-		// A comment or declaration that ends on its own line leaves the next
-		// line a paragraph, where an unfinished tag is plain text. The
-		// element rule still counts its opener and refuses: over-refusal by
-		// design. TestHeldUnclosedParagraphTag pins that the block rule alone
-		// admits both.
-		{"comment closed, paragraph tag", two("<!-- a -->\na <b title=\""), true},
-		{"declaration, paragraph tag", two("<!DOCTYPE html>\na <b title=\""), true},
 		// Refused: an opener after a paragraph, in a container, or sharing
 		// its line with a closed construct.
 		{"paragraph, quoted div", two("<3\n> <div title=\"\nx\" y>"), true},
@@ -599,6 +592,28 @@ func TestHeldScopeContainerDoubt(t *testing.T) {
 		// Refused by design (over-refusal): any fence in a container.
 		{"quoted fence, no tag", two("> ```\n> x\n> ```"), true},
 	})
+}
+
+// runHeldLayerCases runs cases through both consumers, then again with the
+// open-element rule (heldElementCheck) off: every case these tests hold was
+// decided the same way before that rule existed, so each earlier rule must
+// still refuse on its own and the element rule cannot mask a regression in
+// one of them.
+func runHeldLayerCases(t *testing.T, cases []heldScanCase) {
+	t.Helper()
+	runHeldScanCasesOnce(t, cases)
+	t.Run("element rule off", func(t *testing.T) {
+		defer func(f func([]string, []bool, []int) bool) { heldElementCheck = f }(heldElementCheck)
+		heldElementCheck = func([]string, []bool, []int) bool { return false }
+		runHeldScanCasesOnce(t, cases)
+	})
+}
+
+// runHeldScanCasesOnce is runHeldScanCases under the name the layered runner
+// and the open-element test use.
+func runHeldScanCasesOnce(t *testing.T, cases []heldScanCase) {
+	t.Helper()
+	runHeldScanCases(t, cases)
 }
 
 // TestHeldUnclosedParagraphTag: a comment or declaration that ends on its own
@@ -665,7 +680,7 @@ func TestHeldScopeReaderPath(t *testing.T) {
 				cases = append(cases, heldScanCase{name, bf.Evidence, stray})
 			}
 		}
-		runHeldScanCases(t, cases)
+		runHeldLayerCases(t, cases)
 	}
 }
 
@@ -714,6 +729,13 @@ func TestHeldScopeOpenElement(t *testing.T) {
 		{"close escaped", two("<span> \\</span>"), true},
 		{"close in a link target", two("<span> [a](</span>)"), true},
 		{"close in an image text", two("<span> ![</span>][r]\n\n[r]: u"), true},
+		{"close in a shortcut image", two("<span> ![</span>]\n\n[</span>]: u"), true},
+		// A comment or declaration that ends on its own line leaves the next
+		// line a paragraph, where an unfinished tag is plain text; the rule
+		// still counts the opener: over-refusal by design. The block rule
+		// alone admits both (TestHeldUnclosedParagraphTag).
+		{"comment closed, paragraph tag", two("<!-- a -->\na <b title=\""), true},
+		{"declaration, paragraph tag", two("<!DOCTYPE html>\na <b title=\""), true},
 		{"close in an attribute", two("<span><img alt=\"</span>\">"), true},
 		{"close after a math span", two("<span> $a$ </span>"), true},
 		{"close on a later line", two("<span>\n\n</span\n>"), true},
@@ -744,13 +766,13 @@ func TestHeldScopeOpenElement(t *testing.T) {
 			cases = append(cases, heldScanCase{c.name + ", " + eol.name, bf.Evidence, c.wantHeld})
 		}
 	}
-	runHeldScanCases(t, cases)
+	runHeldScanCasesOnce(t, cases)
 }
 
 // TestHeldScopeFailClosed: every place the scope cannot positively classify
 // text, it reads it as before.
 func TestHeldScopeFailClosed(t *testing.T) {
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		{"last entry has only a loose PASS",
 			heldRun + passRun("Non-implementer run — VERIFY: PASS"), true},
 		{"last entry ends BLOCKED",
@@ -848,7 +870,7 @@ func TestHeldScopeFailClosed(t *testing.T) {
 // exit code means is not a disposition.
 func TestHeldScopeExitProse(t *testing.T) {
 	tbl := scopeHdr + scopeRow("1", "exit 0", "ok")
-	runHeldScanCases(t, []heldScanCase{
+	runHeldLayerCases(t, []heldScanCase{
 		{"arrow mapping",
 			"**VERIFY: PASS**\n\n" + tbl + "\nRISK-VALUE: DERIVED — could-not-check→exit 6 (ExitUnverifiable)@main.go:17.\n", false},
 		{"ascii arrow and equals",

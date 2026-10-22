@@ -568,7 +568,7 @@
     {
       "name": "#3841 element: whole supersession ignores an element an entry leaves open",
       "file": "heldscope.go",
-      "old": " &&\n\t\t\t\t\t!heldElementDoubt(lines, inFence, starts)\n",
+      "old": " &&\n\t\t\t\t\t!heldElementCheck(lines, inFence, starts)\n",
       "new": "\n"
     },
     {
@@ -593,7 +593,7 @@
       "name": "#3841 element: a close tag in code, link or math syntax counts",
       "file": "heldscope.go",
       "old": "heldVoidTags[n] || noClose || p > 0",
-      "new": "heldVoidTags[n] || p > 0"
+      "new": "heldVoidTags[n] || noClose && false || p > 0"
     },
     {
       "name": "#3841 element: a backslash-escaped close tag counts",
@@ -647,7 +647,7 @@
       "name": "#3841 element: the last entry may hold an element across a line end",
       "file": "heldscope.go",
       "old": "if lastEntry && len(stack) > 0 {",
-      "new": "if false {"
+      "new": "if lastEntry && false {"
     },
     {
       "name": "#3841 element: an entry may end with an element open",
@@ -664,8 +664,8 @@
     {
       "name": "#3841 element: a close tag need not end in \">\"",
       "file": "heldscope.go",
-      "old": "\tif !strings.HasPrefix(r, \">\") {\n\t\treturn \"\", false\n\t}\n\treturn heldElementName(s[2:n]), true",
-      "new": "\treturn heldElementName(s[2:n]), true"
+      "old": "if !strings.HasPrefix(r, \">\") {",
+      "new": "if r == \"\" && false {"
     },
     {
       "name": "#3841 element: a hyphen ends a close tag's name",
