@@ -36,6 +36,32 @@ var labelKind = map[string]domain.EscalationKind{
 	"ask":            domain.KindAsk,
 }
 
+// KindForLabel resolves a wire label (or the hyphenated domain spelling of one)
+// to its escalation kind. It is the ONLY reader of [labelKind] outside this
+// file, so the label vocabulary has one owner in this module: the MCP filer
+// derives its argument table from here instead of restating it.
+func KindForLabel(label string) (domain.EscalationKind, bool) {
+	k, ok := labelKind[strings.ToLower(strings.TrimSpace(label))]
+	return k, ok
+}
+
+// WireLabel is the GitHub label a kind is filed under: the inverse of
+// [labelKind] on its wire spelling. Where the table carries both a wire and a
+// domain spelling for one kind (`help wanted` / `help-wanted`), the wire one is
+// the key that differs from the domain value. ok=false for an unknown kind.
+func WireLabel(k domain.EscalationKind) (string, bool) {
+	wire, found := "", false
+	for label, kind := range labelKind {
+		if kind != k {
+			continue
+		}
+		if !found || label != string(k) {
+			wire, found = label, true
+		}
+	}
+	return wire, found
+}
+
 // kindPrecedence resolves an issue carrying several escalation labels — the
 // real corpus does (13 label instances across 10 issues, design §1.1). The
 // most human-actionable label wins, so a `needs-decision` that also carries

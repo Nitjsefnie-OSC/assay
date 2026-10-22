@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/medici-finance/assay/deskd/internal/adapter"
 	"github.com/medici-finance/assay/deskd/internal/domain"
 )
 
@@ -110,22 +111,11 @@ type EscalateResult struct {
 	Note        string    `json:"note,omitempty"`
 }
 
-// kindLabel maps a domain kind to the GitHub wire label. `help-wanted` carries
-// a space on the wire — the one drift, handled here as in the adapter.
-var kindLabel = map[domain.EscalationKind]string{
-	domain.KindNeedsDecision: "needs-decision",
-	domain.KindQuestion:      "question",
-	domain.KindHelpWanted:    "help wanted",
-	domain.KindAsk:           "ask",
-}
-
-var kindFromArg = map[string]domain.EscalationKind{
-	"needs-decision": domain.KindNeedsDecision,
-	"question":       domain.KindQuestion,
-	"help-wanted":    domain.KindHelpWanted,
-	"help wanted":    domain.KindHelpWanted,
-	"ask":            domain.KindAsk,
-}
+// The escalation-label vocabulary has ONE owner in this module: the adapter's
+// label table ([adapter.KindForLabel] / [adapter.WireLabel]). The filer reads
+// it rather than restating it, so the wire spelling a filing carries and the
+// spelling the poller parses back cannot drift apart. `help-wanted` carries a
+// space on the wire; that drift is handled once, in the adapter.
 
 var urgencyFromArg = map[string]domain.Urgency{
 	"":         domain.UrgencyRoutine,
@@ -157,7 +147,7 @@ func handleEscalate(ctx context.Context, s *Server, call Call) (any, error) {
 	if a.Situation == "" {
 		return nil, fmt.Errorf("desk__escalate: situation is required — an escalation with no situation is not actionable")
 	}
-	kind, ok := kindFromArg[strings.ToLower(strings.TrimSpace(a.Kind))]
+	kind, ok := adapter.KindForLabel(a.Kind)
 	if !ok {
 		return nil, fmt.Errorf("desk__escalate: kind %q is not one of needs-decision|question|help-wanted|ask", a.Kind)
 	}
@@ -375,7 +365,8 @@ func optionsMarker() string { return "<!-- assay:options v2 -->" }
 // label always, plus an urgency label where the derivation would read one, so
 // the index re-derives the urgency this tool set.
 func escalationLabels(kind domain.EscalationKind, urg domain.Urgency) []string {
-	labels := []string{kindLabel[kind]}
+	wire, _ := adapter.WireLabel(kind)
+	labels := []string{wire}
 	switch urg {
 	case domain.UrgencyGold:
 		labels = append(labels, "gold")

@@ -1053,7 +1053,9 @@ func overrideAnswerer(store *identity.SessionStore, cfg *schema.File) func(r *ht
 				}
 			}
 		}
-		return sess.Login, humanid.Enabled() && sess.Login != "" && answerAs != "" && sess.Login == answerAs
+		// GitHub logins are case-insensitive: compare exactly as the capability
+		// ladder does (identity/capability.go), never with plain ==.
+		return sess.Login, humanid.Enabled() && sess.Login != "" && answerAs != "" && strings.EqualFold(sess.Login, answerAs)
 	}
 }
 

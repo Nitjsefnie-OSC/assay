@@ -346,7 +346,7 @@ func TestLocalDriverForcesPromptSuggestionOffWhenUnset(t *testing.T) {
 // and it is what makes the PTY tests above a regression check on the real
 // mechanism rather than the only proof it works.
 func TestOverrideEnvRemovesInheritedValueBeforeAppending(t *testing.T) {
-	in := []string{"PATH=/bin", "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=true", "HOME=/home/x"}
+	in := []string{"PATH=/bin", "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=true", "HOME=/nonexistent"}
 	got := overrideEnv(in, "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION", "false")
 
 	count := 0
