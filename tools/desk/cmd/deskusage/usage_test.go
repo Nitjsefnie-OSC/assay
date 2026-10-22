@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -270,5 +271,59 @@ func TestUsageAuditAndStop(t *testing.T) {
 	after, e = os.ReadFile(filepath.Join(home, ".config", "assay", "audit.jsonl"))
 	if e != nil || len(bytes.Split(bytes.TrimSpace(after), []byte("\n"))) != 4 {
 		t.Fatalf("disabled audit: %s %v", after, e)
+	}
+}
+
+// regression: F-usage-perf-wrapper
+func TestUsagePerformance(t *testing.T) {
+	home := setupUsage(t)
+	binary := filepath.Join(t.TempDir(), "deskusage")
+	if os.PathSeparator == '\\' {
+		binary += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", binary, ".")
+	if b, e := build.CombinedOutput(); e != nil {
+		t.Fatalf("build: %v %s", e, b)
+	}
+	// Even opted-in help must return before operational audit/config/performance effects.
+	help := exec.Command(binary, "--help")
+	help.Env = append(os.Environ(), "ASSAY_TELEMETRY=1")
+	if b, e := help.CombinedOutput(); e != nil {
+		t.Fatalf("help: %v %s", e, b)
+	}
+	if _, e := os.Stat(filepath.Join(home, ".config", "assay")); !os.IsNotExist(e) {
+		t.Fatal("help created operational state")
+	}
+	var prior []byte
+	for _, enabled := range []string{"0", "1"} {
+		cmd := exec.Command(binary, "summary", "--json")
+		cmd.Env = append(os.Environ(), "ASSAY_TELEMETRY="+enabled)
+		b, e := cmd.CombinedOutput()
+		if e != nil {
+			t.Fatalf("summary: %v %s", e, b)
+		}
+		if prior != nil && !bytes.Equal(prior, b) {
+			t.Fatal("optional performance recording changed command output")
+		}
+		prior = b
+	}
+	path := filepath.Join(home, ".config", "assay", "perf", time.Now().UTC().Format("2006-01-02")+".jsonl")
+	b, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal("missing opted-in performance sample", e)
+	}
+	lines := bytes.Split(bytes.TrimSpace(b), []byte("\n"))
+	if len(lines) != 1 {
+		t.Fatalf("expected exactly one opted-in sample: %s", b)
+	}
+	var record deskkit.PerfRecord
+	if e = json.Unmarshal(lines[0], &record); e != nil {
+		t.Fatal(e)
+	}
+	if record.Tool != "deskusage" {
+		t.Fatalf("wrong tool attribution: %s", b)
+	}
+	if _, e = os.Stat(filepath.Join(home, "counts", deskkit.UsageFile)); !os.IsNotExist(e) {
+		t.Fatal("help created a worker usage record")
 	}
 }
