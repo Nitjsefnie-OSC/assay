@@ -14,7 +14,7 @@ version: 1
 authored: 2026-10-22 by statusgen newbrief
 sources:
   - 'desktools-v2: Land verifier outcome records from a dispatcher-named path outside the home'
-  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of the brief PR that adds this brief): fix in the tooling; the dispatcher allocates a per-run scratch path outside the home and names it in the verifier prompt; deskevidence lands it through the existing binding; no widening of admission; record format unchanged"
+  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of the brief PR that adds this brief, https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22): fix in the tooling; the dispatcher allocates a per-run scratch path outside the home and names it in the verifier prompt; deskevidence lands it through the existing binding; no widening of admission; record format unchanged"
   - docs/proposals/non-ci-architecture/13-migration-and-decisions.md (§The verifier transaction, end to end)
   - freshness-checked 2026-10-22 @ 9a2c6ba2bc85558d77c4227984d93a728a7f7e94 (origin/main)
 exec-tier: any

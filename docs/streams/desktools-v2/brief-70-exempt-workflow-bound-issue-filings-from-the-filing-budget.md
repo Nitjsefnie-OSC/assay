@@ -8,14 +8,14 @@ unblocks: []
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
-gate-why: "Relaxes a fail-closed brake (proposal 11 lists new-issue caps as brakes). The driver ruling, ratified by the driver's merge of this brief PR, names the compensating bound; its implemented values and refusals need human acceptance at done."
+gate-why: "Relaxes a fail-closed brake (proposal 11 lists new-issue caps as brakes). The driver ruling, ratified by the driver's merge of this brief PR (https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22), names the compensating bound; its implemented values and refusals need human acceptance at done."
 issues: []
 schema: brief-v2
 version: 1
 authored: 2026-10-22 by statusgen newbrief
 sources:
   - 'desktools-v2: Exempt workflow-bound issue filings from the filing budget'
-  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR): issues that are part of the regular PR workflow are not counted; the budget bounds only the desk's own process-error reporting"
+  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR, https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22): issues that are part of the regular PR workflow are not counted; the budget bounds only the desk's own process-error reporting"
   - docs/proposals/non-ci-architecture/11-target-architecture.md (§Pacing counts are best effort; brakes fail closed)
   - deskcore/config/knobs.go (budget knobs default 0, counted per role)
   - freshness-checked 2026-10-22 @ 9a2c6ba2bc85558d77c4227984d93a728a7f7e94 (origin/main)
@@ -48,13 +48,15 @@ facts:
 - Contract row `R-new-issue-budget` (`docs/contracts.md:257`) describes the per-session cap and names `TestNewRateUnparseableFallsBackWithNotice` and `TestForceFileDoesNotResetTheRateCount`.
 - Skill wording: the shared comms block says "a spent filing budget never pushes a routine relay onto the tracker" (verify-desk `SKILL.md:1101`, pr-review-desk `:1239`, the-desk `:435`, pr-shepherd `:335`, intake-desk `:611`, worker-desk `:971`); worker-desk `:458` says `deskpr create` and `deskfile new` share one repo-wide ceiling of 20 per hour. Could not find a passage that explicitly tells a desk to defer an Evidence blocker behind the budget. The deferral happens because the tool refuses (exit 4), so the skill change is to name the bound form, not to remove a sentence.
 
-Design-fit: proposal 11 classes new-issue caps as brakes and says relaxing one "is a separate human decision, recorded by the maintainer and naming its compensating bound" (`11-target-architecture.md:296`-`:311`). That decision is recorded by the driver's merge of this gate: human brief PR, which ratifies the 2026-10-22 driver ruling with its compensating bound named in the merged text; no separate earlier record is claimed. The compensating bound is three layers, and each stands without the others: (1) a per-PR, per-role cap on bound filings, as a knob shaped like the rest of `deskcore/config` (budget class, default 0, per role), where the counted role is the one whose App identity performs the write (`deskkit.SessionTokenRole`, the same custody that mints the write token), never a caller-chosen label; (2) bound filings audit as their own class, so the per-session count of unbound filings is unchanged and the bound ones remain visible; (3) the existing repo-wide outward-write ceiling still charges every bound filing. The bound is counted per PR, not per PR head: a head-keyed count would reset on every push, so a push loop could unlock more filings. The brief adds no verb (`new` gains flags), no new tool key (the ceiling keys on `deskfile`) and no perf-v4 schema change. It fits the verifier transaction of proposal 13 (step 5, "Publish through the authorized path"): a blocker the review requires is part of publishing the result, not a process-error report.
+Design-fit: proposal 11 classes new-issue caps as brakes and says relaxing one "is a separate human decision, recorded by the maintainer and naming its compensating bound" (`11-target-architecture.md:296`-`:311`).
+That decision is recorded by the driver's merge of this gate: human brief PR, https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22, which ratifies the 2026-10-22 driver ruling with its compensating bound named in the merged text; no separate earlier record is claimed.
+The compensating bound is three layers, and each stands without the others: (1) a per-PR, per-role cap on bound filings, as a knob shaped like the rest of `deskcore/config` (budget class, default 0, per role), where the counted role is the one whose App identity performs the write (`deskkit.SessionTokenRole`, the same custody that mints the write token), never a caller-chosen label; (2) bound filings audit as their own class, so the per-session count of unbound filings is unchanged and the bound ones remain visible; (3) the existing repo-wide outward-write ceiling still charges every bound filing. The bound is counted per PR, not per PR head: a head-keyed count would reset on every push, so a push loop could unlock more filings. The brief adds no verb (`new` gains flags), no new tool key (the ceiling keys on `deskfile`) and no perf-v4 schema change. It fits the verifier transaction of proposal 13 (step 5, "Publish through the authorized path"): a blocker the review requires is part of publishing the result, not a process-error report.
 
 single-point-of-failure: the count limits, not the binding check — the per-role per-PR cap (when set), the per-PR outward-write tier and the repo-wide ceiling; the last two are always on and are the only bound while the cap is off. The binding check only ties a filing to an open PR and its brief; it does not tie the filer to that PR (see Human decision).
 
 ## Human decision
 
-For ratification at merge: driver ruling, 2026-10-22, whose public record is the driver's merge of this gate: human brief PR. Workflow-bound filings are not counted against the
+For ratification at merge: driver ruling, 2026-10-22, whose public record is the driver's merge of this gate: human brief PR, https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22. Workflow-bound filings are not counted against the
 `new` budget. A bound filing names its work item; when the brief is known it passes both
 `--for-pr <owner/repo#N>` and `--brief <brief id>`, never one without the other; `--for-pr`
 alone only for a PR that has no brief. The tool verifies the binding and back-links the
