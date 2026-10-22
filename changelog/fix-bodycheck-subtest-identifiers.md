@@ -1,2 +1,0 @@
-### Fixed
-- The desk tools' body/diff secret scanner no longer refuses three everyday shapes as "high-entropy runs": a Go test name with a subtest path (`TestX/sub`, as Verify Expect cells and `go test -run` quote it), the all-`+` change bar of a pasted `git diff --stat` line, and CamelCase identifiers containing `OAuth`. Each admission is structural and bounded, and a credential glued behind a test name, a bar glued to a token, or a lone capital in place of `OAuth` still refuses.
