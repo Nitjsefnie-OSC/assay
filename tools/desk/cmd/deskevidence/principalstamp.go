@@ -121,27 +121,45 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 			"the lint cannot read its Evidence section and this tool cannot check or stamp an on-behalf-of " +
 			"principal in it — nothing was written. Close the frontmatter with a `---` line and land again")
 	}
-	start, end, ok := evidenceSpan(lines)
-	if !ok {
-		return content, nil, nil
-	}
 	onBranch := map[string]bool{}
 	baseLines := strings.Split(string(base), "\n")
 	for _, l := range baseLines {
 		onBranch[l] = true
 	}
+	// A heading a renderer shows as Evidence, other than the one section the lint reads, shows
+	// the rows under it as Evidence that neither the lint nor this tool ever reads. A landing
+	// may not add one (the base's own count stands, so a brief that already carries one is not
+	// blocked from every later landing).
+	if unread := unreadEvidenceHeadings(lines); len(unread) > len(unreadEvidenceHeadings(baseLines)) {
+		at := unread[0]
+		for _, i := range unread {
+			if !onBranch[lines[i]] {
+				at = i
+				break
+			}
+		}
+		return nil, nil, deskkit.Refused(fmt.Sprintf("refused: line %d of the landed brief is a heading a renderer "+
+			"shows as Evidence, but the lint reads only the first `## Evidence` section, so rows under that heading "+
+			"would show as Evidence and never be checked or stamped — nothing was written. Land every row in that "+
+			"one section, under no second Evidence heading: %q", at+1, strings.TrimSpace(lines[at])))
+	}
+	start, end, ok := evidenceSpan(lines)
+	if !ok {
+		return content, nil, nil
+	}
 	// Every line this landing adds to the Evidence section, of any kind (data row, header,
 	// separator, or a line that is not a table row at all), is checked for a control character
 	// before any line is skipped below. A line counts as already on the branch here only when it
 	// stands in the base's own Evidence section, so a line carried in from elsewhere in the base
-	// file is checked like any other added line.
+	// file is checked like any other added line. The heading line that ends the section is
+	// checked too: a lone CR in it can put a table the lint never reads right under it.
 	onBranchEvidence := map[string]bool{}
 	if bs, be, ok := evidenceSpan(baseLines); ok {
-		for _, l := range baseLines[bs:be] {
+		for _, l := range baseLines[bs:min(be+1, len(baseLines))] {
 			onBranchEvidence[l] = true
 		}
 	}
-	for i := start; i < end; i++ {
+	for i := start; i < min(end+1, len(lines)); i++ {
 		if onBranchEvidence[lines[i]] {
 			continue
 		}
@@ -201,6 +219,14 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 		}
 		spans := cellSpans(view[i])
 		if i+1 < len(view) && evidenceSeparatorRe.MatchString(strings.Trim(strings.TrimSpace(view[i+1]), "|")) {
+			if !onBranchEvidence[lines[start+i]] {
+				if why := unreadableHeader(view[i], lines[start+i], spans); why != "" {
+					return nil, nil, deskkit.Refused(fmt.Sprintf("refused: the added Evidence header at line %d is one "+
+						"this tool cannot read the way the lint does (%s), so the column a reader takes as Runner may "+
+						"not be the one the lint reads — nothing was written. Land the header with plain ASCII column "+
+						"names and one `Runner` column: %s", start+i+1, why, strings.TrimSpace(lines[start+i])))
+				}
+			}
 			runnerIdx = -1
 			for j, sp := range spans {
 				if strings.ToLower(strings.TrimSpace(view[i][sp[0]:sp[1]])) == "runner" {
@@ -225,6 +251,16 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 		// bytes at the same offset, so everything else in the line is left exactly as it was.
 		cell := view[i][sp[0]:sp[1]]
 		if !isAppRunnerCell(strings.TrimSpace(cell)) {
+			// Markup the lint reads as text can make a renderer show an App-run cell the lint
+			// does not read as one (`<span>…[bot]</span>`, `**…[bot]**`): it is never stamped.
+			if c, ok := runnerMarkup(cell); ok && isAppRunnerCell(strings.TrimSpace(runnerMarkupRe.ReplaceAllString(
+				htmlTagRe.ReplaceAllString(cell, ""), ""))) {
+				return nil, nil, deskkit.Refused(fmt.Sprintf("refused: the Evidence row at line %d has a Runner cell "+
+					"this tool cannot read the way the lint does (it holds the markup character `%c`, and a renderer "+
+					"shows it as an App-run Runner cell the lint does not read as one), so it cannot check or stamp "+
+					"its on-behalf-of principal — nothing was written. Land the row with a plain Runner cell: %s",
+					start+i+1, c, strings.TrimSpace(orig)))
+			}
 			continue
 		}
 		if why := unreadableRunnerCell(cell, orig[sp[0]:sp[1]], joined[i]); why != "" {
@@ -277,6 +313,13 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 		}
 		stamped[strings.TrimSpace(orig)] = strings.TrimSpace(newLine)
 		lines[start+i] = newLine
+	}
+	// A line a renderer reads as a table row the lint does not read the same way (checked after
+	// the rows, so a row the checks above refuse keeps its own, more specific refusal).
+	if i, why := renderedRowMismatch(lines, start, end, onBranchEvidence); why != "" {
+		return nil, nil, deskkit.Refused(fmt.Sprintf("refused: the added Evidence line %d is one this tool "+
+			"cannot read the way the lint does (%s) — nothing was written. Begin every table row with `|`, and "+
+			"put a blank line between a table and any other line: %s", i+1, why, strings.TrimSpace(lines[i])))
 	}
 	// Read the landed section back the way the lint does — closed comments REMOVED, lines
 	// joined — and require every App-run row it reads that is not already a row of the
@@ -414,7 +457,198 @@ func unreadableRunnerCell(view, orig string, joined bool) string {
 				"the lint reads", r)
 		}
 	}
+	if c, ok := runnerMarkup(orig); ok {
+		return fmt.Sprintf("it holds the markup character `%c`, which a renderer can read as HTML or Markdown "+
+			"(a struck-through or hidden annotation, an entity or escape that shows another character), so the "+
+			"rendered text can differ from what the lint reads", c)
+	}
 	return ""
+}
+
+// runnerMarkup returns the first character in an App-run Runner cell that a renderer can read
+// as markup changing the text it shows: `<` and `>` (an HTML tag: strikethrough, a title
+// attribute, a hidden span), `&` (an entity), `~` (strikethrough) and `\` (an escape). An
+// App-run Runner cell is an App login, a commit and plain tags, so none is legitimate there.
+func runnerMarkup(cell string) (rune, bool) {
+	if i := strings.IndexAny(cell, "<>&~\\"); i >= 0 {
+		return rune(cell[i]), true
+	}
+	return 0, false
+}
+
+var (
+	// htmlTagRe and runnerMarkupRe strip what a renderer does not show as text from a Runner
+	// cell (HTML tags; emphasis, strikethrough, code and escape characters), to tell whether
+	// it would SHOW as an App-run cell.
+	htmlTagRe      = regexp.MustCompile(`<[^>]*>`)
+	runnerMarkupRe = regexp.MustCompile("[*_~`\\\\]")
+)
+
+// unreadableHeader reports why an added Evidence header row cannot be read the way the lint
+// reads it, or "" when it can. view is the header with closed comments blanked, orig its bytes
+// as landed, spans its cells in view. The lint takes the Runner column from the last cell that
+// trims and lowercases to exactly `runner`, and otherwise from the row's last cell; a header a
+// reader sees differently can make the column shown as Runner not the one the lint reads.
+//   - An invisible format character (a bidi isolate, a zero-width space): a cell can show as
+//     `Runner` and read as something else.
+//   - A non-ASCII letter or mark: a homoglyph can show as `Runner`. Non-ASCII punctuation and
+//     symbols (`Date · Runner`) are left alone.
+//   - A cell whose letters spell `runner` but that the lint does not read as exactly `runner`
+//     (`**Runner**`, `Run<!-- -->ner`): a reader takes it as the Runner column; the lint does not.
+//   - More than one `Runner` cell: the lint reads the last, a reader may take the first.
+func unreadableHeader(view, orig string, spans [][2]int) string {
+	for i := 0; i < len(orig); {
+		r, size := utf8.DecodeRuneInString(orig[i:])
+		i += size
+		switch {
+		case r == utf8.RuneError && size == 1:
+			return "it is not valid UTF-8"
+		case unicode.Is(unicode.Cf, r):
+			return fmt.Sprintf("it holds the invisible format character U+%04X", r)
+		case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsMark(r)):
+			return fmt.Sprintf("it holds the non-ASCII letter or mark U+%04X, which can show as an ASCII one", r)
+		}
+	}
+	runners := 0
+	for _, sp := range spans {
+		cell := strings.ToLower(strings.TrimSpace(view[sp[0]:sp[1]]))
+		if cell == "runner" {
+			runners++
+			continue
+		}
+		if lettersOf(cell) == "runner" {
+			return fmt.Sprintf("its cell %q renders as Runner, but the lint does not read it as the Runner column",
+				strings.TrimSpace(view[sp[0]:sp[1]]))
+		}
+	}
+	if runners > 1 {
+		return "it has more than one Runner column; the lint reads the last, and a reader may take the first"
+	}
+	return ""
+}
+
+// lettersOf returns s's letters, lowercased, everything else dropped.
+func lettersOf(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+	return b.String()
+}
+
+// renderedRowMismatch returns the first line of the Evidence section lines[start:end] that a
+// Markdown renderer reads as a table row the lint does not read the same way, and why, or ""
+// when there is none. Only lines this landing adds (not in onBranch) are refused. A renderer
+// (GFM) reads a table from a header line holding a `|` followed by a delimiter row, through
+// every following line until a blank line or the start of another block, whether or not a
+// line begins with `|`; the lint reads only `|`-led lines, and forgets the table's header at
+// the first line that is not one.
+//   - A line in a table that does not begin with `|` but holds one renders as a row (or a
+//     header, or a delimiter row) the lint never reads. A pipe-less note line ending a table
+//     renders as a one-cell row with no Runner cell, and is left alone.
+//   - A `|`-led line after such a line in the same table renders under the table's header,
+//     but the lint has dropped that header and reads its Runner cell from another column.
+func renderedRowMismatch(lines []string, start, end int, onBranch map[string]bool) (int, string) {
+	inTable, lost := false, false
+	for i := start; i < end; i++ {
+		t := strings.TrimSpace(lines[i])
+		if t == "" || startsOtherBlock(t) {
+			inTable, lost = false, false
+			continue
+		}
+		piped := hasUnescapedPipe(t)
+		if !inTable {
+			if !piped || i+1 >= end || !isDelimiterRow(lines[i+1]) {
+				continue
+			}
+			inTable, lost = true, false
+		}
+		added := !onBranch[lines[i]]
+		if !strings.HasPrefix(t, "|") {
+			if added && piped {
+				return i, "a renderer reads it as a table row, but it does not begin with `|`, so the lint never reads it"
+			}
+			lost = true
+			continue
+		}
+		if lost && added {
+			return i, "a renderer reads it as a table row under the table's header, but a line above it in the same " +
+				"table does not begin with `|`, so the lint has dropped that header and reads its Runner cell from " +
+				"another column"
+		}
+	}
+	return 0, ""
+}
+
+// startsOtherBlock reports whether a trimmed line opens a block that ends a table: an ATX
+// heading, a code fence or a block quote.
+func startsOtherBlock(t string) bool {
+	if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") || strings.HasPrefix(t, ">") {
+		return true
+	}
+	return atxHeadingRe.MatchString(t)
+}
+
+// isDelimiterRow reports whether a line can be a table's delimiter row: dashes, colons, pipes
+// and spaces only, with at least one dash.
+func isDelimiterRow(line string) bool {
+	t := strings.TrimSpace(line)
+	return t != "" && strings.Contains(t, "-") && evidenceSeparatorRe.MatchString(t)
+}
+
+// hasUnescapedPipe reports whether s holds a `|` not escaped as `\|` (cellSpans' reading).
+func hasUnescapedPipe(s string) bool {
+	return len(cellSpans("x"+s+"x")) > 1
+}
+
+var (
+	// atxHeadingRe matches an ATX heading line (trimmed); group 1 is its text with any closing
+	// sequence removed.
+	atxHeadingRe = regexp.MustCompile(`^#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$`)
+	// setextUnderlineRe matches a setext heading's underline.
+	setextUnderlineRe = regexp.MustCompile(`^ {0,3}(?:=+|-+)[ \t]*$`)
+)
+
+// unreadEvidenceHeadings returns the index of every body line holding a heading a renderer
+// shows as Evidence — an ATX or setext heading of any level whose letters spell `evidence` —
+// other than the `## Evidence` line the lint reads as the section. Lines are also split on a
+// lone CR, which a renderer can treat as a line break, so a heading the lint reads as part of
+// another line counts too.
+func unreadEvidenceHeadings(lines []string) []int {
+	from, _ := briefBodyStart(lines)
+	lintHeading := -1
+	if start, _, ok := evidenceSpan(lines); ok {
+		lintHeading = start - 1
+	}
+	type piece struct {
+		line int
+		text string
+	}
+	var pieces []piece
+	for i := from; i < len(lines); i++ {
+		for _, p := range strings.Split(lines[i], "\r") {
+			pieces = append(pieces, piece{i, p})
+		}
+	}
+	var out []int
+	for k, p := range pieces {
+		if p.line == lintHeading || (len(out) > 0 && out[len(out)-1] == p.line) {
+			continue
+		}
+		t := strings.TrimSpace(p.text)
+		heading := false
+		if m := atxHeadingRe.FindStringSubmatch(t); m != nil {
+			heading = lettersOf(m[1]) == "evidence"
+		} else if k+1 < len(pieces) && t != "" && setextUnderlineRe.MatchString(pieces[k+1].text) {
+			heading = lettersOf(t) == "evidence"
+		}
+		if heading {
+			out = append(out, p.line)
+		}
+	}
+	return out
 }
 
 // rowControlCharacter returns the first control character (C0, DEL or C1, other than a tab,

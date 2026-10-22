@@ -1,0 +1,2 @@
+### Fixed
+- `deskevidence` now refuses an Evidence landing that a Markdown renderer shows differently from how the lint reads it: a second heading shown as Evidence, a table row without its leading pipe (or a row read after one), markup in an App Runner cell, and a table header that names a different Runner column than the one the lint reads. Before, such rows could appear on screen without their on-behalf-of principal ever being checked or stamped. Nothing is written when a landing is refused.

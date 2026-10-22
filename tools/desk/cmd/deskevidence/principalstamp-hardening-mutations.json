@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader|TestPrincipalStampRefusesControlInAnyLine|TestMergeEvidenceLocatesBodySection)$' -count=1 -timeout=300s",
+  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader|TestPrincipalStampRefusesControlInAnyLine|TestMergeEvidenceLocatesBodySection|TestStampRefusesPipelessRow|TestStampRefusesSecondHeading|TestStampRefusesRunnerMarkup|TestStampRefusesRunnerHeader)$' -count=1 -timeout=300s",
   "control": {
     "name": "unreadable-cell refusal not consulted",
     "file": "cmd/deskevidence/principalstamp.go",
@@ -132,6 +132,96 @@
       "file": "cmd/deskevidence/deskevidence.go",
       "old": "evidenceEnd = max(off-1, idx+len(evidenceMarker))",
       "new": "evidenceEnd = -1\n\t\t\t\tcontinue"
+    },
+    {
+      "name": "a second heading shown as Evidence is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "len(unread) > len(unreadEvidenceHeadings(baseLines)) {",
+      "new": "false && len(unread) > len(unreadEvidenceHeadings(baseLines)) {"
+    },
+    {
+      "name": "a lone CR does not split a heading line",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "strings.Split(lines[i], \"\\r\")",
+      "new": "[]string{lines[i]}"
+    },
+    {
+      "name": "only the exact lint heading text counts as Evidence",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "heading = lettersOf(m[1]) == \"evidence\"",
+      "new": "heading = m[1] == \"Evidence\""
+    },
+    {
+      "name": "the heading line that ends the section is not checked for control characters",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "for i := start; i < min(end+1, len(lines)); i++ {",
+      "new": "for i := start; i < end; i++ {"
+    },
+    {
+      "name": "a table line without a leading pipe is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if added && piped {",
+      "new": "if false && added && piped {"
+    },
+    {
+      "name": "a row after a pipe-less line in the same table is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if lost && added {",
+      "new": "if false && lost && added {"
+    },
+    {
+      "name": "a header without a leading pipe does not start a table",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if !piped || i+1 >= end || !isDelimiterRow(lines[i+1]) {",
+      "new": "if !strings.HasPrefix(t, \"|\") || !piped || i+1 >= end || !isDelimiterRow(lines[i+1]) {"
+    },
+    {
+      "name": "markup in an App-run Runner cell is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if c, ok := runnerMarkup(orig); ok {",
+      "new": "if c, ok := runnerMarkup(orig); false && ok {"
+    },
+    {
+      "name": "markup that makes a Runner cell show as App-run is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if c, ok := runnerMarkup(cell); ok && isAppRunnerCell(",
+      "new": "if c, ok := runnerMarkup(cell); false && ok && isAppRunnerCell("
+    },
+    {
+      "name": "the strikethrough character is not taken as markup",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "strings.IndexAny(cell, \"<>&~\\\\\")",
+      "new": "strings.IndexAny(cell, \"<>&\\\\\")"
+    },
+    {
+      "name": "a format character in a header is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "case unicode.Is(unicode.Cf, r):",
+      "new": "case false:"
+    },
+    {
+      "name": "a non-ASCII letter in a header is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsMark(r)):",
+      "new": "case false:"
+    },
+    {
+      "name": "a header cell spelling Runner with markup is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if lettersOf(cell) == \"runner\" {",
+      "new": "if false {"
+    },
+    {
+      "name": "a header with two Runner columns is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if runners > 1 {",
+      "new": "if false {"
+    },
+    {
+      "name": "an added header is never checked",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if why := unreadableHeader(view[i], lines[start+i], spans); why != \"\" {",
+      "new": "if why := unreadableHeader(view[i], lines[start+i], spans); false && why != \"\" {"
     }
   ]
 }

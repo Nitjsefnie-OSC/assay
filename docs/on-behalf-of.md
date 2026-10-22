@@ -232,7 +232,31 @@ same roster's human set:
   and every added App row must carry exactly one annotation, in the exact written form,
   naming `<who>`. A row counts as already on the branch there only when the base has the same
   line with the same Runner cell, so a base line re-landed under a header that moves the
-  Runner column is checked like an added row.
+  Runner column is checked like an added row. The heading line that ends the section is
+  checked for control characters too, when the landing adds it;
+- a landing that shows rows on screen in a way the lint does not read refuses (exit 5),
+  naming the line and the reason; nothing is written. Each check applies only to what the
+  landing adds, so a brief that already carries a shape is not blocked from later landings:
+  - a heading a renderer shows as Evidence, other than the one `## Evidence` section the lint
+    reads: a second `## Evidence`, one at another level or in another case, or one a lone
+    carriage return puts on its own rendered line. Rows under it would show as Evidence and
+    never be checked. A landing may not raise the brief's count of such headings;
+  - a line inside a table that a renderer reads as a row but that does not begin with `|`
+    while holding one (a row, header or delimiter row without its leading pipe). A
+    renderer keeps a table going until a blank line; the lint reads only `|`-led lines. A
+    `|`-led row after such a line in the same table is refused too: the lint has dropped
+    the table's header by then and reads the Runner cell from another column. A pipe-less
+    note line ending a table, such as an attestation line, renders as a one-cell row with
+    no Runner cell and is left alone;
+  - markup in an App Runner cell: `<`, `>`, `&`, `~` or `\`, which can render a
+    struck-through or hidden annotation, or an entity or escape that shows a different
+    character. A Runner cell that only shows as an App runner once its markup is removed
+    (`<span>…[bot]</span>`) is refused the same way;
+  - an added table header that a reader can take as naming a different Runner column than
+    the lint reads: an invisible format character such as a bidi isolate, a non-ASCII
+    letter or mark, a cell whose letters spell `Runner` but that the lint does not read as
+    exactly `runner` (`**Runner**`), or more than one `Runner` column (the lint reads the
+    last).
 
 Like the lint, the tool looks for `## Evidence` only in the brief's body, after the
 frontmatter block: a `## Evidence` line inside the frontmatter is never taken as the section.
