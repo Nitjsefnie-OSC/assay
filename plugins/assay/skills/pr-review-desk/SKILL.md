@@ -1049,10 +1049,12 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   than omitting them. **The verdict itself is a real GitHub review by the reviewer App**, posted via
   `deskpost` under the body schema deskpost enforces (`references/verdict-format.md`).
 - **A container row counts only inside a closed admission bracket.** A `sandbox=container-netns`
-  witness row counts as a Linux witness only when the same Evidence block carries, below its
-  table, a `Tree-Digest: sha256:…` line, a `Container-Image: sha256:…` digest, the
-  `Verification-Attestation:` line and an `Admission-Bracket:` line whose `tree=` equals the
-  `Tree-Digest`, whose `opened=` precedes `closed=`, and whose `witness=` equals what
+  witness row counts as a Linux witness only when it lies inside exactly one `Admission-Bracket:`
+  line's span and that same span, not merely the same Evidence block, carries below its table one
+  `Tree-Digest: sha256:…` line, one `Container-Image: sha256:…` digest and one
+  `Verification-Attestation:` line, with a bracket whose `tree=` equals that span's `Tree-Digest`,
+  whose `run=` and `source=` equal that span's attestation, whose `opened=` precedes `closed=`, and
+  whose `witness=` equals what
   `statusgen verifyrun --bracket-digest --witness <file>` reports for it: `verdict=match` on that
   bracket's own `bracket=` line, run on the landed file. Never compare a raw `sha256sum`: the
   landing stamps `(on-behalf-of human:<subject>)` into App Runner cells, and the verb removes
@@ -1060,7 +1062,9 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   span from the nearest witness header above it to the line before it (an escaped `\|` is never a
   cell delimiter); the `Tree-Digest`, `Container-Image` and attestation lines are the ones inside
   that bracket's own span, one of each, and its `tree=` is compared with that span's
-  `Tree-Digest`, never a line from another bracket; the verdict line's
+  `Tree-Digest`, never a line from another bracket. The bracket line itself is outside the
+  digest, so the verb also reports `mismatch` when its `run=`/`source=` differ from that span's
+  attestation or its `opened=`/`closed=` are not UTC times in order; the verdict line's
   `span-lines=tree-digest:1,container-image:1,attestation:1` shows those counts. `shared` (two brackets on one table),
   `no-table` and `mismatch` are never credit. Credit a row only when it sits inside
   exactly one bracket's span.

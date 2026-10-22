@@ -695,7 +695,9 @@ passing run — which is why they are lint rules and not review vigilance.
       The `Tree-Digest`, `Container-Image` and attestation lines credited
       with a bracket are the ones inside its own span, one of each, and its
       `tree=` is compared with that span's `Tree-Digest`, never a line from
-      another bracket's span; the verb reports `mismatch` otherwise.
+      another bracket's span; the bracket's `run=` and `source=` must equal
+      that span's attestation and its `opened=` must not be after `closed=`
+      (both UTC RFC 3339); the verb reports `mismatch` otherwise.
       The verb prints one line per bracket in the file (`bracket=` and
       `header=` line numbers, `witness=`, `recorded=`,
       `verdict=match|mismatch|no-table|shared` where `shared` means another
