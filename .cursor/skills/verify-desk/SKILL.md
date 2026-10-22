@@ -595,10 +595,12 @@ sets and the PR shape.
 
 Otherwise the brief does NOT advance. File a `bug` immediately (`deskfile new -R <owner/repo> --raised-by verifier
 --label bug`) with the failing command and its real output, then **continue the drain** — the filed issue
-IS the report. **In addition** write one outcome record with `deskevidence --outcome-record` (since
-#882: one NEW file per outcome under `docs/streams/verify-outcomes/<stream>/`, single-writer = this
+IS the report. **In addition** write one outcome record and land it with `deskevidence --outcome-record` (since
+#882: one NEW file per outcome, landed under `docs/streams/verify-outcomes/<stream>/`, single-writer = this
 desk; the `VERIFY FAIL` commit-subject convention is grep-fragile, so bounce-back rate is not
-computable from prose). On PASS write the same row's shape with `"outcome":"verified"` only AFTER
+computable from prose). Write the record to the dispatcher-named outcome path from your prompt —
+never invent one, and never write it inside the home, where it is an untracked file that refuses
+admission; with `--root`, `deskevidence` refuses a relative or in-home `--outcome-record`. On PASS write the same row's shape with `"outcome":"verified"` only AFTER
 the Evidence, execution witnesses, Status `verified` (or `done`), and dated Verified stamp have
 landed on the target branch and `statusgen --lint` accepts that same tree. Before writing,
 refresh only the brief in the verifier home from the target branch
