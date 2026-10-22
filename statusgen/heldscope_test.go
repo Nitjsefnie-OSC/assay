@@ -654,6 +654,72 @@ func TestHeldScopeReaderPath(t *testing.T) {
 	}
 }
 
+// TestHeldScopeOpenElement: an earlier entry that opens an HTML element and
+// never closes it nests the last entry inside that element on the page, which
+// may drop, collapse or flatten it, while the scan reads it live. Whole
+// supersession is off unless every element an entry opens (void ones aside)
+// is closed in that entry, by a close tag the page reads as one, and the last
+// entry holds no element open across a line end. Each case runs on the raw
+// text and on a whole brief file, LF and CRLF, read by parseBriefFileBytes.
+func TestHeldScopeOpenElement(t *testing.T) {
+	blocked := "**VERIFY: BLOCKED** — could-not-check, see the note above."
+	rerun2 := proseRun("Run 2", 2, allOK, "", "**VERIFY: PASS**")
+	two := func(x string) string {
+		return proseRun("Run 1", 2, allOK, "- row 3 could-not-check.\n\n"+x, blocked) + rerun2
+	}
+	base := []heldScanCase{
+		// Admitted controls: every element closed in its entry, or void.
+		{"element closed on its line", two("<span>x</span>"), false},
+		{"element closed later", two("<section>\n\nx\n\n</section>"), false},
+		{"inline element in prose", two("see <b>x</b> here"), false},
+		{"case-folded close", two("<SECTION>x</section>"), false},
+		{"void elements", two("<br>\n<img src=\"u\">\n<hr/>\n<wbr>"), false},
+		// Refused: an element left open, by opener shape.
+		{"open block element", two("<section>"), true},
+		{"open inline element", two("<span>"), true},
+		{"open form element", two("<fieldset>"), true},
+		{"open progress element", two("<progress>"), true},
+		{"open custom element", two("<x-panel>"), true},
+		{"open uppercase element", two("<SECTION>"), true},
+		{"open mixed-case element", two("<SeCtIoN>"), true},
+		{"open element with attribute", two("<section class=\"a\">"), true},
+		{"self-closing non-void", two("<span/>"), true},
+		{"opener shares a line", two("see <span> here"), true},
+		{"opener after the verdict",
+			proseRun("Run 1", 2, allOK, "- row 3 could-not-check.", blocked) + "<section>\n\n" + rerun2, true},
+		{"one of two closed", two("<section>\n<section>\n\n</section>"), true},
+		{"crossed closes", two("<span><b>x</span></b>"), true},
+		// Refused: a close tag the page does not read as one.
+		{"close in a code span", two("<span>\n\n`</span>`"), true},
+		{"close in a comment", two("<span>\n\n<!-- </span> -->"), true},
+		{"close escaped", two("<span>\n\n\\</span>"), true},
+		{"close in a link target", two("<span>\n\n[a](</span>)"), true},
+		{"close in an image text", two("<span>\n\n![</span>][r]\n\n[r]: u"), true},
+		{"close in an attribute", two("<span>\n\n<b title=\"</span>\">x</b>"), true},
+		{"close after a math span", two("<span>\n\n$a$ </span>"), true},
+		{"close on a later line", two("<span>\n\n</span\n>"), true},
+		// Refused: the last entry holds an element across a line end.
+		{"element wraps the last PASS",
+			proseRun("Run 1", 2, allOK, "- row 3 could-not-check.", blocked) +
+				proseRun("Run 2", 2, allOK, "<section>", "**VERIFY: PASS**") + "</section>\n", true},
+		// Refused by design: text the page reads raw, and foreign content.
+		{"raw-text element closed", two("<xmp>x</xmp>"), true},
+		{"foreign element closed", two("<svg></svg>"), true},
+	}
+	cases := append([]heldScanCase(nil), base...)
+	for _, eol := range []struct{ name, s string }{{"LF file", "\n"}, {"CRLF file", "\r\n"}} {
+		for _, c := range base {
+			file := strings.ReplaceAll(validBriefFM+"\n## Evidence\n\n"+c.evidence, "\n", eol.s)
+			bf, ok, err := parseBriefFileBytes("x.md", []byte(file))
+			if err != nil || !ok || bf == nil {
+				t.Fatalf("%s, %s: parse ok=%v err=%v", c.name, eol.name, ok, err)
+			}
+			cases = append(cases, heldScanCase{c.name + ", " + eol.name, bf.Evidence, c.wantHeld})
+		}
+	}
+	runHeldScanCases(t, cases)
+}
+
 // TestHeldScopeFailClosed: every place the scope cannot positively classify
 // text, it reads it as before.
 func TestHeldScopeFailClosed(t *testing.T) {
