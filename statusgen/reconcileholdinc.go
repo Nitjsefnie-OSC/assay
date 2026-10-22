@@ -384,13 +384,24 @@ func driveLintSection(c *driveLintCtx, slug string, now time.Time) (string, int)
 	return section, rc
 }
 
+// driveClaimAssumption is what a drive-region render assumed about claims it
+// did not read: claimed refs the region's In-flight list needs, and unclaimed
+// refs a claim would move to in-flight that the region does not list. Either
+// non-empty makes a matching region could-not-check, never a clean pass.
+type driveClaimAssumption struct {
+	claimed, unclaimed []string
+}
+
+func (a driveClaimAssumption) any() bool { return len(a.claimed)+len(a.unclaimed) > 0 }
+
 // driveLintRender is driveLintSection given the plan file's current region.
 // When the run read no claim set (ClaimSource not Known) and region is
 // non-empty, the render assumes the claims the region's In-flight list implies
-// — only those a claim would actually move to in-flight — and returns them, so
-// the caller reports could-not-check instead of drift on claims nobody read.
-// With a read claim set, or no region, nothing is assumed.
-func driveLintRender(c *driveLintCtx, slug, region string, now time.Time) (string, int, []string) {
+// — only those a claim would actually move to in-flight — and returns them with
+// the refs it assumed unclaimed, so the caller reports could-not-check instead
+// of drift, or of a clean pass, decided on claims nobody read. With a read
+// claim set, or no region, nothing is assumed.
+func driveLintRender(c *driveLintCtx, slug, region string, now time.Time) (string, int, driveClaimAssumption) {
 	c.calls++
 	if !c.loaded {
 		c.loaded = true
@@ -398,7 +409,7 @@ func driveLintRender(c *driveLintCtx, slug, region string, now time.Time) (strin
 	}
 	if c.loadErr != nil {
 		fmt.Fprintln(os.Stderr, "statusgen: --drive-snapshot could not read the board:", c.loadErr)
-		return "", 2, nil
+		return "", 2, driveClaimAssumption{}
 	}
 	if !c.claimsOK {
 		read := c.readClaims
@@ -417,10 +428,10 @@ func driveLintRender(c *driveLintCtx, slug, region string, now time.Time) (strin
 	for _, w := range ds.Warnings {
 		fmt.Fprintln(os.Stderr, "NOTICE:", w)
 	}
-	var assumed []string
+	var assumed driveClaimAssumption
 	if region != "" && !c.claimSrc.Known {
 		assumed = driveAssumedClaims(ds, c.streams, claimed, slug, region, now)
-		for _, ref := range assumed {
+		for _, ref := range assumed.claimed {
 			claimed[ref] = true
 		}
 	}
@@ -430,47 +441,73 @@ func driveLintRender(c *driveLintCtx, slug, region string, now time.Time) (strin
 	}
 	section, ok := driveSnapshotRender(ds, streams, claimed, slug, c.heartbeat, now)
 	if !ok {
-		return "", 2, nil
+		return "", 2, driveClaimAssumption{}
 	}
 	return section, 0, assumed
 }
 
-// driveAssumedClaims returns, sorted, the refs in region's In-flight list that
-// are in flight for slug only because of a claim: in flight when they are
-// assumed claimed, not in flight without. A ref in flight on the board's own
-// status, or not a claimable brief, is never assumed. claimed is not changed.
-func driveAssumedClaims(ds DriveSet, streams []*Stream, claimed map[string]bool, slug, region string, now time.Time) []string {
-	listed := driveRegionInFlight(region)
-	if len(listed) == 0 {
-		return nil
-	}
-	inFlight := func(claims map[string]bool) map[string]bool {
+// driveAssumedClaims returns, sorted, the claims a render of slug against
+// region must assume when the claim set was not read. A ref is claim-sensitive
+// when a claim alone moves it to in-flight: not in flight without one, in flight
+// with one. A claim-sensitive ref listed under the region's In-flight heading is
+// assumed claimed; any other claim-sensitive brief of the drive is assumed
+// unclaimed, because the region matches only while no open branch claims it. A
+// ref in flight on the board's own status, or one a claim does not move, is
+// never assumed either way. claimed is not changed.
+func driveAssumedClaims(ds DriveSet, streams []*Stream, claimed map[string]bool, slug, region string, now time.Time) driveClaimAssumption {
+	// inFlight returns slug's in-flight refs under claims, and every brief ref
+	// on its frontier.
+	inFlight := func(claims map[string]bool) (map[string]bool, []string) {
 		out := map[string]bool{}
+		var briefs []string
 		for _, st := range driveStatuses(ds, cloneStreamRows(streams), claims, now) {
-			if st.Drive.Slug == slug {
-				for _, ref := range frontierRefs(st.Frontier, fsInFlight) {
-					out[ref] = true
+			if st.Drive.Slug != slug {
+				continue
+			}
+			for _, f := range st.Frontier {
+				if f.Kind == "brief" {
+					briefs = append(briefs, f.Ref)
 				}
 			}
+			for _, ref := range frontierRefs(st.Frontier, fsInFlight) {
+				out[ref] = true
+			}
 		}
-		return out
+		return out, briefs
 	}
-	widened := make(map[string]bool, len(claimed)+len(listed))
+	before, briefs := inFlight(claimed)
+	listed := driveRegionInFlight(region)
+	// A claim moves only its own brief (briefFrontierState reads claimed[id]
+	// for that id alone), so claiming every candidate at once answers each
+	// ref's question independently.
+	widened := make(map[string]bool, len(claimed)+len(briefs)+len(listed))
 	for k, v := range claimed {
 		widened[k] = v
 	}
-	for _, ref := range listed {
+	for _, ref := range append(append([]string(nil), briefs...), listed...) {
 		widened[ref] = true
 	}
-	before, after := inFlight(claimed), inFlight(widened)
-	var out []string
+	after, _ := inFlight(widened)
+	isListed := make(map[string]bool, len(listed))
 	for _, ref := range listed {
-		if after[ref] && !before[ref] {
-			out = append(out, ref)
+		isListed[ref] = true
+	}
+	var a driveClaimAssumption
+	seen := map[string]bool{}
+	for _, ref := range append(append([]string(nil), listed...), briefs...) {
+		if seen[ref] || !after[ref] || before[ref] {
+			continue
+		}
+		seen[ref] = true
+		if isListed[ref] {
+			a.claimed = append(a.claimed, ref)
+		} else {
+			a.unclaimed = append(a.unclaimed, ref)
 		}
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(a.claimed)
+	sort.Strings(a.unclaimed)
+	return a
 }
 
 // driveRegionInFlight returns the refs bulleted under the In-flight heading of

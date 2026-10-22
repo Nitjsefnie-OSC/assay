@@ -34,10 +34,11 @@ import (
 // its own (lintClaims for the run's mode), so a plain --lint reads no claims
 // here either: no remote branch list, no dead-claim decay (#3323,
 // docs/statusgen-lint-reach.md). With no claim set read, a region's In-flight
-// list is compared by assuming the claims it implies, and a region that matches
-// only that way is a could-not-check NOTICE naming them — never drift decided
-// on claims nobody read, and never a pass: a region no claim set explains is
-// still drift.
+// list is compared by assuming the claims it implies, and every other brief a
+// claim would move to in-flight is assumed unclaimed. A region that matches
+// only under such an assumption is a could-not-check NOTICE naming the assumed
+// refs — never drift decided on claims nobody read, and never a clean pass
+// either; a region no claim set explains is still drift.
 //
 // nil readClaims is the live read (resolveClaims, as --drive-snapshot renders)
 // with nothing assumed: the reconcile lint hold's form, kept identical to its
@@ -53,7 +54,7 @@ func driveRegionLintProblems(root string, streams []*Stream, readClaims claimRea
 	if readClaims == nil {
 		return driveRegionLint(root, func(slug string) (string, int) { return driveLintSection(ctx, slug, now) })
 	}
-	return driveRegionLintAssuming(root, func(slug, region string) (string, int, []string) {
+	return driveRegionLintAssuming(root, func(slug, region string) (string, int, driveClaimAssumption) {
 		return driveLintRender(ctx, slug, region, now)
 	})
 }
@@ -63,17 +64,19 @@ func driveRegionLintProblems(root string, streams []*Stream, readClaims claimRea
 // slug, now) would. The reconcile lint hold supplies one that reuses a single
 // board load across the rows it evaluates (reconcileholdinc.go).
 func driveRegionLint(root string, section func(slug string) (string, int)) (problems, notices []string) {
-	return driveRegionLintAssuming(root, func(slug, _ string) (string, int, []string) {
+	return driveRegionLintAssuming(root, func(slug, _ string) (string, int, driveClaimAssumption) {
 		fresh, rc := section(slug)
-		return fresh, rc, nil
+		return fresh, rc, driveClaimAssumption{}
 	})
 }
 
 // driveRegionLintAssuming is driveRegionLint with a render that also sees the
 // plan file's current region and returns the claims it had to assume rather
-// than read (driveLintRender). A region that matches only under assumed claims
-// is a could-not-check NOTICE naming them; a region no render matches is drift.
-func driveRegionLintAssuming(root string, render func(slug, region string) (fresh string, rc int, assumed []string)) (problems, notices []string) {
+// than read (driveLintRender): refs assumed claimed and refs assumed unclaimed.
+// A region that matches only under an assumption is a could-not-check NOTICE
+// naming every assumed ref — never a clean pass; a region no render matches is
+// drift.
+func driveRegionLintAssuming(root string, render func(slug, region string) (fresh string, rc int, assumed driveClaimAssumption)) (problems, notices []string) {
 	dir := filepath.Join(root, "docs", "roadmap", "drives")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -152,13 +155,32 @@ func driveRegionLintAssuming(root string, render func(slug, region string) (fres
 			problems = append(problems, driveRegionDriftProblem(e.Name(), slug))
 			continue
 		}
-		if len(assumed) > 0 {
+		if assumed.any() {
 			notices = append(notices, fmt.Sprintf(
-				"drive-region-drift: docs/roadmap/drives/%s matches a fresh render only if %s %s claimed by an open branch; this run did not read the claim set, so that was assumed, not checked — could-not-check (the claim-filtering notice says why)",
-				e.Name(), strings.Join(assumed, ", "), map[bool]string{true: "is", false: "are"}[len(assumed) == 1]))
+				"drive-region-drift: docs/roadmap/drives/%s matches a fresh render only if %s by an open branch; this run did not read the claim set, so that was assumed, not checked — could-not-check (the claim-filtering notice says why; --forge reads it)",
+				e.Name(), driveAssumptionText(assumed)))
 		}
 	}
 	return problems, notices
+}
+
+// driveAssumptionText states an assumption for the region NOTICE, e.g.
+// "alpha/02 is claimed and alpha/03, alpha/04 are not claimed".
+func driveAssumptionText(a driveClaimAssumption) string {
+	verb := func(refs []string) string {
+		if len(refs) == 1 {
+			return "is"
+		}
+		return "are"
+	}
+	var parts []string
+	if len(a.claimed) > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s claimed", strings.Join(a.claimed, ", "), verb(a.claimed)))
+	}
+	if len(a.unclaimed) > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s not claimed", strings.Join(a.unclaimed, ", "), verb(a.unclaimed)))
+	}
+	return strings.Join(parts, " and ")
 }
 
 // driveRegionDriftProblem is the drift PROBLEM for the plan file name (under

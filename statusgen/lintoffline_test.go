@@ -337,7 +337,8 @@ func TestRegenStartsNoForgeProcess(t *testing.T) {
 // TestDriveLintOfflineNoClaims pins the drive-snapshot half of the reach contract: a plain
 // --lint over a drive region reads no claims (no remote branch list, no dead-claim decay),
 // and a region whose In-flight list only a claim can explain reads could-not-check — never
-// a drift PROBLEM decided on claims nobody read. A hand edit no claim set can explain is
+// a drift PROBLEM decided on claims nobody read. A region an unread claim could make stale
+// reads could-not-check too — never a clean pass. A hand edit no claim set can explain is
 // still drift offline, and with --forge the live claim read decides as before.
 //
 // regression: #3323
