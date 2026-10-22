@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "files": {
-    ".cursor/references/claude-code.md": "54247c41cd6dd76081d52ba87c01007a692197ed56171b634820d053981cc5d8",
-    ".cursor/references/codex.md": "394ca659ad8aed956438210c49ec2c958a2a53c93a1f4b492bc0714f3980afd3",
-    ".cursor/references/cursor.md": "eb2529e42aa4689ae6c3815e85086a28c28764d256933a889938ec4660ada30e",
+    ".cursor/references/claude-code.md": "e516df336b5f36b2809b27d058b223d02ad6477ec21fe6b7f66b764bfdd8bf98",
+    ".cursor/references/codex.md": "af59e7db00415cfe6eabdf5a630a394fecb7b83f98aea33af1d8049fc1f9914a",
+    ".cursor/references/cursor.md": "2a5bf5ecc4416ee9460ec9eae6383151352496c2ccde977630de86e73b04a7b5",
     ".cursor/references/desk-common.md": "a55749e6d83fd6b23deeca9a05c6ea7b642d686f89648b7a99f1553df3deb356",
     ".cursor/references/desk-shell.md": "be9463e3d3db6b5201dcb431d91c100d3f3205637b9e5cf4dcc6db75a4f6a8cd",
     ".cursor/references/implementation-pickup.md": "0b356b01a841bd1324c32d4c48b9585a866871c2b1078cfe3437b354bd1966ec",
@@ -34,6 +34,7 @@
     ".cursor/skills/system-demo/SKILL.md": "e13915b75b8843dcbbe183091c883b7dc17fd7267c59408d9a068b6cc0dd1dca",
     ".cursor/skills/system-demo/references/storyboard.md": "9d55dd566e084c1a48eaecb09b6370e2745cd3d7268fdb08494187a80eeff531",
     ".cursor/skills/the-desk/SKILL.md": "d65c476025aa4567421ef48b7d1acbe938a15100e8ee362bba910fd969b48317",
+    ".cursor/skills/trace-path-to-live/SKILL.md": "03b1bf24479cf6a3c7f44246b15f6303aaf2e196c230c04d9027ee156fec5fd2",
     ".cursor/skills/upgrade-assay/SKILL.md": "50b924bd9561444210f6c6bc141fffe14de90583b346e2fd7b58553dec80c2ac",
     ".cursor/skills/verify-desk/SKILL.md": "e3fb098363b8521ac27fce9fda1d33d9db71f8eca31d0e19968e04911e35788f",
     ".cursor/skills/worker-desk/SKILL.md": "64d0051dee369979c0293d76532b7430bf35d595c034eb434bdc084531ec8bcc",
