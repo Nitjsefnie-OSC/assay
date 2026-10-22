@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/medici-finance/assay/gitquiet/goquiet"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -276,15 +277,16 @@ func TestUsageAuditAndStop(t *testing.T) {
 
 // regression: F-usage-perf-wrapper
 func TestUsagePerformance(t *testing.T) {
-	home := setupUsage(t)
+	// Build before moving HOME: module caches must not land in the scratch usage home.
 	binary := filepath.Join(t.TempDir(), "deskusage")
 	if os.PathSeparator == '\\' {
 		binary += ".exe"
 	}
 	build := exec.Command("go", "build", "-o", binary, ".")
-	if b, e := build.CombinedOutput(); e != nil {
+	if b, e := goquiet.Cmd(build).CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
+	home := setupUsage(t)
 	// Even opted-in help must return before operational audit/config/performance effects.
 	help := exec.Command(binary, "--help")
 	help.Env = append(os.Environ(), "ASSAY_TELEMETRY=1")
@@ -322,6 +324,9 @@ func TestUsagePerformance(t *testing.T) {
 	}
 	if record.Tool != "deskusage" {
 		t.Fatalf("wrong tool attribution: %s", b)
+	}
+	if _, e = os.Stat(filepath.Join(home, "go", "pkg", "mod")); !os.IsNotExist(e) {
+		t.Fatal("Go module cache was created inside scratch usage HOME")
 	}
 	if _, e = os.Stat(filepath.Join(home, "counts", deskkit.UsageFile)); !os.IsNotExist(e) {
 		t.Fatal("help created a worker usage record")
