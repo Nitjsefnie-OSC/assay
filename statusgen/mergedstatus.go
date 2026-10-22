@@ -39,6 +39,70 @@ type mergedPR struct {
 	Number  int      // PR number from the merge subject, 0 when not a `Merge pull request` subject
 	Subject string   // the merge commit subject, for the NOTICE text
 	Briefs  []string // "<stream>/<NN>" ids named by the branch or the subject
+	// Delivers / Authors are the ids a `Brief:` / `Authors:` trailer in the merge
+	// commit (or, for a merge commit, its branch's commits) names. A PR that names a
+	// brief only in its subject or branch carries neither: whether it delivered
+	// the brief is then unconfirmed, not assumed (mergeDelivery).
+	Delivers []string
+	Authors  []string
+}
+
+// mergeDelivery is what a merged PR is known to have done to one brief.
+type mergeDelivery int
+
+const (
+	// mergeUnconfirmed — the PR names the brief in its subject/branch and carries
+	// no trailer either way. A lead for the NOTICE, never proof of delivery.
+	mergeUnconfirmed mergeDelivery = iota
+	// mergeDelivered — a `Brief:` trailer names the brief: the implementation.
+	mergeDelivered
+	// mergeAuthoring — only an `Authors:` trailer names the brief: the PR WROTE the
+	// brief and delivered none of it. It never advances a status.
+	mergeAuthoring
+)
+
+// deliveryOf classifies what this merge did to brief id. A `Brief:` trailer
+// outranks an `Authors:` one (a PR may author one brief and deliver another, but a
+// brief both authored and delivered by one PR was delivered).
+func (p mergedPR) deliveryOf(id string) mergeDelivery {
+	for _, d := range p.Delivers {
+		if d == id {
+			return mergeDelivered
+		}
+	}
+	for _, a := range p.Authors {
+		if a == id {
+			return mergeAuthoring
+		}
+	}
+	return mergeUnconfirmed
+}
+
+// mergeTrailerKeys reads the Brief: and Authors: trailer values out of a commit
+// body with the same fence-aware grammar parseBriefLikeTrailers uses, each reduced
+// to its canonical `<stream>/<NN>` key. Pure; no I/O.
+func mergeTrailerKeys(body string) (delivers, authors []string) {
+	inFence := false
+	for _, raw := range strings.Split(body, "\n") {
+		if rePRLinkFence.MatchString(raw) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		m := briefLikeTrailerRe.FindStringSubmatch(strings.TrimRight(raw, "\r"))
+		if m == nil {
+			continue
+		}
+		key := canonicalBriefKey(strings.TrimRight(m[2], ".,;:"))
+		if m[1] == "Brief" {
+			delivers = append(delivers, key)
+		} else {
+			authors = append(authors, key)
+		}
+	}
+	return delivers, authors
 }
 
 // mergeSubjectRe matches GitHub's merge-commit subject and captures PR number + branch.
@@ -98,32 +162,73 @@ const mergedPRLimit = 400
 // read as a PR merge of main.
 func mergedPRsFromGit(root string) ([]mergedPR, error) {
 	out, err := exec.Command("git", "-C", root, "log", "--first-parent",
-		"-n", strconv.Itoa(mergedPRLimit), "--format=%s", "HEAD").Output()
+		"-n", strconv.Itoa(mergedPRLimit), "--format=%H%x1f%s%x1f%b%x1e", "HEAD").Output()
 	if err != nil {
 		return nil, err
 	}
+	return parseMergedLog(string(out), func(sha string) string {
+		// A merge commit's body is only the PR title; the trailers live on the
+		// branch's own commits. Read them only for a merge that names a brief.
+		b, err := exec.Command("git", "-C", root, "log", "-n", "40", "--format=%B%x1e", sha+"^1.."+sha+"^2").Output()
+		if err != nil {
+			return "" // unreadable: stays unconfirmed, never a guessed delivery
+		}
+		return string(b)
+	}), nil
+}
+
+// parseMergedLog turns `git log --first-parent --format=%H%x1f%s%x1f%b%x1e` output
+// into merged PRs. branchBody, when non-nil, supplies the branch commits' bodies
+// for a `Merge pull request` commit that names a brief but whose own body carries
+// no trailer. Pure given branchBody — the git reads live in the caller.
+func parseMergedLog(log string, branchBody func(sha string) string) []mergedPR {
 	var prs []mergedPR
-	for _, subject := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		subject = strings.TrimSpace(subject)
+	for _, rec := range strings.Split(log, "\x1e") {
+		rec = strings.TrimLeft(rec, "\n")
+		parts := strings.SplitN(rec, "\x1f", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		sha, subject := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		body := ""
+		if len(parts) == 3 {
+			body = parts[2]
+		}
 		if subject == "" {
 			continue
 		}
-		num, branch := 0, ""
+		num, branch, isMerge := 0, "", false
 		if m := mergeSubjectRe.FindStringSubmatch(subject); m != nil {
 			num, _ = strconv.Atoi(m[1])
 			branch = m[2]
+			isMerge = true
 		} else if m := squashSubjectRe.FindStringSubmatch(subject); m != nil {
 			num, _ = strconv.Atoi(m[1])
 		} else {
 			continue // an ordinary commit on main: not a merged PR
 		}
 		refs := briefRefsIn(subject, branch)
+		delivers, authors := mergeTrailerKeys(body)
+		if isMerge && branchBody != nil && len(refs) > 0 && len(delivers) == 0 && len(authors) == 0 {
+			delivers, authors = mergeTrailerKeys(branchBody(sha))
+		}
+		seen := map[string]bool{}
+		for _, r := range refs {
+			seen[r] = true
+		}
+		for _, d := range delivers {
+			if !seen[d] {
+				seen[d] = true
+				refs = append(refs, d)
+			}
+		}
 		if len(refs) == 0 {
 			continue
 		}
-		prs = append(prs, mergedPR{Number: num, Subject: subject, Briefs: refs})
+		sort.Strings(refs)
+		prs = append(prs, mergedPR{Number: num, Subject: subject, Briefs: refs, Delivers: delivers, Authors: authors})
 	}
-	return prs, nil
+	return prs
 }
 
 // unreconciledStatuses are the row states a merged PR contradicts. `blocked` is NOT in
@@ -167,6 +272,9 @@ func mergedPRStatusNotices(streams []*Stream, merged []mergedPR, readErr error) 
 			if !known || !unreconciledStatuses[st] {
 				continue
 			}
+			if pr.deliveryOf(id) == mergeAuthoring {
+				continue // an Authors:-only PR WROTE the brief; it advances nothing
+			}
 			if _, dup := seen[id]; dup {
 				continue
 			}
@@ -187,11 +295,16 @@ func mergedPRStatusNotices(streams []*Stream, merged []mergedPR, readErr error) 
 		if h.pr.Number > 0 {
 			where = fmt.Sprintf("merged PR #%d", h.pr.Number)
 		}
+		confirm := ""
+		if h.pr.deliveryOf(id) != mergeDelivered {
+			confirm = " Delivery is UNCONFIRMED (no `Brief:` trailer names it, so this may be an authoring or " +
+				"partial PR): the row is a lead, not held from dispatch on this evidence alone."
+		}
 		notices = append(notices, fmt.Sprintf(
 			"%s names %s but its README row is still %q — Next-up will keep offering work that has "+
 				"already landed (#270). Reconcile the row, or say in the PR why the merge did not "+
-				"advance it. Merge subject: %s",
-			where, id, h.status, h.pr.Subject))
+				"advance it.%s Merge subject: %s",
+			where, id, h.status, confirm, h.pr.Subject))
 	}
 	return notices
 }

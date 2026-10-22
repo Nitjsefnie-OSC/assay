@@ -729,6 +729,18 @@ func runSiblingMergeIfOptedIn(streams []*Stream, root string) (notices []string,
 	return notices, true
 }
 
+// holdPhantomRowsFromGit is runSiblingMergeIfOptedIn's counterpart for the in-tree
+// board-honesty holds: the dispatch emitters (--next-up, --roadmap) call it before
+// nextUp() so they hold the same rows STATUS.md does. A tree with no .git, or an
+// unreadable history, holds nothing — could-not-check is never "delivered".
+func holdPhantomRowsFromGit(streams []*Stream, root string) {
+	if hasNoGitDir(root) {
+		return
+	}
+	merged, err := mergedPRsFromGit(root)
+	applyPhantomHolds(streams, merged, err)
+}
+
 // siblingMergeOffNotices is what --lint prints INSTEAD of the check when the
 // operator has not opted in: at most one line, and only when at least one
 // todo/in-progress row actually declares a sibling — so a skipped read is
