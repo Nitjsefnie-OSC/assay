@@ -563,10 +563,12 @@ sets and the PR shape.
 
 Otherwise the brief does NOT advance. File a `bug` immediately (`deskfile new -R <owner/repo> --raised-by verifier
 --label bug`) with the failing command and its real output, then **continue the drain** — the filed issue
-IS the report. **In addition** write one outcome record with `deskevidence --outcome-record` (since
-#882: one NEW file per outcome under `docs/streams/verify-outcomes/<stream>/`, single-writer = this
+IS the report. **In addition** write one outcome record and land it with `deskevidence --outcome-record` (since
+#882: one NEW file per outcome, landed under `docs/streams/verify-outcomes/<stream>/`, single-writer = this
 desk; the `VERIFY FAIL` commit-subject convention is grep-fragile, so bounce-back rate is not
-computable from prose). On PASS write the same row's shape with `"outcome":"verified"` only AFTER
+computable from prose). Write the record to the dispatcher-named outcome path from your prompt —
+never invent one, and never write it inside the home, where it is an untracked file that refuses
+admission; with `--root`, `deskevidence` refuses a relative or in-home `--outcome-record`. On PASS write the same row's shape with `"outcome":"verified"` only AFTER
 the Evidence, execution witnesses, Status `verified` (or `done`), and dated Verified stamp have
 landed on the target branch and `statusgen --lint` accepts that same tree. Before writing,
 refresh only the brief in the verifier home from the target branch
@@ -1099,7 +1101,11 @@ sent — a hand-off never carries authority. Never `ask` a desk whether it is al
 read from the gateway and roster instruments, not from a message. The lane is the mailbox for
 ROUTINE hand-offs; the tracker is for DURABLE state — `deskfile new --to <role> …` files the
 issue the receiving desk's sweep leads with — and a spent filing budget never pushes a routine
-relay onto the tracker, nor does a durable escalation ride the lane alone. With comms enabled, read your own lane
+relay onto the tracker, nor does a durable escalation ride the lane alone. A filing that an open
+PR's own review or verification requires (a blocker, a question) is workflow-bound: file it with
+`deskfile new --for-pr <owner>/<repo>#<N> --brief <id> …`, which the per-session budget does not
+count, so a spent budget never defers it — its bounds are a per-role, per-PR cap (off unless
+configured) and the outward-write ceiling, and `-R` must be that PR's repo; `--for-pr` does not bind the filer to that PR. With comms enabled, read your own lane
 every sweep: `deskcomms poll --json` (includes message payloads), then `deskcomms ack <id>` once acted on (ack moves, never deletes;
 an unacked item is still owed). The sender's cell and role come from the session context, never
 from a flag; the gateway address and signing key resolve from the project's house layer by NAME

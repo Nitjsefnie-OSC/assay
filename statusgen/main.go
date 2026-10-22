@@ -491,15 +491,19 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 		}
 		// Drive-plan honesty: PROBLEM a drive-plan .md whose
 		// snapshot region has drifted from a fresh render, or that has no manifest
-		// beside it. --lint only (the PR gate); STATUS.md-free and offline. Absent
-		// docs/roadmap/drives ⇒ inert.
+		// beside it. --lint only (the PR gate); STATUS.md-free. Its claim read is
+		// this run's own (lintClaims), so without --forge it reads none and stays
+		// offline (#3323). Absent docs/roadmap/drives ⇒ inert.
+		lintClaimRead := func(r string, s []*Stream) (map[string]bool, ClaimSource) {
+			return lintClaims(r, mode, s)
+		}
 		var dp, dn []string
 		if effScope == "" {
-			dp, dn = driveRegionLintFromBoard(root, streams, nowFunc())
+			dp, dn = driveRegionLintProblems(root, streams, lintClaimRead, nowFunc())
 		} else {
 			// Snapshot frontiers use the full board, including rows outside
 			// the product-scoped checks above. Hydrate those once per sweep.
-			dp, dn = driveRegionLintProblems(root, nowFunc())
+			dp, dn = driveRegionLintProblems(root, nil, lintClaimRead, nowFunc())
 		}
 		problems = append(problems, dp...)
 		notices = append(notices, dn...)
@@ -1828,6 +1832,8 @@ func main() {
 	consumersBrief := flag.String("brief", "", "--consumers: check only this brief (<stream>/<NN>); default = every brief file in the diff")
 	corroborateMode := flag.Bool("corroborate", false, "check human:<name> stamps against PR reviews/comments for corroboration (requires --pr)")
 	corroboratePRs := flag.String("pr", "", "comma-separated PR numbers (required with --corroborate; with --decision-gate, the PRs to judge)")
+	corroborateRecord := flag.String("ruling-record", "", "with --corroborate instead of --pr: corroborate ONE decision record (repo-relative docs/streams/decisions/<name>.md) through its ruling: link, outside any PR (exit 0 = corroborated, 1 = not, 2 = could-not-check)")
+	rulingBrief := flag.String("ruling-brief", "", "with --ruling-record (required there): the repo-relative gate: human brief the ruling must rule on — the ruling comment's decision issue must carry the brief's decision-gate marker and the comment must name the brief")
 	decisionGateMode := flag.Bool("decision-gate", false, "the decision-gate hold, both layers (lifecycle-v1 §4.5): refuse a gate: human brief moved to implemented/verified/done, relabelled, or dropped without a human ruling on its decision issue. Needs --pr <N> or --decision-gate-base <rev>")
 	decisionGateBase := flag.String("decision-gate-base", "", "with --decision-gate: judge the working tree against this local revision (e.g. HEAD, for an uncommitted landing) instead of a PR's merge-base")
 	// Daily factory-floor bottleneck report: per-stage
@@ -2246,6 +2252,17 @@ func main() {
 	}
 	if *decisionGateMode {
 		exitProcess(runDecisionGate(*root, *corroboratePRs, *decisionGateBase))
+	}
+	if *rulingBrief != "" && *corroborateRecord == "" {
+		fmt.Fprintln(os.Stderr, "statusgen: --ruling-brief needs --ruling-record")
+		exitProcess(2)
+	}
+	if *corroborateRecord != "" {
+		if !*corroborateMode || strings.TrimSpace(*corroboratePRs) != "" {
+			fmt.Fprintln(os.Stderr, "statusgen: --ruling-record needs --corroborate and no --pr (it corroborates one record outside any PR)")
+			exitProcess(2)
+		}
+		exitProcess(runCorroborateRecord(*root, *corroborateRecord, *rulingBrief))
 	}
 	if *corroborateMode {
 		exitProcess(runCorroborate(*corroboratePRs))
