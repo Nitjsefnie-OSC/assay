@@ -14,6 +14,13 @@ controls = [
  ('stale-difference', source, 'if equal && match != nil {', 'if false && equal && match != nil {', 'TestRegressionFloorUnlistedDifferenceFails', 'stale difference accepted'),
  ('unlisted-difference', source, 'if match == nil {\n\t\t\treturn fmt.Errorf("unlisted difference %s", id)\n\t\t}', 'if match == nil { return nil }', 'TestRegressionFloorUnlistedDifferenceFails', 'unlisted difference accepted'),
  ('empty-selection', source, 'return inv, nil, nil, fmt.Errorf("zero selected cases")', 'return inv, nil, nil, nil', 'TestRegressionFloorZeroSelectedFails', 'zero selected cases accepted'),
+ ('missing-selected', source, 'if len(selected) > 0 {', 'if false && len(selected) > 0 {', 'TestRegressionFloorZeroSelectedFails', 'missing-selected guard did not refuse'),
+ ('unselected-file', source, 'if !selected[c.ID] {', 'if false && !selected[c.ID] {', 'TestRegressionFloorZeroSelectedFails', 'unselected-file guard did not refuse'),
+ ('duplicate-allowance', source, 'if match != nil {', 'if false && match != nil {', 'TestRegressionFloorUnlistedDifferenceFails', 'duplicate allowance guard did not refuse'),
+ ('unknown-allowance', source, 'if !known[d.Case] {', 'if false && !known[d.Case] {', 'TestRegressionFloorUnlistedDifferenceFails', 'unknown allowance guard did not refuse'),
+ ('empty-reason', source, 'strings.TrimSpace(match.Reason) == "" || ', '', 'TestRegressionFloorUnlistedDifferenceFails', 'empty reason guard did not refuse'),
+ ('freeze-source', module / 'testdata/regressionfloor/freeze.go', 'if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(source) {', 'if false && !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(source) {', 'TestFloorFreezeAuthoring', 'invalid pinned source accepted'),
+ ('freeze-method', module / 'testdata/regressionfloor/freeze.go', 'fn.Recv == nil && ', '', 'TestFloorFreezeAuthoring', 'method selected instead of retained test function'),
 ]
 for name, path, old, new, test, witness in controls:
     original = path.read_text()
@@ -25,6 +32,6 @@ for name, path, old, new, test, witness in controls:
         if run.returncode == 0 or witness not in run.stdout or f'--- FAIL: {test}' not in run.stdout:
             print(run.stdout)
             raise SystemExit(f'{name}: no named behavioral kill')
-        print(f'KILLED {name}: {witness}')
+        print(f'KILLED {name}: {witness}', flush=True)
     finally:
         path.write_text(original)

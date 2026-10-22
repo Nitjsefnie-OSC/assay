@@ -10,12 +10,14 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/medici-finance/assay/gitquiet/goquiet"
 	"github.com/medici-finance/assay/statusgen/domain"
 	"github.com/medici-finance/assay/statusgen/evaluation"
 	"gopkg.in/yaml.v3"
@@ -106,6 +108,15 @@ func floorLoad(dir string) (floorInventory, []floorCase, []floorDifference, erro
 	if len(selected) > 0 {
 		return inv, nil, nil, fmt.Errorf("selected case missing: %v", selected)
 	}
+	known := map[string]bool{}
+	for _, c := range cases {
+		known[c.ID] = true
+	}
+	for _, d := range diffs {
+		if !known[d.Case] {
+			return inv, nil, nil, fmt.Errorf("difference names unselected case %s", d.Case)
+		}
+	}
 	return inv, cases, diffs, nil
 }
 func floorResolve(inv floorInventory) error {
@@ -165,7 +176,7 @@ func floorResolve(inv floorInventory) error {
 			return ""
 		}
 		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(e.BodySHA256) || fmt.Sprintf("%x", sha256.Sum256([]byte(body(f)))) != e.BodySHA256 {
-			return fmt.Errorf("retained baseline test changed: %s", key)
+			return fmt.Errorf("retained baseline test changed: %s; review the test change and its preservation obligations, update this entry to the approved immutable source, then run go run testdata/regressionfloor/freeze.go from statusgen and review the digest diff", key)
 		}
 	}
 	return nil
@@ -272,7 +283,7 @@ func floorCompare(id string, old, newer, expected floorResult, diffs []floorDiff
 		if match == nil {
 			return fmt.Errorf("unlisted difference %s", id)
 		}
-		if match.Reason == "" || !reflect.DeepEqual(old, match.Old) || !reflect.DeepEqual(newer, match.New) {
+		if strings.TrimSpace(match.Reason) == "" || !reflect.DeepEqual(old, match.Old) || !reflect.DeepEqual(newer, match.New) {
 			return fmt.Errorf("difference outcomes/reason mismatch %s", id)
 		}
 		if !reflect.DeepEqual(old, expected) {
@@ -323,15 +334,6 @@ func TestRegressionFloorOldNewAgree(t *testing.T) {
 		head = []byte("unavailable (source export)")
 	}
 	t.Logf("checkout-head=%s (adapters execute this working source, baseline denotes inventory provenance)", strings.TrimSpace(string(head)))
-	known := map[string]bool{}
-	for _, c := range cases {
-		known[c.ID] = true
-	}
-	for _, d := range diffs {
-		if !known[d.Case] {
-			t.Fatalf("difference names unselected case %s", d.Case)
-		}
-	}
 	for _, c := range cases {
 		t.Run(c.ID, func(t *testing.T) {
 			old, newer := floorAdapters(t, c)
@@ -347,6 +349,7 @@ func TestRegressionFloorOldNewAgree(t *testing.T) {
 
 // regression: graph-execution/29
 func TestRegressionFloorUnlistedDifferenceFails(t *testing.T) {
+	floorAllowanceGuards(t)
 	_, cases, _, err := floorLoad(floorDir)
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +375,7 @@ func TestRegressionFloorUnlistedDifferenceFails(t *testing.T) {
 
 // regression: graph-execution/29
 func TestRegressionFloorZeroSelectedFails(t *testing.T) {
+	floorCaseGuards(t)
 	for _, mode := range []string{"empty-selection", "empty-directory"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
@@ -396,8 +400,94 @@ func TestRegressionFloorZeroSelectedFails(t *testing.T) {
 	}
 }
 
+// floorFixture writes only synthetic control data, never production expectations.
+func floorFixture(t *testing.T, selected, files []string, diffs []floorDifference) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "cases"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]any{"inventory.yaml": floorInventory{Added: selected}, "differences.yaml": diffs} {
+		b, err := yaml.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range files {
+		b, err := json.Marshal(floorCase{ID: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "cases", id+".json"), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 // regression: graph-execution/29
-func TestFloorReused(t *testing.T) {
-	t.Run("offline", TestOfflineReaderNeverAnswersEmpty)
-	t.Run("graph", TestGraphJSONLDeterministic)
+func floorCaseGuards(t *testing.T) {
+	t.Helper()
+	dir := floorFixture(t, []string{"known", "second"}, []string{"known", "second"}, nil)
+	if _, cases, _, err := floorLoad(dir); err != nil || len(cases) != 2 {
+		t.Fatalf("valid case selection refused: %v", err)
+	}
+	for _, control := range []struct {
+		name            string
+		selected, files []string
+		want            string
+	}{
+		{"missing-selected", []string{"known", "missing"}, []string{"known"}, "selected case missing"},
+		{"unselected-file", []string{"known"}, []string{"known", "extra"}, "unselected case extra"},
+	} {
+		t.Run(control.name, func(t *testing.T) {
+			dir := floorFixture(t, control.selected, control.files, nil)
+			if _, _, _, err := floorLoad(dir); err == nil || !strings.Contains(err.Error(), control.want) {
+				t.Fatalf("%s guard did not refuse: %v", control.name, err)
+			}
+		})
+	}
+}
+
+// regression: graph-execution/29
+func floorAllowanceGuards(t *testing.T) {
+	t.Helper()
+	old := floorResult{Claim: "could-not-check"}
+	newer := floorResult{Claim: "pass", Released: true}
+	d := floorDifference{Case: "known", Reason: "synthetic approved control", Old: old, New: newer}
+	if err := floorCompare("known", old, newer, old, []floorDifference{d}); err != nil {
+		t.Fatal(err)
+	}
+	if err := floorCompare("known", old, newer, old, []floorDifference{d, d}); err == nil || !strings.Contains(err.Error(), "duplicate difference") {
+		t.Fatalf("duplicate allowance guard did not refuse: %v", err)
+	}
+	for _, reason := range []string{"", "  "} {
+		bad := d
+		bad.Reason = reason
+		if err := floorCompare("known", old, newer, old, []floorDifference{bad}); err == nil || !strings.Contains(err.Error(), "difference outcomes/reason mismatch") {
+			t.Fatalf("empty reason guard did not refuse: %v", err)
+		}
+	}
+	dir := floorFixture(t, []string{"known"}, []string{"known"}, []floorDifference{d})
+	if _, _, _, err := floorLoad(dir); err != nil {
+		t.Fatalf("known allowance refused: %v", err)
+	}
+	d.Case = "unknown"
+	dir = floorFixture(t, []string{"known"}, []string{"known"}, []floorDifference{d})
+	if _, _, _, err := floorLoad(dir); err == nil || !strings.Contains(err.Error(), "difference names unselected case unknown") {
+		t.Fatalf("unknown allowance guard did not refuse: %v", err)
+	}
+}
+
+// regression: graph-execution/29
+func TestFloorFreezeAuthoring(t *testing.T) {
+	cmd := exec.Command("go", "test", "-timeout", "45s", "-count=1", "./testdata/regressionfloor")
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOTOOLCHAIN=local", "KUBECONFIG=/dev/null")
+	out, err := goquiet.Cmd(cmd).CombinedOutput()
+	if err != nil {
+		t.Fatalf("authoring helper controls: %v\n%s", err, out)
+	}
 }

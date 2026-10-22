@@ -21,7 +21,7 @@ adapter, evaluator version/policy digest and source baseline. These are adapter
 comparisons, not independent implementations of the coverage policy.
 
 The graph and offline-reader tests retain their existing frozen inputs and are
-reused unchanged, including through `TestFloorReused`. The domain does not ship
+run unchanged through their original test functions. The domain does not ship
 replacement reader/serializer APIs. Runner conformance stays in its own module;
 all selected kit tests are inventoried and run unchanged. Claim-holder intent is
 explicitly transferred to graph-execution/19; this floor does not qualify its
@@ -36,7 +36,7 @@ to pin the old result. Mutation controls use synthetic allowances only.
 Run from the repository root:
 
 ```
-(cd statusgen && GOWORK=off go test -timeout 90s -count=1 -v -run '^(TestRegressionFloor|TestFloorReused)' .)
+(cd statusgen && GOWORK=off go test -timeout 90s -count=1 -v -run '^(TestRegressionFloor|TestFloorFreezeAuthoring)' .)
 python3 statusgen/testdata/regressionfloor/mutate.py
 (cd loopadmin && GOWORK=off go test -timeout 90s -count=1 ./runner/conformance/)
 ```
@@ -47,3 +47,32 @@ Do not run another test or source consumer concurrently with these mutations.
 No baseline test is removed or weakened. The existing testledger remains the
 only departure report. Local test results confer no independent verification,
 publication, isolation or recovery qualification.
+
+## Repository scope and updating provenance
+
+Run this repository-level floor from a complete Assay source checkout. It reads
+`docs/contracts.md`, the selected sibling-module test files and local fixtures;
+a statusgen-only export is not its supported test envelope. The cross-module
+CI registry lists these readers. The unconditional `ci.yml` statusgen shard runs
+on documentation-only and sibling-module changes as well as statusgen edits.
+No workflow trigger or permission change is needed.
+
+An intentional strengthening or approved replacement of a retained test needs
+review of its preservation obligations. Update only the affected inventory
+entry's `source` to the approved immutable commit containing that test, then run
+`cd statusgen && GOWORK=off go run testdata/regressionfloor/freeze.go` and review
+the source/digest diff. Keep unrelated pins and hand-written expected outcomes
+unchanged. Never regenerate provenance to conceal a weakened or retired test;
+use the existing testledger departure procedure when a test leaves.
+
+The named empty-selection check also covers a nonempty selection with a missing
+file and an unselected file. The named difference check covers known allowances,
+duplicate allowances, unknown case references and empty reasons in addition to
+staleness and exact outcomes. Each refusal has a behavioral mutation control.
+The authoring helper separately checks pinned revision/path syntax and ignores
+same-named methods when resolving a retained top-level test.
+
+After an interrupted mutation run, inspect `git status` and the owned-file diff
+before using or committing the tree. `finally` cannot restore files after
+SIGKILL or unhandled termination; an interrupted tree is not evidence of a
+successful restored run.
