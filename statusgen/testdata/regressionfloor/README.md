@@ -2,9 +2,12 @@
 
 `inventory.yaml` pins the selected test sources at an immutable baseline. The
 inventory check resolves each test and compares its formatted function body with
-that baseline using the existing replacement-object-disabled history adapter.
-It does not establish authenticity or run a historical binary. The baseline
-objects must be available locally; unavailable history fails the check.
+an AST-body SHA256 frozen from that baseline. `freeze.go` reads the pinned Git
+objects with replacement objects disabled to reproduce those provenance hashes
+at authoring time; it does not generate semantic expectations. Routine tests
+need no history, credentials or network. Missing/invalid/mismatched body hashes
+fail the check. The optional checkout-head log is metadata, not a historical
+binary execution or authenticity claim.
 
 `cases/` contains hand-written raw Verify/Evidence facts and expected semantic
 results extracted from the original assertions, plus an explicit passing control.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -24,6 +25,7 @@ const floorDir = "testdata/regressionfloor"
 
 type floorEntry struct {
 	File, Test, Contract, Source, Disposition, Reason string
+	BodySHA256                                        string `yaml:"body_sha256"`
 	Cases                                             []string
 }
 type floorInventory struct {
@@ -151,14 +153,6 @@ func floorResolve(inv floorInventory) error {
 		if !found {
 			return fmt.Errorf("inventory test does not resolve: %s", key)
 		}
-		baseline, err := coverageGit("..", "show", e.Source+":"+e.File).Output()
-		if err != nil {
-			return fmt.Errorf("baseline source unavailable for %s: %w", key, err)
-		}
-		old, err := parser.ParseFile(token.NewFileSet(), e.File, baseline, 0)
-		if err != nil {
-			return err
-		}
 		body := func(file *ast.File) string {
 			for _, decl := range file.Decls {
 				if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == e.Test {
@@ -170,7 +164,7 @@ func floorResolve(inv floorInventory) error {
 			}
 			return ""
 		}
-		if body(old) == "" || body(old) != body(f) {
+		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(e.BodySHA256) || fmt.Sprintf("%x", sha256.Sum256([]byte(body(f)))) != e.BodySHA256 {
 			return fmt.Errorf("retained baseline test changed: %s", key)
 		}
 	}
@@ -303,9 +297,11 @@ func TestRegressionFloorInventoryResolves(t *testing.T) {
 	}
 	bad := inv
 	bad.Entries = append([]floorEntry(nil), inv.Entries...)
-	bad.Entries[0].Source = strings.Repeat("0", 40)
-	if floorResolve(bad) == nil {
-		t.Fatal("unavailable baseline source accepted")
+	for _, digest := range []string{"", "not-a-digest", strings.Repeat("0", 64)} {
+		bad.Entries[0].BodySHA256 = digest
+		if floorResolve(bad) == nil {
+			t.Fatal("missing, invalid or mismatched baseline digest accepted")
+		}
 	}
 	inv.Entries[0].Test += "Misspelled"
 	if floorResolve(inv) == nil {
@@ -324,7 +320,7 @@ func TestRegressionFloorOldNewAgree(t *testing.T) {
 	}
 	head, err := coverageGit("..", "rev-parse", "HEAD").Output()
 	if err != nil {
-		t.Fatal(err)
+		head = []byte("unavailable (source export)")
 	}
 	t.Logf("checkout-head=%s (adapters execute this working source, baseline denotes inventory provenance)", strings.TrimSpace(string(head)))
 	known := map[string]bool{}
