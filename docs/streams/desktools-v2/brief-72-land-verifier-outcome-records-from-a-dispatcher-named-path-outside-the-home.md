@@ -14,7 +14,7 @@ version: 1
 authored: 2026-10-22 by statusgen newbrief
 sources:
   - 'desktools-v2: Land verifier outcome records from a dispatcher-named path outside the home'
-  - "driver ruling, 2026-10-22: fix in the tooling; the dispatcher allocates a per-run scratch path outside the home and names it in the verifier prompt; deskevidence lands it through the existing binding; no widening of admission; record format unchanged"
+  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of the brief PR that adds this brief): fix in the tooling; the dispatcher allocates a per-run scratch path outside the home and names it in the verifier prompt; deskevidence lands it through the existing binding; no widening of admission; record format unchanged"
   - docs/proposals/non-ci-architecture/13-migration-and-decisions.md (§The verifier transaction, end to end)
   - freshness-checked 2026-10-22 @ 9a2c6ba2bc85558d77c4227984d93a728a7f7e94 (origin/main)
 exec-tier: any
@@ -63,7 +63,10 @@ at implemented.
 1. In `deskdispatch`, add an outcome-scratch allocator modeled on `packetPathFor`. It
    uses `<prompt dir>/outcomes/<claim key>/` (beside `--prompt-file`) when given, else
    `<UserCacheDir>/assay/outcomes/<claim key>/`, so runs that share a prompt directory
-   never share an outcome directory. It creates the directory owner-only and
+   never share an outcome directory. The claim key becomes a path segment on both
+   branches, so it is validated on both with `packetPathFor`'s cache-branch rule
+   (`sanitizeSegment` plus `itemKeyRe`, no path separators; `deskdispatch/packet.go:185`-`:188`),
+   and a key that fails is refused. It creates the directory owner-only and
    refuses (does not fall back) when the resolved path lies inside the verifier home or
    the dispatcher root. Use the same week-based pruning as packets.
 2. `writeVerifierAssignment` names that directory in the verifier prompt as an absolute
@@ -83,7 +86,7 @@ at implemented.
 
 | # | Command | Expect |
 |---|---|---|
-| 1 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestVerifierOutcomePath$' -count=1 -v` | exit 0 and named PASS; the verifier prompt contains one absolute outcome path outside the home and the `--outcome-record … --root` command; an allocation that resolves inside the home or root is refused; two claims dispatched with prompt files in one directory get different outcome directories; non-verifier prompts carry no such line |
+| 1 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestVerifierOutcomePath$' -count=1 -v` | exit 0 and named PASS; the verifier prompt contains one absolute outcome path outside the home and the `--outcome-record … --root` command; an allocation that resolves inside the home or root is refused; two claims dispatched with prompt files in one directory get different outcome directories; a claim key containing `/`, `\` or `..` is refused on both the prompt-file and the cache branch; non-verifier prompts carry no such line |
 | 2 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestOutcomeRecordOutsideRoot$' -count=1 -v` | exit 0 and named PASS; with `--root`, a relative path and an in-home absolute path (including through a symlink alias) are refused before any forge read; an outside path proceeds to admission |
 | 3 | `cd tools/desk && go test ./cmd/deskevidence/ ./cmd/deskdispatch/ ./internal/deskkit/ -count=1` | exit 0; existing outcome-record, packet and admission tests unchanged |
 | 4 | `git diff origin/main -- tools/desk/internal/deskkit/verifiersource.go tools/desk/internal/deskkit/verifierattestation.go tools/desk/internal/deskkit/verifyoutcomes.go \| wc -l` | `0` (admission and record format untouched) |

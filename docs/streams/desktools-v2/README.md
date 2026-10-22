@@ -360,7 +360,7 @@ migrate to v4 through dated amendments rather than editing completed evidence.
 
 ## Workflow filings and witness records — 22 October 2026
 
-Four independent wave-1 briefs record driver rulings of 22 October 2026. /70 binds
+Four independent wave-1 briefs carry driver rulings of 22 October 2026 for ratification at merge: the public record of those rulings is the driver's merge of the PR that adds these briefs. /70 binds
 workflow issue filings to their PR (and brief), outside the process-error filing
 budget, with a per-role per-PR cap, its own audit class and the unchanged repo-wide
 ceiling as the compensating bound (proposal 11 brakes). /71 credits Linux container

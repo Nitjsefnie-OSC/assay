@@ -15,7 +15,7 @@ version: 1
 authored: 2026-10-22 by statusgen newbrief
 sources:
   - 'desktools-v2: Make deskevidence own the on-behalf-of principal on Runner cells'
-  - "driver ruling, 2026-10-22: the verifier adds the principal through the existing tool, no new verb; deskevidence restamps or refuses any annotation that is not a roster principal; the skill says leave Runner cells unannotated and pre-check with deskevidence --dry-run"
+  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR): the verifier adds the principal through the existing tool, no new verb; deskevidence restamps or refuses any annotation that is not a roster principal; the skill says leave Runner cells unannotated and pre-check with deskevidence --dry-run"
   - docs/on-behalf-of.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md (independent verification; attributed result)
   - freshness-checked 2026-10-22 @ 9a2c6ba2bc85558d77c4227984d93a728a7f7e94 (origin/main)
@@ -42,6 +42,7 @@ facts:
 - The lint reads a narrower marker. `onBehalfOfPrincipalOf` (`statusgen/principal.go:174`) recognises only `on-behalf-of human:<principal>` and takes the last occurrence. So a cell such as `… on-behalf-of <desk role>` is skipped by the stamper but reads as unannotated to the lint. That is a PROBLEM for rows dated on or after the `2026-09-17` cutover (`statusgen/attribution.go:708`, `:750`-`:762`). A `human:` annotation naming someone outside the roster is a PROBLEM only when the roster config is present (`cfg.Configured()`, `attribution.go:765`-`:775`; `onBehalfOfPrincipalRecognised`, `principal.go:147`). Without that config, a wrong principal passes the lint.
 - Before every write, `deskevidence` runs the statusgen PROBLEM-diff on the stamped content (`deskevidence.go:636`; `lintDiffAt`, `lintdiff.go:68`). `--dry-run` stops only after every refusing gate, the lint diff included (`deskevidence.go:677`-`:695`). So a clean dry-run already shows exactly what will land, while linting the home shows the rows before the stamp.
 - The commit-trailer path already strips planted annotations. `AppendOnBehalfOf` removes any caller-supplied On-behalf-of line before appending the resolved one, "so … a caller cannot pre-seed or shadow the annotation" (`deskkit/principal.go:400`-`:413`). The Runner-cell path has no equivalent.
+- Brief 71 brackets container witnesses with a `witness=` digest over the Evidence span. That digest drops every parenthesised `on-behalf-of` group from Runner cells, so this brief's strip-and-restamp never breaks a bracket, provided the restamped annotation stays a parenthetical in the Runner cell and nothing else in the row changes.
 - verify-desk has no on-behalf-of guidance (`grep -n on-behalf-of plugins/assay/skills/verify-desk/SKILL.md` is empty at the freshness SHA). Verifiers who lint their home see App rows as unannotated PROBLEMs and hand-annotate them.
 
 Design-fit: proposal 11's independent verification ends in "an attributed result" published
@@ -57,7 +58,7 @@ single-point-of-failure: deskevidence's roster resolution of the subject — bac
 
 ## Human decision
 
-Recorded: driver ruling, 2026-10-22, as in sources. For acceptance at done, the
+For ratification at merge: driver ruling, 2026-10-22, as in sources; its public record is the driver's merge of this gate: human brief PR. For acceptance at done, the
 restamp-or-refuse split. Recommended: restamp when the added row's annotation names no
 recognised roster human, or is not in the `human:` form. Leave it when it names the same
 subject the roster resolves. Refuse (exit 5, nothing written) when it names a different
@@ -89,7 +90,9 @@ implemented.
    human: strip and restamp it in the target's form, because a login must never stay on a
    target the roster states public. Annotation present but not in the `human:` form, or naming no recognised roster
    human, means strip every on-behalf-of fragment from the cell and stamp the resolved one
-   (the trailer path's strip-then-append rule). Annotation naming a different recognised
+   (the trailer path's strip-then-append rule). The stamped annotation is always written as
+   one parenthetical in the Runner cell and the rest of the row is left byte-identical,
+   which keeps brief 71's bracket digest stable. Annotation naming a different recognised
    human means refuse with exit 5, name the row, and write nothing.
 2. Recognition uses the same roster data the subject resolution reads, so it does not
    depend on the target's lint config being present. Update the file comment to the new
