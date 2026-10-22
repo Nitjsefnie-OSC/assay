@@ -477,6 +477,10 @@ with a line number. These figures are not for ranking agents or people.
 This record is interim: the shared execution journal replaces it for an enrolled worker role.
 No enrollment behavior is activated by this command.
 
+A Git-managed HOME also makes its default usage directory ineligible. Set `ASSAY_USAGE_DIR`
+to a private directory outside every Git working tree. Claim-key resolution tolerates
+historical torn dispatch lines, but refuses a damaged tail that could hide a newer run.
+
 ### Local performance history — `deskperf`
 
 Optional perf-v3 provider/auth instrumentation and its exact coverage are described

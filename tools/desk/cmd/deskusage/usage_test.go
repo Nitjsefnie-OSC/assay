@@ -144,6 +144,76 @@ func dispatchLine(t *testing.T, key string, at time.Time) string {
 	return ref
 }
 
+// regression: F1 usage-claimkey-dispatch-store-wedge
+func TestUsageClaimKeyDispatchRecovery(t *testing.T) {
+	for _, scenario := range []string{"torn-before", "obsolete-before", "added-field", "torn-after", "invalid-match-after", "recovered-match"} {
+		t.Run(scenario, func(t *testing.T) {
+			setupUsage(t)
+			key := "assay--example--01"
+			at := time.Date(2026, 10, 6, 14, 15, 2, 0, time.UTC)
+			path, err := deskkit.DispatchRecordsPath()
+			if err != nil {
+				t.Fatal(err)
+			}
+			appendLine := func(line string) {
+				t.Helper()
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.WriteString(line + "\n"); err != nil {
+					t.Fatal(err)
+				}
+				if err = f.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dispatchLine(t, "assay--other--09", at)
+			if scenario == "torn-before" {
+				appendLine(`{"schema":"dispatch-record-v1","event":"dispa`)
+			}
+			if scenario == "obsolete-before" {
+				appendLine(`{"schema":"old","event":"dispatched","claim_key":"assay--other--09"}`)
+			}
+			want := dispatchLine(t, key, at.Add(time.Second))
+			if scenario == "added-field" {
+				b, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines := bytes.Split(bytes.TrimSpace(b), []byte("\n"))
+				appendLine(strings.TrimSuffix(string(lines[len(lines)-1]), "}") + `,"future_field":true}`)
+			}
+			if scenario == "torn-after" || scenario == "recovered-match" {
+				appendLine(`{"event":"dispa`)
+			}
+			if scenario == "invalid-match-after" {
+				appendLine(`{"schema":"old","event":"dispatched","claim_key":"` + key + `"}`)
+			}
+			if scenario == "recovered-match" {
+				want = dispatchLine(t, key, at.Add(2*time.Second))
+			}
+			rc, _, stderr := invoke("record", "--claim-key", key, "--repo", "example-org/project", "--item", "example/01", "--tier", "strong", "--input-tokens", "10")
+			if scenario == "torn-after" || scenario == "invalid-match-after" {
+				if rc != 5 || len(storeBytes(t)) != 0 {
+					t.Fatalf("ambiguous latest dispatch recorded stale counts: rc=%d stderr=%q", rc, stderr)
+				}
+				return
+			}
+			if rc != 0 {
+				t.Fatalf("unrelated historical damage wedged usage: rc=%d stderr=%q", rc, stderr)
+			}
+			var got deskkit.UsageRecord
+			if err = json.Unmarshal(bytes.TrimSpace(storeBytes(t)), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.DispatchRef != want {
+				t.Fatalf("joined %q, want latest %q", got.DispatchRef, want)
+			}
+		})
+	}
+}
+
 // regression: F-usage-run-join-and-aggregates
 func TestUsage_RecordToSummaryFlow(t *testing.T) {
 	home := setupUsage(t)

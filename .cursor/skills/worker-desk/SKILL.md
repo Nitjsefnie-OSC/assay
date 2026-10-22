@@ -133,7 +133,11 @@ slots, and a sweep proving nothing eligible exists (§HARD GATE).
   with `--repo`, `--item`, `--tier` (the dispatched tier), and only the usage counts the completion
   notification itself reports (`--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-micros`,
   `--wall-seconds`); omit absent counts. Never read, quote or pass worker transcript, prompt or tool
-  output. These figures are not for ranking agents or people. Log a refusal and continue the refill.
+  output. Token flags take integer token counts, `--cost-micros` takes integer millionths of the
+  currency unit, and `--wall-seconds` takes integer seconds. Omit a figure unless the notification
+  reports it in that exact unit; never relabel milliseconds as seconds or currency units as micros.
+  These figures are not for ranking agents or people. Log a refusal verbatim and continue the refill;
+  never re-attempt the record another way.
   Then dispatch the next eligible item into the freed slot.
 - **Never stop-and-wait-for-restart.** "The plan came back empty" is a reading from ONE instrument,
   not a state of the queue: re-sweep §Sources of work with each source's own instrument. Where every
