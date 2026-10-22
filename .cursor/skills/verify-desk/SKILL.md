@@ -164,6 +164,69 @@ and stamp but no Evidence already landed. The record admits
 Evidence only for its own brief: that brief, its stream-index row, or an outcome record
 keyed to it. Landing Evidence for any other brief refuses, even with a valid record.
 
+A runner inside a `--network none` container cannot reach the forge, so it never runs
+the check itself. The host brackets the container run instead, within one dispatch and
+with no edit to the home between the steps:
+
+1. Host open: `statusgen verifyrun --open-bracket --root <home> --brief <path> --out
+   <receipt>`, with `<receipt>` outside the home. It runs the check, digests the home's
+   tree and writes the receipt. A refused check writes nothing.
+2. Container run: `statusgen verifyrun --sandbox=container-netns --brief <path>
+   --admission-receipt <receipt> --container-image-digest sha256:<64 hex> --witness
+   <file>`, with the receipt mounted read-only and `<file>` a new file outside the home.
+   It refuses before any row unless the mounted root digests to the receipt's tree, and
+   refuses after the rows if they changed it, writing no attestation or `Tree-Digest`.
+   Without a receipt it refuses outright.
+3. Host close: `statusgen verifyrun --close-bracket --root <home> --brief <path>
+   --admission-receipt <receipt> --witness <file>`. It re-runs the check and appends one
+   `Admission-Bracket:` line only when the check re-admits the run the witness names and
+   the home still digests to both the receipt's tree and the witness's `Tree-Digest`, read
+   only from the span ending where the line goes (a span with a second `Tree-Digest`,
+   `Container-Image` or attestation line is refused). Its
+   `witness=` value is the digest `statusgen verifyrun --bracket-digest --witness <file>`
+   prints for that bracket (`verdict=match` once closed), which the landing's on-behalf-of
+   stamp does not change.
+
+Land the closed witness file's bytes, bracket line included, as the Evidence block. A
+container row without its `Admission-Bracket` line is unattested and is not a Linux
+witness. On the landed file, `statusgen verifyrun --bracket-digest --witness <brief>` must
+report `verdict=match` and `span-lines=tree-digest:1,container-image:1,attestation:1` on that
+bracket's own `bracket=` line, and the bracket's `opened` must precede `closed`.
+
+`verdict=match` shows only that the bracket is consistent with its span, not who wrote it:
+the digest is keyless and computed from the file's own bytes. A row is credited only when
+all of these conditions hold:
+
+1. The bracket line and every span line were landed by the verifier's landing step
+   (`deskevidence`). Per line, `git blame --line-porcelain` gives an `author-mail` that is the
+   roster verifier's noreply address with its pinned numeric id, never judged by the display
+   name. A roster human does not qualify.
+2. The span's attestation matches the verifier's attestation record for that run. The whole
+   `Verification-Attestation:` line (run, source, brief, model and tier) equals the line
+   rendered from the record its `<repo>#<issue>` names. That record passes every rule
+   `ReadVerifierAttestation` applies: titled exactly `[verification-attestation] <run>`,
+   authored by the roster's dispatcher identity (distinct from the verifier), closed, never
+   edited, and carrying the dispatcher's model stamp for that model and tier. A record by any
+   other author, the verifier included, is not credit.
+3. That attestation names the brief that contains it and the source under verification.
+
+A bracket and span written outside the landing step, a bracketed block copied from another
+brief or an earlier source, or an attestation that does not match its record is not credit,
+even when the digest matches. Check all three with `statusgen verifyrun --bracket-digest
+--witness <brief> --credit --source <40 hex>` on the landed brief: each bracket's line ends
+`credit=credited`, `credit=not-credited` or `credit=could-not-check`, with the reason on
+standard error. Credit a row only on `credit=credited`, never on `verdict=match` alone. The
+record must be in the brief's own repository and authored by the dispatcher; a login-only
+verifier match, a shallow clone, a missing roster or an unreadable record is
+`credit=could-not-check`, which is not credit. Condition 1 reads
+the commit author git records, which is author-asserted attribution, not authorization: whoever can commit
+to the brief can write the verifier's author address. The forge-attributed record in
+condition 2 is the anchor. Only server-side rules on who may push to the brief's branch
+prevent the forgery, and a verifier roster entry with no numeric id leaves condition 1
+could-not-check. Version 2 (cross-repository) receipts are refused in container mode, and a linked
+worktree's git directory is not mounted in the container, so rows that need git history
+run on the host.
+
 On failed pre-work stamping, no verifier prompt is emitted and the claim is released.
 Keep the retained worktree for recovery; return its real dispatch receipt to the coordinator
 desk, which runs `deskdispatch --attest-verifier --root <home>`. This creates no replacement
@@ -375,6 +438,8 @@ hold. The SHA recorded in Evidence is the one the cross-check confirmed, not the
   verifyrun re-executes each Verify row in a fresh subshell at the repo root and writes back the
   command, exit code, an output hash, the date and the runner identity; that witness table is what
   turns an Evidence row from prose into something a reviewer can re-run and compare.
+  In a `--network none` container, run it only inside the admission bracket (§Pre-work
+  admission); the closed witness file, `Admission-Bracket` line included, is what lands.
   A `verified`/`done` closure this branch makes with no witness for a Verify row is a hard lint
   PROBLEM, not the softer per-stream NOTICE the inherited backlog still gets.
 - **Fail-first: a risk-bearing row must red on the base.** When the table has a risk-bearing row

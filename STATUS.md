@@ -35,7 +35,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/38 | 2026-10-21 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-22 |  |
 
-### Stuck auto-flips (32)
+### Stuck auto-flips (31)
 
 _gate:model briefs at `verified` that the model auto-flip has not moved to `done`. See docs/board-stuck-autoflips.md._
 
@@ -48,7 +48,6 @@ _gate:model briefs at `verified` that the model auto-flip has not moved to `done
 | [build-less-brittle/09](docs/streams/build-less-brittle/README.md) | Brittle investigation: a strong-tier task template that reads the original intent and the issues found, and recommends reconcile, redesign or accept | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [build-less-brittle/10](docs/streams/build-less-brittle/README.md) | Architectural fitness functions in CI: dependency direction, the hub's import allow-list, and one implementation per registered meaning | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [build-less-brittle/11](docs/streams/build-less-brittle/README.md) | Regression tests are a ratchet: every fix ships a tagged bug-reproducing test, a tagged test leaves only with a Retires-test: trailer, and a report lists what left untagged for review to judge | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
-| [contributor-trust/04](docs/streams/contributor-trust/README.md) | Review depth by tier — an unknown author's pull request gets a claims-versus-diff fact check and a fail-first reproduction | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-supervision/17](docs/streams/desk-supervision/README.md) | Verification failures create durable worker repair obligations | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-supervision/18](docs/streams/desk-supervision/README.md) | Enforce repair reservations at worker dispatch | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
 | [desk-supervision/19](docs/streams/desk-supervision/README.md) | Persist review findings and apply the existing round cap across sessions | — | not yet `done`: REFUSED, COULD-NOT-CHECK, or not yet judged — `statusgen --auto-flip-model --dry-run` names which and why |
@@ -130,7 +129,7 @@ _Held by per-stream caps: 20 brief(s) across 1 stream(s) — top: desktools-v2. 
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: f7120881 2026-10-22T17:24:03Z_
+_last regen: 15454729 2026-10-22T19:17:50Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -151,7 +150,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: f7120881 2026-10-22T17:24:03Z_
+_last regen: 15454729 2026-10-22T19:17:50Z_
 
 **Progress:** 34/90 brief items done.
 
@@ -213,7 +212,7 @@ _last regen: f7120881 2026-10-22T17:24:03Z_
 
 _0 untriaged entries — the front door is clear._
 
-## Awaiting verification / review (11 for the desk · 39 for the driver · 31 for workers · 20 for an operator · 38 runner-pending — of 145 total; 5 could-not-check)
+## Awaiting verification / review (12 for the desk · 39 for the driver · 31 for workers · 20 for an operator · 37 runner-pending — of 145 total; 5 could-not-check)
 
 _Gate-queue ordered by score: priorityWeight + staleness×stalenessPerDay + valueWeight + unblocksWeight×blockedCount. The weights are an evolving heuristic (F-09 discipline) — not a claim of truth. Board bucketed by owner (docs/board.md): four owned queues — the driver's human gate, workers' implementer rework, an operator's environment-blocked rows, and runner-pending rows CI or the verify runner moves — then the desk's judgement queue. Each row names its owner and its next act; a row whose inputs cannot be read is could-not-check, never a bucket. Paused and parked streams are not bucketed and count only in the total._
 
@@ -324,7 +323,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desk-tools | 19 [exec:strong] | implemented | 1000 | 0 | — | operator | `cd tools/desk && go build ./... && go vet ./...` | — | — |
 | desktools-v2 | 13 [exec:strong] | implemented | 1000 | 0 | — | operator | environment blocker, cite #1631 | — | — |
 
-### Runner-pending (38)
+### Runner-pending (37)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -351,7 +350,6 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | statusgen | 19 [exec:strong] | verified | 3010 | 4 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 4b15482af5c6 (claude-opus-5-5) | — |
 | statusgen | 20 [exec:strong] | implemented | 2510 | 3 | — | verify runner | none | — | — |
 | desktools-v2 | 60 [exec:strong] | implemented | 2500 | 3 | — | verify runner | none | — | — |
-| contributor-trust | 04 [exec:strong] | verified | 2000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ 2f44050f8a70 (claude-opus-5-5) | — |
 | contributor-trust | 09 [exec:strong] | implemented | 2000 | 0 | — | verify runner | none | — | — |
 | derived-board | 11 [exec:strong] | implemented | 2000 | 0 | — | verify runner | none | — | — |
 | measured-status | 04 [exec:strong] | verified | 2000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-22 assay-verifier-app[bot] @ 05dc9fbc88f2 (claude-opus-5-5) | — |
@@ -367,7 +365,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | desktools-v2 | 12 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-19 assay-verifier-app[bot] @ e4d474af8bca (claude-opus-5-5) | — |
 | desktools-v2 | 14 [exec:strong] | verified | 1000 | 0 | — | CI auto-flip | none; stuck after one main run → file | 2026-10-07 assay-verifier-app[bot] @ 91f04b81ba06 (claude-opus-5-5) | — |
 
-### Desk-actionable (11)
+### Desk-actionable (12)
 
 | Stream | Brief | Status | Score | _Blocked_ | Age | Owner | Next act | Verified | Reviewed |
 |---|---|---|---|---|---|---|---|---|---|
@@ -376,6 +374,7 @@ _`done‡` / `verified‡` = closed over an **UNRUN risk-bearing Verify row**: a
 | contributor-trust | 01 [exec:strong] | implemented | 2500 | 1 | — | verify-desk | triage, then re-bucket | — | — |
 | contributor-trust | 06 | implemented | 2500 | 1 | — | verify-desk | dispatch one judge | — | — |
 | derived-board | 06 [exec:strong] | implemented | 2500 | 1 | — | verify-desk | dispatch one judge | — | — |
+| contributor-trust | 04 [exec:strong] | implemented | 2000 | 0 | — | verify-desk | dispatch one judge | — | — |
 | desk-supervision | 04 [exec:strong] | implemented | 2000 | 2 | — | verify-desk | dispatch one judge | — | — |
 | desktools-v2 | 69 [exec:strong] | implemented | 2000 | 2 | — | verify-desk | dispatch one judge | — | — |
 | forge-neutral | 17 [exec:strong] | implemented | 2000 | 0 | — | verify-desk | triage, then re-bucket | — | — |
@@ -543,7 +542,7 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 01 Contributor provenance probe — mechanical signals about an unknown author, rendered as a neutral card — implemented (wave 0)
 - 02 Trust tiers + the contributor ledger — one vocabulary for how much automation an external identity gets — implemented (wave 0)
 - 03 `deskbless` — a structured blessing act with a machine marker, a scope, a reason and an audit row — todo (wave 1)
-- 04 Review depth by tier — an unknown author's pull request gets a claims-versus-diff fact check and a fail-first reproduction — verified (wave 1)
+- 04 Review depth by tier — an unknown author's pull request gets a claims-versus-diff fact check and a fail-first reproduction — implemented (wave 1)
 - 05 Fork-safe continuous-integration posture — audited workflows, tier-keyed approve-and-run, and never-build-unblessed enforced by a check — todo (wave 2)
 - 06 Contributor-facing documents — state the bar honestly, and ask for verification rather than assertion — implemented (wave 0)
 - 07 Agent contributors — disclosure of automated authorship, and tiering the operating human rather than the tool — todo (wave 1)

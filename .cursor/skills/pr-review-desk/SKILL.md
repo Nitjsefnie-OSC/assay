@@ -1049,6 +1049,63 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   (`references/leak-audience-check.md`); on a purely internal diff both are silent — say so rather
   than omitting them. **The verdict itself is a real GitHub review by the reviewer App**, posted via
   `deskpost` under the body schema deskpost enforces (`references/verdict-format.md`).
+- **A container row counts only inside a closed admission bracket.** A `sandbox=container-netns`
+  witness row counts as a Linux witness only when it lies inside exactly one `Admission-Bracket:`
+  line's span and that same span, not merely the same Evidence block, carries below its table one
+  `Tree-Digest: sha256:…` line, one `Container-Image: sha256:…` digest and one
+  `Verification-Attestation:` line, with a bracket whose `tree=` equals that span's `Tree-Digest`,
+  whose `run=` and `source=` equal that span's attestation, whose `opened=` strictly precedes `closed=`, and
+  whose `witness=` equals what
+  `statusgen verifyrun --bracket-digest --witness <file>` reports for it: `verdict=match` on that
+  bracket's own `bracket=` line, run on the landed file. Never compare a raw `sha256sum`: the
+  landing stamps `(on-behalf-of human:<subject>)` into App Runner cells, and the verb removes
+  exactly that form, collapses whitespace runs and trims, nothing else. Each bracket covers the
+  span from the nearest witness header above it to the line before it (an escaped `\|` is never a
+  cell delimiter); the `Tree-Digest`, `Container-Image` and attestation lines are the ones inside
+  that bracket's own span, one of each, and its `tree=` is compared with that span's
+  `Tree-Digest`, never a line from another bracket. The bracket line itself is outside the
+  digest, so the verb also reports `mismatch` when its `run=`/`source=` differ from that span's
+  attestation or its `opened=` is not a UTC time strictly before `closed=`; the verdict line's
+  `span-lines=tree-digest:1,container-image:1,attestation:1` shows those counts. `shared` (two brackets on one table),
+  `no-table` and `mismatch` are never credit, and the verb exits non-zero while any
+  `sandbox=container-netns` row lies in no bracket's span. Credit a row only when it sits inside
+  exactly one bracket's span.
+  **`verdict=match` shows only that the bracket is consistent with its span, not who wrote it.**
+  The digest is keyless and computed from the file's own bytes. A row is credited only when all of
+  these conditions hold:
+  1. The bracket line and every span line were landed by the verifier's landing step. On the
+     landed brief, `git blame --line-porcelain` must give every line from the header through the
+     bracket an `author-mail` that is the roster verifier's noreply address with its pinned
+     numeric id. Never judge by the display name, which anyone can set. A roster human does not
+     qualify, and one verifier line elsewhere in Evidence does not cover the rest.
+  2. The span's attestation matches the verifier's attestation record for that run. The whole
+     `Verification-Attestation:` line (run, source, brief, model and tier) must equal the line
+     rendered from the record its `<repo>#<issue>` names. That record must pass every rule
+     `ReadVerifierAttestation` applies: an issue titled exactly `[verification-attestation] <run>`,
+     authored by the roster's dispatcher identity (distinct from the verifier), closed, its body
+     never edited, and carrying the dispatcher's model stamp for that model and tier. A record by
+     any other author, the verifier included, is not credit: a look-alike issue anyone filed
+     would otherwise pass.
+  3. That attestation names the brief that contains it (`brief=`) and the source under
+     verification (`source=`).
+
+  A bracket and span written outside the landing step, a bracketed block copied from another
+  brief or an earlier source, or an attestation that does not match its record is not credit,
+  even when the digest matches. Check all three with `statusgen verifyrun --bracket-digest
+  --witness <brief> --credit --source <40 hex>` on the landed brief: each bracket's line ends
+  `credit=credited`, `credit=not-credited` or `credit=could-not-check`, with the reason on
+  standard error. Credit a row only on `credit=credited`, never on `verdict=match` alone. The
+  record must be in the brief's own repository and authored by the dispatcher; a login-only
+  verifier match, a shallow clone, a missing roster or an unreadable record is
+  `credit=could-not-check`, which is not credit. Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
+  refused in container mode; a linked worktree's git directory is not mounted in the container, so
+  rows that need git history must run on the host; the in-container digest is only as
+  trustworthy as the pinned image that computes it; and condition 1 reads the commit author git
+  records, which is author-asserted attribution, not authorization: whoever can commit to the brief can write
+  the verifier's author address. The forge-attributed record in condition 2 is the anchor. Only
+  server-side rules on who may push to the brief's branch prevent the forgery, and a verifier
+  roster entry with no numeric id leaves condition 1 could-not-check. The sequence: rule 45 in the brief rules and
+  verify-desk §Pre-work admission.
 
 ### Merge-time re-check + the body/Verify re-check
 
