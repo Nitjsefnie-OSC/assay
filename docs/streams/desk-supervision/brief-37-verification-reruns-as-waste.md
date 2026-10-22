@@ -65,7 +65,7 @@ consumers:
 ## Context
 files:
 - **edit** `tools/desk/internal/deskkit/verifyoutcomejoin.go`: `attempts` joins `joinTopKeys` (line 130); `ParseJoinInput` (line 149) decodes it; `checkRunMetadataShape` (line 264) calls the new validator.
-- **add** `tools/desk/internal/deskkit/verifyattempts.go` (planned) and `tools/desk/internal/deskkit/verifyattempts_test.go` (planned): the `VerifyAttempt` type, `CheckAttempts`, and `RollupAttempts` (per-brief counts over every record).
+- **add** `tools/desk/internal/deskkit/verifyattempts.go` (planned) and `tools/desk/internal/deskkit/verifyattempts_test.go` (planned): the `VerifyAttempt` type, `CheckAttempts`, `RollupAttempts` (per-brief counts over every record), and `PerfBriefRef` (the qualified perf work ref for a brief).
 - **edit** `tools/desk/cmd/deskevidence/outcomerecord.go` and `tools/desk/cmd/deskevidence/outcomerecord_test.go`: the writer lands `attempts` as validated.
 - **add** `tools/desk/cmd/deskperf/reruns.go` (planned) and `tools/desk/cmd/deskperf/reruns_test.go` (planned); **edit** `tools/desk/cmd/deskperf/main.go` (verb dispatch, usage text, package header).
 - **add** `tools/desk/cmd/deskperf/testdata/reruns/` (planned): the graph-execution/02-shaped fixture (two outcome records, one perf day file).
@@ -105,10 +105,21 @@ facts:
   local-only and pruned to 7 UTC days (`tools/desk/cmd/deskperf/main.go` header). `deskdispatch` passes a
   work ref to the child only when `--perf-work` is given (`dispatch.go` lines 237-241); the
   verify-desk skill does not pass it today, so verifier perf rows currently carry no brief.
+- **A brief work ref takes the qualified id only.** `WorkRef.Brief` must match `briefRE`
+  (`perfrec/context.go` line 124): `<a>:<b>:<stream>:<N>`, four colon-separated segments and a
+  number with no leading zero (in-tree examples: `statusgen/perfrecord_test.go` line 785 uses
+  `assay:assay:statusgen:26`). A `<stream>/<NN>` value fails `validWork`, and the resolver then
+  drops the whole `work` field with coverage `invalid` (`perfrec/context.go` lines 282-286). The row is still
+  written, with no brief, and nothing is refused at dispatch time. A `V3Filter.Work` in that form is
+  refused outright (`perfrec/reduce.go` line 87). The brief file's frontmatter `brief:` value is
+  the qualified id except for zero padding: `assay:assay:desk-supervision:37` is valid as written,
+  but `assay:assay:graph-execution:02` (the frontmatter of graph-execution/02) fails `briefRE`
+  and becomes `assay:assay:graph-execution:2`.
   The brief's total verification lead time is graph-execution/07's `statusgen --flow` dwell;
   token cost per dispatch is desk-supervision/34's `usage-v1`, worker dispatches only.
-- **Join key choice.** The attempt joins to perf rows by `(work.brief, role=verify, row ts
-  within [attempt.started, attempt.finished])`. This puts no perf identifier (`agentId`,
+- **Join key choice.** The attempt joins to perf rows by `(work ref with kind=brief, repo = the
+  root's repo, brief = the qualified id from PerfBriefRef; role=verify; row ts within
+  [attempt.started, attempt.finished])`. This puts no perf identifier (`agentId`,
   `sessionId`) on the record, so nothing local-only reaches a register, public or private.
   Verifier claims are exclusive per brief, so two verifier dispatches for one brief do not
   overlap. When they appear to (more than one distinct `agentId` inside one attempt window),
@@ -160,6 +171,13 @@ already reads (Task 1, Task 4; Verify rows 1-6).
    `checkRunMetadataShape`. Absent `attempts` remains valid. No redaction change: the entries
    carry no identifier beyond `cause_ref`, which the existing public-repo gate already checks like
    `blocker_ref`.
+
+   In the same file, add `PerfBriefRef(frontmatterID string) (string, error)`. It is pure. It takes a
+   brief file's frontmatter `brief:` value (`<a>:<b>:<stream>:<NN>`), drops the leading zeros of
+   the number, and returns the result only when it matches perfrec's `briefRE`. Otherwise it
+   refuses, naming the value. It is the single mapping from a brief to its perf work ref. The
+   report join (step 4) and the skill's dispatch value (step 5) both use it, so the writer and
+   reader cannot drift apart.
 2. **Writer (`tools/desk/cmd/deskevidence/outcomerecord.go`).** `--outcome-record` lands
    `attempts` byte-for-byte as validated. A refusal from step 1 is exit 5 and writes nothing.
 3. **Per-brief rollup (`deskkit.RollupAttempts`).** Over EVERY record for a brief
@@ -171,11 +189,19 @@ already reads (Task 1, Task 4; Verify rows 1-6).
 4. **Report verb `deskperf reruns --root <repo> [--brief <stream>/<NN>] [--days N] [--json]`.**
    It reads the register under `--root` plus the perf day files `deskperf report` already reads.
    It writes nothing and opens no network connection; amend the package header's read-scope sentence to
-   say so. With `--brief`, it prints one line answering "brief N needed X verification runs, Y
-   uncredited, Z discarded", then a cost block. Without it, it prints one row per brief with
+   say so. With `--brief`, it prints one line of the form
+   `<stream>/<NN>: <runs> verification runs, <U> uncredited, <D> discarded, <R> unrecorded`. Row 2
+   pins it exactly as `graph-execution/02: 4 verification runs, 1 uncredited, 1 discarded, 1 unrecorded`. A cost block follows. Without it, it prints one row per brief with
    at least one record, sorted by `runs` descending. Cost is NOT a new measure. For each attempt it
-   selects workflow perf rows with `role=verify`, a `work` ref whose `brief` equals the brief and
-   whose repo equals the root's repo, and a row `ts` inside the attempt window. It sums them
+   selects workflow perf rows with `role=verify`, a row `ts` inside the attempt window, and a
+   `work` ref with `kind` `brief`, `repo` equal to the root's repo, and `brief` equal to
+   `PerfBriefRef` of the frontmatter `brief:` value of the brief file that `--brief <stream>/<NN>`
+   names. For example, `desk-supervision/37` becomes `assay:assay:desk-supervision:37` and
+   `graph-execution/02` becomes `assay:assay:graph-execution:2`. It compares only those three
+   fields: `briefUuid` and `primary` are ignored, so the comparison is not `perfrec`'s
+   whole-struct `workEqual`. A `<stream>/<NN>` work ref never matches, because perfrec never
+   stores one. If the brief file is missing or `PerfBriefRef` refuses, the verb exits 6 and names
+   the path or value. It sums them
    with the existing `perfrec.V3Group` and request-rollup reducers. It then prints the total, the
    uncredited-plus-discarded part, and that part's share. Honest states:
    - an attempt window older than the perf retention or outside `--days` → `could-not-check (pruned)`;
@@ -194,9 +220,12 @@ already reads (Task 1, Task 4; Verify rows 1-6).
    every run of the Verify table, full or partial, in this dispatch is one attempt. Record its
    window, rows run, and disposition and reason from the closed sets in step 1. Discarding a run never
    deletes its entry. `plugins/assay/skills/verify-desk/SKILL.md`: the dispatch step passes
-   `--perf-work '{"kind":"brief","repo":"<owner/repo>","brief":"<stream>/<NN>"}'` (the existing
-   flag, `tools/desk/internal/cli/performance.go`), and the outcome-record step includes
-   `attempts`. Neither changes what is credited.
+   `--perf-work '{"kind":"brief","repo":"<owner/repo>","brief":"<qualified-brief-id>"}'` (the
+   existing flag, `tools/desk/internal/cli/performance.go`). The skill states that
+   `<qualified-brief-id>` is the brief file's frontmatter `brief:` value with the number's
+   leading zeros dropped (`PerfBriefRef`, step 1). Its examples are `assay:assay:desk-supervision:37`,
+   and `assay:assay:graph-execution:2` for graph-execution/02. It also states that a `<stream>/<NN>`
+   value is silently dropped by perfrec. The outcome-record step includes `attempts`. Neither changes what is credited.
 6. **Docs.** Add `attempts` to the Fields table in `verify-wake-v1.md` with the step 1 rules
    and to the register description in `docs/streams/verify-outcomes/README.md`. Add a `deskperf
    reruns` line to `tools/desk/README.md`. Add a changelog fragment.
@@ -205,16 +234,17 @@ already reads (Task 1, Task 4; Verify rows 1-6).
 | # | Command | Expect | Class |
 |---|---------|--------|-------|
 | 1 | `cd tools/desk && go test ./internal/deskkit/... ./cmd/deskevidence/... ./cmd/deskperf/... ./cmd/verifyloop/... > "${TMPDIR:-/tmp}/b37-pkgs.out" 2>&1 && grep -F -e 'cmd/deskperf' "${TMPDIR:-/tmp}/b37-pkgs.out"` | exit 0; the printed `cmd/deskperf` line begins `ok` | check:ci |
-| 2 | `cd tools/desk && go test ./cmd/deskperf/ -run '^TestReruns_GraphExecution02Fixture$' -v > "${TMPDIR:-/tmp}/b37-fixture.out" 2>&1 && grep -F -e '--- PASS: TestReruns_GraphExecution02Fixture' "${TMPDIR:-/tmp}/b37-fixture.out"` | exit 0. The fixture register holds one record for `graph-execution/02` (outcome `blocked`) with attempts `[uncredited local-build, discarded env-fault, credited]`, plus one earlier legacy record with no `attempts`. The fixture perf day file holds rows inside each window. Output line equals `graph-execution/02: 4 verification runs, 1 uncredited, 1 discarded, 1 unrecorded`. The cost block's uncredited-plus-discarded `sumOwnProcessWallMs` equals the sum of the fixture rows inside attempts 1-2 exactly, and its share is printed. Verifier tokens print `could-not-check` | check:ci +flow +dereference |
+| 2 | `cd tools/desk && go test ./cmd/deskperf/ -run '^TestReruns_GraphExecution02Fixture$' -v > "${TMPDIR:-/tmp}/b37-fixture.out" 2>&1 && grep -F -e '--- PASS: TestReruns_GraphExecution02Fixture' "${TMPDIR:-/tmp}/b37-fixture.out"` | exit 0. The fixture register holds one record for `graph-execution/02` (outcome `blocked`) with attempts `[uncredited local-build, discarded env-fault, credited]`, plus one earlier legacy record with no `attempts`. The fixture perf day file holds rows inside each window, each carrying the work ref `{"kind":"brief","repo":"medici-finance/assay","brief":"assay:assay:graph-execution:2"}`. Output line equals `graph-execution/02: 4 verification runs, 1 uncredited, 1 discarded, 1 unrecorded`. The cost block's uncredited-plus-discarded `sumOwnProcessWallMs` equals the sum of the fixture rows inside attempts 1-2 exactly, and its share is printed. Verifier tokens print `could-not-check` | check:ci +flow +dereference |
 | 3 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestCheckAttempts$' -v > "${TMPDIR:-/tmp}/b37-check.out" 2>&1 && grep -F -e '--- PASS: TestCheckAttempts' "${TMPDIR:-/tmp}/b37-check.out"` | exit 0. Each subtest is refused naming its rule: a gap in numbering; `credited` not last; two `credited`; `verified` outcome ending in `discarded`; `env-fault` without `cause_ref`; `credited` with a `reason`; overlapping windows; an attempt outside the record's `started`/`finished`; `rows_run` above `rows_total`; 17 entries; an unknown key (`tokens`); a case-variant key (`Disposition`). A record with no `attempts` passes. Mutation: with the credited-last rule removed, the `credited` not last subtest fails | check:ci +mutation |
-| 4 | `cd tools/desk && go test ./cmd/deskperf/ -run '^TestReruns_InvalidStoredRecordNotCounted$' -v > "${TMPDIR:-/tmp}/b37-reader.out" 2>&1 && grep -F -e '--- PASS: TestReruns_InvalidStoredRecordNotCounted' "${TMPDIR:-/tmp}/b37-reader.out"` | exit 0. A hand-placed record (writer bypassed) whose attempts put `credited` first is listed `invalid` with its path and excluded from `runs` | check:ci +mutation |
-| 5 | `cd tools/desk && go test ./cmd/deskperf/ -run '^TestReruns_NeverEstimates$' -v > "${TMPDIR:-/tmp}/b37-honest.out" 2>&1 && grep -F -e '--- PASS: TestReruns_NeverEstimates' "${TMPDIR:-/tmp}/b37-honest.out"` | exit 0. Subtests: an empty perf dir prints cost `could-not-check (no perf rows)` while the counts are still printed; a window older than `--days` prints `could-not-check (pruned)`; two distinct `agentId`s in one window mark that attempt `ambiguous`, which is excluded from both sums; a row for the brief outside every window is `unassigned`. In no subtest does the JSON carry a numeric `0` for a could-not-check measure | check:ci +mutation |
+| 4 | `cd tools/desk && go test ./cmd/deskperf/ -run '^TestReruns_InvalidStoredRecordNotCounted$' -v > "${TMPDIR:-/tmp}/b37-reader.out" 2>&1 && grep -F -e '--- PASS: TestReruns_InvalidStoredRecordNotCounted' "${TMPDIR:-/tmp}/b37-reader.out"` | exit 0. A hand-placed record (writer bypassed) whose attempts put `credited` first is listed `invalid` with its path and excluded from `runs`. Mutation: with the reader's re-validation removed (`deskperf reruns` no longer calls `CheckAttempts` on stored records), the record is counted and the test fails | check:ci +mutation |
+| 5 | `cd tools/desk && go test ./cmd/deskperf/ -run '^TestReruns_NeverEstimates$' -v > "${TMPDIR:-/tmp}/b37-honest.out" 2>&1 && grep -F -e '--- PASS: TestReruns_NeverEstimates' "${TMPDIR:-/tmp}/b37-honest.out"` | exit 0. Subtests: an empty perf dir prints cost `could-not-check (no perf rows)` while the counts are still printed; a window older than `--days` prints `could-not-check (pruned)`; two distinct `agentId`s in one window mark that attempt `ambiguous`, which is excluded from both sums; a row for the brief outside every window is `unassigned`. In no subtest does the JSON carry a numeric `0` for a could-not-check measure. Mutations: replacing the missing-perf state with `0` fails the empty-dir subtest, and splitting an ambiguous window's rows evenly across its agents fails the ambiguous subtest | check:ci +mutation |
 | 6 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestOutcomeRecordWrite$' -v > "${TMPDIR:-/tmp}/b37-writer.out" 2>&1 && grep -F -e '--- PASS: TestOutcomeRecordWrite' "${TMPDIR:-/tmp}/b37-writer.out" && grep -F -e 'attempts' "${TMPDIR:-/tmp}/b37-writer.out"` | exit 0. The existing table gains named subtests whose names contain `attempts`: a valid attempts list lands byte-for-byte, and an invalid one exits 5 with nothing written | check:ci |
-| 7 | `go test ./statusgen/ -run '^TestVerifyOutcomes_AdditiveKeys$' -v > "${TMPDIR:-/tmp}/b37-statusgen.out" 2>&1 && grep -F -e '--- PASS: TestVerifyOutcomes_AdditiveKeys' "${TMPDIR:-/tmp}/b37-statusgen.out"` | exit 0. The pinned additive-key record now includes `attempts`, and the board output is byte-identical to the same record without it | check:ci +neighbour |
+| 7 | `cd statusgen && go test . -run '^TestVerifyOutcomes_AdditiveKeys$' -v > "${TMPDIR:-/tmp}/b37-statusgen.out" 2>&1 && grep -F -e '--- PASS: TestVerifyOutcomes_AdditiveKeys' "${TMPDIR:-/tmp}/b37-statusgen.out"` | exit 0. The pinned additive-key record now includes `attempts`, and the board output is byte-identical to the same record without it. The command runs from `statusgen/`, its own module; the repo root has no `go.mod`. The form matches desk-supervision/27 row 6 | check:ci +neighbour |
 | 8 | `cd tools/desk && go test ./cmd/verifyloop/ -run '^TestOutcomeRecords$' -v > "${TMPDIR:-/tmp}/b37-verifyloop.out" 2>&1 && grep -F -e '--- PASS: TestOutcomeRecords' "${TMPDIR:-/tmp}/b37-verifyloop.out"` | exit 0. A `blocked` record carrying `attempts` yields the same plan bucket and wake decision as the same record without it | check:ci +neighbour |
-| 9 | `grep -F -e 'local-build' docs/streams/desk-supervision/verify-wake-v1.md && grep -F -e 'local-build' tools/desk/cmd/deskdispatch/references/verifier-prompt.md && grep -F -e '--perf-work' plugins/assay/skills/verify-desk/SKILL.md && grep -F -e 'deskperf reruns' tools/desk/README.md` | exit 0; each grep prints its line (none of the four strings is in its file at 866a169ae) | check:ci |
+| 9 | `grep -F -e 'local-build' docs/streams/desk-supervision/verify-wake-v1.md && grep -F -e 'local-build' tools/desk/cmd/deskdispatch/references/verifier-prompt.md && grep -F -e '"brief":"<qualified-brief-id>"' plugins/assay/skills/verify-desk/SKILL.md && grep -F -e 'assay:assay:graph-execution:2' plugins/assay/skills/verify-desk/SKILL.md && ! grep -F -e '"brief":"<stream>/<NN>"' plugins/assay/skills/verify-desk/SKILL.md && grep -F -e 'deskperf reruns' tools/desk/README.md` | exit 0. Each positive grep prints its line, and the negative grep prints nothing. None of the positive strings is in its file at 866a169ae. The skill's `--perf-work` example carries the qualified placeholder and the zero-stripped worked example, never the short form | check:ci |
 | 10 | `test -f tools/desk/internal/deskkit/verifyattempts.go && ! grep -n -i -e 'json:"[a-z_]*token' -e 'json:"[a-z_]*cost' -e 'json:"[a-z_]*wall' -e 'json:"[a-z_]*model' tools/desk/internal/deskkit/verifyattempts.go` | exit 0; no output. No attempt field names a token, cost, wall-time or model measure (driver correction) | check:ci |
 | 11 | `statusgen --consumers --brief desk-supervision/37 --base $(git merge-base origin/main HEAD)` | exit 0; every `follow-up desk-supervision/37` entry reads CORROBORATED (the implementation edits each named path); the four out-of-scope entries stay UNCHECKED and reviewer-owned; completeness is not proved | check:ci |
+| 12 | `cd tools/desk && go test ./internal/deskkit/ -run '^TestPerfBriefRef$' -v > "${TMPDIR:-/tmp}/b37-ref.out" 2>&1 && grep -F -e '--- PASS: TestPerfBriefRef' "${TMPDIR:-/tmp}/b37-ref.out" && go test ./cmd/deskperf/ -run '^TestReruns_JoinsQualifiedWorkRefOnly$' -v > "${TMPDIR:-/tmp}/b37-join.out" 2>&1 && grep -F -e '--- PASS: TestReruns_JoinsQualifiedWorkRefOnly' "${TMPDIR:-/tmp}/b37-join.out"` | exit 0. `TestPerfBriefRef`: `assay:assay:desk-supervision:37` maps to itself, `assay:assay:graph-execution:02` maps to `assay:assay:graph-execution:2`, and `desk-supervision/37` and `a:b:c:0` are refused. Each mapped value, set as a `perfrec` work ref, resolves with work coverage `measured`. `TestReruns_JoinsQualifiedWorkRefOnly`: perf rows are written through the real `perfrec` context resolver with `--perf-work` as the skill passes it. Rows from the qualified ref are joined to the attempt. Rows written with `"brief":"graph-execution/02"` carry no work, and the attempt reports `could-not-check (no perf rows)`, never a cost. Mutation: with the join comparing the `<stream>/<NN>` id instead of `PerfBriefRef`'s, the first case joins nothing and the test fails | check:ci +mutation |
 
 ### Pre-mortem
 | Failure | Caught by |
@@ -225,6 +255,7 @@ already reads (Task 1, Task 4; Verify rows 1-6).
 | The new key breaks the board or the wake planner on old or new records | rows 7, 8 |
 | Someone adds `tokens` or `wall_ms` to an attempt "for convenience" and duplicates perf | rows 3 (unknown key), 10 |
 | The verify-desk never passes `--perf-work`, so every cost block is could-not-check in production | row 9 (skill line); the report's own reason text names the missing work ref |
+| `--perf-work` carries `<stream>/<NN>` or a zero-padded number, so perfrec silently drops the work ref and no attempt ever joins a cost row | rows 9 (skill pins the qualified placeholder, never the short form), 12 (mapping and join through the real resolver) |
 | Verifiers stop reporting discarded runs because it looks bad | no row — review-only (a reporting norm stated in the verifier kit; the count is a measure of environment waste, never of the verifier) |
 
 ## Evidence
