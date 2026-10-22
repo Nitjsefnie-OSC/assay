@@ -1,4 +1,4 @@
-package home
+package treated
 
 import (
 	"os/exec"
