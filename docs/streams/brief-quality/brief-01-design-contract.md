@@ -92,6 +92,28 @@ Scope note: rows 1 and 91 establish presence only. Semantic adequacy of the cont
 
 **VERIFY: PASS** — 2/2 rows; attested source d6d2d4b94a613077583aaa051ff7bcaa2908ba7f.
 
+### 2026-10-22 — independent post-merge verification (witnessed)
+
+Non-implementer verifier pass at merged main `05dc9fbc88f2`, admitted by the dispatcher-owned pre-work check (binding below). Both Verify rows were executed by `statusgen verifyrun` in write mode on a clean detached tree at that source; the witness table and attestation line below are exactly as the tool wrote them.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `python3 -c "from pathlib import Path; s=Path('docs/streams/brief-quality/spec.md').read_text(); assert all(x in s for x in ['Work size','Specification completeness','Reasoning difficulty','Coupling','Verification strength','Failure consequence'])"` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
+| 91 | `python3 -c "from pathlib import Path; assert Path('statusgen/briefv2.go').is_file(); assert 'parseBriefV2Keys' in Path('statusgen/briefv2.go').read_text(); assert Path('qualgen/telemetry/source.go').is_file()"` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#4029 run=a13332d4e1fcc50fce1f3671bbc74b52ac5de2e7dc63d98276dd029cb2529cc0 source=05dc9fbc88f2b1b23cd78bebc8634c564327eca4 brief=docs/streams/brief-quality/brief-01-design-contract.md model=claude-opus-5-5 tier=strong
+
+Supplemental probes (diagnostic only; they discharge no Verify row):
+
+- Row 1 discriminates: the same assertion against a scratch copy of the spec with one dimension name altered exits 1 (AssertionError).
+- Task 3 graph: frontmatters of all nine briefs in this stream parsed; 10 dependency edges, each with its inverse `unblocks` entry and a strictly earlier wave, so the graph is acyclic.
+- Per the brief's own Verify note, these rows establish presence only; semantic adequacy of the design contract stays with review.
+
+Risk-bearing values (risk metadata is present and all four answers are "no"; enumeration covered the delivering change's spec and brief text in this stream): spec Version = 0.1-design @ docs/streams/brief-quality/spec.md:3; schema = brief-assessment-v1 @ docs/streams/brief-quality/spec.md:49; proposed qualgen briefs exit codes 0 complete / 2 invalid input / 3 report with gaps / 1 IO failure @ docs/streams/brief-quality/spec.md:112. All are reversible document edits in a proposed design; none is an irreversible authority binding.
+
+RISK-VALUE: DERIVED — qualgen briefs exit codes = 0/2/3/1 @ docs/streams/brief-quality/spec.md:112 — a report with gaps (3) is kept distinct from a complete report (0), as the stream's ground rule that unknown evidence is never a passing result requires.
+
+**VERIFY: PASS** — 2/2 Verify rows passed under the execution witness; no could-not-check rows.
+
 ## Review
 
 Gate: model. Reviewer confirms the spec contract and the declared limitations. No hand-authored verified/done claim.
