@@ -114,16 +114,16 @@ implemented.
 
 ## Verify
 
-| # | Command | Expect |
-|---|---|---|
-| 1 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStamp$' -count=1 -v` | exit 0 and named PASS; the desk-role annotation and the unknown `human:` name are restamped to the resolved subject; the same-subject cell is byte-identical; a different known human refuses with nothing written; rows already on the branch are untouched |
-| 2 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStampLintParity$' -count=1 -v` | exit 0 and named PASS; for every fixture where the stamp succeeds, the lint reports no attribution PROBLEM on the stamped row; the different-known-human fixture is refused with nothing written and is the one named case stricter than the lint; the other-form fixture is restamped in the target's form |
-| 3 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestDryRunRestampsPlantedPrincipal$' -count=1 -v` | exit 0 and named PASS; a dry-run of a landing with a planted desk-role annotation shows the restamped row and runs the PROBLEM-diff before stopping |
-| 4 | `cd tools/desk && go test ./cmd/deskevidence/ ./internal/deskkit/ -count=1` | exit 0; every package reports `ok` |
-| 5 | `grep -n 'on-behalf-of' plugins/assay/skills/verify-desk/SKILL.md` | at least one match, in the Evidence-landing passage, naming `--dry-run` |
-| 6 | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
-| 7 | `statusgen --root . --consumers --brief desktools-v2/73 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
-| 8 | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
+| # | Class | Command | Expect |
+|---|---|---|---|
+| 1 | check:ci +mutation | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStamp$' -count=1 -v` | exit 0 and named PASS; the desk-role annotation and the unknown `human:` name are restamped to the resolved subject; the same-subject cell is byte-identical; a different known human refuses with nothing written; rows already on the branch are untouched; mutation: revert `needsPrincipalStamp` to the bare `on-behalf-of` skip — the named test must fail |
+| 2 | check:ci +flow +mutation | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStampLintParity$' -count=1 -v` | exit 0 and named PASS; for every fixture where the stamp succeeds, the lint reports no attribution PROBLEM on the stamped row; the different-known-human fixture is refused with nothing written and is the one named case stricter than the lint; the other-form fixture is restamped in the target's form; mutation: revert `needsPrincipalStamp` to the bare `on-behalf-of` skip — the named test must fail |
+| 3 | check:ci | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestDryRunRestampsPlantedPrincipal$' -count=1 -v` | exit 0 and named PASS; a dry-run of a landing with a planted desk-role annotation shows the restamped row and runs the PROBLEM-diff before stopping |
+| 4 | check:ci | `cd tools/desk && go test ./cmd/deskevidence/ ./internal/deskkit/ -count=1` | exit 0; every package reports `ok` |
+| 5 | check:ci | `grep -n 'on-behalf-of' plugins/assay/skills/verify-desk/SKILL.md` | at least one match, in the Evidence-landing passage, naming `--dry-run` |
+| 6 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
+| 7 | check | `statusgen --root . --consumers --brief desktools-v2/73 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
+| 8 | check | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
 
 Pre-mortem: a parser that differs from the lint's (first rather than last occurrence, or
 case-sensitive) lets a planted cell through. Row 2 catches that by comparing against the

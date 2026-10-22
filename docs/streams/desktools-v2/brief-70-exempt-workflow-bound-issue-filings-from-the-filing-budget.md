@@ -133,17 +133,17 @@ existing refusal. Stop at implemented; an independent verifier records Evidence.
 
 ## Verify
 
-| # | Command | Expect |
-|---|---|---|
-| 1 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFiling$' -count=1 -v` | exit 0 and named PASS; cases: bound filing with exhausted `new` budget succeeds; `--brief` alone refused; `--for-pr` alone refused when the PR has a brief and accepted when it has none; closed PR refused; brief not the PR's brief refused; unreadable PR holds exit 6; `--force-file` with `--for-pr` refused |
-| 2 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingCap$' -count=1 -v` | exit 0 and named PASS; with `ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR__WORKER=2` a third bound filing on the same PR by the same role is refused exit 4 with retry-after, a filing on a different PR still succeeds, and a different role is counted separately; the `Detail` prefix records the session-token role; passing `--raised-by` with another role, or setting the per-role override for another role, does not change the counted role or reset the count; an unresolvable session role holds exit 6 with nothing created |
-| 3 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingStillChargesRepoCeiling$' -count=1 -v` | exit 0 and named PASS; with the knob off, a bound filing is refused by the repo-wide ceiling once 20 `deskfile` writes are in the rolling hour |
-| 4 | `cd tools/desk && go test ./cmd/deskfile/ -count=1` | exit 0; the unbound budget's existing regressions (`TestBudget*`, `TestNewRateUnparseableFallsBackWithNotice`, `TestForceFileDoesNotResetTheRateCount`) still pass unchanged |
-| 5 | `cd deskcore && go test ./config/ -count=1` | exit 0; the new knob passes the table validator (default 0, per role) |
-| 6 | `grep -n 'issue.file.bound_per_pr' deskcore/config/knobs.go docs/contracts.md` | both files match; the contract row names the knob and the bound-filing tests |
-| 7 | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
-| 8 | `statusgen --root . --consumers --brief desktools-v2/70 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
-| 9 | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
+| # | Class | Command | Expect |
+|---|---|---|---|
+| 1 | check:ci +mutation | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFiling$' -count=1 -v` | exit 0 and named PASS; cases: bound filing with exhausted `new` budget succeeds; `--brief` alone refused; `--for-pr` alone refused when the PR has a brief and accepted when it has none; closed PR refused; brief not the PR's brief refused; unreadable PR holds exit 6; `--force-file` with `--for-pr` refused; mutation: make the "is the PR's brief" check always return true — the brief-mismatch case must fail |
+| 2 | check:ci +flow | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingCap$' -count=1 -v` | exit 0 and named PASS; with `ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR__WORKER=2` a third bound filing on the same PR by the same role is refused exit 4 with retry-after, a filing on a different PR still succeeds, and a different role is counted separately; the `Detail` prefix records the session-token role; passing `--raised-by` with another role, or setting the per-role override for another role, does not change the counted role or reset the count; an unresolvable session role holds exit 6 with nothing created |
+| 3 | check:ci | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingStillChargesRepoCeiling$' -count=1 -v` | exit 0 and named PASS; with the knob off, a bound filing is refused by the repo-wide ceiling once 20 `deskfile` writes are in the rolling hour |
+| 4 | check:ci | `cd tools/desk && go test ./cmd/deskfile/ -count=1` | exit 0; the unbound budget's existing regressions (`TestBudget*`, `TestNewRateUnparseableFallsBackWithNotice`, `TestForceFileDoesNotResetTheRateCount`) still pass unchanged |
+| 5 | check:ci | `cd deskcore && go test ./config/ -count=1` | exit 0; the new knob passes the table validator (default 0, per role) |
+| 6 | check:ci | `grep -n 'issue.file.bound_per_pr' deskcore/config/knobs.go docs/contracts.md` | both files match; the contract row names the knob and the bound-filing tests |
+| 7 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
+| 8 | check | `statusgen --root . --consumers --brief desktools-v2/70 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
+| 9 | check | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
 
 Pre-mortem: an exemption that lets any filing through by naming any PR is caught by row 1
 (binding refusals); a cap keyed on head SHA or on session instead of PR and role, or a
