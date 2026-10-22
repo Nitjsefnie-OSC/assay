@@ -388,7 +388,7 @@ Row 10 (check:ci): could-not-check. Cause: this darwin host has no `unshare --ne
 
 Risk values: the enumeration above stands. `commandNotDerivable` is restored to NAMED, NOT DERIVED, as the two earlier passes recorded it; the code at format.go:77 is unchanged since c82a8c5f807b and no derivation was made. The three DERIVED lines of the section above stand.
 
-RISK-VALUE: NAMED, NOT DERIVED — commandNotDerivable = "not derivable — desk to fill" @ tools/desk/cmd/deskinbox/format.go:77 — a display string held only by parity with the oracle's same text; no rule derives it. Question filed: #4130.
+RISK-VALUE: NAMED, NOT DERIVED — commandNotDerivable = "not derivable — desk to fill" @ tools/desk/cmd/deskinbox/format.go:77 — a display string held only by parity with the oracle's same text; no rule derives it. Question filed: medici-finance/assay#4130.
 
 Finding (advisory, no row effect): row 5's command drops every line that mentions statusgen or deskboard anywhere, comments included. The one real exec site (flow.go:194, `exec.Command(bin, args...)`) passes only because of its trailing comment `// statusgen or deskboard only`; the call itself names neither binary, so an unscoped call with the same comment would also pass. The binary-name bound is enforced at runtime by resolveFlowBin (DERIVED above), not by row 5.
 
