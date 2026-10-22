@@ -474,8 +474,8 @@ one are refused. `deskusage summary --by item|tier [--json]` prints only group c
 medians and measured/null/could-not-check tallies; unknown fields or polluted lines refuse
 with a line number. These figures are not for ranking agents or people.
 
-This record is interim: graph-execution/26's execution journal replaces it for a worker role
-enrolled under graph-execution/27. No enrollment behavior is activated by this command.
+This record is interim: the shared execution journal replaces it for an enrolled worker role.
+No enrollment behavior is activated by this command.
 
 ### Local performance history — `deskperf`
 
