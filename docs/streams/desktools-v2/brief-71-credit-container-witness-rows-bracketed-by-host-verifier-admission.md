@@ -10,6 +10,7 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 gate-why: "Changes which runs count as admitted independent-verification witnesses (proposal 11 independent verification; proposal 13 verifier transaction step 3). Human acceptance of the bracket rule is required at done."
 decision-issue: 4071
+ruling: "https://github.com/medici-finance/assay/issues/4071#issuecomment-6349598734"
 design: DR-container-witness
 issues: []
 schema: brief-v2

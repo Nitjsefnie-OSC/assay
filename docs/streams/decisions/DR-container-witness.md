@@ -4,6 +4,7 @@ date: "2026-10-22"
 title: "Credit a Linux container witness row only inside a host verifier-admission bracket, with the image digest recorded"
 consequence: major
 decided-by: "human:<name>"
+ruling: "https://github.com/medici-finance/assay/issues/4071#issuecomment-6349598734"
 alternatives:
   - "Run verifier admission inside the network-less container. Ruled out: this is the refused shape. The admission check must reach the forge, and a container started with no network cannot, so the row either fails admission or runs unattested."
   - "Leave container-sandboxed rows unattested, or credit them without an admission bracket. Ruled out: a Linux container is the only Linux runner many verifiers have, and an unattested row is not an admitted independent-verification witness, so reviewers reject it."
@@ -16,18 +17,24 @@ accepted:
   - "Building the container image, choosing the runtime and writing runner scripts stay with the adopter."
 ---
 
-**Status:** draft — not approved. This record is not an approval. Approving a design record on a
-`gate: human` brief is the driver's act. A model or a worker cannot set it. When the driver
-merges the pull request that adds this record, that merge ratifies the record.
+**Status:** draft — the pull request that adds this record does not mark it approved. Approving a
+design record on a `gate: human` brief is the driver's act; a model or a worker cannot set it.
+The driver's merge of that pull request ratifies the record.
 
 ## Basis
 
-The decision text above comes from two places: the `sources:` line of
+The decision text above comes from three places: the `sources:` line of
 [desktools-v2/71](../desktools-v2/brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md),
-and the body of that brief's decision issue, #4071. The public record of the ruling it
-transcribes is a citation, not a quote. It is the driver's merge of #4069, the pull request
-that authored the brief, merged 2026-10-22. No ruling comment exists yet on #4071, so this record has
-no `ruling:` link, and `decided-by` keeps the placeholder a public repository uses.
+the body of that brief's decision issue, #4071, and the ruling comment on #4071.
+
+The ruling comment is linked in `ruling:` above. It was posted on 2026-10-22 from the driver's
+own account, and #4071 is now closed. Relayed as given, its text reads:
+
+> desktools-v2/71: recommended — host admission bracket before and after the container run; image digest required on every credited container row (DR-container-witness)
+
+The earlier public record of the same direction is the driver's merge of #4069, the pull request
+that authored the brief, merged 2026-10-22. `decided-by` keeps the placeholder a public
+repository uses; the `ruling:` link is what names the human.
 
 The implementation is #4078. That merge records what was built. It is not an approval of
 this record.
