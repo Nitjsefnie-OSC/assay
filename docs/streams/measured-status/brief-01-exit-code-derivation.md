@@ -141,7 +141,7 @@ RISK-VALUE: DERIVED — ExitRateLimited = 4, ExitRefused = 5, ExitUnverifiable =
 
 The implementation meets the brief's contract: the Derivation block is present and correct, the pinning test passes, and the corpus catches the new mutant. The defect is in the Verify table. Row 4 pipes go test into `grep -q`, which is the same SIGPIPE-under-pipefail class as #2241 (measured-status/04). Remedy: re-baseline row 4 to the pipefail-safe form, e.g. `… 2>&1 | grep -c -- '--- PASS: TestExitCodeTableMatchesDerivation'` with Expect "prints 1, exit 0". Then re-verify.
 
-**VERIFY: FAIL** — row 4 exits 141 under the canonical `bash -o pipefail -c` shell (6/6 runs); rows 1, 2, 3 and 5 pass (4/5); the code meets the contract; the defect is in the Verify-table check definition.
+**VERIFY: FAIL** — row 4 exits 141 under the canonical `bash -o pipefail -c` shell (6/6 runs); rows 1, 2, 3 and 5 pass (4/5); the code meets the contract; the defect is in the Verify-table check definition (blocker: #4170).
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
