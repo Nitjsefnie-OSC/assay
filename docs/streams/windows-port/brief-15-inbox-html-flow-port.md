@@ -378,6 +378,22 @@ RISK-VALUE: DERIVED — stagedefs = [intake, todo, in-progress, review, implemen
 
 **VERIFY: BLOCKED** — 9/10 rows carry a passing execution witness at 05dc9fbc88f2 (row 8's is exit-only, and its agreement is shown only by the supplemental comparison above). Row 10 (check:ci) is could-not-check: the darwin host has no `unshare --net`, and the container-netns run refused at admission (medici-finance/assay#3216, medici-finance/assay#2665). No acceptance obligation was observed to fail. Gate is model, and all four risk answers are no. Next actor: an admitted Linux runner with forge reach and a network-off sandbox re-runs the witness.
 
+### Addendum to the 2026-10-22 pass at 05dc9fbc88f2 — 2026-10-22 claude-opus-5-5 verifier (restated tally: 8 met, 0 fail, 2 could-not-check)
+
+This addendum supersedes the tally, the row 8 credit, the row 10 cause and the risk-value list of the 2026-10-22 section above. That section and its witness table stay as written. No row was re-run; admission by `deskdispatch --check-verifier` gave rc=0 before and after this addendum with the same binding (run 6b44a1dfc149, source 05dc9fbc88f2, attestation issue medici-finance/assay#4062).
+
+Row 8: could-not-check, held. The witness lifts only the first code span, and its trailing `echo` sets the exit, so its pass credits the exit code only. The row's Expect (the bottleneck line and per-stage counts agree between the two tools) has no witness. The supplemental hand comparison earns no credit. Open issue medici-finance/assay#3569 owns this: it states the row 8 witness pass cannot be treated as evidence and holds row 8 until the row is re-authored.
+
+Row 10 (check:ci): could-not-check. Cause: this darwin host has no `unshare --net` network sandbox, which the witness requires for check:ci rows (open issue medici-finance/assay#2665). The container-netns attempt described above is not an admitted verification route; it is not part of this cause and earns no credit.
+
+Risk values: the enumeration above stands. `commandNotDerivable` is restored to NAMED, NOT DERIVED, as the two earlier passes recorded it; the code at format.go:77 is unchanged since c82a8c5f807b and no derivation was made. The three DERIVED lines of the section above stand.
+
+RISK-VALUE: NAMED, NOT DERIVED — commandNotDerivable = "not derivable — desk to fill" @ tools/desk/cmd/deskinbox/format.go:77 — a display string held only by parity with the oracle's same text; no rule derives it. Question issue: to be linked.
+
+Finding (advisory, no row effect): row 5's command drops every line that mentions statusgen or deskboard anywhere, comments included. The one real exec site (flow.go:194, `exec.Command(bin, args...)`) passes only because of its trailing comment `// statusgen or deskboard only`; the call itself names neither binary, so an unscoped call with the same comment would also pass. The binary-name bound is enforced at runtime by resolveFlowBin (DERIVED above), not by row 5.
+
+**VERIFY: BLOCKED** — rows_passed 8 / rows_total 10 at 05dc9fbc88f2. Met: rows 1–7 and 9 by the execution witness. Could-not-check: row 8 (medici-finance/assay#3569) and row 10 (medici-finance/assay#2665). No acceptance obligation was observed to fail. Next actor: row 8 needs re-authoring per medici-finance/assay#3569; row 10 needs an admitted Linux runner with `unshare --net`.
+
 ## Review
 Gate: **model**. Reviewer's questions: (1) does the flow-model port reproduce the
 could-not-check-vs-n/a distinction and the fleet-row "AT LEAST" partial-sum flag, or does a
