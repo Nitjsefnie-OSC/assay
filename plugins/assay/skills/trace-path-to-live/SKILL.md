@@ -65,9 +65,10 @@ transitive `depends:` closure, with live status, comes from the root that owns t
 ## 4. Stitch the graph across roots
 
 - **Verdicts and holds.** Run `statusgen --root <dir> --eligibility --json` in **every** root. It
-  gives each brief a verdict (`eligible` / `held` / `eligible-with-notice`) and its typed holds.
-  The holds cover `depends:`, `gates:` and `feathers:`, with cross-repo `gates:` resolved
-  through `docs/streams/graph-repos.yaml`.
+  gives each brief a verdict (`eligible` / `held` / `eligible-with-notice`) and its typed edges.
+  `holds` cover `depends:` and `gates:`, with cross-repo `gates:` resolved through
+  `docs/streams/graph-repos.yaml`. An unsatisfied `feathers:` edge is never a hold: it comes
+  through `notices` (verdict `eligible-with-notice`). Read both lists.
 - **Following cross-root holds.** A closure node may hold on a ref in another root. Run that
   root's `--launch` for the ref, add the result to the closure, and repeat until no new
   cross-root ref appears.
@@ -82,10 +83,13 @@ transitive `depends:` closure, with live status, comes from the root that owns t
     page.
 - **Gates.** A node's gate is its brief frontmatter `gate:` (`human` or `model`).
 - **Open PRs.** Run `deskboard prs --json`; `deskboard actions --json` adds review state where
-  it returns. Match a PR to a node by its `Brief:` trailer, or else by the brief id in its
-  title.
-- **Claims.** Use the list verb of the repo's dispatch-claim helper. Claim keys have the form
-  `<repo>--<stream>--<NN>`.
+  it returns. Match a PR to a node by its `Brief: <stream>/<NN>` trailer, by its
+  `Cross-repo-brief: <alias>:<stream>/<NN>` trailer (a cross-repo dispatch, whose PR lives in a
+  different repo from the brief), or else by the brief id in its title.
+- **Claims.** Use the list verb of the repo's dispatch-claim helper. Claim keys have three forms:
+  `<repo>--<stream>--<NN>` for a same-repo brief, `<alias>--<stream>--<NN>` for a cross-repo
+  brief (keyed under the tracking alias), and `<repo>--issue-<N>` for issue-shaped work. A node
+  with a PR or a live claim under any of these forms is in flight, never a dispatch move.
 - **Stale board views.** `deskboard dispatch` / `awaiting` read the configured working trees. If
   those are behind the fetched branch, take status from step 3, not from them.
 - **Stage pressure.** `statusgen --bottleneck --json` or `deskboard throughput --json` shows it.
