@@ -37,7 +37,7 @@ consumers:
 
 ## Context
 
-files: statusgen/{verifyrun,verifieradmission,verifysandbox}.go and their tests; docs/brief-rules.md (rule 45); plugins/assay/skills/verify-desk/SKILL.md; plugins/assay/skills/pr-review-desk/SKILL.md; tools/desk/cmd/deskevidence/ (test only); tools/desk/internal/deskkit/verifierattestation.go (read only).
+files: statusgen/verifyrun.go, statusgen/verifieradmission.go, statusgen/verifysandbox.go and their tests; docs/brief-rules.md (rule 45); plugins/assay/skills/verify-desk/SKILL.md; plugins/assay/skills/pr-review-desk/SKILL.md; tools/desk/cmd/deskevidence/ (test only); tools/desk/internal/deskkit/verifierattestation.go (read only)
 
 facts:
 - Rule 45 (`docs/brief-rules.md:639`) admits `--sandbox=container-netns` as an explicit opt-in for a runner already inside a `--network none` container (`:649`-`:661`). Every sandboxed row records `sandbox=unshare` or `sandbox=container-netns` in its witness Result cell. `witnessSandboxOf` reads it (`statusgen/verifysandbox.go:148`).
@@ -109,6 +109,12 @@ Stop at implemented.
    `Verification-Attestation:` lines under it. Other witness tables in the same file or
    Evidence block, above or below, are outside it, so a brief with several witness tables
    needs no extra marker. A position with no witness table header above it has no span.
+   The header and every table row are split into cells exactly as `cellSpans` splits them
+   (`tools/desk/cmd/deskevidence/principalstamp.go:219`-`:242`, the boundaries statusgen's
+   `splitRowEscaped` at `statusgen/verifyrows.go:60` reads): on `|`, but never on an
+   escaped `\|`, dropping at most one blank cell at each end. A Command cell that contains
+   `\|` therefore stays one cell and never shifts which cell is the Runner cell. Use the
+   same splitter on both sides, never a plain split on `|`.
    The span is normalised before hashing: trailing whitespace stripped, blank lines
    dropped, lines joined with LF, and each table row's Runner cell (the column the span's
    header names `Runner`) rewritten in three steps. First, every occurrence of exactly
@@ -163,9 +169,12 @@ Stop at implemented.
    `Container-Image: sha256:<…>`.
 6. Host close step: `statusgen verifyrun --close-bracket --root <home> --brief <brief>
    --admission-receipt <file> --witness <file>`. It runs `deskdispatch --check-verifier` on
-   the host and compares the result's run, source, brief, model and tier with the witness's
-   attestation line. It recomputes the home's tree digest and requires it to equal both the
-   receipt's `tree` and the witness's `Tree-Digest`. It refuses a witness that already
+   the host and compares the result's run, source, brief, model and tier with the
+   `Verification-Attestation:` line inside the span that ends at the append position (Task
+   1). It recomputes the home's tree digest and requires it to equal both the receipt's
+   `tree` and that span's `Tree-Digest`. Lines of these kinds outside the span (another
+   table's) are ignored, and a span carrying more than one `Verification-Attestation:`,
+   `Tree-Digest:` or `Container-Image:` line is refused. It refuses a witness that already
    carries an `Admission-Bracket` line. On a full match it appends one line:
    `Admission-Bracket: run=<run> source=<source> tree=sha256:<…> witness=sha256:<…>
    opened=<UTC> closed=<UTC> before=receipt after=check-verifier`, where `witness` is the
@@ -177,13 +186,14 @@ Stop at implemented.
 7. Amend rule 45 and verify-desk §Pre-work admission with the bracket sequence: host open
    step, container run with receipt and image digest, host close step, within one dispatch
    and with no home edits between. Amend pr-review-desk with the credit rule: a
-   `sandbox=container-netns` row counts as a Linux witness only when the same Evidence
-   block carries its Verification-Attestation line, a `Tree-Digest`, a `Container-Image`
-   digest and an `Admission-Bracket` line whose `tree` equals the `Tree-Digest`, for
-   which `statusgen verifyrun --bracket-digest` run on the landed Evidence block reports
-   `verdict=match` on that bracket's own `bracket=` line (never a raw `sha256sum`, which the
-   landing stamp would break), and whose `opened` precedes `closed`; and the row lies
-   inside exactly one bracket's span (Task 1). Otherwise it is rejected as unattested. State the known
+   `sandbox=container-netns` row counts as a Linux witness only when the row lies inside
+   exactly one `Admission-Bracket` line's span (Task 1), and that same span, not merely
+   the same Evidence block, carries exactly one `Verification-Attestation:` line, exactly
+   one `Tree-Digest:` line and exactly one `Container-Image:` digest line. The bracket's
+   `tree` must equal that span's `Tree-Digest`, never a `Tree-Digest` belonging to another
+   table. `statusgen verifyrun --bracket-digest` run on the landed Evidence block must
+   report `verdict=match` on that bracket's own `bracket=` line (never a raw `sha256sum`,
+   which the landing stamp would break), and the bracket's `opened` must precede `closed`. Otherwise it is rejected as unattested. State the known
    limits: version 2 receipts are refused; a linked worktree's git directory is not mounted
    in the container, so rows that need `git` history must run on the host; and the
    in-container digest is only as trustworthy as the pinned image that computes it.
@@ -195,8 +205,8 @@ Stop at implemented.
 |---|---|---|---|
 | 1 | check:ci +mutation | `cd statusgen && go test -run '^TestContainerNetnsRequiresAdmissionReceipt$' -count=1 -v .` | exit 0 and named PASS; with `DESK_LOOP` unset and no attestation file, container-netns without a receipt is refused before any row runs and no witness row is written; mutation: restore the conditional `required` path for container-netns — the named test must fail |
 | 2 | check:ci | `cd statusgen && go test -run '^TestContainerNetnsReceipt$' -count=1 -v .` | exit 0 and named PASS; a valid version 1 receipt yields the same attestation line the in-process path renders and a `Tree-Digest` line; a version 2 receipt, a brief mismatch, an incomplete receipt, a missing image digest and a mounted tree whose digest differs from the receipt's `tree` (one file's content changed, one file added) are each refused before any row runs; a row that changes a file under the mounted root makes the run exit non-zero with no attestation or `Tree-Digest` line; no `deskdispatch` process is started (fake on PATH records zero calls) |
-| 3 | check:ci | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | exit 0 and named PASS; a matching host check appends one `Admission-Bracket:` line carrying `tree=`, `witness=` (equal to `--bracket-digest` of the span above it), `opened=` and `closed=`; the witness digest is unchanged when an `(on-behalf-of human:<p>)` parenthetical is added to or replaced in a Runner cell, changes when a Result, Command or Date cell changes, and changes when a non-exact form such as `(on-behalf-of <desk role>)` or `(On-Behalf-Of human:x)` is added; a Runner cell carrying a `(git-config)` source tag digests the same unstamped and with the stamp inserted before the tag; in a file with two witness tables, each bracketed, `--bracket-digest` prints one line per bracket naming its own `bracket=` and nearest `header=` line, and a change in the first table changes only the first bracket's digest; a second bracket under the same table reports `verdict=shared` for both and exits non-zero; a bracket with no witness table header above it reports `verdict=no-table`; a witness `Tree-Digest` that differs from the home's recomputed digest, a home whose digest changed between open and close, a changed source, a different run, a witness that already carries a bracket line, or a refused host check each appends nothing and exits non-zero |
-| 4 | check:ci +flow | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestBracketedWitnessSurvivesLanding$' -count=1 -v` | exit 0 and named PASS; a bracketed container witness fixture with unannotated App Runner cells, at least one of which ends in a runner-source tag such as `(git-config)`, is passed through `deskevidence`'s landing stamp (`stampEvidencePrincipal` with a fixture roster through the existing `principalSubjectFn` seam, no forge), which adds the annotation before the tag; `statusgen verifyrun --bracket-digest`, built from this branch by the test, on the stamped block reports `verdict=match` and its `witness=` equals the bracket's; the same fixture with one Result cell edited does not |
+| 3 | check:ci | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | exit 0 and named PASS; a matching host check appends one `Admission-Bracket:` line carrying `tree=`, `witness=` (equal to `--bracket-digest` of the span above it), `opened=` and `closed=`; the witness digest is unchanged when an `(on-behalf-of human:<p>)` parenthetical is added to or replaced in a Runner cell, changes when a Result, Command or Date cell changes, and changes when a non-exact form such as `(on-behalf-of <desk role>)` or `(On-Behalf-Of human:x)` is added; a Runner cell carrying a `(git-config)` source tag digests the same unstamped and with the stamp inserted before the tag; in a file with two witness tables, each bracketed, `--bracket-digest` prints one line per bracket naming its own `bracket=` and nearest `header=` line, and a change in the first table changes only the first bracket's digest; a second bracket under the same table reports `verdict=shared` for both and exits non-zero; a bracket with no witness table header above it reports `verdict=no-table`; a witness `Tree-Digest` that differs from the home's recomputed digest, a home whose digest changed between open and close, a changed source, a different run, a witness that already carries a bracket line, a span whose only `Tree-Digest:` or `Verification-Attestation:` line belongs to another table, a span with two `Tree-Digest:` lines, or a refused host check each appends nothing and exits non-zero |
+| 4 | check:ci +flow +mutation | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestBracketedWitnessSurvivesLanding$' -count=1 -v` | exit 0 and named PASS; a bracketed container witness fixture with unannotated App Runner cells, at least one of which ends in a runner-source tag such as `(git-config)`, and at least one row whose Command cell contains an escaped pipe (`grep -e a \| wc -l`), is passed through `deskevidence`'s landing stamp (`stampEvidencePrincipal` with a fixture roster through the existing `principalSubjectFn` seam, no forge), which adds the annotation before the tag; `statusgen verifyrun --bracket-digest`, built from this branch by the test, on the stamped block reports `verdict=match` and its `witness=` equals the bracket's; the same fixture with one Result cell edited does not; mutation: make the digest split on every `|`, escaped or not; the escaped-pipe row's stamp is then not normalised away, the stamped block reports `verdict=mismatch`, and the named test must fail |
 | 5 | check:ci | `cd statusgen && go test -run '^TestSandbox' -count=1 -v .` | exit 0 and all seven existing `TestSandbox*` tests PASS; the existing loopback precheck, CI-lane and `--in-container` refusals are unchanged |
 | 6 | check:ci | `grep -n 'Admission-Bracket' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | all three files match |
 | 7 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |

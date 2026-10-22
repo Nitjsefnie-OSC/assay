@@ -36,7 +36,7 @@ consumers:
 
 ## Context
 
-files: tools/desk/cmd/deskfile/deskfile.go; tools/desk/internal/deskkit/{ratelimit,audit,audittoolkey,trailer}.go; deskcore/config/knobs.go; docs/contracts.md; plugins/assay/skills/*/SKILL.md (filing-budget passages); docs/proposals/non-ci-architecture/11-target-architecture.md.
+files: tools/desk/cmd/deskfile/deskfile.go; tools/desk/internal/deskkit/ratelimit.go, tools/desk/internal/deskkit/audit.go, tools/desk/internal/deskkit/audittoolkey.go, tools/desk/internal/deskkit/trailer.go; deskcore/config/knobs.go; docs/contracts.md; plugins/assay/skills/*/SKILL.md (filing-budget passages); docs/proposals/non-ci-architecture/11-target-architecture.md
 
 facts:
 - The `new` budget is per session and per repository, not per role: `defaultNewRate = 3` at `tools/desk/cmd/deskfile/deskfile.go:452`, `defaultNewWindow = 24 * time.Hour` at `:455`, read through `ASSAY_DESKFILE_NEW_RATE` / `ASSAY_DESKFILE_NEW_WINDOW` by `newBudgetConfig` (`:465`-`:490`). `checkSessionBudget` (`:554`) counts audit entries with `Tool == "deskfile"`, `Verb == "new"`, the same repo and the same `SessionTag` (`:562`-`:568`). Nothing in the count records why an issue was filed.

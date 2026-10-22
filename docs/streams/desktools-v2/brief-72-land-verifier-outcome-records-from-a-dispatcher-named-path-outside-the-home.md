@@ -33,7 +33,7 @@ consumers:
 
 ## Context
 
-files: tools/desk/cmd/deskdispatch/{prompt,packet,packet_verifier}.go; tools/desk/cmd/deskevidence/{deskevidence,outcomerecord}.go; tools/desk/internal/deskkit/{verifiersource,verifierattestation,verifyoutcomes}.go (read only); plugins/assay/skills/verify-desk/SKILL.md.
+files: tools/desk/cmd/deskdispatch/prompt.go, tools/desk/cmd/deskdispatch/packet.go, tools/desk/cmd/deskdispatch/packet_verifier.go; tools/desk/cmd/deskevidence/deskevidence.go, tools/desk/cmd/deskevidence/outcomerecord.go; tools/desk/internal/deskkit/verifiersource.go, tools/desk/internal/deskkit/verifierattestation.go, tools/desk/internal/deskkit/verifyoutcomes.go (read only); plugins/assay/skills/verify-desk/SKILL.md
 
 facts:
 - `deskdispatch --check-verifier` reaches `verifierLocalCheck` (`deskkit/verifierattestation.go:163`). Its source closure (`deskkit/verifiersource.go:339`, `verifierSourceClosure`) refuses any untracked file: `Refused("unattested worktree file: "+rel)` (`:380`-`:381`). The check's own comment says "Other outputs belong outside this home" (`verifierattestation.go:220`-`:225`).

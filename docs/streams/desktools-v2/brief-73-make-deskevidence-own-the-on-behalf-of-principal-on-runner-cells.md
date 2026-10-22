@@ -34,7 +34,7 @@ consumers:
 
 ## Context
 
-files: tools/desk/cmd/deskevidence/{principalstamp,principalstamp_test,deskevidence,lintdiff}.go; tools/desk/internal/deskkit/principal.go (read only); statusgen/{attribution,principal}.go (read only); plugins/assay/skills/verify-desk/SKILL.md.
+files: tools/desk/cmd/deskevidence/principalstamp.go, tools/desk/cmd/deskevidence/principalstamp_test.go, tools/desk/cmd/deskevidence/deskevidence.go, tools/desk/cmd/deskevidence/lintdiff.go; tools/desk/internal/deskkit/principal.go (read only); statusgen/attribution.go, statusgen/principal.go (read only); plugins/assay/skills/verify-desk/SKILL.md
 
 facts:
 - `deskevidence` stamps the principal at ingest. The subject comes only from the roster, through `deskkit.ResolvePrincipal` (`principalstamp.go:60`-`:72`, `deskkit/principal.go:320`). It is the neutral name on a public target and the login on a target the roster states private (`deskkit/principal.go:145`). Only rows this landing adds are touched (`stampEvidencePrincipal`, `principalstamp.go:78`). Stamping runs before the merge (`deskevidence.go:435`-`:464`).
