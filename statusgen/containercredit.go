@@ -113,13 +113,13 @@ type creditContext struct {
 	// the witness sits, what provenance can be read against, and what a
 	// record can be read against. Each is credited when it does not decide.
 	place, prov, rec creditVerdict
-	records          map[string]creditVerdict
+	records          map[string]creditRecord
 }
 
 // newCreditContext reads what does not depend on the bracket: the witness's
 // place in its repository, the roster, the clone's depth and the origin.
 func newCreditContext(witness, source, text string) *creditContext {
-	cc := &creditContext{source: source, lines: strings.Split(text, "\n"), records: map[string]creditVerdict{}}
+	cc := &creditContext{source: source, lines: strings.Split(text, "\n"), records: map[string]creditRecord{}}
 	cc.place, cc.prov, cc.rec = creditOK(), creditOK(), creditOK()
 	if cc.place = cc.placeWitness(witness); cc.place.verdict != creditCredited {
 		return cc
@@ -287,110 +287,128 @@ var (
 	creditCheckoutRe  = regexp.MustCompile(`^autocrlf=(true|false|input) eol=(lf|crlf|native)$`)
 )
 
-// record is condition (b). The record is read once per <repo>#<issue>.
+// creditRecord is one <repo>#<issue> read: whether the record is admitted, and
+// the attestation line rendered from its binding. It names no bracket.
+type creditRecord struct {
+	verdict          creditVerdict
+	target, rendered string
+}
+
+// record is condition (b). Only the record read is cached per <repo>#<issue>;
+// each bracket's attestation line is compared with the rendered line on its
+// own, so a bracket never inherits another bracket's comparison.
 func (cc *creditContext) record(a []string, attestation string) creditVerdict {
 	if cc.rec.verdict != creditCredited {
 		return cc.rec
 	}
 	key := a[1] + "#" + a[2]
-	if v, ok := cc.records[key]; ok {
-		return v
+	r, ok := cc.records[key]
+	if !ok {
+		r = cc.readRecord(a)
+		cc.records[key] = r
 	}
-	v := cc.readRecord(a, attestation)
-	cc.records[key] = v
-	return v
+	if r.verdict.verdict != creditCredited {
+		return r.verdict
+	}
+	if r.rendered != attestation {
+		m := attestationV1Re.FindStringSubmatch(r.rendered)
+		var differ []string
+		for i, name := range []string{"repo", "issue", "run", "source", "brief", "model", "tier"} {
+			if m == nil || m[i+1] != a[i+1] {
+				differ = append(differ, name)
+			}
+		}
+		return creditNot("record: the span's attestation differs from the line rendered from %s in %s", r.target, strings.Join(differ, ", "))
+	}
+	return creditOK()
 }
 
-func (cc *creditContext) readRecord(a []string, attestation string) creditVerdict {
+// readRecord reads and admits a[1]#a[2] as ReadVerifierAttestation would.
+func (cc *creditContext) readRecord(a []string) creditRecord {
+	v, target, rendered := cc.admitRecord(a)
+	return creditRecord{verdict: v, target: target, rendered: rendered}
+}
+
+func (cc *creditContext) admitRecord(a []string) (creditVerdict, string, string) {
 	repo, issueNo := a[1], a[2]
 	if !strings.EqualFold(repo, cc.repo) {
-		return creditNot("record: %s#%s is not in the brief's own repository %s", repo, issueNo, cc.repo)
+		return creditNot("record: %s#%s is not in the brief's own repository %s", repo, issueNo, cc.repo), "", ""
 	}
 	n, err := strconv.Atoi(issueNo)
 	if err != nil || n <= 0 {
-		return creditNot("record: %s is not a positive issue number", issueNo)
+		return creditNot("record: %s is not a positive issue number", issueNo), "", ""
 	}
 	target := fmt.Sprintf("%s#%d", repo, n)
 
 	first, err := creditReadIssue(target)
 	if err != nil {
-		return creditCouldNot("record: %v", err)
+		return creditCouldNot("record: %v", err), target, ""
 	}
 	_, raw, ok := strings.Cut(first.Body, "\n\n")
 	if !ok {
-		return creditNot("record: %s's body is not a binding", target)
+		return creditNot("record: %s's body is not a binding", target), target, ""
 	}
 	var b creditBinding
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&b); err != nil {
-		return creditNot("record: %s's body is not a binding: %v", target, err)
+		return creditNot("record: %s's body is not a binding: %v", target, err), target, ""
 	}
 	if why := creditBindingProblem(b, repo); why != "" {
-		return creditNot("record: %s: %s", target, why)
+		return creditNot("record: %s: %s", target, why), target, ""
 	}
 	data, _ := json.MarshalIndent(b, "", "  ")
 	title, body := verifierRecordTitle+b.Run, verifierRecordPreamble+string(data)+"\n"
 	if why := cc.recordTarget(first, title, body); why != "" {
-		return creditNot("record: %s %s", target, why)
+		return creditNot("record: %s %s", target, why), target, ""
 	}
 
 	trust, err := creditReadTrust(target)
 	if err != nil {
-		return creditCouldNot("record: %v", err)
+		return creditCouldNot("record: %v", err), target, ""
 	}
 	switch {
 	case trust.BodyHistoryKnown == nil || !*trust.BodyHistoryKnown:
-		return creditNot("record: %s's body history was not reported (bodyHistoryKnown is false or absent)", target)
+		return creditNot("record: %s's body history was not reported (bodyHistoryKnown is false or absent)", target), target, ""
 	case !trust.Complete:
-		return creditNot("record: %s's body history is incomplete", target)
+		return creditNot("record: %s's body history is incomplete", target), target, ""
 	case trust.BodyEditedAt != "":
-		return creditNot("record: %s's body was edited at %s", target, trust.BodyEditedAt)
+		return creditNot("record: %s's body was edited at %s", target, trust.BodyEditedAt), target, ""
 	}
 	if first.State != "closed" {
-		return creditNot("record: %s is %s, not closed; the pre-work attestation has not completed", target, first.State)
+		return creditNot("record: %s is %s, not closed; the pre-work attestation has not completed", target, first.State), target, ""
 	}
 
 	// A second read after the history read: a record edited or reopened in
 	// between is not the one whose history was read.
 	second, err := creditReadIssue(target)
 	if err != nil {
-		return creditCouldNot("record: %v", err)
+		return creditCouldNot("record: %v", err), target, ""
 	}
 	if why := cc.recordTarget(second, title, body); why != "" {
-		return creditNot("record: %s on the second read %s", target, why)
+		return creditNot("record: %s on the second read %s", target, why), target, ""
 	}
 	if second.State != "closed" {
-		return creditNot("record: %s is %s on the second read, not closed", target, second.State)
+		return creditNot("record: %s is %s on the second read, not closed", target, second.State), target, ""
 	}
 
 	events, err := creditReadLabelEvents(target)
 	if err != nil {
-		return creditCouldNot("record: %v", err)
+		return creditCouldNot("record: %v", err), target, ""
 	}
 	if events.Complete == nil || !*events.Complete {
-		return creditCouldNot("record: %s's label history is incomplete", target)
+		return creditCouldNot("record: %s's label history is incomplete", target), target, ""
 	}
 	model, tier, why := cc.attestedStamp(second.Labels, events.Events)
 	if why != "" {
-		return creditNot("record: %s: %s", target, why)
+		return creditNot("record: %s: %s", target, why), target, ""
 	}
 	if model != b.Model || tier != b.Tier {
-		return creditNot("record: %s's dispatcher stamp names model=%s tier=%s, the binding model=%s tier=%s", target, model, tier, b.Model, b.Tier)
+		return creditNot("record: %s's dispatcher stamp names model=%s tier=%s, the binding model=%s tier=%s", target, model, tier, b.Model, b.Tier), target, ""
 	}
 
 	rendered := fmt.Sprintf("Verification-Attestation: %s#%d run=%s source=%s brief=%s model=%s tier=%s", b.Repo, n, b.Run, b.Source, b.Brief, b.Model, b.Tier)
-	if rendered != attestation {
-		r := attestationV1Re.FindStringSubmatch(rendered)
-		var differ []string
-		for i, name := range []string{"repo", "issue", "run", "source", "brief", "model", "tier"} {
-			if r == nil || r[i+1] != a[i+1] {
-				differ = append(differ, name)
-			}
-		}
-		return creditNot("record: the span's attestation differs from the line rendered from %s in %s", target, strings.Join(differ, ", "))
-	}
-	return creditOK()
+	return creditOK(), target, rendered
 }
 
 // creditBindingProblem applies ReadVerifierAttestation's field checks. Only a

@@ -290,6 +290,41 @@ func TestBracketCredit(t *testing.T) {
 		check(t, "a one-actor roster", base, fixtureSource, notCredited("to one actor"))
 	})
 
+	// (b) per bracket: two brackets naming one record are each compared with
+	// that record, so a credited first bracket never carries the second.
+	t.Run("record shared by two brackets", func(t *testing.T) {
+		other := strings.Replace(creditBaseAtt(41), "model=claude-opus-4", "model=claude-sonnet-4", 1)
+		for _, c := range []struct {
+			name        string
+			first, last string
+			want        [2]string
+		}{
+			{"matching then differing", creditBaseAtt(41), other, [2]string{creditCredited, creditNotCredited}},
+			{"differing then matching", other, creditBaseAtt(41), [2]string{creditNotCredited, creditCredited}},
+		} {
+			fx := newCreditRepo(t)
+			fx.commit(t, vfMailVerifier, creditPreface+creditBlock(t, c.first, creditClosed)+"\n"+creditBlock(t, c.last, creditClosed))
+			code, out := fx.credit(t, fixtureSource)
+			var lines []string
+			for _, l := range strings.Split(out, "\n") {
+				if strings.HasPrefix(l, "bracket=") {
+					lines = append(lines, l)
+				}
+			}
+			if code != verifyrunExitFail || len(lines) != 2 {
+				t.Fatalf("%s: exit %d output %q, want exit 1 and two bracket lines", c.name, code, out)
+			}
+			for i, l := range lines {
+				if !strings.Contains(l, " verdict=match ") || !strings.HasSuffix(l, " credit="+c.want[i]) {
+					t.Fatalf("%s: bracket %d reads %q, want verdict=match and credit=%s", c.name, i+1, l, c.want[i])
+				}
+			}
+			if !strings.Contains(out, "differs from the line rendered from example-org/tracker#41 in model") {
+				t.Fatalf("%s: output %q does not name the model difference", c.name, out)
+			}
+		}
+	})
+
 	// (c) binding: the attestation names this brief and --source.
 	t.Run("binding", func(t *testing.T) {
 		copied := landed(t, vfMailVerifier, creditAtt(creditRepo, 44, fixtureRun, fixtureSource, "docs/streams/demo/brief-02-other.md", "claude-opus-4", "strong"))
@@ -357,7 +392,7 @@ func TestCreditRecordFixtures(t *testing.T) {
 			}
 		}
 		a := attestationV1Re.FindStringSubmatch(att)
-		cc := &creditContext{desk: "assay-desk-app", repo: creditRepo, rec: creditOK(), records: map[string]creditVerdict{}}
+		cc := &creditContext{desk: "assay-desk-app", repo: creditRepo, rec: creditOK(), records: map[string]creditRecord{}}
 		v := cc.record(a, att)
 		admitted := v.verdict == creditCredited
 		if admitted != (f.Expect == "admit") {
