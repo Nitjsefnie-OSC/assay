@@ -20,11 +20,18 @@ import (
 // Before this, the decision gate always ran the consumer's decision script with `ensure`, which
 // derives a decision issue from the brief — and a consumer script may refuse a brief whose
 // decision section now carries a link, so an item whose human HAD ruled could not be dispatched
-// at all. The recorded ruling is now a second way through the gate, never a weaker one: the
-// linked record must exist in the brief's own checkout and its ruling must CORROBORATE through
-// `statusgen --corroborate --ruling-record` — the same forge check (registers-v1 §7.5) the PR
-// lane applies to every decision record: an unedited, non-bot comment by a mapped human, naming
-// the record, on a decision issue for it. Anything short of that refuses, naming the line.
+// at all. The recorded ruling is now a second way through the gate: the linked record must exist
+// in the brief's own checkout and its ruling must CORROBORATE, AS A RULING ON THIS BRIEF, through
+// `statusgen --corroborate --ruling-record <record> --ruling-brief <brief>` — the forge check
+// (registers-v1 §7.5) the PR lane applies to every decision record (an unedited, non-bot comment
+// by a mapped human, naming the record), plus the decision-gate hold's binding to the brief: the
+// comment's decision issue must carry THIS brief's decision-gate marker and the comment must name
+// the brief. A record ruled for another brief does not pass. Anything short of that refuses,
+// naming the line.
+//
+// What is checked is provenance — THAT the brief's human ruled — never WHAT they ruled: the
+// option the line names is parsed for its shape and not compared with the record (the record
+// carries no chosen-option field). The decision-gate hold confirms its rulings the same way.
 //
 // Scope, deliberately narrow so no brief that dispatched before changes path:
 //   - a candidate is a line opening `**Ruling (` (an optional list marker first), outside the
@@ -48,6 +55,8 @@ var rulingListMarkerRe = regexp.MustCompile(`^(?:[-*+]|\d+[.)])\s+`)
 // after the target is allowed and ignored).
 var mdLinkRe = regexp.MustCompile(`\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)`)
 
+// decisionsDirRel is the decision register this gate reads at runtime; the corpus guard lists
+// its root as an operational stream for that reason.
 const decisionsDirRel = "docs/streams/decisions"
 
 // recordedRuling is a brief's recorded ruling, parsed offline before the claim.
@@ -55,6 +64,7 @@ type recordedRuling struct {
 	lineNo   int    // 1-based line number in the brief
 	line     string // the line as written, trimmed
 	repoRoot string // the checkout the brief and the record live in
+	brief    string // the brief's path relative to repoRoot — what the ruling must rule on
 	record   string // the record's repo-relative path, docs/streams/decisions/<name>.md
 }
 
@@ -153,6 +163,9 @@ func readRecordedRuling(root, brief, shown string) (*recordedRuling, error) {
 		}
 		if why == "" {
 			r.repoRoot, r.record = repoRoot, records[0]
+			if rel, rerr := filepath.Rel(repoRoot, path); rerr == nil {
+				r.brief = filepath.ToSlash(rel)
+			}
 			full := filepath.Join(repoRoot, filepath.FromSlash(r.record))
 			if fi, serr := os.Stat(full); serr != nil || !fi.Mode().IsRegular() {
 				why = fmt.Sprintf("the decision record it links, %s, does not exist in %s", r.record, repoRoot)
@@ -251,10 +264,13 @@ func linkedRecords(briefPath, repoRoot, line string) (records []string, why stri
 // statusgenBinary is the corroborating tool's name on PATH.
 const statusgenBinary = "statusgen"
 
-// checkRecordedRuling corroborates a recorded ruling through `statusgen --corroborate
-// --ruling-record`, under the credential the claim step resolved (env). Exit 0 passes; exit 1 is
-// the record's ruling failing a condition (REFUSED, naming the line); anything else — the tool
-// missing, a forge read failing — is a could-not-check (UNVERIFIABLE). Never a pass by default.
+// checkRecordedRuling corroborates a recorded ruling as a ruling on THIS brief through `statusgen
+// --corroborate --ruling-record --ruling-brief`, under the credential the claim step resolved
+// (env, minted for --repo). Exit 0 passes; exit 1 is the ruling failing a condition (REFUSED,
+// naming the line and the repository the credential was minted for, since a credential that
+// cannot read the brief's checkout reads a private record's ruling as deleted); anything else —
+// the tool missing, a forge read failing — is a could-not-check (UNVERIFIABLE). Never a pass by
+// default.
 func checkRecordedRuling(o dispatchOpts, r *recordedRuling, env []string) (string, error) {
 	bin, err := lookPath(statusgenBinary)
 	if err != nil {
@@ -262,20 +278,22 @@ func checkRecordedRuling(o dispatchOpts, r *recordedRuling, env []string) (strin
 			"step %s: %s records a ruling, but %s is not on PATH, so the ruling cannot be corroborated — this "+
 				"refuses rather than take the ruling on the brief's word", stepDecisionGate, r.where(briefArg(o)), statusgenBinary), err)
 	}
-	res := runCmdEnv(r.repoRoot, env, bin, "--root", r.repoRoot, "--corroborate", "--ruling-record", r.record)
+	res := runCmdEnv(r.repoRoot, env, bin, "--root", r.repoRoot, "--corroborate", "--ruling-record", r.record, "--ruling-brief", r.brief)
 	said := firstLine(res.stdout)
 	if strings.TrimSpace(res.stdout) == "" {
 		said = res.run.Said()
 	}
 	if res.err == nil {
-		return fmt.Sprintf("OK: already ruled — %s, transcribed as %s, corroborated (%s); no decision issue ensured",
+		return fmt.Sprintf("OK: ruling recorded — %s, transcribed as %s, corroborated as a human ruling on this brief "+
+			"(provenance only; the option it names is not compared) (%s); no decision issue ensured",
 			r.where(briefArg(o)), r.record, said), nil
 	}
 	if exitCodeOf(res.err) == 1 {
 		return "", deskkit.Refused(fmt.Sprintf(
-			"step %s: %s records a ruling transcribed as %s, but that record's ruling does not corroborate: %s. "+
-				"Fix the record's ruling: link (or record the ruling on its decision issue), or remove the line to "+
-				"take the decision-issue path.", stepDecisionGate, r.where(briefArg(o)), r.record, said))
+			"step %s: %s records a ruling transcribed as %s, but that record's ruling does not corroborate as a "+
+				"ruling on this brief: %s (read under the credential for %s). Fix the record's ruling: link, rule on "+
+				"this brief on its decision issue, or remove the line to take the decision-issue path.",
+			stepDecisionGate, r.where(briefArg(o)), r.record, said, o.repo))
 	}
 	return "", res.run.FailVerbatim(deskkit.ExitUnverifiable, fmt.Sprintf(
 		"step %s: %s records a ruling transcribed as %s, and corroborating it could not be completed (%s) — "+

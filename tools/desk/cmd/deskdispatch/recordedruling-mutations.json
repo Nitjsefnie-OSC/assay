@@ -84,6 +84,12 @@
       "file": "cmd/deskdispatch/recordedruling.go",
       "old": "\tvar ws []string\n\tfor _, r := range found {",
       "new": "\tif len(found) > 0 {\n\t\treturn found[0], nil\n\t}\n\tvar ws []string\n\tfor _, r := range found {"
+    },
+    {
+      "name": "F1 — the dispatched brief is not passed to statusgen, so a record ruled for another brief would corroborate; TestRecordedRulingPassesBrief must go red",
+      "file": "cmd/deskdispatch/recordedruling.go",
+      "old": "\"--ruling-record\", r.record, \"--ruling-brief\", r.brief)",
+      "new": "\"--ruling-record\", r.record)"
     }
   ]
 }

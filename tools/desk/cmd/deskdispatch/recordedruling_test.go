@@ -5,7 +5,8 @@ package main
 // ran the consumer's decision script, which derives a NEW decision issue from the brief. The
 // gate now accepts a `**Ruling (<date>): option <N>.**` line linking a record under
 // docs/streams/decisions/, provided the record exists and its ruling corroborates through
-// `statusgen --corroborate --ruling-record`. Every other shape refuses, naming the line.
+// `statusgen --corroborate --ruling-record --ruling-brief` as a ruling on THIS brief. Every other
+// shape refuses, naming the line.
 //
 // Nothing here reaches a forge: statusgen is answered by the harness's exec seam.
 
@@ -61,8 +62,8 @@ func TestRecordedRulingParsesLinkedLine(t *testing.T) {
 	if r == nil {
 		t.Fatal("a well-formed linked Ruling line was not recognised as a recorded ruling")
 	}
-	if r.record != rrRecordRel || r.repoRoot != root || r.lineNo != 12 {
-		t.Fatalf("parsed %+v, want record %s in %s at line 12", r, rrRecordRel, root)
+	if r.record != rrRecordRel || r.repoRoot != root || r.lineNo != 12 || r.brief != rrBriefRel {
+		t.Fatalf("parsed %+v, want record %s for brief %s in %s at line 12", r, rrRecordRel, rrBriefRel, root)
 	}
 }
 
@@ -157,6 +158,19 @@ func TestRecordedRulingDispatches(t *testing.T) {
 	}
 	if s.ran("decision-issue.sh") {
 		t.Fatalf("a decision issue was ensured although the ruling is recorded and corroborated: %v", s.calls)
+	}
+}
+
+// The dispatched brief reaches statusgen with the record, so the ruling is checked against THIS
+// brief: a record whose human ruled on a different brief must not open this brief's gate.
+// regression: #2079
+func TestRecordedRulingPassesBrief(t *testing.T) {
+	rc, s := rrDispatch(t, true, 0, rrRecordRel+": CORROBORATED — example")
+	if rc != deskkit.ExitOK {
+		t.Fatalf("dispatch rc = %d, want 0", rc)
+	}
+	if !s.ran("--ruling-record " + rrRecordRel + " --ruling-brief " + rrBriefRel) {
+		t.Fatalf("statusgen was not told which brief the ruling must rule on: %v", s.calls)
 	}
 }
 
