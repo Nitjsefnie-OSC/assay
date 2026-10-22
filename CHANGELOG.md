@@ -23,6 +23,15 @@ Pending notable changes are recorded as one-file-per-PR fragments under
 here at release time. This section is written only by the release workflow;
 do not add highlight bullets to it directly.
 
+## v1.0.56 — 2026-10-22
+
+### Fixed
+- The verify-runner image now carries what its rows need offline: a Go module cache for `tools/desk` (including the `gopkg.in/yaml.v3` module the `containers/k8s` YAML adapter uses) and for `statusgen`, which `tools/desk` tests build from source, at the image's `GOMODCACHE`, and kustomize v5.8.3, kubeconform v0.8.0 and gitleaks 8.30.1, each checked against a pinned sha256 at build time. Rows run with no network and a read-only root no longer stop at module or tool resolution before reaching their commands.
+
+### Changed
+- `deskevidence --dry-run` prints each row the stamp wrote. The verify-desk skill now says to leave Runner cells unannotated and to pre-check with `--dry-run`.
+- `deskevidence` now owns the on-behalf-of principal on the Runner cells of App-run Evidence rows a landing adds. It reads an existing annotation the way the attribution lint does. A cell carrying exactly the stamp the tool writes, naming the roster's principal, is left as it is. A planted or non-principal annotation, including a desk role, an unknown name, the same human in the other form, or the principal in another spelling, is stripped and restamped in place, keeping any source tag after it. A row naming a different roster human is refused, and nothing is written. So is a row whose Runner cell the lint would read differently from its text: an HTML comment in the cell or across the row's line break, invalid UTF-8, an invisible format character, a character whose lowercase form changes byte length, or any other non-ASCII character. Any line a landing adds to the body's Evidence section (a data row, header, separator or non-table line) holding a C0, DEL or C1 control character other than a tab is refused too; a line the base's Evidence section already holds is left. Like the lint, the tool finds the Evidence section only in the brief's body, never inside the frontmatter, and the `--brief-path` merge places new rows with the same body-only rule; the tool refuses a landing that carries an Evidence heading under a frontmatter block that never closes.
+
 ## v1.0.55 — 2026-10-22
 
 ### Added
