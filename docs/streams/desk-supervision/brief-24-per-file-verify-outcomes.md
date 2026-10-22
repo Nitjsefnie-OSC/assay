@@ -833,7 +833,7 @@ Result, by the latest tool-written witness for each row: 2 pass, 0 fail, 13 coul
 
 Blockers for the 13 check:ci rows, with the needed capability: an admitted verifier run with a network-off sandbox. Either a Linux runner whose `unshare --net` works (medici-finance/assay#3216, and the darwin host gap in medici-finance/assay#2665), or a container-netns route whose pre-work admission does not need the forge from inside the `--network none` container (medici-finance/assay#2665 records the same admission dependency). The next actor is the desk, which routes the runner capability. No sandbox was relaxed and no admission was bypassed: a witness from an unadmitted clone would not carry this run's attestation.
 
-RISK-VALUE: the enumeration and verdicts of the 2026-10-22 block above stand unchanged at 05dc9fbc88f2 (four DERIVED entries; two ranked last and reversible). MaxClockSkew = `5 * time.Minute` @ tools/desk/internal/deskkit/verifyoutcomes.go:278, hand-copied at statusgen/verifyoutcomes.go:296, stays RISK-VALUE: NAMED, NOT DERIVED, with its question issue to be linked once filed.
+RISK-VALUE: the enumeration and verdicts of the 2026-10-22 block above stand unchanged at 05dc9fbc88f2 (four DERIVED entries; two ranked last and reversible). MaxClockSkew = `5 * time.Minute` @ tools/desk/internal/deskkit/verifyoutcomes.go:278, hand-copied at statusgen/verifyoutcomes.go:296, stays RISK-VALUE: NAMED, NOT DERIVED, with its question filed as #4128.
 
 **VERIFY: BLOCKED** — 2 pass (rows 8 and 10), 0 fail, 13 could-not-run (rows 1–7, 9 and 11–15) at `05dc9fbc88f2`; the check:ci rows need an admitted network-off runner (medici-finance/assay#3216). This supersedes the PASS tally of the 2026-10-22 block above.
 
