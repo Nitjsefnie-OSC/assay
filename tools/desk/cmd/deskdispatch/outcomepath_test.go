@@ -202,6 +202,41 @@ func TestVerifierOutcomePath(t *testing.T) {
 		}
 	})
 
+	t.Run("traversal-shaped claim keys are refused on both branches", func(t *testing.T) {
+		home, root, side, cache := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+		old := packetCacheDir
+		packetCacheDir = func() (string, error) { return cache, nil }
+		t.Cleanup(func() { packetCacheDir = old })
+		branches := map[string]string{
+			"beside --prompt-file": filepath.Join(side, "prompt.md"),
+			"user cache":           "",
+		}
+		keys := []string{"../escape", "a/../../b", `a\..\b`, "..", "a..b", "/abs", "a/b", " repo--x", ""}
+		for branch, pf := range branches {
+			for _, key := range keys {
+				t.Run(branch+"/"+key, func(t *testing.T) {
+					o := dispatchOpts{kit: "verifier", item: "example-stream/07", root: root, promptFile: pf}
+					dir, err := allocateOutcomeDir(o, dispatchPlan{claimKey: key}, home)
+					if err == nil || !deskkit.IsRefused(err) {
+						t.Fatalf("claim key %q on the %s branch = %q, %v; want a refusal", key, branch, dir, err)
+					}
+				})
+			}
+			parent := filepath.Join(side, outcomeDirName)
+			if pf == "" {
+				parent = filepath.Join(cache, "assay", "outcomes")
+			}
+			if entries, err := os.ReadDir(parent); err == nil && len(entries) != 0 {
+				t.Errorf("%s branch: refused keys still created %d entr(ies) under %s", branch, len(entries), parent)
+			}
+		}
+		for _, outside := range []string{filepath.Join(side, "escape"), filepath.Join(cache, "assay", "escape"), filepath.Join(side, "b")} {
+			if _, err := os.Lstat(outside); !os.IsNotExist(err) {
+				t.Errorf("a traversal-shaped key reached %s (stat err %v)", outside, err)
+			}
+		}
+	})
+
 	t.Run("non-verifier prompts carry no outcome line", func(t *testing.T) {
 		for _, p := range []struct{ kit, item string }{{"worker", "example-stream--07"}, {"review", "review-item-9"}} {
 			prompt := dispatchPrompt(t, p.kit, p.item)

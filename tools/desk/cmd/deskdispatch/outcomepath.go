@@ -30,7 +30,8 @@ const outcomeDirName = "outcomes"
 //     never the agent's worktree, never the configuration directory.
 //
 // Both forms end in a per-claim subdirectory, so runs that share a prompt directory never
-// share an outcome directory.
+// share an outcome directory. Each branch validates the claim key (outcomeClaimDir) before
+// it becomes that path component.
 //
 // It REFUSES, and never falls back to another location, when the resolved directory is the
 // verifier home or the dispatcher root, or sits under either: a record written there is an
@@ -38,17 +39,15 @@ const outcomeDirName = "outcomes"
 // Containment is checked on symlink-resolved paths, so an alias cannot hide the home.
 // home may be "" on a dry run, where no worktree exists yet; the root check still applies.
 func outcomeDirFor(o dispatchOpts, plan dispatchPlan, home string) (string, error) {
-	name := sanitizeSegment(plan.claimKey)
-	if name == "" || strings.ContainsAny(name, `/\`) || !itemKeyRe.MatchString(name) {
-		return "", fmt.Errorf("claim key %q does not make a directory name", plan.claimKey)
-	}
 	var dir string
 	if pf := strings.TrimSpace(o.promptFile); pf != "" {
 		abs, err := filepath.Abs(pf)
 		if err != nil {
 			return "", err
 		}
-		dir = filepath.Join(filepath.Dir(abs), outcomeDirName, name)
+		if dir, err = outcomeClaimDir(filepath.Join(filepath.Dir(abs), outcomeDirName), plan.claimKey); err != nil {
+			return "", err
+		}
 	} else {
 		cache, err := packetCacheDir()
 		if err != nil {
@@ -57,9 +56,10 @@ func outcomeDirFor(o dispatchOpts, plan dispatchPlan, home string) (string, erro
 		if !filepath.IsAbs(cache) {
 			return "", fmt.Errorf("cache directory %q is not absolute", cache)
 		}
-		dir = filepath.Join(cache, "assay", "outcomes", name)
+		if dir, err = outcomeClaimDir(filepath.Join(cache, "assay", "outcomes"), plan.claimKey); err != nil {
+			return "", err
+		}
 	}
-	dir = filepath.Clean(dir)
 	for _, guarded := range []struct{ what, path string }{{"verifier home", home}, {"dispatcher root", o.root}} {
 		p := strings.TrimSpace(guarded.path)
 		if p == "" {
@@ -73,6 +73,25 @@ func outcomeDirFor(o dispatchOpts, plan dispatchPlan, home string) (string, erro
 				"an outcome record must be written OUTSIDE it (an untracked file there refuses verifier admission). "+
 				"Keep --prompt-file outside both, or omit it to use the user cache directory", dir, guarded.what, p))
 		}
+	}
+	return dir, nil
+}
+
+// outcomeClaimDir joins the claim key under base as ONE path component. The key is
+// validated as it stands, never rewritten: a key that sanitizing would change (a separator,
+// a "..") or that fails the item-key shape is refused, so a traversal-shaped key can neither
+// climb out of base nor be silently renamed into a different claim's directory. The joined
+// result must sit directly under base.
+func outcomeClaimDir(base, claimKey string) (string, error) {
+	key := strings.TrimSpace(claimKey)
+	if key == "" || key != claimKey || sanitizeSegment(key) != key || strings.ContainsAny(key, `/\`) ||
+		strings.Contains(key, "..") || !itemKeyRe.MatchString(key) {
+		return "", deskkit.Refused(fmt.Sprintf("refused: claim key %q does not make a single outcome-directory name", claimKey))
+	}
+	base = filepath.Clean(base)
+	dir := filepath.Join(base, key)
+	if filepath.Dir(dir) != base || filepath.Base(dir) != key {
+		return "", deskkit.Refused(fmt.Sprintf("refused: claim key %q does not stay one directory under %s", claimKey, base))
 	}
 	return dir, nil
 }
