@@ -36,12 +36,15 @@ sources:
   - "freshness-checked 2026-10-06 @ 1fbf1153f (origin/main): no `deskusage` command under tools/desk/cmd/; no usage/token record is written at or after claim release by deskclaim-ref (claim.go:261 cmdRelease deletes the ref only), deskdispatch (dispatch.go:1120 releaseClaim) or the worker prompt's release line (prompt.go:453 writeReleaseClaim); the only token field anywhere is desk-supervision/13's per-session beacon `resource.tokens` (vitals.go:67-73), which is a live session vital, not a per-dispatch record"
   - "re-checked 2026-10-13 @ bcc02252e (origin/main): still no `deskusage` command; `loopadmin/runner/usage.go` exists (graph-execution/20) and is its own Go module (`loopadmin/go.mod`), so this brief matches its JSON keys and never imports it"
 consumers:
-  - "tools/desk/cmd/deskusage/ (planned — new verb `record` + `summary`): follow-up desk-supervision/34 (this brief; flips to fixed-here when the implementation edits the path)"
-  - "tools/desk/internal/deskkit/usage.go (planned — record type, store resolution, strict reader): follow-up desk-supervision/34 (this brief; flips to fixed-here when the implementation edits the path)"
-  - "tools/desk/internal/deskkit/rosterconfig.go (knownRosterKeys gains ASSAY_USAGE_DIR): follow-up desk-supervision/34 (this brief; flips to fixed-here when the implementation edits the path)"
-  - "statusgen/rosterconfig.go and statusgen/testdata/roster_coupling.json (statusgen's twin of the roster key set): follow-up desk-supervision/34 (this brief; flips to fixed-here when the implementation edits the path)"
-  - "plugins/assay/skills/worker-desk/SKILL.md (the refill-on-completion step records usage): follow-up desk-supervision/34 (this brief; flips to fixed-here when the implementation edits the path)"
-  - "tools/desk/README.md (deskusage row + the ASSAY_USAGE_DIR key): follow-up desk-supervision/34 (this brief; flips to fixed-here when the implementation edits the path)"
+  - "docs/streams/desktools-v2/cli-migration.json: fixed-here (production command route; the offline mutation replay lives under the scanner's existing testdata exclusion)"
+  - "docs/streams/desktools-v2/brief-56-migrate-deskperf-to-cobra-and-viper.md: fixed-here (remaining shared CLI qualification routed to the existing owner; both-command Verify selectors)"
+  - "tools/desk/internal/deskkit/audittoolkey.go: fixed-here (register the local command in the existing audit tool catalogue)"
+  - "tools/desk/cmd/deskusage/ (planned — new verb `record` + `summary`): fixed-here"
+  - "tools/desk/internal/deskkit/usage.go (planned — record type, store resolution, strict reader): fixed-here"
+  - "tools/desk/internal/deskkit/rosterconfig.go (knownRosterKeys gains ASSAY_USAGE_DIR): fixed-here"
+  - "statusgen/rosterconfig.go and statusgen/testdata/roster_coupling.json (statusgen's twin of the roster key set): fixed-here"
+  - "plugins/assay/skills/worker-desk/SKILL.md (the refill-on-completion step records usage): fixed-here"
+  - "tools/desk/README.md (deskusage row + the ASSAY_USAGE_DIR key): fixed-here"
   - "docs/records-and-retention.md (lists this record class): out-of-scope (desk-supervision/35 owns that page and lists every analysis record; this brief only supplies the location, writer and schema it will cite)"
   - "desksupervise reclaim and deskdispatch's lifecycle-failure release (dispatch.go:379/418/495): out-of-scope (no agent run completed, so no harness usage figure exists to record; a reclaimed run's cost stays unrecorded rather than estimated)"
   - "review and verify agent dispatches (pr-review-desk, verify-desk): out-of-scope (deferred to an unauthored follow-up — the same verb serves them, but this brief scopes the worker pool only, per the driver's ruling)"
@@ -53,8 +56,10 @@ consumers:
 
 ## Context
 files:
+- **add** `tools/desk/cmd/deskusage/testdata/mutations.py` — production-overlay mutation replay, run with `python3 tools/desk/cmd/deskusage/testdata/mutations.py`.
 - **add** `tools/desk/internal/deskkit/usage.go` (planned) — `UsageRecord` type (schema `usage-v1`), store-directory resolution, append writer, strict reader.
 - **add** `tools/desk/internal/deskkit/usage_test.go` (planned).
+- **edit** `tools/desk/internal/deskkit/audittoolkey.go` — register the local command with the existing audit owner.
 - **add** `tools/desk/cmd/deskusage/main.go` (planned), `tools/desk/cmd/deskusage/record.go` (planned),
   `tools/desk/cmd/deskusage/summary.go` (planned) and their tests — the verb.
 - **edit** `tools/desk/internal/deskkit/rosterconfig.go` — `EnvUsageDir = "ASSAY_USAGE_DIR"` and its entry in `knownRosterKeys()` (line 536).

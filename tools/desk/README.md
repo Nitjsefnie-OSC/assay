@@ -89,6 +89,7 @@ changed or discarded.
 | `deskclaim` | `acquire`, `release`, `list`, `stale` — the flock-backed claimable-action lock | local-only (claims dir) | no |
 | `desksupervise` | `tick` (one classification sweep of every `state=dispatched` dispatch claim against `internal/loopengine`'s liveness taxonomy; `--claims-fixture`/`--observations-fixture` run it fully offline), `run --interval` (loop `tick` forever) — turns a wedged worker into a logged, minutes-scale reclaim (`RECLAIM-ELIGIBLE` / `BLOCKED-TIMEOUT`) instead of a silent hold on the 120-minute stale-claim backstop; fires the `after_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (logged, non-fatal) when it releases or lands a claim | read-mostly (probes read the audit trail, a branch's SHA, and a PR's `updated_at`) / outward write on a non-dry-run reclaim or blocked-timeout filing | no |
 | `opmetrics` | (no verbs) — operator-layer collector: reads transcripts/beacons/claims, writes one **aggregates-only** day-file | local-only (strictly read-only against every input) | no |
+| `deskusage` | `record` reported counts at worker completion; `summary --by item\|tier [--json]` aggregates only; never reads transcripts, prompts, stdin or tool output | local-only counts write, outside Git worktrees; no network | no |
 | `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest; forge calls per tool and per release against the App rate-limit budget), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
 | `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `maintain objects` inventories and compacts the common Git directory offline; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); inspection takes `--dry-run` | local-only | no |
 | `deskgit` | `fetch` (bare / `--prune` / `--pr <N>` / `--branch <B>`) — the only git verb | local-only (inbound refs) | no |
@@ -459,6 +460,22 @@ assertions. A verb opts into the whole contract by routing its terminal error th
 
 Retrofitted so far: `deskdispatch`, `deskwt`, `desktoken`, `deskfile`. Other verbs are
 unaffected and keep their current behaviour until they are moved over.
+
+### Local worker usage — `deskusage`
+
+`deskusage record (<dispatch_ref> | --claim-key KEY) --repo owner/name --item stream/NN
+--tier any|strong` accepts only reported nonnegative integer counts (or `could-not-check`)
+through `--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-micros` and
+`--wall-seconds`. Omitted counts stay null. It never reads stdin, transcripts, prompts or tool
+output. The claim-key form resolves the latest dispatched run and requires the matching repo.
+The schema is `usage-v1`; records append under an exclusive lock with mode 0600. `ASSAY_USAGE_DIR`
+selects one absolute directory, otherwise `<state dir>/usage`; Git worktrees and symlinks into
+one are refused. `deskusage summary --by item|tier [--json]` prints only group counts, sums,
+medians and measured/null/could-not-check tallies; unknown fields or polluted lines refuse
+with a line number. These figures are not for ranking agents or people.
+
+This record is interim: graph-execution/26's execution journal replaces it for a worker role
+enrolled under graph-execution/27. No enrollment behavior is activated by this command.
 
 ### Local performance history — `deskperf`
 
@@ -7039,6 +7056,7 @@ The roster keys (`~/.config/assay/roster.env`; strictly parsed):
 | Key | Value |
 |---|---|
 | `ASSAY_CLAIM_STORE` | `file` or `service` — one value for the cell, or `owner/name=<store>` entries for a cell whose repos genuinely differ (a repo the per-repo form does not name is refused, not defaulted) |
+| `ASSAY_USAGE_DIR` | optional one absolute local usage directory; defaults to `<state dir>/usage`; refuses Git worktrees including symlink targets |
 | `ASSAY_CLAIM_DIR` | the `file` store's directory, one absolute path; default `<config home>/dispatch-claims` |
 | `ASSAY_CLAIM_SINGLE_HOST` | `yes` — the declaration that this cell's repos are dispatched from this host only; any other value is refused |
 

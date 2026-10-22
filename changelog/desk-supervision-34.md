@@ -1,0 +1,1 @@
+- Add local counts-only worker usage records and aggregate summaries, with strict schemas, explicit unknown counts, dispatch-run joins and refusal to store inside Git worktrees. No transcripts, prompts or tool output are read.
