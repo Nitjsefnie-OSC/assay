@@ -193,5 +193,15 @@ RISK-VALUE: NAMED, NOT DERIVED — defect-labels default = "bug,defect,incident"
 
 **VERIFY: BLOCKED** — 8/9 rows exit 0, 0 failed, row 4 could-not-check (muhar derived-build regression from #3272 breaks the harness for this cross-module spec); gate: model
 
+### Citation addendum — 2026-10-22 (no row run again; cites the blocker for the 2026-10-21 section)
+
+This addendum is append-only. It changes nothing in the sections above, and no Verify row was run for it. It records the blocker issue that the section "Non-implementer verifier re-run — 2026-10-21 claude-opus-5-5 verifier at 48532629922d (8/9 rows exit 0; row 4 could-not-check: mutation harness broken at merged main)" names but does not cite.
+
+Blocker: row 4 could-not-check is tracked on #4117 (muhar: a spec test command starting with cd breaks the derived build since #3272); re-dispatch once it lands. #4117 is open. Its text names the same cause recorded in row 4 and the supplemental diagnosis of the 2026-10-21 section: the derived build does not follow a leading cd, falls back to the bare-package build relative to tools/desk, and go reports `directory ../../qualgen outside main module or its selected dependencies`. Its done-when list has this brief re-dispatched for verification once the fix lands, with row 4 run again as written.
+
+The 2026-10-21 section's rows, row accounting and risk-bearing values stand as recorded.
+
+**VERIFY: BLOCKED** — 8/9 rows exit 0, 0 failed, row 4 could-not-check (muhar derived-build regression from #3272, tracked on #4117); gate: model
+
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.
