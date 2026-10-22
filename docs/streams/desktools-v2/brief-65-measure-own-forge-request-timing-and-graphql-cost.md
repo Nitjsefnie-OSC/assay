@@ -195,6 +195,39 @@ Ranked lower, reversible: the GraphQL path labels `"/graphql"` and `"/api/graphq
 
 **VERIFY: BLOCKED** — rows 1–3 pass and discriminate. Row 4 is could-not-check: statusgen cannot derive the delivery until this Verification-Table marker lands on main. After landing, re-run row 4 as written at the landing commit.
 
+### Citation addendum — 2026-10-22 (dispatched verifier, claude-opus-5-5, tier strong)
+
+Append-only. This section re-runs no Verify row and edits no earlier section. It adds the
+blocker citation and corrects the remedy stated in the section headed "Independent
+verification — 2026-10-21 (dispatched verifier, claude-opus-5-5, tier strong)".
+
+Blocker: row 4 is tracked on #3826 (the row 4 consumer command binds neither delivery nor
+base; open). Its defect class is #1915 (open). The decision on whether #3826 proceeds as a
+one-off exception is pending on #3832 (open, needs-decision, no ruling recorded).
+
+Correction, superseding the remedy in the section headed "Independent verification —
+2026-10-21 (dispatched verifier, claude-opus-5-5, tier strong)": that section's row 4
+Observed cell ("The cause is ordering"), its first Supplemental bullet ("Row 4 has to be
+re-run as written once this Evidence, with its marker, is on main") and its VERIFY line
+("After landing, re-run row 4 as written at the landing commit") name the marker landing
+as the whole remedy. It is not. After this Evidence lands, a row 4 re-run as written can exit
+0, but that pass cannot support closure. On a branch that closes this brief, lint raises a
+PROBLEM on row 4 under the consumer-delivery-range rule. Confirmed from statusgen source at
+f1e7cae3aff8: statusgen/strength.go lists ruleConsumerRange in promotedRowRules (tagged
+#1915). statusgen/consumerdelivery.go consumerRangeWhy returns "consumer command has no
+explicit --base (the default becomes HEAD on merged main)" for any `--consumers` command
+without `--base`, which is row 4's command as written. statusgen/verifyrows.go then reports a
+promoted rule as a PROBLEM when the branch closes the brief ("an unfailable row cannot be the
+basis of a new closure"), and as a NOTICE otherwise. So closure needs both conditions: this
+Evidence with its Verification-Table marker on main, and the row 4 definition repair on
+#3826 (decision #3832), made through the protected Verify-table amendment path, followed by
+a freshly admitted re-run of the repaired row.
+
+Rows, tally and verdict are unchanged: 4 required rows; rows 1, 2 and 3 pass; row 4 is
+could-not-check (could-not-run accounting: 1 row).
+
+**VERIFY: BLOCKED** — rows 1–3 pass and discriminate. Row 4 is could-not-check. Blocker: #3826 (class #1915, decision pending on #3832). Closure needs this Evidence's Verification-Table marker on main and the #3826 row 4 definition repair; a re-run as written after landing alone cannot support closure.
+
 ## Review
 
 Gate: model. Reject changed legacy meanings, guessed identity/cost, lost coverage or optional measurement that changes an operation.
