@@ -277,6 +277,15 @@ func dispatch(o dispatchOpts) error {
 		} else {
 			fmt.Println("  " + line)
 		}
+		if o.kit == "verifier" {
+			// Resolved and checked, never created: a dry run touches nothing. A refusal here is
+			// the same refusal the real dispatch would give.
+			dir, oerr := outcomeDirFor(o, plan, plan.home)
+			if oerr != nil {
+				return oerr
+			}
+			plan.outcomePath = dir
+		}
 		prompt, perr := assemblePrompt(o, plan, plan.home)
 		if perr != nil {
 			return perr
@@ -620,6 +629,13 @@ func dispatch(o dispatchOpts) error {
 				return held.settle(err)
 			}
 		}
+		// The outcome-record directory: outside the home and the dispatcher root, or no
+		// prompt at all. A refusal never falls back to another location.
+		dir, oerr := allocateOutcomeDir(o, plan, home)
+		if oerr != nil {
+			return held.settle(oerr)
+		}
+		plan.outcomePath = dir
 		// The verifier's read-ahead packet is built only after provenance is established.
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
 		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
@@ -749,6 +765,10 @@ type dispatchPlan struct {
 	packetPath string
 	// Optional attribution stays in an owner-only local sidecar, never prompt logs.
 	performancePath string
+	// outcomePath is the absolute directory a VERIFIER writes its outcome record into before
+	// landing it with `deskevidence --outcome-record` (outcomepath.go): outside the home and the
+	// dispatcher root, per run. "" for every other kit; the prompt names it iff it is set.
+	outcomePath string
 	// workerAttestation is the read-back pre-work worker attestation (--attest-worker), set at
 	// step 5 before the prompt is emitted; nil otherwise, and on a dry run.
 	workerAttestation *deskkit.WorkerReceipt
