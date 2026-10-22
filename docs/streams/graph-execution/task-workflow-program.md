@@ -76,7 +76,7 @@ milestone or authorize activation.
 | desk-tools/39 and /42 | Importable review policy and role-specific issue projections | Existing extraction owners; /27 consumes them from tools/desk-local bindings, never imports cmd/main or duplicates classifiers. |
 | /27 | Deterministic standing-desk clients, bounded jobs and one-owner transfer | Existing queues/claims remain work owners. Remove model-managed mechanical loops only when the replacement behavior is proven. No workflow store/controller required. |
 | desk-supervision/34 | Usage compatibility for non-enrolled workers | /27 preserves the existing skip for enrolled workers; do not count one invocation in two stores. |
-| desk-tools/37, /43–44 | Matched baseline, caller migration and complete-workflow qualification | Reuse its oracle/cohorts and qualification record. Minimal local counters are sufficient initially; parked performance collection is not an activation prerequisite or a second measurement pipeline. |
+| desk-tools/37, /43–44 | Matched baseline, caller migration and complete-workflow qualification | Reuse its oracle/cohorts and qualification record. Minimal local counters are sufficient initially; performance collection is not an activation prerequisite or a second measurement pipeline. |
 
 ### Priority, blockers and dependency waves
 
