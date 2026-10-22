@@ -109,12 +109,25 @@ func TestRunDriveLintScopeArms(t *testing.T) {
 	if !ok || !strings.Contains(stale, "pb/02") || normalizeDriveSnapshot(stale) == normalizeDriveSnapshot(fresh) {
 		t.Fatalf("fixture drift: unhydrated, pb/02 must reach the frontier (ok=%v):\n%s", ok, stale)
 	}
+	// A plain --lint reads no claim set (#3323), so the fresh region's todo briefs
+	// are assumed unclaimed: the one drive-region line allowed is that
+	// could-not-check, naming exactly them. Any other drive-region line — drift,
+	// or a drive that no longer renders — is the comparison going wrong.
+	const assumedFree = "NOTICE: drive-region-drift: docs/roadmap/drives/d1.md matches a fresh render only if pb/01, pb/02 are not claimed by an open branch;"
 	for _, scope := range []string{"", "product-a"} {
 		stderr := captureStderr(t, func() { run(root, "lint", nil, nil, scope) })
+		sawAssumed := false
 		for _, line := range strings.Split(stderr, "\n") {
+			if strings.HasPrefix(line, assumedFree) {
+				sawAssumed = true
+				continue
+			}
 			if strings.Contains(line, "drive-region-drift") || strings.Contains(line, "drive-without-manifest") {
 				t.Errorf("scope=%q: the fresh region must compare clean, got: %s", scope, line)
 			}
+		}
+		if !sawAssumed {
+			t.Errorf("scope=%q: offline, the fresh region must read could-not-check on its unread claims (%q); stderr:\n%s", scope, assumedFree, stderr)
 		}
 	}
 	// Positive control: a hand-edited region is drift under both arms, so the
