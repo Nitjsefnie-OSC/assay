@@ -678,7 +678,9 @@ passing run — which is why they are lint rules and not review vigilance.
       `Admission-Bracket: run=… source=… tree=sha256:… witness=sha256:…
       opened=… closed=… before=receipt after=check-verifier` line only when the
       check re-admits the run the witness names and the home still digests to
-      both the receipt's `tree` and the witness's `Tree-Digest`. The tree
+      both the receipt's `tree` and the witness's `Tree-Digest`, read only
+      from the span that ends at the append position (a span with more than
+      one `Tree-Digest`, `Container-Image` or attestation line is refused). The tree
       digest is sha256 over the sorted `<path> NUL <mode> NUL <sha256 of
       content or link target> NUL` entries of every regular file and symlink
       under the root, top-level `.git` excluded. `witness=` is the witness
@@ -695,9 +697,11 @@ passing run — which is why they are lint rules and not review vigilance.
       `tree=` is compared with that span's `Tree-Digest`, never a line from
       another bracket's span; the verb reports `mismatch` otherwise.
       The verb prints one line per bracket in the file (`bracket=` and
-      `header=` line numbers, `witness=`, `recorded=`, and
-      `verdict=match|mismatch|no-table|shared`, where `shared` means another
-      bracket covers the same table) and exits 0 only when every verdict is
+      `header=` line numbers, `witness=`, `recorded=`,
+      `verdict=match|mismatch|no-table|shared` where `shared` means another
+      bracket covers the same table, and `span-lines=`, the span's
+      `Tree-Digest`, `Container-Image` and attestation line counts) and
+      exits 0 only when every verdict is
       `match`. Check it with that verb on the landed file, never a raw
       `sha256sum`. A container row is credited only inside exactly one
       bracket's span, and only when that bracket's verdict is `match`. A

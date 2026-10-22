@@ -100,7 +100,7 @@ func bracketVerdict(t *testing.T, statusgen, text string) (string, int) {
 		t.Fatalf("--bracket-digest: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	m := regexp.MustCompile(`^bracket=L\d+ header=L\d+ witness=sha256:[0-9a-f]{64} recorded=sha256:[0-9a-f]{64} verdict=(\S+)$`).FindStringSubmatch(lines[0])
+	m := regexp.MustCompile(`^bracket=L\d+ header=L\d+ witness=sha256:[0-9a-f]{64} recorded=sha256:[0-9a-f]{64} verdict=(\S+) span-lines=tree-digest:1,container-image:1,attestation:1$`).FindStringSubmatch(lines[0])
 	if len(lines) != 1 || m == nil {
 		t.Fatalf("--bracket-digest printed %q, want one bracket line", out)
 	}

@@ -180,7 +180,9 @@ with no edit to the home between the steps:
 3. Host close: `statusgen verifyrun --close-bracket --root <home> --brief <path>
    --admission-receipt <receipt> --witness <file>`. It re-runs the check and appends one
    `Admission-Bracket:` line only when the check re-admits the run the witness names and
-   the home still digests to both the receipt's tree and the witness's `Tree-Digest`. Its
+   the home still digests to both the receipt's tree and the witness's `Tree-Digest`, read
+   only from the span ending where the line goes (a span with a second `Tree-Digest`,
+   `Container-Image` or attestation line is refused). Its
    `witness=` value is the digest `statusgen verifyrun --bracket-digest --witness <file>`
    prints for that bracket (`verdict=match` once closed), which the landing's on-behalf-of
    stamp does not change.

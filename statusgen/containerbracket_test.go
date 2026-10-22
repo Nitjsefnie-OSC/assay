@@ -287,7 +287,8 @@ func TestContainerNetnsReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := getFile(t, fx.witness)
-	if !strings.HasSuffix(got, " |\n"+treeDigestPrefix+tree+"\n"+containerImagePrefix+fixtureImage+"\n"+want+"\n") {
+	tail := strings.Join([]string{" |", treeDigestPrefix + tree, containerImagePrefix + fixtureImage, want, ""}, "\n")
+	if !strings.HasSuffix(got, tail) {
 		t.Fatalf("the witness does not end with the table, then the Tree-Digest line, the image line and the in-process attestation line %q:\n%s", want, got)
 	}
 	if !strings.Contains(got, "sandbox="+sandboxContainerNetns) {
@@ -338,6 +339,11 @@ func TestCloseBracket(t *testing.T) {
 	closeArgs := []string{"--close-bracket", "--root", fx.home, "--brief", fx.brief, "--admission-receipt", fx.receipt, "--witness", fx.witness}
 	source := filepath.Join(fx.home, "source.txt")
 	otherTree := "sha256:" + strings.Repeat("e", 64)
+	attLine := regexp.MustCompile(`(?m)^Verification-Attestation: .*$`).FindString(witness)
+	parts := strings.SplitN(witness, "\n", 3)
+	head, rest := parts[0]+"\n"+parts[1]+"\n", parts[2]
+	rows, tail, _ := strings.Cut(rest, treeDigestPrefix)
+	tail = treeDigestPrefix + tail
 
 	refusals := []struct {
 		name, check, exit, why string
@@ -350,10 +356,18 @@ func TestCloseBracket(t *testing.T) {
 		{"different run", checkJSON(1, strings.Repeat("d", 64), fixtureSource, "docs/brief.md", "m"), "0", "does not re-admit", witness, false},
 		{"refused host check", validCheck, "1", "host admission check failed", witness, false},
 		{"already bracketed", validCheck, "0", "already carries", witness + admissionBracketPrefix + "run=x\n", false},
-		{"no witness header", validCheck, "0", "no witness table header lies above the append position", strings.SplitN(witness, "\n", 3)[2], false},
-		// S11: rows with no header of their own under another bracketed
-		// table would make the span take that table's Tree-Digest lines.
-		{"rows under another table's header", validCheck, "0", "carry no witness table header of their own", witness + "\n" + strings.SplitN(witness, "\n", 3)[2], false},
+		{"no witness header", validCheck, "0", "no witness table header lies above the append position", rest, false},
+		// S11: the run and tree are read only from the span that ends at
+		// the append position. Rows with no header of their own under
+		// another table make that span take the other table's Tree-Digest
+		// and attestation lines; a span with two Tree-Digest lines is
+		// refused the same way; rows split from their header by a blank
+		// line have no header of their own.
+		{"another table's lines in the span", validCheck, "0", "holds 2 Tree-Digest:, 2 Container-Image: and 2 attestation lines", witness + "\n" + rest, false},
+		{"two Tree-Digest lines in the span", validCheck, "0", "holds 2 Tree-Digest:, 1 Container-Image: and 1 attestation lines", head + rows + treeDigestPrefix + otherTree + "\n" + rows + tail, false},
+		{"two Container-Image lines in the span", validCheck, "0", "holds 1 Tree-Digest:, 2 Container-Image: and 1 attestation lines", head + rows + containerImagePrefix + otherTree + "\n" + rows + tail, false},
+		{"two attestation lines in the span", validCheck, "0", "holds 1 Tree-Digest:, 1 Container-Image: and 2 attestation lines", head + rows + attLine + "\n" + rows + tail, false},
+		{"rows under another table's header", validCheck, "0", "carry no witness table header of their own", head + rows + "\n" + rows + tail, false},
 	}
 	for _, c := range refusals {
 		putFile(t, fx.check, c.check)
@@ -393,9 +407,11 @@ func TestCloseBracket(t *testing.T) {
 		t.Fatalf("the bracket line %q does not match %s", line, want)
 	}
 	// --bracket-digest on the bracketed file: one line, its own bracket and
-	// header line, the recorded value, verdict=match, exit 0.
+	// header line, the recorded value, verdict=match, the span's own line
+	// counts, exit 0.
+	const oneEach = "tree-digest:1,container-image:1,attestation:1"
 	n := strings.Count(witness, "\n") + 1
-	if out := verbLines(t, got, verifyrunExitPass); len(out) != 1 || out[0] != fmt.Sprintf("bracket=L%d header=L1 witness=%s recorded=%s verdict=match", n, preClose, preClose) {
+	if out := verbLines(t, got, verifyrunExitPass); len(out) != 1 || out[0] != fmt.Sprintf("bracket=L%d header=L1 witness=%s recorded=%s verdict=match span-lines=%s", n, preClose, preClose, oneEach) {
 		t.Fatalf("--bracket-digest of the bracketed file: %q", out)
 	}
 
@@ -476,24 +492,31 @@ func TestCloseBracket(t *testing.T) {
 	res0 := strings.TrimSpace(cells0[2])
 	editedTwo := strings.Replace(two, "| "+res0+" |", "| "+res0+"X |", 1)
 	out = verbLines(t, editedTwo, verifyrunExitFail)
-	if len(out) != 2 || !strings.HasSuffix(out[0], "verdict=mismatch") || !strings.HasSuffix(out[1], "verdict=match") {
+	if len(out) != 2 || !strings.Contains(out[0], " verdict=mismatch ") || !strings.Contains(out[1], " verdict=match ") {
 		t.Fatalf("an edit in the first table must move only the first bracket: %q", out)
 	}
 	// S11: a bracket is bound to its own span. A tree= that is not its own
 	// span's Tree-Digest, here the other table's, is a mismatch even though the
-	// witness digest matches, and so is a span holding a second Tree-Digest
-	// line under a recomputed witness=.
+	// witness digest matches, and so is a span holding a second Tree-Digest,
+	// Container-Image or attestation line under a recomputed witness=; the
+	// verdict line prints the span's counts.
 	otherTD := "tree=" + otherTree
 	swapped := "## Evidence\n\n" + got + "\nprose between\n\n" + strings.Replace(got, "tree="+tree[1], otherTD, 1)
 	if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, swapped)}); res.code != verifyrunExitFail ||
 		!strings.Contains(out, "witness="+preClose+" recorded="+preClose+" verdict=mismatch") || !strings.Contains(out, "is not its own span's Tree-Digest") {
 		t.Fatalf("a bracket whose tree= is not its own span's Tree-Digest: exit %d output %q", res.code, out)
 	}
-	extra := strings.Replace(witness, "Tree-Digest: ", "Tree-Digest: "+otherTree+"\nTree-Digest: ", 1)
-	forged := extra + admissionBracketPrefix + strings.Replace(line, preClose, digestOf(t, extra), 1)
-	if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, forged)}); res.code != verifyrunExitFail ||
-		!strings.Contains(out, "verdict=mismatch") || !strings.Contains(out, "not one of each") {
-		t.Fatalf("a span with two Tree-Digest lines: exit %d output %q", res.code, out)
+	for _, dup := range []struct{ name, before, extra, counts string }{
+		{"Tree-Digest", treeDigestPrefix, treeDigestPrefix + otherTree, "tree-digest:2,container-image:1,attestation:1"},
+		{"Container-Image", containerImagePrefix, containerImagePrefix + otherTree, "tree-digest:1,container-image:2,attestation:1"},
+		{"attestation", attestationPrefix, attLine, "tree-digest:1,container-image:1,attestation:2"},
+	} {
+		extra := strings.Replace(witness, dup.before, dup.extra+"\n"+dup.before, 1)
+		forged := extra + admissionBracketPrefix + strings.Replace(line, preClose, digestOf(t, extra), 1)
+		if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, forged)}); res.code != verifyrunExitFail ||
+			!strings.Contains(out, " verdict=mismatch span-lines="+dup.counts) || !strings.Contains(out, "not one of each") {
+			t.Fatalf("a span with two %s lines: exit %d output %q", dup.name, res.code, out)
+		}
 	}
 	// S10: an escaped \| is cell content, never a delimiter, as in the
 	// landing's cellSpans: a Command cell carrying one still leaves the stamp
@@ -511,12 +534,12 @@ func TestCloseBracket(t *testing.T) {
 	}
 	// A second bracket under the same table: both are shared, exit non-zero.
 	out = verbLines(t, got+admissionBracketPrefix+line, verifyrunExitFail)
-	if len(out) != 2 || !strings.HasSuffix(out[0], "verdict=shared") || !strings.HasSuffix(out[1], "verdict=shared") {
+	if len(out) != 2 || !strings.Contains(out[0], " verdict=shared ") || !strings.Contains(out[1], " verdict=shared ") {
 		t.Fatalf("two brackets under one table: %q", out)
 	}
 	// A bracket with no witness header above it.
 	out = verbLines(t, admissionBracketPrefix+line+got, verifyrunExitFail)
-	if len(out) != 2 || out[0] != "bracket=L1 header=none witness=none recorded="+preClose+" verdict=no-table" || !strings.HasSuffix(out[1], "verdict=match") {
+	if len(out) != 2 || out[0] != "bracket=L1 header=none witness=none recorded="+preClose+" verdict=no-table span-lines=none" || !strings.Contains(out[1], " verdict=match ") {
 		t.Fatalf("a bracket with no table above it: %q", out)
 	}
 	// A file with no bracket is could-not-check; another flag is a usage error.

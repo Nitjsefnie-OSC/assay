@@ -1725,13 +1725,18 @@ Flags:
                     the home's tree digest, and append one Admission-Bracket line
                     to --witness only when the check re-admits the run the
                     witness names and the digest equals both the receipt's tree
-                    and the witness's Tree-Digest. witness= is the digest
+                    and the witness's Tree-Digest. It reads the run and tree
+                    only from the span that ends at the append position and
+                    refuses a span with more than one Tree-Digest,
+                    Container-Image or attestation line. witness= is the digest
                     --bracket-digest checks: the span from the nearest witness
                     header above the line to the line before it.
   --bracket-digest  read-only, with --witness <file> only: print one line per
                     Admission-Bracket line, in file order:
                     bracket=L<n> header=L<n> witness=sha256:<64 hex>
-                    recorded=<the bracket's witness=> verdict=<v>. A bracket's
+                    recorded=<the bracket's witness=> verdict=<v>
+                    span-lines=tree-digest:<n>,container-image:<n>,attestation:<n>
+                    (none with no header). A bracket's
                     span runs from the nearest witness table header above it to
                     the line before it; trailing whitespace is stripped, blank
                     lines dropped, lines joined with LF, and each Runner cell

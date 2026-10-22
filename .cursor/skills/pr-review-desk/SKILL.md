@@ -1061,7 +1061,8 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   span from the nearest witness header above it to the line before it (an escaped `\|` is never a
   cell delimiter); the `Tree-Digest`, `Container-Image` and attestation lines are the ones inside
   that bracket's own span, one of each, and its `tree=` is compared with that span's
-  `Tree-Digest`, never a line from another bracket. `shared` (two brackets on one table),
+  `Tree-Digest`, never a line from another bracket; the verdict line's
+  `span-lines=tree-digest:1,container-image:1,attestation:1` shows those counts. `shared` (two brackets on one table),
   `no-table` and `mismatch` are never credit. Credit a row only when it sits inside
   exactly one bracket's span.
   Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are

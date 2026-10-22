@@ -363,6 +363,14 @@ func findContainerBlock(text string) (containerBlock, error) {
 	if m == nil {
 		return containerBlock{}, fmt.Errorf("the witness's attestation line is not the version-1 form a container run records: %q", lines[n-1])
 	}
+	// The run, source and tree are compared with the lines inside the span
+	// that ends at the append position, never with another table's: a span
+	// holding more than one of them is refused before anything else is read.
+	if _, header := witnessSpanDigest(lines, n); header >= 0 {
+		if _, problem := spanOwnLines(lines[header:n]); problem != "" {
+			return containerBlock{}, fmt.Errorf("the span that ends at the append position is not bound to one run: %s", problem)
+		}
+	}
 	containerRows, ownHeader := 0, false
 	for i := n - 4; i >= 0 && strings.HasPrefix(lines[i], "|"); i-- {
 		if isWitnessHeaderLine(lines[i]) {
@@ -535,6 +543,9 @@ type bracketCheck struct {
 	witness, recorded string
 	verdict           string // match | mismatch | no-table | shared
 	why               string // a digest match the span's own lines do not support
+	// counts is the span's Tree-Digest, Container-Image and attestation line
+	// counts, the lines the credit rule needs one of each of; nil with no span.
+	counts []int
 }
 
 func (c bracketCheck) String() string {
@@ -542,7 +553,11 @@ func (c bracketCheck) String() string {
 	if c.header > 0 {
 		header, witness = fmt.Sprintf("L%d", c.header), c.witness
 	}
-	return fmt.Sprintf("bracket=L%d header=%s witness=%s recorded=%s verdict=%s", c.bracket, header, witness, c.recorded, c.verdict)
+	spanLines := "none"
+	if c.counts != nil {
+		spanLines = fmt.Sprintf("tree-digest:%d,container-image:%d,attestation:%d", c.counts[0], c.counts[1], c.counts[2])
+	}
+	return fmt.Sprintf("bracket=L%d header=%s witness=%s recorded=%s verdict=%s span-lines=%s", c.bracket, header, witness, c.recorded, c.verdict, spanLines)
 }
 
 var bracketWitnessRe = regexp.MustCompile(`(?:^|\s)witness=(\S+)`)
@@ -563,8 +578,12 @@ func bracketChecks(text string) []bracketCheck {
 			c.recorded = m[1]
 		}
 		digest, header := witnessSpanDigest(lines, i)
-		if header >= 0 && digest == c.recorded {
-			c.why = spanBindingProblem(lines[header:i], l)
+		if header >= 0 {
+			trees, images, attestations := spanLineCounts(lines[header:i])
+			c.counts = []int{len(trees), images, attestations}
+			if digest == c.recorded {
+				c.why = spanBindingProblem(lines[header:i], l)
+			}
 		}
 		switch {
 		case header < 0:
@@ -587,8 +606,6 @@ func bracketChecks(text string) []bracketCheck {
 	return checks
 }
 
-// isWitnessHeaderLine reports whether a line, trimmed, is the first line of a
-// verifyrun witness header, plain or fail-first.
 // bracketTreeRe reads an Admission-Bracket line's tree= value.
 var bracketTreeRe = regexp.MustCompile(`(?:^|\s)tree=(\S+)`)
 
@@ -598,8 +615,35 @@ var bracketTreeRe = regexp.MustCompile(`(?:^|\s)tree=(\S+)`)
 // bracket's tree= must equal that span's Tree-Digest, never a line from
 // another bracket's span. It is "" when the span binds.
 func spanBindingProblem(span []string, bracket string) string {
-	var trees []string
-	images, attestations := 0, 0
+	tree, problem := spanOwnLines(span)
+	if problem != "" {
+		return problem
+	}
+	m := bracketTreeRe.FindStringSubmatch(bracket)
+	if m == nil || m[1] != tree {
+		got := "none"
+		if m != nil {
+			got = m[1]
+		}
+		return fmt.Sprintf("the bracket's tree=%s is not its own span's %s %s", got, strings.TrimSpace(treeDigestPrefix), tree)
+	}
+	return ""
+}
+
+// spanOwnLines counts a span's Tree-Digest, Container-Image and attestation
+// lines. It returns the span's one Tree-Digest value, or why the span does not
+// hold exactly one line of each kind.
+func spanOwnLines(span []string) (tree, problem string) {
+	trees, images, attestations := spanLineCounts(span)
+	if len(trees) != 1 || images != 1 || attestations != 1 {
+		return "", fmt.Sprintf("the span holds %d %s, %d %s and %d attestation lines, not one of each", len(trees), strings.TrimSpace(treeDigestPrefix), images, strings.TrimSpace(containerImagePrefix), attestations)
+	}
+	return trees[0], ""
+}
+
+// spanLineCounts returns a span's Tree-Digest values and its Container-Image
+// and attestation line counts.
+func spanLineCounts(span []string) (trees []string, images, attestations int) {
 	for _, l := range span {
 		l = strings.TrimSpace(l)
 		switch {
@@ -611,20 +655,11 @@ func spanBindingProblem(span []string, bracket string) string {
 			attestations++
 		}
 	}
-	if len(trees) != 1 || images != 1 || attestations != 1 {
-		return fmt.Sprintf("the span holds %d %s, %d %s and %d attestation lines, not one of each", len(trees), strings.TrimSpace(treeDigestPrefix), images, strings.TrimSpace(containerImagePrefix), attestations)
-	}
-	m := bracketTreeRe.FindStringSubmatch(bracket)
-	if m == nil || m[1] != trees[0] {
-		got := "none"
-		if m != nil {
-			got = m[1]
-		}
-		return fmt.Sprintf("the bracket's tree=%s is not its own span's %s %s", got, strings.TrimSpace(treeDigestPrefix), trees[0])
-	}
-	return ""
+	return trees, images, attestations
 }
 
+// isWitnessHeaderLine reports whether a line, trimmed, is the first line of a
+// verifyrun witness header, plain or fail-first.
 func isWitnessHeaderLine(l string) bool {
 	l = strings.TrimSpace(l)
 	for _, header := range []string{witnessHeader, witnessHeaderFailFirst} {
