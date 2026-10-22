@@ -1069,16 +1069,16 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   `no-table` and `mismatch` are never credit, and the verb exits non-zero while any
   `sandbox=container-netns` row lies in no bracket's span. Credit a row only when it sits inside
   exactly one bracket's span.
-  **`verdict=match` is consistency, not authorship.** The digest is keyless and computed from
-  the file's own bytes, so a hand-written bracket can match; the verb never shows that the close
-  step ran or who wrote the lines. Credit the row only when, in addition: (1) the bracket line and
-  every line of its span were landed by the verifier identity, read per line on the landed file
-  (`git blame`: each line's landing commit is an accepted verifier's), never the any-line
-  Evidence-actor test; (2) the span's `Verification-Attestation:` line is the one the verifier's
-  attestation record for that `run=` renders (the record the line's `<repo>#<issue>` names
-  carries the same run, source and brief); and (3) its `brief=` is the brief whose Evidence holds
-  it and its `source=` is the source under verification. A block copied from another brief or an
-  earlier source, or written by hand, is never credit, whatever the verb prints.
+  **`verdict=match` shows only that the bracket is consistent with its span, not who wrote it.**
+  The digest is keyless and computed from the file's own bytes. A row is credited only when all of
+  these conditions hold: (1) the bracket line and every span line were landed by the verifier's
+  landing step, read per line (`git blame` on the landed file: each line's commit is the verifier
+  App's), never the any-line Evidence-actor test; (2) the span's attestation matches the
+  verifier's attestation record for that run (the record its `<repo>#<issue>` names); and (3) that
+  attestation names the brief that contains it and the source under verification. A bracket and
+  span written outside the landing step, a bracketed block copied from another brief or an earlier
+  source, or an attestation that does not match its record is not credit, even when the digest
+  matches. `verifyrun` does not check these conditions; check them yourself.
   Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
   refused in container mode; a linked worktree's git directory is not mounted in the container, so
   rows that need git history must run on the host; and the in-container digest is only as

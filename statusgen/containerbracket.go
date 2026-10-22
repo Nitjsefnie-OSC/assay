@@ -39,10 +39,12 @@ import (
 //
 // A container-sandboxed row is credited only inside a closed bracket. The
 // bracket digest is keyless and computed from the file's own bytes, so a
-// match shows only that a bracket agrees with its span, never who wrote it:
-// credit also needs the bracket and its span landed by the verifier identity
-// line by line, and an attestation the verifier's record for that run backs,
-// naming the brief that holds it and the source under verification (rule 45).
+// match shows only that the bracket is consistent with its span, not who
+// wrote it. A row is credited only when the bracket line and every span line
+// were landed by the verifier's landing step, the span's attestation matches
+// the verifier's attestation record for that run, and that attestation names
+// the brief that contains it and the source under verification (rule 45);
+// nothing in this file checks those conditions.
 
 const (
 	containerImagePrefix   = "Container-Image: "

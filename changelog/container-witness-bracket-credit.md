@@ -18,8 +18,10 @@
   that span and refuses one holding a second `Tree-Digest`, `Container-Image` or attestation line,
   and replaces the witness by temp file and rename, never in place.
   Rule 45, verify-desk and pr-review-desk now credit a container row only inside exactly one
-  closed bracket whose verdict is `match`, and only when the bracket and its span were landed
-  by the verifier identity line by line and its attestation is the verifier's own for that run,
-  naming the brief that holds it and the source under verification: `match` is consistency,
-  not authorship.
+  closed bracket whose verdict is `match`, and state that `verdict=match` shows only that the
+  bracket is consistent with its span, not who wrote it: a row is credited only when the
+  bracket line and every span line were landed by the verifier's landing step, the span's
+  attestation matches the verifier's attestation record for that run, and that attestation
+  names the brief that contains it and the source under verification. No tool checks those
+  conditions yet.
 - The driver's ruling of 2026-10-22 that bracketed container runs count as Linux witnesses, for ratification at merge: #4069

@@ -1758,14 +1758,15 @@ Flags:
                     outside every bracket's span (those rows are named on
                     stderr); a file with no bracket is could-not-check.
                     A raw sha256sum of the landed bytes will not match.
-                    verdict=match shows only that a bracket agrees with its
-                    own span: the digest is keyless, computed from the file's
-                    own bytes, so it never shows who wrote the bracket or that
-                    the close step ran. Credit also needs the bracket and its
-                    span landed by the verifier identity line by line, the
-                    span's attestation equal to the verifier's attestation
-                    record for that run, and its brief= and source= the brief
-                    holding it and the source under verification (rule 45).
+                    verdict=match shows only that the bracket is consistent
+                    with its span, not who wrote it: the digest is keyless,
+                    computed from the file's own bytes. It is not credit on
+                    its own: a row is credited only when the bracket line and
+                    every span line were landed by the verifier's landing
+                    step, the span's attestation matches the verifier's
+                    attestation record for that run, and that attestation
+                    names the brief that contains it and the source under
+                    verification (rule 45). This verb checks none of those.
   --in-container    run the rows inside the PINNED harness container instead of on
                     the host — the supported execution-witness runner on Windows,
                     where a native pipefail bash is unreliable (#1418). Reads the

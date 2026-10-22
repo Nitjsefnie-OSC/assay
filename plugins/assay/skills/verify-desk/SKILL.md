@@ -188,7 +188,19 @@ with no edit to the home between the steps:
 
 Land the closed witness file's bytes, bracket line included, as the Evidence block. A
 container row without its `Admission-Bracket` line is unattested and is not a Linux
-witness. Version 2 (cross-repository) receipts are refused in container mode, and a linked
+witness. On the landed file, `statusgen verifyrun --bracket-digest --witness <brief>` must
+report `verdict=match` and `span-lines=tree-digest:1,container-image:1,attestation:1` on that
+bracket's own `bracket=` line, and the bracket's `opened` must precede `closed`.
+
+`verdict=match` shows only that the bracket is consistent with its span, not who wrote it:
+the digest is keyless and computed from the file's own bytes. A row is credited only when
+all of these conditions hold: the bracket line and every span line were landed by the
+verifier's landing step (`deskevidence`, read per line, never the any-line Evidence-actor
+test), the span's attestation matches the verifier's attestation record for that run, and
+that attestation names the brief that contains it and the source under verification. A
+bracket and span written outside the landing step, a bracketed block copied from another
+brief or an earlier source, or an attestation that does not match its record is not credit,
+even when the digest matches. `verifyrun` does not check these conditions. Version 2 (cross-repository) receipts are refused in container mode, and a linked
 worktree's git directory is not mounted in the container, so rows that need git history
 run on the host.
 

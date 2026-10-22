@@ -710,16 +710,18 @@ passing run — which is why they are lint rules and not review vigilance.
       span. Check it with that verb on the landed file, never a raw
       `sha256sum`. A container row is credited only inside exactly one
       bracket's span, and only when that bracket's verdict is `match`.
-      `match` is consistency, not authorship: the digest is keyless and
-      computed from the file's own bytes, so it never shows that the close
-      step ran or who wrote the lines. The row is credited only when, in
-      addition, the bracket line and every line of its span were landed by
-      the verifier identity (read per line on the landed file, never the
-      any-line Evidence-actor test), the span's attestation is the one the
-      verifier's attestation record for that `run=` renders, and its
-      `brief=` is the brief whose Evidence holds it and its `source=` the
-      source under verification. A block copied from another brief or an
-      earlier source, or written by hand, is never credit. A
+      `verdict=match` shows only that the bracket is consistent with its
+      span, not who wrote it: the digest is keyless and computed from the
+      file's own bytes. A row is credited only when all of these conditions
+      hold: the bracket line and every span line were landed by the
+      verifier's landing step (read per line, never the any-line
+      Evidence-actor test), the span's attestation matches the verifier's
+      attestation record for that run, and that attestation names the brief
+      that contains it and the source under verification. A bracket and span
+      written outside the landing step, a bracketed block copied from another
+      brief or an earlier source, or an attestation that does not match its
+      record is not credit, even when the digest matches. `verifyrun` does
+      not check these conditions; the reviewer does. A
       container-netns run without
       `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
       Known limits: version 2 (cross-repository) receipts are refused; a
