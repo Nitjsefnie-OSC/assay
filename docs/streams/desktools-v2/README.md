@@ -124,6 +124,10 @@ is the one contract; /15–/17 own its foundation, rollout and completion.
 | 67 | [Define an extensible perf-v4 envelope and compatible readers](brief-67-define-an-extensible-perf-v4-envelope-and-compatible-readers.md) | 3 | M | todo | — | — |
 | 68 | [Select perf-v4 in shared producers and qualify the direct migration](brief-68-select-perf-v4-in-shared-producers-and-qualify-the-direct-migration.md) | 4 | M | todo | — | — |
 | 69 | [Specify extensible JSON contracts and migration targets](brief-69-specify-extensible-json-contracts-and-migration-targets.md) | 1 | M | implemented | — | — |
+| 70 | [Exempt workflow-bound issue filings from the filing budget](brief-70-exempt-workflow-bound-issue-filings-from-the-filing-budget.md) | 1 | M | todo | — | — |
+| 71 | [Credit container witness rows bracketed by host verifier admission](brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md) | 1 | M | todo | — | — |
+| 72 | [Land verifier outcome records from a dispatcher-named path outside the home](brief-72-land-verifier-outcome-records-from-a-dispatcher-named-path-outside-the-home.md) | 1 | M | todo | — | — |
+| 73 | [Make deskevidence own the on-behalf-of principal on Runner cells](brief-73-make-deskevidence-own-the-on-behalf-of-principal-on-runner-cells.md) | 1 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -353,3 +357,17 @@ selection). /67 also needs /63; /68 also needs /64 and /65 verification. Authori
 these briefs does not claim their implementation. Existing /26 and /62 work retains
 its snapshot, phase, benchmark and verification obligations; future format tasks
 migrate to v4 through dated amendments rather than editing completed evidence.
+
+## Workflow filings and witness records — 22 October 2026
+
+Four independent wave-1 briefs record driver rulings of 22 October 2026. /70 binds
+workflow issue filings to their PR (and brief), outside the process-error filing
+budget, with a per-role per-PR cap, its own audit class and the unchanged repo-wide
+ceiling as the compensating bound (proposal 11 brakes). /71 credits Linux container
+witness rows only when host verifier admission brackets the run, and makes
+`verifyrun --sandbox=container-netns` fail closed without that bracket. /72 has the
+dispatcher name an outcome-record path outside the verifier home, which `deskevidence`
+lands; admission and the record format are unchanged. /73 makes `deskevidence` restamp
+or refuse an on-behalf-of annotation that is not the roster principal, with a lint
+parity test. /71, /72 and /73 each edit the verify-desk skill, so whichever lands later
+merges the others' text. Authoring these briefs does not claim their implementation.
