@@ -180,5 +180,61 @@ The implementation meets the brief's contract. The defect is in the Verify table
 
 **VERIFY: FAIL** — rows 2 and 4 exit 141 under the canonical pipefail witness (statusgen verifyrun v1.0.39), unchanged since 2026-10-07; rows 1, 3 and 5 pass; the code meets the contract; the Verify-table defect is tracked in #2241.
 
+### Re-verification — VERIFY: PASS — 2026-10-21
+
+Non-implementer re-verification on merged main 65a6418cd90c921153db509370212b1cdcd4f5e1 against the re-baselined Verify table (rows 2 and 4 now use the pipefail-safe `grep -c` form, re-baselined 2026-10-16). Gate: model; all four risk answers no. Every row was run under `bash -o pipefail` from the checkout root (go1.27.2 darwin/arm64, git 2.56.0), and rows 2 and 4 were run again in plain bash with the same results. stalefail.go, its test, the three fixture trees and the mutation script are unchanged since 8e20f91571c9. The tree was clean after every row.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `cd statusgen && go test . -run TestStaleFailVsMissingCard -count=1` | exit 0; output contains "ok" | exit 0 under pipefail; "ok github.com/medici-finance/assay/statusgen 0.980s" | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `cd statusgen && go test . -run TestStaleFailVsMissingCard -count=1 -v 2>&1 \| grep -c '^--- PASS: TestStaleFailVsMissingCard'` | prints `1`, exit 0 | prints 1, exit 0 under pipefail (no SIGPIPE); plain bash also prints 1, exit 0. Subtests stale-fail, missing-card and current-fail each show --- PASS | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `ls statusgen/testdata/*stale*fail* statusgen/testdata/*missing*card* >/dev/null 2>&1` | exit 0 | exit 0; the glob matches the stale-fail and missing-card fixture dirs and stalefail-mutation.sh; the current-fail fixture dir is also present | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd statusgen && go test . -run TestStaleFailVsMissingCard -count=1 -v 2>&1 \| grep -c 'stale FAIL'` | prints a count >= 1, exit 0 | prints 1, exit 0 under pipefail; plain bash also prints 1, exit 0. The matched line reads "brief check/01 has stale FAIL — newest relevant main commit ed659a6 postdates Evidence 2026-08-01; a non-implementer RE-VERIFY supersedes it" | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `cd statusgen && bash testdata/stalefail-mutation.sh` | exit 0; planted second route is detected | exit 0 under pipefail; "unclassified waiting-brief route in planted_route_2PxuLq.go:plantedRoute" then "PASS: the planted second route was detected"; tree clean afterwards | 2026-10-21 | assay-verifier-app[bot] @ 65a6418cd90c921153db509370212b1cdcd4f5e1 (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Verification-Attestation: medici-finance/assay#3882 run=8d6199a753d839b4e786e1525773e5785224231bbddd326cf183fae75c657a94 source=65a6418cd90c921153db509370212b1cdcd4f5e1 brief=docs/streams/measured-status/brief-04-stale-fail-lint-derivation.md model=claude-opus-5-5 tier=strong
+
+Risk-bearing values. Risk metadata is present and all four answers are no, including irreversible: no. Enumerated over the 8e20f91571c9 diff to brieffile.go and stalefail.go, re-located at 65a6418cd90c:
+- date.AddDate(0, 0, 1) @ statusgen/stalefail.go:111 — a fix commit counts only if it lands on a later UTC day than the Evidence date
+- failHeadingRe = ^#{3,6}[ \t] @ statusgen/stalefail.go:12 — the Evidence run-heading depth
+- status set {in-progress, implemented, verified} @ statusgen/stalefail.go:164
+- ref order {refs/remotes/origin/main, refs/heads/main} @ statusgen/stalefail.go:81
+- is-shallow-repository must equal "false" @ statusgen/stalefail.go:76, otherwise could-not-check
+
+All of these are reversible lint-routing knobs, fixed by an edit and a release.
+
+RISK-VALUE: DERIVED — date.AddDate(0, 0, 1) = 1 day @ statusgen/stalefail.go:111 — Evidence dates are day-granular, so a same-day commit cannot be ordered against them. Counting only commits from the next UTC day or later as stale avoids rounding an unknown order to stale. Its one error mode is an over-call for a same-local-day edit west of UTC, and that routes to a re-verify, never to a sign-off.
+
+The Verify-table defect behind the 2026-10-07 and 2026-10-11 FAILs (rows 2 and 4 exiting 141 under pipefail, #2241) is fixed by the 2026-10-16 re-baseline: both rows now exit 0 under pipefail.
+
+**VERIFY: PASS** — 5/5 rows pass at 65a6418cd90c921153db509370212b1cdcd4f5e1 under pipefail.
+
+### Re-verification — VERIFY: PASS — 2026-10-21 (merged main 471fa0febe6d)
+
+Non-implementer re-verification on merged main 471fa0febe6d4370b973cf2380a0513f6a1d7efd, admitted by the dispatcher's pre-work check (attestation line below). Gate: model; all four risk answers no. Every row was run under `bash -o pipefail` from the checkout root (go1.27.2 darwin/arm64, git 2.56.0). Between 65a6418cd90c and 471fa0febe6d the only statusgen changes are to the dorajson files; stalefail.go, its test, the three fixture trees and the mutation script are unchanged since 8e20f91571c9. The tree was clean after every row.
+
+| # | Command | Expect | Observed | Date | Runner |
+|---|---------|--------|----------|------|--------|
+| 1 | `cd statusgen && go test . -run TestStaleFailVsMissingCard -count=1` | exit 0; output contains "ok" | exit 0 under pipefail; "ok github.com/medici-finance/assay/statusgen 0.690s" | 2026-10-21 | assay-verifier-app[bot] @ 471fa0febe6d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 2 | `cd statusgen && go test . -run TestStaleFailVsMissingCard -count=1 -v 2>&1 \| grep -c '^--- PASS: TestStaleFailVsMissingCard'` | prints `1`, exit 0 | prints 1, exit 0 under pipefail; subtests stale-fail, missing-card and current-fail each show --- PASS | 2026-10-21 | assay-verifier-app[bot] @ 471fa0febe6d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 3 | `ls statusgen/testdata/*stale*fail* statusgen/testdata/*missing*card* >/dev/null 2>&1` | exit 0 | exit 0; the glob matches the stale-fail and missing-card fixture dirs and stalefail-mutation.sh; the current-fail fixture dir is also present | 2026-10-21 | assay-verifier-app[bot] @ 471fa0febe6d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 4 | `cd statusgen && go test . -run TestStaleFailVsMissingCard -count=1 -v 2>&1 \| grep -c 'stale FAIL'` | prints a count >= 1, exit 0 | prints 1, exit 0 under pipefail; the matched line reads "brief check/01 has stale FAIL — newest relevant main commit ed659a6 postdates Evidence 2026-08-01; a non-implementer RE-VERIFY supersedes it", distinct from the missing-card line ("sign-off card missing — verify-desk lands the marker") and the current-fail line ("no decision-issue — file one via --decision-issues") | 2026-10-21 | assay-verifier-app[bot] @ 471fa0febe6d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+| 5 | `cd statusgen && bash testdata/stalefail-mutation.sh` | exit 0; planted second route is detected | exit 0 under pipefail; "unclassified waiting-brief route in planted_route_CTjOIa.go:plantedRoute" then "PASS: the planted second route was detected"; tree clean afterwards | 2026-10-21 | assay-verifier-app[bot] @ 471fa0febe6d (claude-opus-5-5 verifier) (on-behalf-of human:ian) |
+
+Verification-Attestation: medici-finance/assay#3988 run=5086aedb5aacce807de66169de97685930e7ac12331cbcd838d20c682a524752 source=471fa0febe6d4370b973cf2380a0513f6a1d7efd brief=docs/streams/measured-status/brief-04-stale-fail-lint-derivation.md model=claude-opus-5-5 tier=strong
+
+Risk-bearing values. Risk metadata is present and all four answers are no, including irreversible: no. Enumerated over the 8e20f91571c9 diff to brieffile.go and stalefail.go, re-located at 471fa0febe6d:
+- date.AddDate(0, 0, 1) @ statusgen/stalefail.go:111 — a fix commit counts only if it lands on a later UTC day than the Evidence date
+- failHeadingRe = ^#{3,6}[ \t] @ statusgen/stalefail.go:12 — the Evidence run-heading depth
+- status set {in-progress, implemented, verified} @ statusgen/stalefail.go:164
+- ref order {refs/remotes/origin/main, refs/heads/main} @ statusgen/stalefail.go:81
+- is-shallow-repository must equal "false" @ statusgen/stalefail.go:77, otherwise could-not-check
+
+All of these are reversible lint-routing knobs, fixed by an edit and a release.
+
+RISK-VALUE: DERIVED — date.AddDate(0, 0, 1) = 1 day @ statusgen/stalefail.go:111 — Evidence dates are day-granular, so a same-day commit cannot be ordered against them. Counting only commits from the next UTC day or later as stale avoids rounding an unknown order to stale. Its one error mode is an over-call for a same-local-day edit west of UTC, and that routes to a re-verify, never to a sign-off.
+
+**VERIFY: PASS** — 5/5 rows pass at 471fa0febe6d4370b973cf2380a0513f6a1d7efd under pipefail.
+
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.

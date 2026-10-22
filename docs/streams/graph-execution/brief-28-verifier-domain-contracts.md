@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 5
+version: 6
 authored: 2026-10-13 by worker-desk (author-brief), non-CI architecture reconciliation
 sources:
   - docs/proposals/non-ci-architecture/16-delivery-sequence.md — package R1 (domain contracts and regression floor)
@@ -30,7 +30,6 @@ consumers:
   - "docs/contracts.md: fixed-here (S-verification-domain owner and consumer boundary)"
   - "statusgen/contexthandoff/jsonschema_test.go: fixed-here (uses the shared statusgen/internal/testschema helper)"
   - "docs/streams/desktools-v2/cli-migration.json: fixed-here (exact source-test route for statusgen/domain/mutate.py; read by the unchanged tools/desk/internal/clicontract inventory, research-replay and routing-mutation checks)"
-  - "tools/desk/cmd/deskwt/maintenancecustody_unix_test.go: fixed-here (CI fixture repair for medici-finance/assay#3736; publish the complete child PID atomically while preserving the crash and custody assertions)"
   - "workflow candidate record (spec/workflow-candidate-v1.md as planned by graph-execution/23): follow-up graph-execution/23"
   - "regression-floor adapters: follow-up graph-execution/29"
   - "statusgen/evaluation: out-of-scope (consumed unchanged through its exported API; statusgen/15 owns it)"
@@ -49,6 +48,8 @@ files: `spec/verification-domain-v1.md`, `schemas/verification-domain-v1.json`,
 `docs/contracts.md` (one new semantic-owner row), `docs/lifecycle.md`,
 `docs/streams/desktools-v2/cli-migration.json`, `changelog/k8s-verifier-domain-contracts.md`,
 `tools/desk/cmd/deskwt/maintenancecustody_unix_test.go` (test-only CI repair).
+
+facts (implementation notes):
 
 CI shepherd repair (2026-10-20, medici-finance/assay#3736): the legacy crash fixture
 publishes its complete child PID through a same-directory rename. A deterministic
@@ -165,9 +166,14 @@ merged PR, records its full immutable SHA in `ASSAY_DELIVERY_SHA`, and records t
 commit's actual first-parent SHA in `ASSAY_DELIVERY_BASE_SHA`. Neither value defaults to
 HEAD, origin/main or a branch tip. Both commits must be available in the verification
 checkout; absent or unknown provenance fails closed. Record exact consumer result counts
-and resolve unchecked required consumers separately; zero disproofs alone is not complete
-flow coverage. A pre-merge PR-range check is local sanity only and is not row-10 delivery
-evidence. The writer of this brief does not assert post-merge verification here.
+and distinguish follow-up ownership corroboration from actual contract consumption.
+Required candidate-workspace (/23), regression-adapter (/29) and durable-store (/19)
+consumption stays held until separately proved, even when their owning briefs are
+corroborated; zero disproofs alone is not complete flow coverage. A pre-merge PR-range
+check can leave follow-up entries unchecked; delivery mode can corroborate their owning
+briefs without proving consumption. PR-range results are local sanity only and are not
+row-10 delivery evidence. The writer of this brief does not assert post-merge verification
+here.
 
 | # | Class | Command | Expect |
 |---|---|---|---|
@@ -180,14 +186,18 @@ evidence. The writer of this brief does not assert post-merge verification here.
 | 7 | check:ci +mutation | `(cd statusgen && name=$(GOWORK=off go list -f '{{.Name}}' ./domain/) && test "$name" = domain && bad=$(GOWORK=off go list -f '{{range .Imports}}{{if or (eq . "os") (eq . "os/exec") (eq . "net") (eq . "net/http") (eq . "syscall") (eq . "io/ioutil") (eq . "path/filepath")}}{{.}} {{end}}{{end}}' ./domain/) && test -z "$bad")` | exit 0; the package exists and imports no filesystem, process or network package; mutation: add an `os` import to the package — the row must fail |
 | 8 | check:ci +dereference | `(cd statusgen && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run "^TestDomainSchemaFixtures$" ./domain/ > "$out" && grep -F -- "--- PASS: TestDomainSchemaFixtures " "$out")` | exit 0; named PASS; every fixture under `statusgen/testdata/domain/` (planned) validates (positive) or is refused (negative) against `schemas/verification-domain-v1.json` (planned), and the spec names each schema record |
 | 9 | check:ci +flow +mutation | `(cd statusgen && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run "^TestDomainStageSeparation$" ./domain/ > "$out" && grep -Fq -- "--- PASS: TestDomainStageSeparation " "$out")` | exit 0; named PASS; the three stage combinations remain distinct; mutation: map execution success directly to accepted — the test fails |
-| 10 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief graph-execution/28 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its actual first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; unchecked required candidate-workspace, regression-adapter and durable-store consumers stay held; the unchanged evaluator and deferred runtime-controller exclusions remain reviewer judgments, and omitted consumers remain a review obligation |
+| 10 | check +flow | `test -n "$ASSAY_DELIVERY_SHA" && test -n "$ASSAY_DELIVERY_BASE_SHA" && statusgen --root . --consumers --brief graph-execution/28 --delivery "$ASSAY_DELIVERY_SHA" --base "$ASSAY_DELIVERY_BASE_SHA"` | exit 0 only for the named landed delivery and its actual first parent; record exact corroborated/disproved/unchecked counts, 0 disproved; delivery-mode corroboration of follow-up graph-execution/23, /29 and /19 establishes owning-brief existence and routing only, not contract use; their required candidate-workspace, regression-adapter and durable-store consumption stays held until separately proved, regardless of corroborated ownership; the unchanged evaluator and deferred runtime-controller exclusions remain reviewer judgments, and omitted consumers remain a review obligation |
 
 ## Pre-mortem
 
 Likely wrong builds: identity from paths (row 1), unknown facts rounded to pass (row 2), a
 branch-name binding (row 3), acceptance inferred from execution (row 4), stale results reused
-(row 5), a second evaluator hidden in the package (row 6), effects creeping in (row 7) and a
-schema that drifts from the code (row 8). Adequacy of the record shapes stays a review judgment.
+(row 5), a second evaluator hidden in the package (row 6), effects creeping in (row 7), a
+schema that drifts from the code (row 8), collapsed execution/acceptance/publication states
+(row 9), and delivery provenance or consumer-routing failures (row 10). Row 10 corroborates
+follow-up ownership, not actual contract use; downstream consumption and omitted consumers
+remain independent proof and review obligations. Adequacy of the record shapes stays a
+review judgment.
 
 ## Evidence
 
