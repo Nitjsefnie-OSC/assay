@@ -25,6 +25,7 @@ const usage = `deskfile — filing gate: mandatory dedupe, class-issue attach, p
 USAGE:
   deskfile new    -R <owner/repo> --title <t> --body-file <f> [--label ...] [--raised-by <role>]
                   [--to <role>] [--force-new --reason <r>]
+                  [--for-pr <owner/repo>#<N> [--brief <id>]]
   deskfile attach -R <owner/repo> --to <N> --body-file <f> [--kind issue|mr]
   deskfile check  -R <owner/repo> --title <t>
   deskfile --version
@@ -38,6 +39,23 @@ new    — file a new issue. Runs a dedupe search against the repo's OPEN issues
          (exit 4 over); attach comments are never budgeted. The budget is charged to the
          FILING agent's own session tag ($DESK_SESSION ahead of the harness session id a
          dispatched agent inherits), so each agent in a fan-out has its own 3.
+
+         WORKFLOW-BOUND FILINGS: --for-pr <owner/repo>#<N> [--brief <id>] files an issue
+         that a review or verification of open change request N requires. It is NOT counted
+         against the per-session budget above. The PR must be open, and --brief (or, when
+         omitted, the PR's own brief, if any) must resolve to a brief file that is the PR's
+         brief; otherwise the filing is REFUSED (exit 5; an unreadable PR or brief exits 6).
+         --brief without --for-pr, and --force-file with --for-pr, are refused (exit 5).
+         --for-pr does NOT bind the filer to the PR — any session may name any open PR. The
+         bound is the counting instead: a per-role, per-PR cap (knob
+         issue.file.bound_per_pr over issue.file.window; 0 = off), where the role is the
+         App identity that performs the write (from the session's token, never from
+         --raised-by, --to or the environment; an unresolvable role exits 6); the per-PR and
+         repo-wide outward-write tiers, which still charge every bound filing; and the audit
+         log, where each bound filing is its own verb (new-bound) naming the PR, brief and
+         role. Over the cap: exit 4 with a retry-after. After filing, a back-link comment is
+         posted on the PR; if it cannot be confirmed the issue still stands and the command
+         exits 6 naming the URL — do not re-file.
 
          --raised-by <role> stamps the provenance label raised-by:<role> so the by-desk
          issue metric can attribute the filing. The role vocabulary is DERIVED from the
