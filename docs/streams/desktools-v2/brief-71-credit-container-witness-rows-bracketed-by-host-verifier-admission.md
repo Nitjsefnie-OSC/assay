@@ -15,7 +15,7 @@ version: 1
 authored: 2026-10-22 by statusgen newbrief
 sources:
   - 'desktools-v2: Credit container witness rows bracketed by host verifier admission'
-  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR, https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22): Linux container runs count as Linux witnesses when the host runs verifier admission immediately before and after the container run; admission inside a network-less container is the refused shape"
+  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR, #4069, merged 2026-10-22): Linux container runs count as Linux witnesses when the host runs verifier admission immediately before and after the container run; admission inside a network-less container is the refused shape"
   - docs/brief-rules.md (rule 45)
   - docs/proposals/non-ci-architecture/13-migration-and-decisions.md (§The verifier transaction, end to end, step 3)
   - docs/proposals/non-ci-architecture/29-extensible-json-contracts.md (worker/verifier attestations row)
@@ -68,7 +68,7 @@ single-point-of-failure: the host close step's three-way tree-digest match (host
 
 ## Human decision
 
-For ratification at merge: driver ruling, 2026-10-22, as in sources; its public record is the driver's merge of this gate: human brief PR, https://github.com/medici-finance/assay/pull/4069, merged 2026-10-22. Still for acceptance at done: the
+For ratification at merge: driver ruling, 2026-10-22, as in sources; its public record is the driver's merge of this gate: human brief PR, #4069, merged 2026-10-22. Still for acceptance at done: the
 bracket form below and the image-digest requirement. Recommended: require the image
 digest on every credited container row. A run whose digest cannot be read is
 could-not-run, not a pass. Alternative: make the digest advisory. That is easier to adopt,
