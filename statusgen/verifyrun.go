@@ -1250,7 +1250,7 @@ func briefVerifyRows(verifySection string) []verifyRow {
 		row := verifyRow{ID: id, Command: cmd, CommandCell: strings.TrimSpace(r.Command), Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect)}
 		if first, why := proseLedCommandWhy(r.Command); why != "" {
 			what := "first span "
-			if why == shellCommentMarkedWhy {
+			if why == shellCommentMarkedWhy || why == shellNoOpMarkedWhy {
 				what = "marked command "
 			}
 			row.ProseLed = what + strings.ReplaceAll(first, "|", "\\|") + " is " + why
