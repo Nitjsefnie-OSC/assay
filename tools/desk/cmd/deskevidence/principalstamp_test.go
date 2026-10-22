@@ -23,12 +23,12 @@ const (
 
 func stampRoster(humanMap bool) string {
 	r := "ASSAY_BLESS_LOGIN=example-operator:4001\n" +
-		"ASSAY_TRUSTED_LOGINS=example-operator:4001,shared-agent:4002\n" +
+		"ASSAY_TRUSTED_LOGINS=example-operator:4001,shared-agent:4002,example-colleague:4003\n" +
 		"ASSAY_TRUSTED_BOT_SLUGS=desk=assay-desk-app:300000001,reviewer=assay-reviewer-app:300000004," +
 		"verifier=assay-verifier-app:300000005,worker=assay-worker-app:300000006\n" +
 		"ASSAY_ALLOWED_REPOS=" + stampPublicRepo + ":ci:public," + stampPrivateRepo + ":ci:private\n"
 	if humanMap {
-		r += "ASSAY_HUMAN_LOGIN_MAP=operator:example-operator\n"
+		r += "ASSAY_HUMAN_LOGIN_MAP=operator:example-operator,colleague:example-colleague\n"
 	}
 	return r
 }
@@ -122,9 +122,10 @@ func TestStampBriefFragment(t *testing.T) {
 }
 
 // regression: #2976
-// TestStampLeavesRowsAlone: rows that already carry a principal (even one the lint would
-// reject), human-run rows, and an unstamped App row ALREADY on the branch all land
-// byte-identical; with nothing to stamp the roster is never consulted for the stamp.
+// TestStampLeavesRowsAlone: human-run rows (even one carrying annotation-like text) and an
+// unstamped App row ALREADY on the branch land byte-identical; with no added App row the
+// roster is never consulted. (Added App rows that already carry an annotation are classified
+// against the resolved principal — TestPrincipalStamp.)
 func TestStampLeavesRowsAlone(t *testing.T) {
 	f := setupStamp(t, true)
 	calls := 0
@@ -134,9 +135,8 @@ func TestStampLeavesRowsAlone(t *testing.T) {
 	standing := "| 1 | `a` | 0 | ok | 2026-10-01 | example-app[bot] @ abc1234 (git-config) |\n"
 	head := "# Brief\n\n## Evidence\n\n| # | Command | Exit | Result | Date | Runner |\n|---|---|---|---|---|---|\n"
 	f.setFile(stampBrief, head+standing)
-	frag := "| 2 | `b` | 0 | ok | 2026-10-14 | example-app[bot] @ abc1234 (on-behalf-of human:someone) (forge-identity) |\n" +
-		"| 3 | `c` | 0 | ok | 2026-10-14 | human:operator @ abc1234 |\n" +
-		"| 4 | `d` | 0 | ok | 2026-10-14 | example-app[bot] @ abc1234 (On-Behalf-Of human:operator) |\n"
+	frag := "| 3 | `c` | 0 | ok | 2026-10-14 | human:operator @ abc1234 |\n" +
+		"| 4 | `d` | 0 | ok | 2026-10-14 | human:operator @ abc1234 (on-behalf-of desk) |\n"
 	root := rootWithFile(t, stampBrief, head+standing+frag)
 	if code := run([]string{stampPublicRepo, "main", "--evidence-file", stampBrief, "--root", root}); code != deskkit.ExitOK {
 		t.Fatalf("exit = %d, want 0", code)

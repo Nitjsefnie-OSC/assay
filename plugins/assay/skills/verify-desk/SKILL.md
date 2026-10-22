@@ -635,6 +635,13 @@ where admission is checked. The admitted forms are:
 - Outcome record: `--outcome-record <absolute file outside the home>`.
 Release the home only after the last landing for its run.
 
+**Leave Runner cells unannotated; `deskevidence` owns the on-behalf-of principal.** Never type an
+`on-behalf-of` annotation into a Runner cell; pre-check with `deskevidence … --dry-run` instead.
+The tool stamps the roster's principal into every App-run row the landing adds. It restamps a
+planted or non-principal annotation, and refuses (nothing written) a row naming a different roster
+human. The dry-run runs every refusing gate on the stamped content and prints each stamped row. Do not
+pre-check by linting the home, where App rows read as unstamped PROBLEMs that the landing itself fixes.
+
 **A sanctioned channel is not a way around a blocked write.** `deskevidence` is where the real guards
 live and fire — `VERIFIER_MAIN_OK`, the repo allowlist, the BodyCheck secret/impersonation scan, the
 outward-write rate limit, the post-commit attribution check (author = the App's bot USER id), the

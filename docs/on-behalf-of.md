@@ -191,8 +191,32 @@ text, it inserts ` (on-behalf-of human:<who>)` before a trailing `(forge-identit
 `verifyrun` renders. `<who>` comes from the same roster resolution as the commit trailer
 (the neutral name on any target not stated `:private`, the login on one that is), never
 from a flag, an environment variable or the landed content; when it cannot be resolved
-the landing refuses (exit 5) and nothing is written. A row already on the branch, a
-`human:<name>` row and a cell that already carries an annotation are left byte-identical.
+the landing refuses (exit 5) and nothing is written. A row already on the branch and a
+`human:<name>` row are left byte-identical.
+
+An added App cell that already carries `on-behalf-of` text is read the way the lint reads
+it (the last `on-behalf-of human:<p>`, case-insensitive) and checked against `<who>` and the
+same roster's human set:
+
+- exactly one annotation naming `<who>` is left byte-identical;
+- an annotation not in the `human:` form (a desk role, a bare word), one naming no
+  recognised roster human, more than one annotation, or the same human in the other form
+  (the login on a public target, the neutral name on a private one) has every
+  `on-behalf-of` fragment stripped and `<who>` stamped — the trailer's strip-then-append
+  rule, so a planted annotation never survives and a login never stays on a public target;
+- any `human:` annotation naming a *different* recognised roster human refuses the landing
+  (exit 5), naming the row; nothing is written. This is deliberately stricter than the lint,
+  which accepts any recognised human: one human's attribution is never overwritten with
+  another's automatically.
+
+The stamp is always one ` (on-behalf-of human:<who>)` parenthetical in the Runner cell, and a
+strip removes each old fragment with exactly one whitespace byte before it, so the rest of the
+row is byte-identical: deleting every ` (on-behalf-of …)` group gives the same row before and
+after the stamp whenever the old fragments were parentheticals of that shape.
+
+So a verifier leaves Runner cells unannotated and pre-checks with `deskevidence … --dry-run`,
+which runs every refusing gate on the stamped content and prints each row it stamped; a
+lint of the verifier's own home reads App rows before the stamp, so it is not the pre-check.
 
 ## The lint
 

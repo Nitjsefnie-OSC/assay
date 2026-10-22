@@ -1,0 +1,3 @@
+### Changed
+- `deskevidence` now owns the on-behalf-of principal on the Runner cells of App-run Evidence rows a landing adds. It reads an existing annotation the way the attribution lint does. A cell naming the roster's principal is left as it is. A planted or non-principal annotation, including a desk role, an unknown name, or the same human in the other form, is stripped and restamped. A row naming a different roster human is refused, and nothing is written.
+- `deskevidence --dry-run` prints each row the stamp wrote. The verify-desk skill now says to leave Runner cells unannotated and to pre-check with `--dry-run`.

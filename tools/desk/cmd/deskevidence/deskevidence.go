@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
@@ -433,19 +434,25 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	var commitContent []byte
 	blockAlready := false
 	// The on-behalf-of principal is stamped into every App-run Evidence row this landing ADDS
-	// that carries none (principalstamp.go), from the roster — never from argv or the content —
-	// or the landing refuses here, before any write. On --brief-path the stamp is decided on the
+	// that does not already name the roster's principal — a planted non-principal annotation is
+	// stripped and restamped, one naming a different recognised human refuses (principalstamp.go)
+	// — from the roster, never from argv or the content, or the landing refuses here, before any
+	// write. On --brief-path the stamp is decided on the
 	// merged brief (so a headerless fragment reads under the brief's own table header, as the
 	// lint will read it) and then applied to the fragment, which is what is merged: the block-
 	// level idempotency check then compares the stamped block with what a stamped earlier
 	// landing left standing.
 	resolveSubject := func() (string, error) { return principalSubjectFn(repoSlug) }
+	// stampedRows records every Runner cell the stamp wrote (original row → stamped row), so a
+	// --dry-run shows the rows exactly as they will land, restamps included.
+	var stampedRows map[string]string
 	if *briefPath != "" {
 		merged, present := mergeEvidenceContent(remoteContent, localContent)
 		stampedMerged, stamped, serr := stampEvidencePrincipal(merged, remoteContent, resolveSubject)
 		if serr != nil {
 			return serr
 		}
+		stampedRows = stamped
 		if len(stamped) > 0 {
 			merged, present = mergeEvidenceContent(remoteContent, stampFragment(localContent, stamped))
 			if !bytes.Equal(merged, stampedMerged) {
@@ -456,10 +463,11 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		commitContent = merged
 		blockAlready = present
 	} else {
-		stampedContent, _, serr := stampEvidencePrincipal(localContent, remoteContent, resolveSubject)
+		stampedContent, stamped, serr := stampEvidencePrincipal(localContent, remoteContent, resolveSubject)
 		if serr != nil {
 			return serr
 		}
+		stampedRows = stamped
 		commitContent = stampedContent
 	}
 
@@ -692,6 +700,14 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 		fmt.Fprintf(stdout, "dry-run plan: conditional forge write to %s — %s %s on branch %s, "+
 			"authenticated as the verifier App (%s); sha256 %s; no local `git commit` in this plan\n",
 			repoSlug, verb, targetRepoPath, branch, deskkit.RoleAppLoginOrEmpty("verifier"), bodyDig)
+		rows := make([]string, 0, len(stampedRows))
+		for _, to := range stampedRows {
+			rows = append(rows, to)
+		}
+		sort.Strings(rows)
+		for _, row := range rows {
+			fmt.Fprintf(stdout, "dry-run: on-behalf-of principal stamped by this tool (lands as): %s\n", row)
+		}
 		return nil
 	}
 
