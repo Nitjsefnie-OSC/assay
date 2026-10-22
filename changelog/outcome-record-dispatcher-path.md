@@ -1,5 +1,5 @@
 ### Fixed
-- `deskdispatch --kit verifier` now allocates a per-run outcome-record directory outside the
+- `deskdispatch --kit verifier` now allocates a per-claim outcome-record directory outside the
   verifier home and the dispatcher root (`<prompt dir>/outcomes/<claim key>/` beside
   `--prompt-file`, else `<user cache>/assay/outcomes/<claim key>/`, owner-only, cache form
   pruned after a week) and names it in the verifier

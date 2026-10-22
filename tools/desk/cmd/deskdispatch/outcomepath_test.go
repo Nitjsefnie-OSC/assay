@@ -67,6 +67,9 @@ func TestVerifierOutcomePath(t *testing.T) {
 		if !strings.Contains(prompt, "never write the record inside the home") {
 			t.Error("prompt does not say never to write the record inside the home")
 		}
+		if !strings.Contains(prompt, "an earlier run's record may already be there") {
+			t.Error("prompt does not say the per-claim directory may hold an earlier run's record")
+		}
 	})
 
 	t.Run("dry-run verifier prompt carries the line beside --prompt-file", func(t *testing.T) {

@@ -200,6 +200,7 @@ func writeOutcomeRecordLine(b *strings.Builder, plan dispatchPlan, repo, home st
 	fmt.Fprintf(b, "## Outcome record — write it OUTSIDE the home\n\n"+
 		"Outcome directory (dispatcher-named, absolute, outside the home): `%s`. Write the outcome record there "+
 		"and nowhere else: never write the record inside the home `%s` (an untracked file there refuses the "+
-		"admission check). Land it with exactly:\n\n```\ndeskevidence %s main --outcome-record %s --root %s\n```\n\n",
+		"admission check). The directory is per claim, so a re-dispatch of the same claim reuses it and an "+
+		"earlier run's record may already be there: write a new file and land only your own. Land it with exactly:\n\n```\ndeskevidence %s main --outcome-record %s --root %s\n```\n\n",
 		plan.outcomePath, home, repo, filepath.Join(plan.outcomePath, "<file>.json"), home)
 }
