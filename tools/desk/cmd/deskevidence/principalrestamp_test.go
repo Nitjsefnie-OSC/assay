@@ -337,3 +337,57 @@ func TestPrincipalStampRefusesUnreadable(t *testing.T) {
 		})
 	}
 }
+
+// TestPrincipalStampRefusesControlInAnyLine: a control character in ANY line a landing adds to
+// the Evidence section is refused before any write, whatever kind of line it is. The lint
+// splits lines on LF only and reads only data rows, but a renderer can treat a lone CR as a
+// line break: a header line can then hide a data row, a separator line can render as two, and
+// a line that is not a table row at all can hold a whole table, each showing an App row naming
+// another human that the lint never reads. A C1 control (NEL) is refused the same way. A line
+// counts as already on the branch only when it stands in the base's own Evidence section, so a
+// line copied in from elsewhere in the base file is checked too; one already in the base's
+// Evidence section is not this landing's and is left alone.
+//
+// regression: #4070
+func TestPrincipalStampRefusesControlInAnyLine(t *testing.T) {
+	const app = "example-app[bot] @ abc1234"
+	other := "| 3 | " + app + " (on-behalf-of human:colleague) |"
+	crRow := "| 2 | `b` | 0 | ok | 2026-10-14 | " + app + " |\r" + other
+	cases := []struct {
+		name, base, added, line, why string
+	}{
+		{"header-hides-row", restampHead, "\n| # | Runner |\r" + other + "\n|---|---|\n", "line 8", "U+000D"},
+		{"separator-line", restampHead, "\n| # | Runner |\n|---|---|\r|---|---|\n| 3 | " + app + " |\n", "line 9", "U+000D"},
+		{"non-table-line-holds-table", restampHead, "\nnote\r| # | Runner |\r|---|---|\r" + other + "\n", "line 8", "U+000D"},
+		{"c1-next-line", restampHead, "| 2 | `b` | 0 | ok\u0085 | 2026-10-14 | human:operator @ abc1234 |\n", "line 7", "U+0085"},
+		{"line-from-another-section", restampHead + "\n## Notes\n\n" + crRow + "\n", crRow + "\n", "line 7", "U+000D"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setupStamp(t, true)
+			f.setFile(stampBrief, tc.base)
+			content := restampHead + tc.added + strings.TrimPrefix(tc.base, restampHead)
+			root := rootWithFile(t, stampBrief, content)
+			if code := run([]string{stampPublicRepo, "main", "--evidence-file", stampBrief, "--root", root}); code != deskkit.ExitRefused {
+				t.Fatalf("exit = %d, want %d (refused); landed:\n%q", code, deskkit.ExitRefused, f.putContent)
+			}
+			if f.putCalls != 0 {
+				t.Fatalf("a control character still wrote %d time(s):\n%q", f.putCalls, f.putContent)
+			}
+			if got := lastAudit(t).Detail; !strings.Contains(got, "cannot read the way the lint does") ||
+				!strings.Contains(got, tc.line) || !strings.Contains(got, "control character "+tc.why) {
+				t.Fatalf("refusal is not the control-character refusal for %s: %q", tc.line, got)
+			}
+		})
+	}
+	t.Run("already-in-base-evidence", func(t *testing.T) {
+		f := setupStamp(t, true)
+		base := restampHead + crRow + "\n"
+		f.setFile(stampBrief, base)
+		root := rootWithFile(t, stampBrief, base+"| 4 | `d` | 0 | ok | 2026-10-14 | human:operator @ abc1234 |\n")
+		if code := run([]string{stampPublicRepo, "main", "--evidence-file", stampBrief, "--root", root}); code != deskkit.ExitOK {
+			t.Fatalf("exit = %d, want 0: a line already in the base Evidence section is not this landing's (%q)",
+				code, lastAudit(t).Detail)
+		}
+	})
+}

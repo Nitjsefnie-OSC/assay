@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader)$' -count=1 -timeout=300s",
+  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader|TestPrincipalStampRefusesControlInAnyLine|TestMergeEvidenceLocatesBodySection)$' -count=1 -timeout=300s",
   "control": {
     "name": "unreadable-cell refusal not consulted",
     "file": "cmd/deskevidence/principalstamp.go",
@@ -62,10 +62,10 @@
       "new": "if false && r > unicode.MaxASCII {"
     },
     {
-      "name": "a control character in an added row is not refused",
+      "name": "a control character in an added Evidence line is not refused",
       "file": "cmd/deskevidence/principalstamp.go",
-      "old": "if r, ok := rowControlCharacter(orig); ok {",
-      "new": "if r, ok := rowControlCharacter(orig); false && ok {"
+      "old": "if r, ok := rowControlCharacter(lines[i]); ok {",
+      "new": "if r, ok := rowControlCharacter(lines[i]); false && ok {"
     },
     {
       "name": "the Evidence section is located in the whole file, frontmatter included",
@@ -84,6 +84,54 @@
       "file": "cmd/deskevidence/principalstamp.go",
       "old": "\t\tonBranchRows[[2]string{r.line, r.runner}] = true\n\t}\n\tfor _, r := range lintEvidenceRunners(landed) {\n\t\tif onBranchRows[[2]string{r.line, r.runner}]",
       "new": "\t\tonBranchRows[[2]string{r.line, \"\"}] = true\n\t}\n\tfor _, r := range lintEvidenceRunners(landed) {\n\t\tif onBranchRows[[2]string{r.line, \"\"}]"
+    },
+    {
+      "name": "the control-character check skips lines that are not table rows",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\t\tif onBranchEvidence[lines[i]] {\n",
+      "new": "\t\tif onBranchEvidence[lines[i]] || !strings.HasPrefix(strings.TrimSpace(lines[i]), \"|\") {\n"
+    },
+    {
+      "name": "the control-character check skips separator lines",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\t\tif onBranchEvidence[lines[i]] {\n",
+      "new": "\t\tif onBranchEvidence[lines[i]] || strings.HasPrefix(strings.TrimSpace(lines[i]), \"|---\") {\n"
+    },
+    {
+      "name": "the control-character check skips header lines",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\t\tif onBranchEvidence[lines[i]] {\n",
+      "new": "\t\tif onBranchEvidence[lines[i]] || strings.Contains(lines[i], \"Runner\") {\n"
+    },
+    {
+      "name": "a C1 control character is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if r != '\\t' && unicode.IsControl(r) {",
+      "new": "if r != '\\t' && (r < 0x20 || r == 0x7f) {"
+    },
+    {
+      "name": "a line anywhere in the base file counts as already on the branch",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\t\tif onBranchEvidence[lines[i]] {\n",
+      "new": "\t\tif onBranch[lines[i]] {\n"
+    },
+    {
+      "name": "the --brief-path merge locator reads the frontmatter",
+      "file": "cmd/deskevidence/deskevidence.go",
+      "old": "if from, closed := briefBodyStart(lines); closed {",
+      "new": "if from, closed := 0, true; closed {"
+    },
+    {
+      "name": "the --brief-path merge locator needs the heading exactly, untrimmed",
+      "file": "cmd/deskevidence/deskevidence.go",
+      "old": "i >= from && strings.TrimSpace(lines[i]) == \"## Evidence\" {",
+      "new": "i >= from && lines[i] == \"## Evidence\" {"
+    },
+    {
+      "name": "an empty section's rows land after the heading that follows it",
+      "file": "cmd/deskevidence/deskevidence.go",
+      "old": "evidenceEnd = max(off-1, idx+len(evidenceMarker))",
+      "new": "evidenceEnd = -1\n\t\t\t\tcontinue"
     }
   ]
 }

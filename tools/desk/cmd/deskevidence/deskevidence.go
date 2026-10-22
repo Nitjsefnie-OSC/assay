@@ -1084,13 +1084,29 @@ func mergeEvidenceContent(remoteContent, evidence []byte) (merged []byte, alread
 	// Clean up evidence: remove leading/trailing whitespace but keep internal newlines
 	evidenceStr = strings.TrimSpace(evidenceStr)
 
-	// If the remote has a "## Evidence" section, append to it.
-	evidenceMarker := "\n## Evidence\n"
-	idx := strings.Index(remoteStr, evidenceMarker)
-	if idx < 0 {
-		// Also try "## Evidence\r\n"
-		evidenceMarker = "\n## Evidence\r\n"
-		idx = strings.Index(remoteStr, evidenceMarker)
+	// If the remote has a "## Evidence" section, append to it. The section is located the way
+	// the lint and the on-behalf-of stamp locate it (evidenceSpan): in the body only, after the
+	// frontmatter block, on the first line that trims to `## Evidence`, ending at the next line
+	// that trims to a `## ` heading. A `## Evidence` line inside the frontmatter is not the
+	// section, so the merged rows never land where the stamp does not read them.
+	lines := strings.Split(remoteStr, "\n")
+	idx, evidenceMarker, evidenceEnd := -1, "", -1
+	if from, closed := briefBodyStart(lines); closed {
+		off := 0
+		for i := 0; i < len(lines); i++ {
+			if idx < 0 && i >= from && strings.TrimSpace(lines[i]) == "## Evidence" {
+				if i == len(lines)-1 { // the heading ends the file with no newline
+					remoteStr += "\n"
+				}
+				idx, evidenceMarker = off, lines[i]+"\n"
+			} else if idx >= 0 && strings.HasPrefix(strings.TrimSpace(lines[i]), "## ") {
+				// The "\n" ahead of the next heading; a heading right after `## Evidence` (an
+				// empty section) ends it at the heading line itself.
+				evidenceEnd = max(off-1, idx+len(evidenceMarker))
+				break
+			}
+			off += len(lines[i]) + 1
+		}
 	}
 	if idx < 0 {
 		// No Evidence section found — append one at the end. This CREATES the section, so it is
@@ -1099,12 +1115,8 @@ func mergeEvidenceContent(remoteContent, evidence []byte) (merged []byte, alread
 		return []byte(out), false
 	}
 
-	// Find the end of the Evidence section (next ## heading or EOF).
-	afterMarker := remoteStr[idx+len(evidenceMarker):]
-	nextHeading := strings.Index(afterMarker, "\n## ")
-	evidenceEnd := len(remoteStr)
-	if nextHeading >= 0 {
-		evidenceEnd = idx + len(evidenceMarker) + nextHeading
+	if evidenceEnd < 0 { // no later heading: the section runs to EOF
+		evidenceEnd = len(remoteStr)
 	}
 
 	// Build the merged content: before Evidence + Evidence header + existing + new + after.

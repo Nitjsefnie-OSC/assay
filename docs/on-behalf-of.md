@@ -220,10 +220,15 @@ same roster's human set:
   byte length (the lint matches in a lowercased copy and slices the original at the same
   offsets); or any other non-ASCII character, such as a combining mark or a homoglyph in the
   marker, which renders an annotation the lint does not read. An App Runner cell is an App
-  login, a commit and ASCII tags, so nothing legitimate is refused. Any added row, App or
-  not, holding a control character other than a tab (a lone carriage return, say) is refused
-  the same way: the lint splits rows on line feeds only, so a renderer could show a second row
-  the lint never reads. As a last check, the landed section is read the way the lint reads it,
+  login, a commit and ASCII tags, so nothing legitimate is refused. Any line the landing adds
+  to the body's Evidence section is refused the same way when it holds a control character
+  other than a tab (C0, DEL or C1: a lone carriage return or a next-line character, say). That
+  covers every kind of line, App row or not: a data row, a header, a separator, or a line that
+  is not a table row at all. The lint splits lines on line feeds only, so a renderer could show
+  a row the lint never reads. A line is skipped only when the base's own Evidence section
+  already holds that exact line; a line copied in from elsewhere in the base is checked. The
+  check covers control characters only, not other characters a renderer may break a line on
+  (U+2028, U+2029). As a last check, the landed section is read the way the lint reads it,
   and every added App row must carry exactly one annotation, in the exact written form,
   naming `<who>`. A row counts as already on the branch there only when the base has the same
   line with the same Runner cell, so a base line re-landed under a header that moves the
@@ -231,7 +236,9 @@ same roster's human set:
 
 Like the lint, the tool looks for `## Evidence` only in the brief's body, after the
 frontmatter block: a `## Evidence` line inside the frontmatter is never taken as the section.
-A landing whose frontmatter opens but never closes has no body the lint can read, so if it
+The `--brief-path` merge places the new rows with the same rule: it takes the first body line
+that reads `## Evidence` once surrounding spaces are trimmed, so a heading with a trailing
+space is that section, not a reason to append a second one. A landing whose frontmatter opens but never closes has no body the lint can read, so if it
 carries an `## Evidence` heading anywhere it is refused (exit 5) and nothing is written.
 
 The stamp is always one `(on-behalf-of human:<who>)` parenthetical in the Runner cell. A

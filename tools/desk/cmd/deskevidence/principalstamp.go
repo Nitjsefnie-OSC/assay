@@ -126,8 +126,31 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 		return content, nil, nil
 	}
 	onBranch := map[string]bool{}
-	for _, l := range strings.Split(string(base), "\n") {
+	baseLines := strings.Split(string(base), "\n")
+	for _, l := range baseLines {
 		onBranch[l] = true
+	}
+	// Every line this landing adds to the Evidence section, of any kind (data row, header,
+	// separator, or a line that is not a table row at all), is checked for a control character
+	// before any line is skipped below. A line counts as already on the branch here only when it
+	// stands in the base's own Evidence section, so a line carried in from elsewhere in the base
+	// file is checked like any other added line.
+	onBranchEvidence := map[string]bool{}
+	if bs, be, ok := evidenceSpan(baseLines); ok {
+		for _, l := range baseLines[bs:be] {
+			onBranchEvidence[l] = true
+		}
+	}
+	for i := start; i < end; i++ {
+		if onBranchEvidence[lines[i]] {
+			continue
+		}
+		if r, ok := rowControlCharacter(lines[i]); ok {
+			return nil, nil, deskkit.Refused(fmt.Sprintf("refused: the added Evidence line %d is one this tool "+
+				"cannot read the way the lint does (it holds the control character U+%04X, which a renderer can show "+
+				"as a line break, putting a row the lint never reads on screen) — nothing was written. Land "+
+				"the line without it: %s", i+1, r, strings.TrimSpace(lines[i])))
+		}
 	}
 	// Blank closed comments out byte-for-byte (newlines kept) so offsets and line numbers in
 	// the blanked view are the original's. The lint REMOVES them instead, which joins the
@@ -193,12 +216,6 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 		orig := lines[start+i]
 		if onBranch[orig] {
 			continue
-		}
-		if r, ok := rowControlCharacter(orig); ok {
-			return nil, nil, deskkit.Refused(fmt.Sprintf("refused: the added Evidence row at line %d is one this tool "+
-				"cannot read the way the lint does (it holds the control character U+%04X, which a renderer can show "+
-				"as a line break, putting a second row the lint never reads on screen) — nothing was written. Land "+
-				"the row without it: %s", start+i+1, r, strings.TrimSpace(orig)))
 		}
 		sp := spans[len(spans)-1]
 		if runnerIdx >= 0 && runnerIdx < len(spans) {
@@ -267,7 +284,6 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 	// aligned; this is the backstop for any shape where they still differ.
 	landed := strings.Join(lines[start:end], "\n")
 	baseSection := ""
-	baseLines := strings.Split(string(base), "\n")
 	if bs, be, ok := evidenceSpan(baseLines); ok {
 		baseSection = strings.Join(baseLines[bs:be], "\n")
 	}
@@ -369,8 +385,8 @@ func stampPosition(cell, stripped string, cuts [][2]int) (int, string) {
 //     An App-run Runner cell is an App login, a commit and ASCII tags, so nothing legitimate is
 //     lost.
 //
-// A control character anywhere in an added row is refused separately (rowControlCharacter),
-// since it can sit outside the Runner cell.
+// A control character anywhere in an added Evidence line is refused separately
+// (rowControlCharacter), since it can sit outside the Runner cell or outside any data row.
 func unreadableRunnerCell(view, orig string, joined bool) string {
 	if joined {
 		return "an HTML comment on its line crosses a line break, and the lint reads the lines around it as one"
@@ -401,13 +417,15 @@ func unreadableRunnerCell(view, orig string, joined bool) string {
 	return ""
 }
 
-// rowControlCharacter returns the first control character (other than a tab, and a line's
-// trailing CR) in an added Evidence row, any column. The lint splits rows on LF only, so a lone
-// CR or other control character keeps what a renderer may show as two rows in the one row the
-// lint reads; the second row's annotation would be visible and never checked.
+// rowControlCharacter returns the first control character (C0, DEL or C1, other than a tab,
+// and a line's trailing CR) in an added line of the Evidence section, whatever kind of line it
+// is. The lint splits lines on LF only, so a lone CR or other control character keeps what a
+// renderer may show as two lines (a header that hides a data row, a non-table line that holds a
+// whole table) in the one line the lint reads; a row shown that way would be visible and never
+// checked.
 func rowControlCharacter(line string) (rune, bool) {
 	for _, r := range strings.TrimSuffix(line, "\r") {
-		if r == 0x7f || (r < 0x20 && r != '\t') {
+		if r != '\t' && unicode.IsControl(r) {
 			return r, true
 		}
 	}
