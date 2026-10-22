@@ -78,6 +78,7 @@ refuses.
   `Verification-Table` marker required by the protected-table closure contract.
 - Run EVERY Verify row. Record `command → exit code → key output line` — real observed
   output, never a claim.
+- **A `check:ci` row the host cannot sandbox runs in the container lane.** Where the default `unshare --net` sandbox is denied (no user namespaces, as on a darwin host), run the row with `--sandbox=container-netns` inside the closed admission bracket that `docs/brief-rules.md` rule 45 and the verify-desk skill's "Pre-work admission" section define: host `statusgen verifyrun --open-bracket`, the container run with `--admission-receipt`, host `--close-bracket`, then land the closed witness with its `Admission-Bracket:` line. Record the row as could-not-run only when the installed statusgen has no `--open-bracket` or a bracket step refuses, quoting the refusal. Never substitute a locally built binary in an admitted run.
 - A row that cannot run (no toolchain, no environment) is recorded as EXPLICITLY unrun,
   with the reason. It is never silently skipped and never assumed to pass.
   Add `could-not-run` accounting for that row. Include every required row in the totals and

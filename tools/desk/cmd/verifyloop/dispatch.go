@@ -114,6 +114,13 @@ var dispatchRequirements = []dispatchRequirement{
 			"supplemental rows receive no original acceptance credit", "Verification-Table"},
 	},
 	{
+		// Kit § "Run every row": the container lane for a check:ci row the host cannot sandbox.
+		ID:      "check-ci-container-admission-bracket",
+		Anchors: []string{"check:ci", "admission bracket", "container-netns"},
+		How:     carriedInPrompt,
+		Probes:  []string{"runs in the container lane", "--open-bracket", "--close-bracket", "Admission-Bracket:"},
+	},
+	{
 		// Kit § "Run every row", clause 2.
 		ID:      "run-every-verify-row-observed-output",
 		Anchors: []string{"run every verify row", "exit code"},
@@ -295,6 +302,7 @@ func renderDispatchPrompt(it loopengine.Item, tier loopengine.Tier) string {
 	// Keep these acceptance clauses verbatim with the kit; the sync test compares full clauses.
 	b.WriteString("- **Preflight the exact acceptance commands before execution.** Read every required row's Command, Expect and class against the approved executor envelope: offline/network limits, available tools, sandbox, timeout, output location and fail-first side effects. For protected tables use the original acceptance commands and provenance from `deskpathguard rederive --root <home> --brief <path>`. Read `docs/protected-paths.md` section \"Recording closure after re-derivation\" for the immutable table marker and original-row obligations; if that contract or its required objects are unavailable, report incomplete evidence. If a command cannot run as admitted, record the exact command and reason unrun and route the missing capability or a reviewed check-definition repair. Never silently add a test filter, replace a command, shorten its scope or relax the sandbox to make it runnable. A separately labelled supplemental probe (including a tighter test selector) can diagnose a blocker but discharges no original row. A definition repair requires fresh dispatch/admission after it lands. For a protected table, a reviewed amendment alone does not supersede the original baseline: closure still requires the delivered table and original obligations. Retain their provenance and hold when no supported acceptance-transition path exists. Never invent a CLI override, relabel a supplemental probe as acceptance, or repoint delivery to bypass that obligation.\n")
 	b.WriteString("- **Account for the original row inventory.** For a protected table, re-derive its immutable original acceptance table before execution and retain its provenance. Zero rows, a missing original row, or a filtered run with no required-row coverage is incomplete even on exit 0. Preserve every original row ID, Command, Expect, class and fail-first obligation. Author-added and supplemental rows receive no original acceptance credit. Retain the immutable `Verification-Table` marker required by the protected-table closure contract.\n")
+	b.WriteString("- **A `check:ci` row the host cannot sandbox runs in the container lane.** Where the default `unshare --net` sandbox is denied (no user namespaces, as on a darwin host), run the row with `--sandbox=container-netns` inside the closed admission bracket that `docs/brief-rules.md` rule 45 and the verify-desk skill's \"Pre-work admission\" section define: host `statusgen verifyrun --open-bracket`, the container run with `--admission-receipt`, host `--close-bracket`, then land the closed witness with its `Admission-Bracket:` line. Record the row as could-not-run only when the installed statusgen has no `--open-bracket` or a bracket step refuses, quoting the refusal. Never substitute a locally built binary in an admitted run.\n")
 	b.WriteString("\n")
 	if payloadValue(it, "wake_runnable_rows") != "" {
 		b.WriteString("Verify table — account for EVERY row. Under this unchanged partial receipt, execute only the newly runnable identities listed below; retain prior PASS as prior observations and held rows as explicitly unrun. These lists govern this partial run, never a whole-brief PASS.\n")
