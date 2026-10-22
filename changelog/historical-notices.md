@@ -1,3 +1,6 @@
 ### Added
 - `statusgen --lint` now separates frozen historical findings from actionable ones through one shared notice report. A finding from any included check (structural and strength Verify-row rules, identifier dereference, risk-files cross-read, why / exec-tier-why / security-review metadata, ordering gate, consumers routing) on a brief already `done` or `verified` at the merge-base is counted per rule instead of printed one by one; active, newly closed, unknown-status and non-brief findings stay individual NOTICEs, and PROBLEMs and the exit code are unchanged.
 - `statusgen --lint --all` restores every historical finding as its own NOTICE line, and `statusgen --lint --json` prints a deterministic report (per-rule and per-status counts, actionable and historical partitions, could-not-check states) in place of the `LINT:` line.
+
+### Changed
+- The three private closed-brief aggregates in the Verify-row audit (`gotest-run-vacuous`, `prose-led-command`, row strength) are gone: each finding on a closed brief is now one ordinary per-record line that the shared report counts, so text and JSON totals agree. `docs/archive` is excluded from live lifecycle classification only; link checks still cover it. `difflint` and the lint audit share the same line normalizer and run the inner lint with `--all`.
