@@ -861,6 +861,27 @@ RISK-VALUE: NAMED, NOT DERIVED — R = 60 @ plugins/assay/references/tick-contra
 
 **VERIFY: BLOCKED** — at e1952464ea12, 0 deliverable failures. Rows 1 to 8 pass on substance: they ran by hand at 610a78107977, and their inputs are byte-identical at this source. In this pass's witness only rows 4 and 7 pass. Still owed: the six check:ci rows have no network-off witness in this lane; row 13 has no admissible result at this source; row 14 is could-not-check (medici-finance/assay#1915); online-lane rows 9 to 12 have never run (medici-finance/assay#1920). Status stays implemented.
 
+### Non-implementer verifier re-pass (citation scope) — 2026-10-22, cites the lane blocker for the round-3 addendum at admitted source e1952464ea12
+
+Scope: citations only. No row was re-run in this pass, and every observation in the round-3 addendum directly above stands. The pre-work dispatcher check (exit 0) admitted the pass, and the same check ran again after it. This pass supersedes the round-3 sentence "No blocker issue tracks this lane limit yet". The lane limit is now tracked on medici-finance/assay#4010, cause 6 (issue comment 6330447531). That comment says: "`statusgen verifyrun` runs `deskdispatch --check-verifier` before any row. Inside the go1.27-py image that check refuses, so no check:ci row gets an admitted network-off witness." It adds: "A darwin host passes admission but has no `unshare --net`, so check:ci rows come back could-not-run there. Neither local lane can witness check:ci rows." It also lists this brief by name: "desk-containers/08 rows 1, 3, 6, 8 and 13 (Evidence #3941)."
+
+Citations:
+- Check:ci rows 1, 3, 6, 8 and 13 are could-not-run. They are blocked under medici-finance/assay#4010, cause 6, quoted above.
+- Row 14 has two halves:
+  - The lane half: like the other check:ci rows, it has no network-off witness. It is blocked under medici-finance/assay#4010, cause 6. The comment's general statement ("Neither local lane can witness check:ci rows") covers it, but its list of named rows does not include row 14.
+  - The check-definition half (no delivery marker, exit 2): it stays blocked under medici-finance/assay#1915.
+- Rows 9 to 12 are online-lane rows that have never run. They stay blocked under medici-finance/assay#1920.
+- Rows 2 and 5 hit a witness-parse limit: their prose Command cells cannot be executed by verifyrun. A filed issue already covers this. The body of medici-finance/assay#1920 says "Rows 2 and 5: the Command cells are prose, which the witness cannot run". The older verifyrun issue for prose-cell execution, medici-finance/assay#1805, is closed.
+
+**VERIFY: BLOCKED** — at e1952464ea12, 0 deliverable failures. Rows 1 to 8 pass on substance: they ran by hand at 610a78107977, and their inputs are byte-identical at this source. In the round-3 witness only rows 4 and 7 pass. Still owed:
+- check:ci rows 1, 3, 6, 8 and 13 have no network-off witness (medici-finance/assay#4010, cause 6);
+- row 13 also has no admissible result at this source;
+- row 14 is could-not-check, its lane half under medici-finance/assay#4010 and its check-definition half under medici-finance/assay#1915;
+- online-lane rows 9 to 12 have never run (medici-finance/assay#1920);
+- rows 2 and 5 hit the prose-cell witness-parse limit (medici-finance/assay#1920).
+
+Status stays implemented.
+
 
 ## Review
 
