@@ -1292,6 +1292,10 @@ func (b *budgetFlags) Set(v string) error {
 var statusgenVersion = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "lifecycle-preflight" {
+		exitProcess(runLifecyclePreflight(os.Args[2:], os.Stdout, os.Stderr))
+	}
+
 	// The check:ci network-off sandbox re-executes statusgen as its in-namespace
 	// helper (netns.go, issue #1925). Dispatched first: it brings loopback up,
 	// proves isolation and execs the row — or refuses — and never returns.
