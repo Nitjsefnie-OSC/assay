@@ -32,7 +32,7 @@ func (c *Cell) prepareLaunch() (bool, error) {
 	values := map[string]string{}
 	if c.Env != nil {
 		for k, v := range c.Env.vals {
-			if strings.HasPrefix(k, "CELL_") || strings.Contains(k, "MODEL_") || k == "ASSAY_OPERATOR_GENERATION" {
+			if preparationBindingKey(k) {
 				values[k] = v
 			}
 		}
@@ -59,4 +59,15 @@ func (c *Cell) prepareLaunch() (bool, error) {
 		c.recordLaunchStep("launch-preparation", time.Since(began), nil)
 	}
 	return fresh, err
+}
+
+// Only non-secret launch/storage selectors enter the local receipt fingerprint.
+// Provider credentials and arbitrary CELL_/MODEL_ environment are not selectors.
+func preparationBindingKey(k string) bool {
+	switch k {
+	case "ASSAY_OPERATOR_GENERATION", "CELL_KIND", "CELL_HARNESS", "CELL_PROVIDER", "CELL_MODEL_POLICY", "CELL_MODEL_TTL_DAYS",
+		"CELL_SCRATCH_MAX_AGE", "CELL_SCRATCH_MAX_BYTES", "CELL_GO_CACHE", "CELL_GO_CACHE_ROOT", "CELL_GO_CACHE_BYTES", "CELL_GO_CACHE_MIN_FREE", "CELL_GO_CACHE_BUILD_MAX_AGE", "CELL_GO_CACHE_LOW_WATER_PERCENT", "CELL_GO_CACHE_TRIM_MIN_AGE", "CELL_GO_TRIMPATH":
+		return true
+	}
+	return strings.HasPrefix(k, "TIER_MODEL_") || (strings.HasPrefix(k, "CELL_PROVIDER_") && strings.HasSuffix(k, "_MODEL"))
 }

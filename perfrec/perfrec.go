@@ -345,11 +345,16 @@ func (w *Writer) Write(stateDir string, rec Record) error {
 // WriteEnabled records with the application's resolved consent. Applications
 // that resolve configuration after process entry use the same writer and sink;
 // this value changes no retention, schema, redaction or observation contract.
+// V3 additionally requires the exact process-environment opt-in at the writer;
+// resolved application consent cannot extend the v3 consent boundary.
 func (w *Writer) WriteEnabled(enabled bool, stateDir string, rec Record) error {
 	if !enabled {
 		return errors.New("perfrec: recording is disabled")
 	}
 	if rec.Schema == SchemaV3 {
+		if !Enabled() {
+			return errors.New("perfrec: v3 recording is disabled")
+		}
 		if err := validV3(rec); err != nil {
 			return err
 		}

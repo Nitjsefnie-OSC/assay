@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -215,10 +216,11 @@ func (s *Store) atomic(name string, b []byte) error {
 	return s.root.Rename(tmp, name)
 }
 func validID(id string) bool {
-	if !strings.HasPrefix(id, "task-") || len(id) != 21 {
+	kind, nonce, ok := strings.Cut(id, "-")
+	if !ok || kind != "task" || len(nonce) != 16 {
 		return false
 	}
-	_, err := hex.DecodeString(id[5:])
+	_, err := hex.DecodeString(nonce)
 	return err == nil
 }
 func (s *Store) record(id string) (Record, error) {
@@ -283,7 +285,7 @@ func (s *Store) Begin(session, task, revision string) (*Run, error) {
 	if _, err = rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	id := "task-" + hex.EncodeToString(nonce)
+	id := fmt.Sprintf("task-%s", hex.EncodeToString(nonce))
 	if err = s.root.Mkdir(id, 0700); err != nil {
 		return nil, err
 	}

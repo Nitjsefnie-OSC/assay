@@ -169,6 +169,14 @@ func TestCellPrepFences(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("compatible preparations=%d", n)
 	}
+	for _, key := range []string{"CELL_PROVIDER_TOKEN", "MODEL_API_KEY"} {
+		c.Env.Put(key, "fixture-secret")
+		b, e := c.prepareLaunch()
+		must(t, e)
+		if b {
+			t.Fatalf("credential-bearing environment entered preparation binding: %s", key)
+		}
+	}
 	for _, generation := range []string{"one", "two"} {
 		c.Env.Put("ASSAY_OPERATOR_GENERATION", generation)
 		b, e := c.prepareLaunch()

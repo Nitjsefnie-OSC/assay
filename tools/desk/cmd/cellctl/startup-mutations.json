@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/cellctl ./internal/cellcache ./internal/deskkit ./internal/cellscratch -run '^TestCellPrepBounded$/(walking_callers|cache_enrollment|history)|^TestCellPrepFences$|^TestCellLaunchTelemetry$|^TestCacheScanAdmission$|^TestMaintenanceScanBound$' -count=1 -timeout=60s",
+  "test": "go test ./cmd/cellctl ./internal/cellcache ./internal/deskkit ./internal/cellscratch ./internal/cellprocess -run '^TestCellPrepBounded$/(walking_callers|cache_enrollment|history)|^TestCellPrepFences$|^TestCellLaunchTelemetry$|^TestCacheScanAdmission$|^TestMaintenanceScanBound$|^TestCacheEnrollmentTelemetry$' -count=1 -timeout=60s",
   "control": {
     "name": "remove preparation fence",
     "file": "internal/cellscratch/prepare.go",
