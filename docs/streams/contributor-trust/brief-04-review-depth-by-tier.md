@@ -472,5 +472,23 @@ What changed since the implementing squash 2083064fdeb2, stated precisely. revie
 
 **VERIFY: PASS** — 12/12 rows pass on merged main 05dc9fbc88f2 under the statusgen verifyrun witness with sandbox=container-netns, check:ci rows 8 and 9 included; 0 fail, 0 could-not-run. Both mutation probes killed. Gate is model; risk all no.
 
+### Correction — 2026-10-22 claude-opus-5-5 verifier at 05dc9fbc88f2 (check:ci rows 8 and 9 withdrawn to could-not-check; 10 met, 0 fail, 2 could-not-check)
+
+This correction is append-only; nothing above it is edited. It supersedes and withdraws two things in the two 2026-10-22 sections at 05dc9fbc88f2 above, the section headed "Non-implementer verifier run — 2026-10-22 … (10 rows witnessed pass, check:ci rows 8 and 9 hand-run pass in a network-off container)" and the section headed "Addendum — 2026-10-22 … (check:ci rows 8 and 9 now witnessed in a network-off container; supersedes the rows 8 and 9 tally above)": (a) the credit each gives check:ci rows 8 and 9, and (b) the bold pass verdict line closing each, both reading "12/12 rows pass on merged main 05dc9fbc88f2". Neither of those verdict lines is the verdict of this run.
+
+Why. Neither source of the rows 8 and 9 credit is an admitted witness. The first section's container run is prose, written by hand, and a prose hand run credits no row. The second section's `verifyrun --sandbox container-netns` table was written in a throwaway clone of the admitted home that carries no admission record, so no Verification-Attestation line binds it; a host-side admission check before and after does not attest a table written in a different tree. That table is not credited, for any row. No human ruling admits that runner route, and this correction does not run it again.
+
+Rows 8 and 9: could-not-check. The admitted host is darwin and has no `unshare --net` network sandbox, so the admitted-home witness records both as could-not-run (sandbox=unshare); no admitted container or Linux network-off witness exists. Both open issues cover exactly this gap: #3216 (this brief's check:ci rows 8 and 9 need a Linux network-off sandbox, unavailable on darwin; it asks for an independently admitted Linux verifier and forbids relabelling direct execution as network-off) and #2665 (check:ci sandbox unavailable on macOS; it asks for an admitted Linux runner and forbids relaxing the sandbox). Both were read open on 2026-10-22.
+
+Rows 1–7 and 10–12 stay credited, from the admitted-home tool witness only: the table in the first 2026-10-22 section above, as `statusgen verifyrun` wrote it, every one of those rows pass exit=0 at 05dc9fbc88f2, under its Verification-Attestation line (medici-finance/assay#4037, run 99ebd76b0392, source 05dc9fbc88f2, model claude-opus-5-5, tier strong). That binding matches the admission check for this correction. Nothing was run again for this correction.
+
+Admission: `deskdispatch --check-verifier` exit 0 on the admitted home before and after this correction, with the binding unchanged (run 99ebd76b0392, source 05dc9fbc88f2).
+
+Mutation probes and risk-bearing values: as recorded in the first 2026-10-22 section above (both mutants killed; the RISK-VALUE lines there stand). This correction's read finds no change to them.
+
+Tally: 10 met, 0 fail, 2 could-not-check (rows 8 and 9), of 12 Verify rows. Gate is model; risk all no.
+
+**VERIFY: BLOCKED** — rows_passed 10 / rows_total 12 at 05dc9fbc88f2
+
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
