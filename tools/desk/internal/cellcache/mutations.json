@@ -28,8 +28,8 @@
     {
       "name": "hide measurement failure",
       "file": "internal/cellcache/cache.go",
-      "old": "r.Outcome = \"could-not-check\"",
-      "new": "r.Outcome = \"checked-clean\""
+      "old": "if len(r.Failures) > 0 {\n\t\tr.Outcome = \"could-not-check\"",
+      "new": "if len(r.Failures) > 0 {\n\t\tr.Outcome = \"checked-clean\""
     },
     {
       "name": "lose uncertain custody",
