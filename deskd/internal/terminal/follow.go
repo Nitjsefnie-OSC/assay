@@ -2,7 +2,7 @@ package terminal
 
 import "time"
 
-// follow.go — the READ-ONLY live follower brief 17's SSE stream is built on
+// follow.go — the READ-ONLY live follower the terminal stream's SSE stream is built on
 // (the service contract).
 //
 // A [Follower] is a wakeup, not a queue. The registry's pump never hands a

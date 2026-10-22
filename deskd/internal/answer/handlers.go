@@ -61,7 +61,7 @@ type Handlers struct {
 	// per-request writer to read.
 	CredentialFor func(r *http.Request) (Credential, bool)
 	// AuthLogin resolves the AUTHENTICATED login of the request's OAuth identity
-	// session (brief-23). When set, a live-answer session may be begun ONLY as
+	// session. When set, a live-answer session may be begun ONLY as
 	// that login — the live-answer session inherits whoever actually signed in,
 	// so its Actor is a real authenticated identity, not a fixed persona. When
 	// nil (the localhost-default and the existing test suite), begin falls back
@@ -207,8 +207,8 @@ func (h *Handlers) handleSessionBegin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"live": true, "actor": sess.Actor, "expires_at": sess.ExpiresAt})
 }
 
-// beginSession mints the live-answer session. When AuthLogin is wired
-// (brief-23), it binds the session to the request's AUTHENTICATED login — a
+// beginSession mints the live-answer session. When AuthLogin is wired,
+// it binds the session to the request's AUTHENTICATED login — a
 // live-answer session cannot be begun without an OAuth identity, and it carries
 // whoever signed in. Without AuthLogin (localhost-default / tests) it falls back
 // to the default answerer identity via Begin.

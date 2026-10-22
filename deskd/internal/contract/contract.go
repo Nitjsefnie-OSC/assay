@@ -4,8 +4,8 @@
 // MCP stays the AGENT surface (internal/mcp); ACP is reserved for a later
 // chat-pane seam. This package is the single home of the request/response
 // shapes, the SSE event envelope, the answer-record envelope, and the
-// signed-intent envelope so the service (brief-25) and every client host
-// (brief-26) speak one contract that a diff can break rather than a review
+// signed-intent envelope so the service and every client host
+// speak one contract that a diff can break rather than a review
 // argues.
 //
 // # Leaf, deliberately
@@ -34,7 +34,7 @@
 //     ([SignedIntent]) carries a SIGNATURE over a record, never a raw token.
 //
 // Neither rule is the service's not-at-rest guarantee itself — that is a
-// runtime persistence audit landed with the service in brief-25 — but together
+// runtime persistence audit landed with the service in the v1 contract — but together
 // they are the shape of the seam that makes the guarantee expressible.
 package contract
 
@@ -68,7 +68,7 @@ type Action string
 
 const (
 	// ActionAnswer commits a human decision — a comment carrying the answer
-	// record plus a close (brief-10 semantics, unchanged).
+	// record plus a close (the answer flow semantics, unchanged).
 	ActionAnswer Action = "answer"
 	// ActionAck posts the 👀 read-receipt reaction as the person.
 	ActionAck Action = "ack"
@@ -135,7 +135,7 @@ type Route struct {
 	Summary string
 }
 
-// Routes is the complete v1 contract surface. Reads mirror the brief-08/12
+// Routes is the complete v1 contract surface. Reads mirror the read surface and altitude panes
 // read set (each has an MCP twin — a parity test lands with the service);
 // events is the SSE stream; the two local-state writes are ruling D7; the two
 // named actions are the closed custody-(b) allow-list; refresh is the nudge.
@@ -148,8 +148,8 @@ var Routes = []Route{
 	{GET, Prefix + "/inbox", KindRead, "", "escalations for a cell, urgency-then-age, with index age and confidence"},
 	{GET, Prefix + "/escalations/{id}", KindRead, "", "one escalation's full item view, with derived outcome"},
 	{GET, Prefix + "/roadmap", KindRead, "", "stream roadmap (delegated to statusgen; could-not-check until wired)"},
-	{GET, Prefix + "/portfolio", KindRead, "", "portfolio strip (altitude panes, brief-12)"},
-	{GET, Prefix + "/metrics", KindRead, "", "metrics query (brief-08/12 read set)"},
+	{GET, Prefix + "/portfolio", KindRead, "", "portfolio strip (altitude panes)"},
+	{GET, Prefix + "/metrics", KindRead, "", "metrics query (read set)"},
 	{GET, Prefix + "/desks/{id}/terminal", KindRead, "", "one desk's terminal handle: agent state, target kind, scrollback cursor (the service contract)"},
 	// The desk registry read (the service contract): the rail's data source. It
 	// joins the cell's configured loops, each loop's App identity, and the live
@@ -162,7 +162,7 @@ var Routes = []Route{
 	// seam (spec §5.1). A KindEvent route — SSE, protocol option 1, never a
 	// socket upgrade — so it has no MCP twin (parity walks KindRead only) and it is
 	// NOT a named action: it takes no body and cannot write to the desk. The
-	// write half (`send`) is brief 18's contract change, not this route's.
+	// write half (`send`) is the send route's contract change, not this route's.
 	{GET, Prefix + "/desks/{id}/terminal/stream", KindEvent, "", "SSE: one desk's terminal — scrollback from a cursor, then live output (terminal.output, terminal.state, resync); Last-Event-ID = the byte cursor (the service contract)"},
 	{GET, Prefix + "/events", KindEvent, "", "SSE: badge counts, escalation.transition, index.health; Last-Event-ID resume"},
 	{POST, Prefix + "/escalations/{id}/read", KindLocalState, "", "mark read — service-local state (ruling D7), no platform write"},
@@ -347,7 +347,7 @@ type TerminalHandle struct {
 	// optimistic reading (spec §5.1).
 	State string `json:"state"`
 	// Cursor is the latest scrollback cursor (a monotonic byte offset per
-	// handle); a stream client resumes from it (brief 17).
+	// handle); a stream client resumes from it.
 	Cursor uint64 `json:"cursor"`
 	// AsOf is when the handle was last derived, nil when never attached.
 	AsOf *time.Time `json:"as_of"`
@@ -432,7 +432,7 @@ type AttachCapability struct {
 // a client could use to name or select a target (see [TestNoTargetShapedRequest]).
 type DeskRow struct {
 	// ID is "<cell>/<role>" for a configured desk, "<cell>/custom/<uuid>" for
-	// a session (brief 18), or "<peer-cell>/master" for a peer row.
+	// a session, or "<peer-cell>/master" for a peer row.
 	ID string `json:"id"`
 	// Cell is the row's owning cell — the entered cell for master/desk/custom
 	// rows, the OTHER cell for a peer row.
@@ -454,7 +454,7 @@ type DeskRow struct {
 	TargetKind string `json:"target_kind"`
 	// State is the derived agent state: live | busy | waiting | idle |
 	// could-not-check. A peer row is always could-not-check in this brief —
-	// no cross-deskd read happens here (brief 26 makes peers reachable).
+	// no cross-deskd read happens here (peer reachability makes peers reachable).
 	State string `json:"state"`
 	// Unread is the D7-style unread-marker count scoped to this desk. Always
 	// 0 in this build: no producer of a desk-scoped unread count exists yet

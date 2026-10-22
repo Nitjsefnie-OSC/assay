@@ -34,7 +34,7 @@ func ParseRepo(slug string) (Repo, error) {
 func (r Repo) String() string { return r.Owner + "/" + r.Name }
 
 // escalationLabels is the label set that makes an issue an escalation
-// (issue-loop/06 contract, design §1.1). `help wanted` carries a space on
+// (the escalation wire contract, design §1.1). `help wanted` carries a space on
 // the wire and a hyphen in the domain; this is the only place that drift is
 // spelled out.
 var escalationLabels = []string{"needs-decision", "question", "help wanted", "ask"}
@@ -138,7 +138,7 @@ type RawIssue struct {
 	// Comments is the tail of the issue's comment thread (the service contract
 	// increment 3, task 6): the last [commentWindow] comments, oldest first,
 	// as GraphQL returns them. It is what [DeriveAnswer] scans for the
-	// brief-24 answer-record marker ON POLL. Empty on every issue this
+	// the answer-record grammar answer-record marker ON POLL. Empty on every issue this
 	// build's candidate list never names as closed (the marker is only
 	// meaningful once an issue has settled), which is the common case for the
 	// open-issue set.
@@ -443,7 +443,7 @@ const aliasChunk = 50
 
 // commentWindow bounds the comment tail fetched per issue (the service contract
 // increment 3, task 6). The answer-record marker is written by the LAST
-// commit of the answer (brief-10's decisionBody, or a future re-home of it),
+// commit of the answer (the answer flow's decisionBody, or a future re-home of it),
 // so a small, fixed tail is enough to find it without an unbounded per-issue
 // page walk — the same "bounded, not exhaustive" shape the label list already
 // uses (pageBudget).

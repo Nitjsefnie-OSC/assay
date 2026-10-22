@@ -2,7 +2,7 @@
 //
 // # Read-only, structurally
 //
-// Brief the service contract ships no write path of any kind. That is enforced
+// The service contract ships no write path of any kind. That is enforced
 // here in two places, neither of which is a convention:
 //
 //  1. [Routes] is the ONE route table. Every entry is a [Route] whose only
@@ -79,7 +79,7 @@ type Server struct {
 	Config *schema.File
 	// Now is injectable so tests can pin index age.
 	Now func() time.Time
-	// Authz is the surface/listing private-repo gate (brief-23 security fix):
+	// Authz is the surface/listing private-repo gate (the capability model security fix):
 	// it filters the inbox feed to only the repos the request's viewer may see.
 	// Optional: nil leaves the feed unfiltered (the middleware's surface login
 	// gate still fronts private cells), which is the anonymous-public / test
@@ -171,7 +171,7 @@ var sourcesNotRead = []string{
 	"CI check runs and statuses — a 0-check PR is not visible to this index",
 	"`statusgen --json` / `--dora` / `--gate-scores` — the roadmap route declares them as its delegated source and is a skeleton in this build",
 	"`deskboard actions|prs|health|awaiting` — no board verb is consulted; nothing here re-derives what they already derive",
-	"issue comments — only the issue body and labels are read, so an answer left in a comment is not seen until brief-10",
+	"issue comments — only the issue body and labels are read, so an answer left in a comment is not seen until the answer flow",
 	"closed escalations — the inbox serves open rows; a closed one is out of window, not absent",
 	"Kubernetes pod phase — the platform-assigned liveness sensor arrives with §9.3 phase-2 pods; the attention derivation prefers it where a pod record exists (the service contract upgrade path), but this build ingests none",
 	"any artifact or dispatch stream other than escalation issues — the service contract lands the attention derivation and its first-artifact deadline as a closed pure function, but only escalation issues are ingested here, so a live inbox row derives `waiting` (open escalation) or unresolved, and the richer working/idle/silent/failed-to-start states arrive with the Portfolio strip and the pod substrate",
@@ -304,7 +304,7 @@ func (s *Server) handleCells(w http.ResponseWriter, r *http.Request) {
 
 // RoadmapPayload is the /roadmap skeleton.
 //
-// The route exists because brief-08 asks for the skeleton; the DATA does
+// The route exists because the read surface asks for the skeleton; the DATA does
 // not, because this build derives no roadmap. Rather than serve an empty
 // array — which reads as "no work" — it serves an explicit could-not-check
 // naming the delegated source it will consume. derive-or-diff: statusgen is

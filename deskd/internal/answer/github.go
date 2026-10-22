@@ -16,7 +16,7 @@ import (
 // human-gate answer path. It is the one place in the whole process that
 // constructs a mutating GitHub request authored as the human (operator), and
 // TestExactlyOneWritePath asserts that: no other file in this package builds a
-// non-GET request, so "the answer path is the ONE write path" (brief-10) is a
+// non-GET request, so "the answer path is the ONE write path" is a
 // property a diff would break rather than a claim a reviewer makes.
 //
 // It gets its token from a Credential (satisfied by internal/custody) at the

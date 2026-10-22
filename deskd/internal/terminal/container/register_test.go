@@ -8,7 +8,7 @@ import (
 )
 
 // TestContainerDriverRegisteredForKindContainer is the fail-first regression
-// test for the authorization contract: brief 13's driver (PR 137) never called
+// test for the authorization contract: the container driver's driver (PR 137) never called
 // terminal.RegisterDriver for kind: container (PR 137's own body: registering
 // it "left as a follow-up"), so a `kind: container` desk configured in
 // cells.yaml resolved NO driver at all — terminal.DriverFor(schema.TargetContainer)
@@ -21,7 +21,7 @@ import (
 func TestContainerDriverRegisteredForKindContainer(t *testing.T) {
 	factory, ok := terminal.DriverFor(schema.TargetContainer)
 	if !ok {
-		t.Fatal("no driver registered for kind: container — terminal.RegisterDriver was not called (brief 13 task 2 / the authorization contract)")
+		t.Fatal("no driver registered for kind: container — terminal.RegisterDriver was not called (the container driver task 2 / the authorization contract)")
 	}
 	target, err := factory()
 	if err != nil {

@@ -40,11 +40,11 @@ type Handle struct {
 	asOf          *time.Time
 
 	// pendingResize is a resize requested before a driver attached — queued,
-	// never dropped (brief 13 facts: "a resize before attach is queued, not
+	// never dropped (the container driver facts: "a resize before attach is queued, not
 	// dropped"), and applied the moment [Handle.attach] runs.
 	pendingResize *Size
 
-	// followers are the read-only live followers brief 17's SSE stream
+	// followers are the read-only live followers the terminal stream's SSE stream
 	// registers (follow.go). They are poked, never fed: see [Follower].
 	followers map[*Follower]struct{}
 
@@ -223,7 +223,7 @@ func (h *Handle) attach(s Session) uint64 {
 }
 
 // write sends p to the handle's live session — the client-to-target byte path
-// [Session.Write]'s doc names ("brief 18 gates the write route, but the
+// [Session.Write]'s doc names ("the send route gates the write route, but the
 // transport is here"). Writing to a handle with no live session is an error,
 // never a panic; there is nothing yet to route the write to.
 func (h *Handle) write(p []byte) error {
@@ -264,7 +264,7 @@ func (h *Handle) alive() bool {
 }
 
 // since returns the handle's scrollback bytes written after cursor c — the
-// resume primitive brief 17's SSE stream is built on ([ring.Since]'s
+// resume primitive the terminal stream's SSE stream is built on ([ring.Since]'s
 // [ErrCursorEvicted] on a stale cursor).
 func (h *Handle) since(c uint64) ([]byte, error) {
 	return h.ring.Since(c)
@@ -614,11 +614,11 @@ func (r *Registry) ids() []string {
 
 // Write sends p to a configured desk's live session — the client-to-target
 // half of the byte pipe [Target]/[Session] describe (target.go: "Write sends
-// input; brief 18 gates the write route, but the transport is here"). This is
-// Go-level plumbing only: no wire route reaches it. Brief 18's `send` named
+// input; the send route gates the write route, but the transport is here"). This is
+// Go-level plumbing only: no wire route reaches it. The send route's `send` named
 // action writes through [Registry.WaitThenSend], which binds the write to the
 // handle epoch, never through Write, so nothing outside this process can call
-// Write. It exists because brief 13's own Verify
+// Write. It exists because the container driver's own Verify
 // must prove bytes a caller writes reach the container AND the container's
 // reply reaches the ring — through the registry, not by holding the driver's
 // [Session] directly — and that round trip needs a write path to exist.
@@ -651,7 +651,7 @@ func (r *Registry) Alive(id string) bool {
 }
 
 // Since returns a configured desk's scrollback bytes written after cursor c.
-// It is the same primitive brief 17's SSE stream will resume clients from
+// It is the same primitive the terminal stream's SSE stream will resume clients from
 // ([ErrCursorEvicted] on a cursor older than the ring's retained window);
 // exposed here so this brief's Verify can confirm ring content through the
 // registry seam rather than by re-deriving it from a held [Session].

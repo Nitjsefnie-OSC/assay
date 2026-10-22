@@ -19,7 +19,7 @@ import (
 const dockerBinary = "docker"
 
 // attachCmd is the ONLY interactive command this driver ever execs — a login
-// shell, never a value a caller supplies (brief 13 SPOF layer 2). It is `bash
+// shell, never a value a caller supplies (the container driver SPOF layer 2). It is `bash
 // -l` behind a fixed one-line preamble: the preamble prints the shell's own
 // in-container pid, then `exec`s `bash -l` in the same process, so the shell
 // in the container IS `bash -l` (same pid, argv `bash -l`). The session
@@ -28,7 +28,7 @@ const dockerBinary = "docker"
 // (the service contract review finding F-cor-1). The preamble runs under
 // [posixBash], so a container-side $BASH_ENV cannot print a decoy pid line
 // ahead of it. [terminal.TargetSpec]
-// (the service contract, as landed in medici-finance/the authorization contract) carries
+// (the service contract) carries
 // no per-desk command-override field: there is no `attach_cmd` key on
 // schema.TargetSpec today, so there is no path — not even a misconfigured
 // cells.yaml — by which a value could choose the exec'd argv. A configurable

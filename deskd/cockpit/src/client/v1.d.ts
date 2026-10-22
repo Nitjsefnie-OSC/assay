@@ -233,7 +233,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** metrics query (brief-08/12 read set) */
+        /** metrics query (read set) */
         get: operations["get_metrics"];
         put?: never;
         post?: never;
@@ -250,7 +250,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** portfolio strip (altitude panes, brief-12) */
+        /** portfolio strip (altitude panes) */
         get: operations["get_portfolio"];
         put?: never;
         post?: never;
@@ -949,7 +949,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description metrics query (brief-08/12 read set) (envelope carries the staleness meta; see internal/serve for the payload shape) */
+            /** @description metrics query (read set) (envelope carries the staleness meta; see internal/serve for the payload shape) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -967,7 +967,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description portfolio strip (altitude panes, brief-12) (envelope carries the staleness meta; see internal/serve for the payload shape) */
+            /** @description portfolio strip (altitude panes) (envelope carries the staleness meta; see internal/serve for the payload shape) */
             200: {
                 headers: {
                     [name: string]: unknown;

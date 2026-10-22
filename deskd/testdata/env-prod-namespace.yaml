@@ -1,4 +1,4 @@
-# Negative-path fixture for cellsvalidate (brief the service contract Verify row 3).
+# Negative-path fixture for cellsvalidate (the service contract Verify row 3).
 #
 # MUTATION ROW. Everything here is valid EXCEPT one namespace: the cell tries
 # to declare `example-prod-app` alongside its two synthetic development namespaces. This is

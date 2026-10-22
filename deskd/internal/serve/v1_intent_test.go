@@ -74,7 +74,7 @@ func (gatedPolicy) SurfaceLoginGated() bool                  { return true }
 
 type intentRig struct {
 	v1      http.Handler // the /v1 surface, unguarded
-	guarded http.Handler // the same surface behind the brief-23 guard
+	guarded http.Handler // the same surface behind the capability model guard
 	named   *serve.NamedActions
 	gh      *fakeGH
 	pub     ed25519.PublicKey

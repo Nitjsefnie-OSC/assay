@@ -109,7 +109,7 @@ const (
 )
 
 // PushBehavior is what a notification tier resolves to on the menubar/Slack
-// push path (brief-11).
+// push path.
 type PushBehavior string
 
 const (
@@ -132,11 +132,11 @@ type Loop struct {
 	Schedule string `yaml:"schedule"`
 	// Models is the worker-initiated escalation ladder (§13.8 ruling):
 	// cheapest-first, e.g. [deepseek-chat, glm-5.2]. May be empty for a
-	// zero-AI, deterministic loop (metrics — brief-05's "zero-AI first
+	// zero-AI, deterministic loop (metrics — the metrics design's "zero-AI first
 	// mover"); every other role requires at least one model.
 	Models []string `yaml:"models"`
 	// App is the GitHub App identity name (bot slug, no [bot] suffix)
-	// this loop authenticates as — brief-04 names the Secret per role
+	// this loop authenticates as — the loop-identity design names the Secret per role
 	// from this field. It is the loop's READ/actor identity and, absent
 	// WriteApp, its write identity too.
 	App string `yaml:"app"`
@@ -264,22 +264,21 @@ func (l Loop) WriteAppOrDefault() string {
 
 // ── environments: the dev environments a cell owns (the service contract) ────
 //
-// Verification of a Canton product is not "run shell in a box": a Verify row
-// that claims something about the running system has to reach the running
-// system. `environments:` is the DECLARATION half of that — a cell says which
-// dev environments it owns, and the cell's verify-runner identity is granted
-// access to exactly those (platform k8s/runners/verify/, the per-
-// namespace Roles in tracker k8s/dev/*/verify-runner-rbac.yaml).
+// Verification of a ledger-backed product is not "run shell in a box": a
+// Verify row that claims something about the running system has to reach the
+// running system. `environments:` is the DECLARATION half of that — a cell
+// says which dev environments it owns, and the cell's verify-runner identity
+// is granted access to exactly those (by the deployment's runner manifests and
+// per-namespace Roles, which live outside this module).
 //
 // The whole point of this block is that it is DEV-ONLY BY CONSTRUCTION. This
 // validator is the single control standing between "someone edits cells.yaml"
-// and "a verify pod is declared against prod" (brief-27 Context,
-// single-point-of-failure). Behind it stand RBAC (bindings exist only where
-// one was authored, and no Task authors one in a example-prod-* namespace),
-// the conformance check (platform k8s/runners/verify/
-// check-environment-scope.sh), the verify pool's own pod fence, and the
-// cluster namespace fences — but this is the layer that refuses first, and it
-// refuses on a schema/regex signal rather than on a cluster one.
+// and "a verify pod is declared against prod". Behind it stand RBAC (bindings
+// exist only where one was authored, and none is authored in an
+// example-prod-* namespace), the deployment's environment-scope conformance
+// check, the verify pool's own pod fence, and the cluster namespace fences —
+// but this is the layer that refuses first, and it refuses on a schema/regex
+// signal rather than on a cluster one.
 //
 // So the rules below are deliberately written as "the wrong thing cannot be
 // SPELLED", not as "the wrong thing is rejected after being understood":
@@ -320,7 +319,7 @@ var validEnvironmentTiers = map[EnvironmentTier]bool{EnvTierDev: true}
 //	               rest of `read`.
 //	exec-admin-pod create on pods/exec, so a row may exec the documented probe
 //	               scripts in the jump-box (#210 keeps cluster rows on those
-//	               scripts; the runner never holds the Canton admin token).
+//	               scripts; the runner never holds the ledger admin token).
 //
 // There is deliberately no `write`, no `admin`, no `cluster-admin` and no
 // `secrets` level. Those are not omissions to be filled in later — a level
@@ -332,7 +331,7 @@ const (
 	// AccessRead is namespace-scoped read on non-secret resources.
 	AccessRead AccessLevel = "read"
 	// AccessExecAdminPod is create on pods/exec, granted only on its own
-	// reviewed change (brief-27 Task 2 phase 2).
+	// reviewed change.
 	AccessExecAdminPod AccessLevel = "exec-admin-pod"
 	// AccessLogs is pods/log read on its own.
 	AccessLogs AccessLevel = "logs"
@@ -347,7 +346,7 @@ var validAccessLevels = map[AccessLevel]bool{
 // devNamespaceRE is the POSITIVE half of the dev-only namespace rule: a
 // namespace must carry a `-dev` segment (`example-dev-app`,
 // `example-dev-canton`). A name with no `-dev` segment at all — `example-app`,
-// `assay-loops`, `flux-system` — is not a dev namespace by NAME and is
+// `example-loops`, `flux-system` — is not a dev namespace by NAME and is
 // refused; naming is the only signal available here, because dev and prod in
 // this fleet are sibling namespaces in ONE cluster under ONE context, not a
 // context or cluster split. That is precisely why the schema binds namespaces
@@ -425,14 +424,14 @@ type Cell struct {
 	Loops             []Loop                            `yaml:"loops"`
 	SilenceThreshold  string                            `yaml:"silence_threshold"`
 	NotificationTiers map[NotificationTier]PushBehavior `yaml:"notification_tiers"`
-	// AnswerAs is the GitHub login authorized to ANSWER on this cell (brief-23):
+	// AnswerAs is the GitHub login authorized to ANSWER on this cell:
 	// the authenticated viewer whose login equals it is the answerer tier. It
 	// defaults to the explicit startup principal when human operations are enabled.
 	// The answer path authors as that principal via request custody; this field
 	// names WHO may invoke it. It cannot enable an unconfigured process.
 	AnswerAs string `yaml:"answer_as"`
 	// AllowAnonymousRead is a per-cell OPT-IN to anonymous (unauthenticated)
-	// read (brief-23). It defaults to false — deny-by-default. It is valid ONLY
+	// read. It defaults to false — deny-by-default. It is valid ONLY
 	// when deskd verifies EVERY repo in the cell is public against the GitHub API
 	// at startup and each poll cycle; a private repo in an opted-in cell is a
 	// fail-closed runtime error (enforced in deskd, not here — the schema cannot
@@ -489,7 +488,7 @@ type Cell struct {
 	// peers (the service contract, spec §5.2) — the desk registry read renders
 	// them as `group: peer` rows carrying the peer's URL so a client can go
 	// there directly (deskd never proxies; spec §7). This brief only LISTS
-	// peers (state always could-not-check — no cross-deskd read here); brief 26
+	// peers (state always could-not-check — no cross-deskd read here); peer reachability
 	// makes them reachable.
 	Peers []Peer `yaml:"peers"`
 }
@@ -578,7 +577,7 @@ type File struct {
 }
 
 // Load reads and strictly validates a cells.yaml file at path: unknown
-// fields anywhere in the document are errors (brief-02 task 2), and every
+// fields anywhere in the document are errors, and every
 // structural/semantic rule below must hold.
 func Load(path string) (*File, error) {
 	data, err := os.ReadFile(path)
@@ -970,7 +969,7 @@ func (l *Loop) validate() error {
 	if err := validateCronFields(l.Schedule); err != nil {
 		return fmt.Errorf("schedule: %w", err)
 	}
-	// Zero-AI loops (metrics — brief-05) may ship an empty ladder;
+	// Zero-AI loops (metrics — the metrics design) may ship an empty ladder;
 	// every other role needs at least one model to escalate from.
 	if l.Role != RoleMetrics && len(l.Models) == 0 {
 		return fmt.Errorf("models: at least one model is required for role %q", l.Role)

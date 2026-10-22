@@ -48,7 +48,7 @@ func v1Fixture(t *testing.T, authz serve.SurfaceAuthorizer) (http.Handler, strin
 	return serve.NewV1(db, cfg, authz, nil, nil, nil, nil, nil), "IT1"
 }
 
-// TestV1ReadsCarryStalenessAndETag — brief-25 task 2: every /v1 read carries
+// TestV1ReadsCarryStalenessAndETag — the v1 contract task 2: every /v1 read carries
 // the contract staleness envelope (index_age_seconds present, null on a cold
 // index) in the body AND an ETag in the header. Design §10: staleness is
 // displayed, not hidden.
@@ -206,7 +206,7 @@ func TestV1InboxFiltersByCapability(t *testing.T) {
 // sees the real count and distribution. Without the per-repo filter in
 // handleV1Metrics the denied viewer receives the escalation count + urgency
 // histogram of a repo it cannot read — the authorization/exposure class
-// Security-Review 5091037270 (brief-23) closed on the inbox listing.
+// Security-Review 5091037270 closed on the inbox listing.
 func TestV1MetricsFiltersByCapability(t *testing.T) {
 	metricValue := func(h http.Handler, metric string) any {
 		t.Helper()

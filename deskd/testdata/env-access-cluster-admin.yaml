@@ -1,4 +1,4 @@
-# Negative-path fixture for cellsvalidate (brief the service contract Verify row 5).
+# Negative-path fixture for cellsvalidate (the service contract Verify row 5).
 #
 # Correct tier, correct dev namespaces — and an access level of
 # `cluster-admin`. The access enum is closed at {read, exec-admin-pod, logs},

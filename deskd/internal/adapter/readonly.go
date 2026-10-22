@@ -19,7 +19,7 @@ type ReadOnlyViolation struct {
 }
 
 func (e *ReadOnlyViolation) Error() string {
-	return fmt.Sprintf("READ-ONLY TRANSPORT REFUSED %s %s: %s — brief the service contract ships no write path of any kind; "+
+	return fmt.Sprintf("READ-ONLY TRANSPORT REFUSED %s %s: %s — the service contract ships no write path of any kind; "+
 		"the human-gate answer path is the service contract and the agent write path is the service contract",
 		e.Method, e.URL, e.Why)
 }

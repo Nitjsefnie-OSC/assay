@@ -137,7 +137,7 @@ func TestAnswerStampsHuman(t *testing.T) {
 	}
 }
 
-// TestAnswerRefusesWrongIdentity proves the answerer-login binding (brief-23
+// TestAnswerRefusesWrongIdentity proves the answerer-login binding (the capability model
 // task 5): a live session whose AUTHENTICATED login is not the cell's answer_as
 // cannot write — a commenter-tier user, even past the middleware, cannot answer.
 // The write's own identity (operator, via custody) is a separate guarantee

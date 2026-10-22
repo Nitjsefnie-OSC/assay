@@ -7,7 +7,7 @@ import (
 	"github.com/medici-finance/assay/deskd/internal/domain"
 )
 
-// This file is the answer-DRAFT store (brief-10, §7.6 "draft survives failure").
+// This file is the answer-DRAFT store (the answer flow, §7.6 "draft survives failure").
 // A draft is the human's own in-progress answer text — NOT derived from GitHub —
 // so it lives in the local half of the store beside read/ack (ruling D7), under
 // the local_ prefix, and is untouched by DropDerived. That is what makes

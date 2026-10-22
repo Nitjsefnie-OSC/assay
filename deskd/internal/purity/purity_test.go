@@ -20,7 +20,7 @@ func writePkg(t *testing.T, src string) string {
 }
 
 // TestLintCatchesTheSpecNamedLeaks is the POSITIVE CONTROL for the
-// domain-purity lint — brief-08 Verify row 10, automated.
+// domain-purity lint — the read surface Verify row 10, automated.
 //
 // Row 10 describes a manual mutation: add `HTMLURL string` to a domain type,
 // run the lint, revert. A manual mutation is a claim someone made once. This

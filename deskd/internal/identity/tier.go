@@ -1,5 +1,5 @@
-// Package identity is deskd's PER-USER authentication and capability ladder
-// (brief-23). It replaces the single compile-time "operator" persona with a real
+// Package identity is deskd's PER-USER authentication and capability ladder.
+// It replaces the single compile-time "operator" persona with a real
 // per-viewer GitHub identity and a three-tier capability derived from that
 // user's GitHub repo permission.
 //
@@ -11,7 +11,7 @@
 // token lives only in the in-memory [SessionStore], keyed by an HttpOnly
 // cookie; a deskd restart logs everyone out. A viewer's [Capability] on any
 // given item is derived from that item's repo permission, queried with DESKD'S
-// OWN read identity (the per-org read-token router, brief-18) — never with the
+// OWN read identity (the per-org read-token router) — never with the
 // viewer's token, so a viewer's token scopes cannot influence their tier. The
 // derivation fails CLOSED to [Anonymous] on any error. The [Middleware] wraps
 // every data and write route and enforces the required tier server-side; the

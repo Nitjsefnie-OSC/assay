@@ -12,7 +12,7 @@ import (
 // read-only GraphQL document shape [Client.deriveByNumber] already uses, so
 // they get the read-only guarantee ([ReadOnlyTransport]) and the per-org
 // token routing ([ResolveTokens] / [RoutingFetcher]) for free — no new
-// transport, no new token plumbing, no new daemon (brief-08 §Delivery).
+// transport, no new token plumbing, no new daemon (the read surface §Delivery).
 //
 // Everything here is a single bounded GraphQL page per repo, never an
 // unbounded walk: a repo that has MORE open PRs or claims than the page size

@@ -21,7 +21,7 @@ package identity
 //     nothing renders pre-auth on a private cell exactly as before;
 //   - the OAuth sign-in route is not served, so no viewer can rise above
 //     anonymous;
-//   - the pre-brief-23 single-persona mode does NOT return. There is no
+//   - the pre-capability-model single-persona mode does NOT return. There is no
 //     configured "whoever reaches the console IS operator" path to fall back
 //     to, and reintroducing one on a sensitive-data identity surface — in a
 //     process that must serve an ON cell beside an OFF one — was the second

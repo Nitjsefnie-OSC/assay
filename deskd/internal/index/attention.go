@@ -7,7 +7,7 @@ import (
 )
 
 // This file is the attention derivation (decision-model spec §1.2, §1.3), the
-// "08b" derivation layer on top of brief-08's schema. Its input set is CLOSED
+// "08b" derivation layer on top of the read surface's schema. Its input set is CLOSED
 // and authority-tested: DeriveAttention may read only (adapter-sourced index
 // rows, cell config, the clock) — nothing else, ever. There is no field,
 // endpoint, tool parameter, header, file, env var, beacon, or config key by

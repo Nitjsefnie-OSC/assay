@@ -9,14 +9,14 @@ import (
 )
 
 // PermissionCacheTTL bounds how long a derived (user, repo) permission is
-// trusted before it is re-queried. 120s (brief-23 task 2): short enough that a
+// trusted before it is re-queried. 120s: short enough that a
 // revoked collaborator drops to anonymous within the window (Verify 11), long
 // enough that a busy console is not one permission call per request.
 const PermissionCacheTTL = 120 * time.Second
 
 // PermissionQuerier answers "what permission does this user hold on this repo?"
-// using DESKD'S OWN read identity — the brief-17 read App token routed per-org
-// by the brief-18 router — NEVER the viewer's own token. That independence is
+// using DESKD'S OWN read identity — the dedicated read App token routed per-org
+// by the per-org router — NEVER the viewer's own token. That independence is
 // the whole point (Verify 6): a viewer's token scopes or claims cannot change
 // their tier, because the query that decides the tier is made with a credential
 // the viewer does not control.

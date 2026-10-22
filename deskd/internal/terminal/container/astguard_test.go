@@ -10,7 +10,7 @@ import (
 )
 
 // forbiddenTokens are docker-exec CLI flags that would let this driver widen
-// an exec beyond the container's own user and environment (brief 13 SPOF
+// an exec beyond the container's own user and environment (the container driver SPOF
 // layer 2 — the exec runs with the container's OWN user and env, never an
 // override). This is the internal/custody/norest_test.go pattern applied
 // here: a SOURCE audit, because what must hold is that NO code path can ever
@@ -38,13 +38,13 @@ func TestDriverNeverOverridesUserOrEnv(t *testing.T) {
 			t.Fatalf("parse %s: %v", name, err)
 		}
 		if hits := forbiddenTokenHits(file); len(hits) > 0 {
-			t.Errorf("%s contains %v — the exec must run with the container's OWN user and environment, never an override (brief 13 SPOF layer 2)", name, hits)
+			t.Errorf("%s contains %v — the exec must run with the container's OWN user and environment, never an override (the container driver SPOF layer 2)", name, hits)
 		}
 	}
 }
 
 // TestDriverNeverOverridesUserOrEnvCatchesAViolation is the positive control
-// (the brief-12 norest_test.go / TestNoTargetShapedRequestCatchesAnAddressField
+// (the altitude panes norest_test.go / TestNoTargetShapedRequestCatchesAnAddressField
 // pattern): it proves the walk actually flags a -u override rather than
 // vacuously passing because the walk itself is broken.
 func TestDriverNeverOverridesUserOrEnvCatchesAViolation(t *testing.T) {

@@ -61,7 +61,7 @@ func TestDesksTool_UnknownCell(t *testing.T) {
 
 // TestDesksTool_ReturnsRowPerConfiguredLoop — the MCP twin returns the SAME
 // shape as the HTTP read: one row per configured loop, master resolved by
-// role (spec §5.2's "feature = tool", brief-16 Verify row 8's cross-surface
+// role (spec §5.2's "feature = tool", the desks view Verify row 8's cross-surface
 // flow).
 func TestDesksTool_ReturnsRowPerConfiguredLoop(t *testing.T) {
 	s := desksTestServer(t)

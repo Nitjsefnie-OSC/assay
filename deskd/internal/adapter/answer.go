@@ -38,7 +38,7 @@ func (v AnswerVerifier) verify(rec contract.AnswerRecord, iss RawIssue, c RawCom
 	})
 }
 
-// DeriveAnswer scans a CLOSED issue's polled comment tail for the brief-24
+// DeriveAnswer scans a CLOSED issue's polled comment tail for the answer-record grammar
 // answer-record marker (`<!-- assay:answer v1 login=… option=… options_rev=…
 // -->`) and derives the domain outcome (the service contract increment 3, task 6).
 // This is [contract.ParseAnswerRecord]'s first non-test caller: the audited

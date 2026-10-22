@@ -23,7 +23,7 @@ type goldenParse struct {
 	Confidence domain.Confidence       `json:"confidence"`
 }
 
-// TestOptionsEncodings is brief-08 Verify row 2 and spec §5.5 08a row 1:
+// TestOptionsEncodings is the read surface Verify row 2 and spec §5.5 08a row 1:
 // golden fixtures for BOTH wire encodings parse — prose-v1 ⇒ Options = nil,
 // typed-v2 ⇒ a typed list plus an OptionsRev.
 //
@@ -124,7 +124,7 @@ func TestOptionsEncodings(t *testing.T) {
 				}
 			case adapter.EncodingTypedV2Malformed:
 				if res.Options != nil {
-					t.Errorf("a malformed v2 block published %d option(s) — a partial list misnumbers the number keys brief-10 binds to", len(res.Options))
+					t.Errorf("a malformed v2 block published %d option(s) — a partial list misnumbers the number keys the answer flow binds to", len(res.Options))
 				}
 				if len(res.Problems) == 0 {
 					t.Errorf("malformed classification with no stated problem is not actionable")
@@ -142,7 +142,7 @@ func TestOptionsEncodings(t *testing.T) {
 // "fixed" by a future reader: the id/label separator is U+2014, and an ASCII
 // hyphen must NOT be accepted.
 //
-// Accepting both would be friendlier and wrong. `desk__escalate` (brief-09)
+// Accepting both would be friendlier and wrong. `desk__escalate`
 // emits the em-dash form and this parser round-trips it; a parser that also
 // accepted a hyphen would let two spellings of the same grammar exist, and
 // the emitter and the parser would stop being each other's test.

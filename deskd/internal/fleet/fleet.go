@@ -1,4 +1,4 @@
-// Package fleet builds the spatial fleet map (brief the service contract): a
+// Package fleet builds the spatial fleet map (the service contract): a
 // read-only, glance-shaped view over dispatch claims (refs/dispatch/*) and
 // open PRs, grouped by repo lane. It is a RENDERING of state that already
 // exists elsewhere — refs/dispatch/*, GitHub's PR list — and derives

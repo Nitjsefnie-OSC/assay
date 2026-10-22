@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mutate-chat-controls.sh — fail-first evidence for the four controls the Ask
-# Assay chat rests on (brief the service contract, worker-prompt kit §9).
+# Assay chat rests on (the service contract, worker-prompt kit §9).
 #
 # WHY MUTATION AND NOT A PRE-FIX RED RUN.
 #

@@ -19,7 +19,7 @@ import (
 // TestExactlyOneWritePath: it parses every non-test file in this package and
 // asserts outbound requests are built in exactly one file (github.go). A second
 // user write path anywhere in the package would build an http.NewRequest* in
-// another file and fail here — so "exactly one user write site" (brief-23 facts,
+// another file and fail here — so "exactly one user write site" (the capability model facts,
 // the restated single-write-path invariant) is checked on every build.
 //
 // Fail-first: add a second file to this package that calls
@@ -40,7 +40,7 @@ func TestOneUserWritePath(t *testing.T) {
 // TestUserWriterConstructsNoClose asserts the ONE write builder posts a comment
 // and NOTHING that could close an issue: no PATCH method, and no `state:closed`
 // payload anywhere in the package. "A comment can never carry a close" is thus a
-// property a diff would break, not a claim (brief-23 facts, §6.6 injection
+// property a diff would break, not a claim (the capability model facts, §6.6 injection
 // posture).
 //
 // Fail-first: add a Close (issues PATCH state:closed) to github.go and this

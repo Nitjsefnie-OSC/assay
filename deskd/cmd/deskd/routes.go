@@ -94,12 +94,12 @@ type routeHandlers struct {
 	V1Authenticated func(r *http.Request) bool
 }
 
-// protectedRoutes is the capability-gated table (brief-23 task 3): EVERY data
+// protectedRoutes is the capability-gated table: EVERY data
 // and write route registers through the capability middleware, and the table is
 // validated before mounting so a route without the gate cannot ship.
 //
 // Two entries carry human writes, and both are `/answer/`-shaped or `/v1`-
-// shaped sub-routes of a single mount: the tree at "/answer/" (the brief-10
+// shaped sub-routes of a single mount: the tree at "/answer/" (the answer flow
 // console path: answer + ack + draft) and the tree at "/v1/" (the seam's two
 // named actions). They are declared here at the granularity the mux mounts
 // them; [humanWriteActions] resolves each to the actions it can perform by
@@ -113,7 +113,7 @@ func protectedRoutes(h routeHandlers) []mountedRoute {
 		// Answer/ack/draft: needs answerer. The two platform writes reachable
 		// under this tree are the SAME two named actions the seam serves — the
 		// console path and the seam path are two mounts of one write path
-		// (brief-10's TestExactlyOneWritePath), not two write paths.
+		// (the answer flow's TestExactlyOneWritePath), not two write paths.
 		{Route: identity.Route{Pattern: "/answer/", Min: identity.Answerer, ItemScoped: true, Handler: h.Answer}, Kind: kindNamedAction, Action: contract.ActionAnswer},
 		// Surface-scoped feeds: the private-repo gate (SurfaceLoginGated) applies.
 		{Route: identity.Route{Pattern: "/inbox", Min: identity.Commenter, ItemScoped: false, Handler: h.Inbox}, Kind: kindRead},

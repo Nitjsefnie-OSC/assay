@@ -8,7 +8,7 @@ import (
 	"github.com/medici-finance/assay/deskd/config/schema"
 )
 
-// TestRingReadFromBoundaries pins the cursor arithmetic brief 17's stream
+// TestRingReadFromBoundaries pins the cursor arithmetic the terminal stream's stream
 // stands on, at every boundary where an off-by-one could hide: the base, the
 // byte before it, the end, and one past the end.
 func TestRingReadFromBoundaries(t *testing.T) {

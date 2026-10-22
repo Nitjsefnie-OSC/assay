@@ -314,7 +314,7 @@ func (s *Supervisor) run(ctx context.Context, h *Handle) {
 				return
 			}
 			if kind == schema.TargetLocal {
-				// Spawned once; never re-spawned in a loop (brief 15).
+				// Spawned once; never re-spawned in a loop.
 				s.transition(h, AttachFailed, ReasonExited, attempts, nil, nil)
 				return
 			}
@@ -324,7 +324,7 @@ func (s *Supervisor) run(ctx context.Context, h *Handle) {
 			wait, delay = s.backoff(delay)
 			reason = ReasonExited
 		case kind == schema.TargetLocal:
-			// A refused spawn is never retried either (brief 15), whatever
+			// A refused spawn is never retried either, whatever
 			// the refusal: this case comes before the unauthorized timer.
 			reason := ReasonUnreachable
 			if errors.Is(err, ErrUnauthorized) {

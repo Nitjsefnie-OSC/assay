@@ -229,7 +229,7 @@ func (s *session) Read() <-chan []byte { return s.ch }
 
 // Write implements [terminal.Session]: bytes go straight to the pty master —
 // this driver's half of the byte pipe target.go documents ("Write sends
-// input (brief 18 gates the write route, but the transport is here)").
+// input (the send route gates the write route, but the transport is here)").
 func (s *session) Write(p []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

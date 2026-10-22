@@ -24,7 +24,7 @@ func (r *recordingBase) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // TestReadOnlyTransportRefusesEveryWriteShape is the STRUCTURAL proof that
-// brief the service contract ships no write path.
+// the service contract ships no write path.
 //
 // The refusal is at the transport, so it binds every call site in the
 // process — including ones nobody has written yet. This test enumerates the

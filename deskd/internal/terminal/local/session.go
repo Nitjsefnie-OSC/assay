@@ -13,7 +13,7 @@ import (
 // Pid is exported beyond that interface (the interface owns only the byte
 // pipe, per internal/terminal/target.go's doc) so a caller that holds the
 // concrete type — a test proving the round trip against the REAL spawned
-// process rather than a fake reader (brief 15 Verify row 2) — can dereference
+// process rather than a fake reader — can dereference
 // the bytes it reads back against the process that actually produced them.
 type Session struct {
 	cmd  *exec.Cmd
@@ -77,14 +77,14 @@ func (s *Session) Read() <-chan []byte { return s.ch }
 
 // Write implements terminal.Session: it writes directly to the PTY master, so
 // bytes reach the child's stdin exactly as typed (no server-side transcoding
-// — brief-11 spike ANSWER 4).
+// — the terminal spike spike ANSWER 4).
 func (s *Session) Write(p []byte) error {
 	_, err := s.ptmx.Write(p)
 	return err
 }
 
 // Resize implements terminal.Session via TIOCSWINSZ (pty.Setsize wraps the
-// ioctl; brief 15 task 1).
+// ioctl; the local driver task 1).
 func (s *Session) Resize(cols, rows int) error {
 	return pty.Setsize(s.ptmx, &pty.Winsize{
 		Rows: clampWinsize(rows),

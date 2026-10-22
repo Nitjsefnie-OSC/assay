@@ -11,7 +11,7 @@ import (
 	"github.com/medici-finance/assay/deskd/internal/index"
 )
 
-// TestAttentionState exercises the §1.2 precedence derivation. Brief-14 Verify
+// TestAttentionState exercises the §1.2 precedence derivation. The attention layer Verify
 // row 1: open escalation ⇒ waiting; a class with no no-op artifact derives
 // silent, never idle; precedence holds.
 func TestAttentionState(t *testing.T) {
@@ -86,7 +86,7 @@ func TestAttentionState(t *testing.T) {
 	}
 }
 
-// TestFirstArtifactDeadline is brief-14 Verify row 1's second half + §1.3:
+// TestFirstArtifactDeadline is the attention layer Verify row 1's second half + §1.3:
 // dispatched with no subsequent artifact past N ⇒ failed-to-start, and NEVER
 // working; a late first artifact clears it; N below the poller floor never
 // fires; pod phase is preferred where a pod exists.
@@ -158,7 +158,7 @@ func TestFirstArtifactDeadline(t *testing.T) {
 	})
 }
 
-// TestDerivationInputs is the §11 authority suite (brief-14 Verify rows 4 & 5).
+// TestDerivationInputs is the §11 authority suite (the attention layer Verify rows 4 & 5).
 // It parses attention.go and FAILS on any addition to the derivation's input
 // set: a new import beyond {time, internal/domain}, or a new field on
 // AttentionInputs / AttentionConfig. Adding an env-var read means importing

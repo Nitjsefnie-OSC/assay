@@ -143,7 +143,7 @@ func (f *fixtureAPI) handler() http.Handler {
 // aliased derivation, mapping, storage, serving — through the shipped HTTP
 // client rather than a Fetcher stub.
 //
-// It also produces the JSON shape brief-08's Verify rows query with jq, so
+// It also produces the JSON shape the read surface's Verify rows query with jq, so
 // the contract those rows assert is pinned by a test rather than by a
 // one-off manual run.
 func TestEndToEndThroughTheRealClient(t *testing.T) {
@@ -182,7 +182,7 @@ func TestEndToEndThroughTheRealClient(t *testing.T) {
 		seen[r.ID] = true
 	}
 
-	// --- brief-08 Verify 4: options carry id/label/consequence -----------
+	// --- the read surface Verify 4: options carry id/label/consequence -----------
 	var typed *index.Row
 	for i := range rows {
 		if rows[i].Options != nil {
@@ -205,7 +205,7 @@ func TestEndToEndThroughTheRealClient(t *testing.T) {
 		t.Error("the stored OptionsRev does not re-derive from the stored options")
 	}
 
-	// --- brief-08 Verify 5: provenance is agent-raised (ruling D4) -------
+	// --- the read surface Verify 5: provenance is agent-raised (ruling D4) -------
 	for _, r := range rows {
 		if r.Provenance != domain.AgentRaised {
 			t.Errorf("row %q derived %q; nothing in this build produces the other value (D4)", r.Title, r.Provenance)

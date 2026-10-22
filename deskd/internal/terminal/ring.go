@@ -17,7 +17,7 @@ const (
 
 // ErrCursorEvicted is returned by [ring.Since] when the requested cursor is
 // older than the ring's oldest retained byte — the resume point has scrolled
-// off. It is a TYPED error, never a silent truncation: brief 17's SSE stream
+// off. It is a TYPED error, never a silent truncation: the terminal stream's SSE stream
 // turns it into a `resync` event so a late client re-reads from the base rather
 // than resuming from a hole (spec §5.1). Silent truncation is exactly the
 // off-by-one the spike's per-byte cursor was chosen to make impossible.

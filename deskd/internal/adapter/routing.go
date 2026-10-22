@@ -27,8 +27,8 @@ import (
 const legacyTokenEnv = "DESKD_GITHUB_TOKEN"
 
 // perOrgTokenPrefix opens the per-org read-token env vars:
-// DESKD_GITHUB_TOKEN_<ORG>, e.g. DESKD_GITHUB_TOKEN_MEDICI_FINANCE,
-// DESKD_GITHUB_TOKEN_JOJIG_DAO. The suffix is the owner uppercased with '-'
+// DESKD_GITHUB_TOKEN_<ORG>, e.g. DESKD_GITHUB_TOKEN_EXAMPLE_ORG,
+// DESKD_GITHUB_TOKEN_OTHER_ORG. The suffix is the owner uppercased with '-'
 // mapped to '_' (GitHub org logins never contain '_', so the mapping is
 // injective in practice). See [EnvTokenName].
 const perOrgTokenPrefix = "DESKD_GITHUB_TOKEN_"

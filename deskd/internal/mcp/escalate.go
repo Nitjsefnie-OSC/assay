@@ -16,7 +16,7 @@ import (
 // Filing a well-formed escalation is one call instead of work, so a blocked
 // loop files and stays alive rather than blocking in-terminal. It is a
 // FORMATTER + FILER — GitHub stays the record (spec §1.4); the tool writes the
-// same issue the issue-loop/06 contract defines.
+// same issue the escalation wire contract defines.
 
 // Filer is the App-identity write path desk__escalate needs, plus the
 // open-escalation read the filing-time collapse consults.

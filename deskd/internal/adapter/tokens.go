@@ -95,7 +95,7 @@ type FileTokenSource struct {
 	// Dir is the directory holding one file per owner, named by
 	// [fileTokenName]. A missing, empty, or unreadable file for a configured
 	// owner is reported in missing rather than causing an error return — the
-	// caller degrades that ONE org to could-not-check (the brief-08 rule:
+	// caller degrades that ONE org to could-not-check (the read surface rule:
 	// never a silent empty inbox), it never blinds the whole cycle.
 	Dir string
 }

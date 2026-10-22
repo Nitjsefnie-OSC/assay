@@ -149,7 +149,7 @@ func classifyTitle(title string) TitleSignal {
 // detectPrompt is the spike ANSWER 2 heuristic as a pure function: within the
 // idle window, output is flowing; past it, a trailing shell-prompt regex means
 // a settled prompt, and anything else is unknown. OSC 133 prompt marks are
-// preferred when a shell emits them (brief 18 wires that), but a stock shell
+// preferred when a shell emits them (the send route wires that), but a stock shell
 // emits none, so silence-plus-regex is the shipped fallback.
 func detectPrompt(tail []byte, silence, idleWindow time.Duration) PromptSignal {
 	if silence < idleWindow {

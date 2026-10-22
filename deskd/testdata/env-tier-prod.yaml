@@ -1,4 +1,4 @@
-# Negative-path fixture for cellsvalidate (brief the service contract Verify row 4).
+# Negative-path fixture for cellsvalidate (the service contract Verify row 4).
 #
 # The namespaces here are the two synthetic development namespaces — nothing is wrong
 # with the blast radius. What is wrong is that the entry claims `tier: prod`.

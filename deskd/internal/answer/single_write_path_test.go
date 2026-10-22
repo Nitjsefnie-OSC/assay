@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestExactlyOneWritePath is the structural guarantee behind brief-10's "the
+// TestExactlyOneWritePath is the structural guarantee behind the answer flow's "the
 // answer path is the ONE write path". It parses every non-test file in this
 // package and asserts that OUTBOUND HTTP REQUESTS are constructed in exactly one
 // file — github.go, where HumanWriter lives. A second write path anywhere in

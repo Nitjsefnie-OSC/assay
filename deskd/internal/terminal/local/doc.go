@@ -3,7 +3,7 @@
 // implementations (container/13, pod/14, local/15) — it spawns
 // [schema.TargetSpec.Command] on a PTY in deskd's OWN process tree. This is
 // the target for a laptop-hosted desk (the master desk sharing the operator's
-// machine with deskd) and for a hand-opened custom session (brief 18): no
+// machine with deskd) and for a hand-opened custom session: no
 // container runtime, no cluster, nothing but a PTY.
 //
 // # The one spawn site
@@ -24,7 +24,7 @@
 // error wrapping [terminal.ErrUnreachable] (an exec-time failure in the
 // driver), never at config load — schema validation only requires a
 // non-empty `command:`, not that it resolves (single-point-of-failure note,
-// brief 15).
+// the local driver).
 //
 // # The deny-list: deskd's own secrets never reach a desk's shell
 //
@@ -61,6 +61,6 @@
 // the registry's ring (a different package, a different at-rest guarantee) or
 // out through Close/Kill. norest_test.go in this directory is the same source
 // audit internal/terminal/norest_test.go runs, scoped to this package, so the
-// scrollback-at-rest guarantee covers the local driver too (brief 15 Verify
+// scrollback-at-rest guarantee covers the local driver too (the local driver Verify
 // row 7).
 package local

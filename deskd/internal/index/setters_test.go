@@ -9,7 +9,7 @@ import (
 	"github.com/medici-finance/assay/deskd/internal/index"
 )
 
-// TestReadAckSetsLocalStateZeroPlatformWrites is brief-14 Verify row 6 (D7):
+// TestReadAckSetsLocalStateZeroPlatformWrites is the attention layer Verify row 6 (D7):
 // read and ack set local state, and NOTHING on the platform changes. The
 // platform half of the proof is structural — internal/index holds no GitHub
 // client and imports no transport, so there is no reachable write — and this

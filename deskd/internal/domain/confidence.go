@@ -23,7 +23,7 @@
 // that cannot be constructed without declaring the probe that produced it,
 // and that REFUSES to carry a value at all when the probe hit its limit.
 //
-// The vocabulary is desk-hardening/01's three states, used verbatim.
+// The vocabulary is the methodology's three probe states, used verbatim.
 package domain
 
 import (

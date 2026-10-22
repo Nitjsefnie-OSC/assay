@@ -105,7 +105,7 @@ func harness(t *testing.T, cred answer.Credential) (http.Handler, *recordingWrit
 	w := &recordingWriter{}
 	// NewService takes an unexported interface type, but every method on it is
 	// exported — so a writer defined out here satisfies it, which is exactly how
-	// brief-10's own tests substitute one.
+	// the answer flow's own tests substitute one.
 	svc := answer.NewService(w, nil, nil, nil)
 	svc.SetAnswerAs("operator")
 	sessions := answer.NewSessionStore(nil, func() bool { return true })
@@ -216,7 +216,7 @@ func TestNamedActionUsesTheCallersCredential(t *testing.T) {
 		t.Fatalf("answer returned %d: %s", rec.Code, rec.Body.String())
 	}
 	if w.comments != 1 || w.closes != 1 {
-		t.Fatalf("answer wrote %d comments and %d closes, want exactly one of each (brief-10 semantics, unchanged)", w.comments, w.closes)
+		t.Fatalf("answer wrote %d comments and %d closes, want exactly one of each (the answer flow semantics, unchanged)", w.comments, w.closes)
 	}
 	for _, tok := range w.tokensSeen {
 		if tok != fixtureToken {

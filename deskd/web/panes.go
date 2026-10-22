@@ -12,7 +12,7 @@ import (
 	"github.com/medici-finance/assay/deskd/internal/index"
 )
 
-// This file adds the altitude panes (brief the service contract): Roadmap + epic
+// This file adds the altitude panes: Roadmap + epic
 // drill-down, Measures, Portfolio, and Teams. Every pane carries the §5.2
 // ambient metrics strip at its own scope (the binding ambient rule), and every
 // pane renders honestly: the figures this build derives from the index are

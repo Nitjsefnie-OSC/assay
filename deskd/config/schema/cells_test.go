@@ -129,7 +129,7 @@ func TestParse_NoCells(t *testing.T) {
 // ── environments: dev-only by construction (the service contract) ────────────
 //
 // Every test below is named *Environment* so `go test ./config/... -run
-// 'Environment' -count=1` (brief-27 Verify row 6) selects exactly this block.
+// 'Environment' -count=1` selects exactly this block.
 //
 // The negative cases are the point of the file. A validator is only worth the
 // bytes if it REFUSES, so each rule gets a case that would pass without it,
@@ -223,12 +223,12 @@ func TestEnvironment_RejectsNamespaceWithoutDevSegment(t *testing.T) {
 	block := `      - name: loops
         kind: k8s
         tier: dev
-        namespaces: [assay-loops]
+        namespaces: [example-loops]
         access: [read]
         runner_pool: example-verify-loops
 `
 	err := parseErr(t, envDoc(block))
-	assertMentions(t, err, "assay-loops")
+	assertMentions(t, err, "example-loops")
 }
 
 // The denylist earning its keep: this namespace SATISFIES the positive

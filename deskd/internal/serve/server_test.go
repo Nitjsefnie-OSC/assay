@@ -27,7 +27,7 @@ func (a denyRepoAuthz) SurfaceAuthorizer(*http.Request) func(owner, name string)
 	}
 }
 
-// TestInboxJSONHidesRowsWithoutCapability (brief-23 security fix, Security-Review
+// TestInboxJSONHidesRowsWithoutCapability (the capability model security fix, Security-Review
 // 5091037270): the JSON read surface's inbox listing must filter per-repo. An
 // authenticated viewer with no read capability on a cell's private repo must NOT
 // receive that repo's rows. Pre-fix the listing served every row (gated on login

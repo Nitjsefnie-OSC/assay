@@ -15,7 +15,7 @@ import (
 
 // testContainerName returns the COCKPIT_VERIFY_CONTAINER fixture name, or
 // skips. These tests need a local Docker daemon and the named fixture
-// container (brief 13 Verify rows 2-6, ground rules: "docker run/exec/rm of
+// container (the container driver Verify rows 2-6, ground rules: "docker run/exec/rm of
 // the NAMED throwaway fixture cockpit-verify... is the ONE sanctioned
 // mutation"). A plain `go test ./...` (row 1, no env var, e.g. CI) must see a
 // clean skip here, never a failure or a daemon dependency.
@@ -23,13 +23,13 @@ func testContainerName(t *testing.T) string {
 	t.Helper()
 	name := os.Getenv("COCKPIT_VERIFY_CONTAINER")
 	if name == "" {
-		t.Skip("COCKPIT_VERIFY_CONTAINER not set — this test needs a local Docker daemon and a fixture container (brief 13 Verify rows 2-6)")
+		t.Skip("COCKPIT_VERIFY_CONTAINER not set — this test needs a local Docker daemon and a fixture container (the container driver Verify rows 2-6)")
 	}
 	return name
 }
 
 // testRegistry builds a one-desk [terminal.Registry] whose only desk's target
-// is the named container — the same shape brief 12's registry_test.go uses.
+// is the named container — the same shape the terminal core's registry_test.go uses.
 func testRegistry(containerName string) (*terminal.Registry, string) {
 	const deskID = "cockpit-verify/review"
 	cfg := &schema.File{Cells: []schema.Cell{{
@@ -122,7 +122,7 @@ func TestContainerDriverRoundTrip(t *testing.T) {
 //
 // The write sets and clears the title itself rather than relying on bare PTY
 // chatter: a `sleep N` alone produces no bytes, so the two-signal machine
-// (brief 12) has no way to tell "still running silently" from "hung" and
+// has no way to tell "still running silently" from "hung" and
 // correctly reads could-not-check, not busy, once the ~200ms idle window
 // passes with nothing to look at. That is a real, already-shipped product
 // property this brief does not own; exercising it with a bare `sleep 5\n`
@@ -166,7 +166,7 @@ func TestContainerDriverStateAfterPrompt(t *testing.T) {
 	// the busy-to-idle handoff is not asserted against here: the idle title
 	// and the still-flowing bytes of the printf that set it are, for an
 	// instant, two disagreeing signals by the shipped design (state.go's
-	// disagreement rule) — a real, correct property of brief 12, not
+	// disagreement rule) — a real, correct property of the terminal core, not
 	// something this row is testing.
 	deadline := time.Now().Add(8 * time.Second)
 	for {

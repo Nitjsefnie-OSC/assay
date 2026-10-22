@@ -274,7 +274,7 @@ func TestLeafImports(t *testing.T) {
 	for _, f := range forbidden {
 		if deps[f] {
 			t.Errorf("internal/contract transitively imports %s — the contract must be a leaf both binaries import, "+
-				"so importing it never drags one toward the other's identity (brief-24 row 9)", f)
+				"so importing it never drags one toward the other's identity", f)
 		}
 	}
 	// Positive control: the package DOES reach internal/domain, so the check is

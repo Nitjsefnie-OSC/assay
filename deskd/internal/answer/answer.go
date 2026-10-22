@@ -1,4 +1,4 @@
-// Package answer is the human-gate WRITE PATH (brief-10): the ONE place a
+// Package answer is the human-gate WRITE PATH: the ONE place a
 // operator-authored mutation is produced, behind a live human session. It is the
 // authorization artifact's referent for §13.1 (the operator, the custody design).
 //
@@ -117,7 +117,7 @@ type Service struct {
 	acks   AckRecorder
 	now    func() time.Time
 	// answerAs is the cell's authorized-answerer login (cells.yaml, default
-	// humanActor()). The NEW answerer-login binding (brief-23 task 5, SPOF layer)
+	// humanActor()). The NEW answerer-login binding (the capability model task 5, SPOF layer)
 	// lives in requireLive: a live session may write ONLY when its authenticated
 	// Actor equals answerAs. Empty means "default to the write identity", which
 	// preserves the pre-brief behaviour (answer as operator, gated on operator).
@@ -137,7 +137,7 @@ func NewService(w platformWriter, drafts DraftStore, acks AckRecorder, now func(
 	return &Service{writer: w, drafts: drafts, acks: acks, now: now}
 }
 
-// SetAnswerAs binds the Service to a cell's authorized-answerer login (brief-23
+// SetAnswerAs binds the Service to a cell's authorized-answerer login (the capability model
 // task 5). deskd calls it with the cell's answer_as (default humanActor()). It is
 // the authorization identity a live session's Actor must equal to write; the
 // write is still authored as operator by the custody credential, unchanged.
@@ -168,7 +168,7 @@ func (s *Service) requireLive(sess *Session) error {
 	if s.now().After(sess.ExpiresAt) {
 		return ErrSessionExpired
 	}
-	// The NEW answerer-login binding (brief-23 task 5): the session's
+	// The NEW answerer-login binding: the session's
 	// authenticated login must equal the cell's authorized answerer. This is the
 	// answer path's own gate, independent of the capability middleware — an
 	// attacker past the mux still cannot answer unless their authenticated login

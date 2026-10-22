@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mutate-env-rules.sh — fail-first evidence for the dev-only environment
-# validator (brief the service contract, worker-prompt kit §9).
+# validator (the service contract, worker-prompt kit §9).
 #
 # WHY THIS EXISTS, and why a plain "run the test before the fix" run does not
 # do the job here.

@@ -265,7 +265,7 @@ func (e Escalation) Key() CollapseKey {
 // (spec §1.1, §1.1.1). It returns "" when opts is nil — the prose-v1 case.
 //
 // The spec pins neither algorithm nor encoding, and the rev crosses the wire
-// (brief-09 emits `options-rev <shorthash>`; this adapter re-derives it from
+// (the options grammar emits `options-rev <shorthash>`; this adapter re-derives it from
 // a re-polled body), so the encoding is FIXED HERE and both sides must use
 // this function:
 //

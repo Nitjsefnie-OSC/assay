@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// This file is the LIVE-HUMAN SESSION GATE (design §6, brief-10: "behind their
+// This file is the LIVE-HUMAN SESSION GATE (design §6, the answer flow: "behind their
 // live session"). It is the reason a bot or an unauthenticated caller cannot
 // reach the write path: every write in this package requires a *Session that
 // was minted by [SessionStore.Begin], and Begin is the ONLY way the unexported
@@ -33,11 +33,11 @@ const SessionTTL = 30 * time.Minute
 // Session is one live human presence at the console. The `live` field is
 // unexported by design: it is set only by [SessionStore.Begin].
 //
-// Actor is the AUTHENTICATED login of the human who established the session
-// (brief-23): the fixed "operator" assumption is gone — Actor now carries whoever
+// Actor is the AUTHENTICATED login of the human who established the session:
+// the fixed "operator" assumption is gone — Actor now carries whoever
 // signed in, and the Service asserts it equals the cell's answer_as before any
 // write. The write itself is still authored as operator by the custody credential
-// (frozen, brief-10); Actor is the AUTHORIZATION identity, not the write one.
+// (frozen, the answer flow); Actor is the AUTHORIZATION identity, not the write one.
 type Session struct {
 	ID        string
 	Actor     string
@@ -89,7 +89,7 @@ func (st *SessionStore) Begin() (*Session, error) {
 	return st.BeginAs(humanActor())
 }
 
-// BeginAs mints a live-human session bound to an AUTHENTICATED login (brief-23).
+// BeginAs mints a live-human session bound to an AUTHENTICATED login.
 // deskd calls it with the login the OAuth identity session resolved, so the
 // live-answer session carries whoever actually signed in — the Service then
 // asserts that login equals the cell's answer_as before any write. The operator

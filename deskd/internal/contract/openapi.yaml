@@ -832,22 +832,22 @@ paths:
       operationId: get_metrics
       responses:
         "200":
-          description: metrics query (brief-08/12 read set) (envelope carries the staleness meta; see internal/serve for the payload shape)
+          description: metrics query (read set) (envelope carries the staleness meta; see internal/serve for the payload shape)
       security:
         - viewerToken:
             - read:user
-      summary: metrics query (brief-08/12 read set)
+      summary: metrics query (read set)
       x-kind: read
   /v1/portfolio:
     get:
       operationId: get_portfolio
       responses:
         "200":
-          description: portfolio strip (altitude panes, brief-12) (envelope carries the staleness meta; see internal/serve for the payload shape)
+          description: portfolio strip (altitude panes) (envelope carries the staleness meta; see internal/serve for the payload shape)
       security:
         - viewerToken:
             - read:user
-      summary: portfolio strip (altitude panes, brief-12)
+      summary: portfolio strip (altitude panes)
       x-kind: read
   /v1/roadmap:
     get:

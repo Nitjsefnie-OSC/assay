@@ -10,9 +10,9 @@ import (
 
 // This file is the read/ack setters (decision-model spec §1.1.2, ruling D7):
 // the FIRST deskd state not rebuildable from GitHub. They write the
-// local_attention table brief-08 created and NOTHING ELSE — no GitHub write of
+// local_attention table the read surface created and NOTHING ELSE — no GitHub write of
 // any kind lands this brief. The write-through to a `operator` 👀 reaction is
-// brief-10's, where the authenticated write path actually exists.
+// the answer flow's, where the authenticated write path actually exists.
 //
 // The setters live on internal/index, which holds no GitHub client and imports
 // no transport, so "no platform write" is a property of what this code can

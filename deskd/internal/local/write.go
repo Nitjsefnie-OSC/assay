@@ -17,8 +17,8 @@
 // This package holds no GitHub client and imports no transport: it depends on
 // internal/index (the SQLite store) and the standard library, and that is the
 // whole of its reach. The setters it calls touch one local table. The
-// write-through to a `operator` 👀 reaction is brief-10's, where the
-// authenticated write path actually exists — these are the endpoints brief-10
+// write-through to a `operator` 👀 reaction is the answer flow's, where the
+// authenticated write path actually exists — these are the endpoints the answer flow
 // will call.
 package local
 
@@ -46,7 +46,7 @@ func New(db *index.DB) *Writer {
 	return &Writer{DB: db, Now: func() time.Time { return time.Now().UTC() }, Actor: index.DefaultActor()}
 }
 
-// Handler registers the two POST endpoints brief-10 will call:
+// Handler registers the two POST endpoints the answer flow will call:
 //
 //	POST /escalations/{id}/read   — set the local read timestamp
 //	POST /escalations/{id}/ack    — set the local ack timestamp
@@ -113,7 +113,7 @@ func (wr *Writer) handle(set setter) http.HandlerFunc {
 			"read":  read,
 			"acked": acked,
 			// A standing disclosure: this endpoint is local-only by ruling D7.
-			"platform_write": "none — read/ack are index-local this brief (spec §1.1.2, D7); the operator write-through is brief-10",
+			"platform_write": "none — read/ack are index-local this brief (spec §1.1.2, D7); the operator write-through is the answer flow",
 		})
 	}
 }

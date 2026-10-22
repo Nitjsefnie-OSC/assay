@@ -60,7 +60,7 @@ type Target interface {
 }
 
 // Session is one live attachment to a desk's terminal. Read yields the desk's
-// output bytes; Write sends input (brief 18 gates the write route, but the
+// output bytes; Write sends input (the send route gates the write route, but the
 // transport is here); Resize follows a window resize; Alive reports whether the
 // underlying process is still attached; Close tears the attachment down.
 //

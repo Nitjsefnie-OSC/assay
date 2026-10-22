@@ -102,8 +102,8 @@ func (r ParseResult) Assessment() domain.Assessment {
 }
 
 // ParseOptions reads an escalation body under BOTH wire encodings (ruling D6:
-// the adapter parses v1 and v2 from day one, so the tracker `issue-loop/06`
-// amendment never blocks this brief in either direction).
+// the adapter parses v1 and v2 from day one, so an amendment to the
+// escalation wire contract never blocks this parser in either direction).
 //
 // The grammar (spec §1.4), reproduced so the parser and the spec can be
 // diffed by eye:
@@ -209,7 +209,7 @@ func ParseOptions(body string) ParseResult {
 	if len(problems) > 0 {
 		// Malformed: keep whatever parsed for a human to look at, but do
 		// NOT publish it as the option set — a partial list would misnumber
-		// the number keys brief-10 binds to.
+		// the number keys the answer flow binds to.
 		res.Encoding = EncodingTypedV2Malformed
 		res.Problems = problems
 		res.Options = nil

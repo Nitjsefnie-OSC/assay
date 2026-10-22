@@ -154,7 +154,7 @@ func TestModelCannotCallAnUnboundTool(t *testing.T) {
 
 // TestFigureComesFromToolResultOnly is Verify row 5. A desk__metrics_query
 // result builds an askassay.Answer rendering its value plus query key; a
-// saturated / empty / throttled result renders could-not-check. The brief-01
+// saturated / empty / throttled result renders could-not-check. The chat figure design
 // rules hold UNCHANGED through the MCP source — every downgrade below is the
 // imported package's decision, not a local one.
 func TestFigureComesFromToolResultOnly(t *testing.T) {

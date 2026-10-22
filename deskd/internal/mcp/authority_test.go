@@ -17,7 +17,7 @@ import (
 const custodyPkg = "github.com/medici-finance/assay/deskd/internal/custody"
 
 // TestHumanCredentialUnreachable extends the §11 authority contract to
-// brief-10: the MCP surface — and everything it transitively imports — must
+// the answer flow: the MCP surface — and everything it transitively imports — must
 // have NO import path to the custody package, so the token that authors a
 // operator write is code-path-unreachable from an agent tool call (design §7.1;
 // gate-why: "the token is unreachable from the MCP code path (§11 test)").
@@ -29,7 +29,7 @@ const custodyPkg = "github.com/medici-finance/assay/deskd/internal/custody"
 func TestHumanCredentialUnreachable(t *testing.T) {
 	mcpDeps := goListDeps(t, ".")
 	if mcpDeps[custodyPkg] {
-		t.Fatalf("the MCP surface imports %s — the operator credential must be unreachable from the MCP code path (§11, brief-10). "+
+		t.Fatalf("the MCP surface imports %s — the operator credential must be unreachable from the MCP code path (§11, the answer flow). "+
 			"An agent tool call could otherwise reach the human-gate token.", custodyPkg)
 	}
 
@@ -44,10 +44,10 @@ func TestHumanCredentialUnreachable(t *testing.T) {
 }
 
 // TestUserCommentPathUnreachableFromCustody extends the §11 authority contract
-// to brief-23: the USER comment path (internal/comment) — and everything it
+// to the capability model: the USER comment path (internal/comment) — and everything it
 // transitively imports — must have NO import path to the custody package, so a
 // commenter-tier viewer can never reach the operator credential. Comment-only is
-// therefore a compile-time property (brief-23 SPOF layer 2, Verify 1), not a
+// therefore a compile-time property (the capability model SPOF layer 2, Verify 1), not a
 // runtime check.
 //
 // The paired positive control is internal/answer's known custody edge, checked
@@ -56,7 +56,7 @@ func TestHumanCredentialUnreachable(t *testing.T) {
 func TestUserCommentPathUnreachableFromCustody(t *testing.T) {
 	commentDeps := goListDeps(t, "../comment")
 	if commentDeps[custodyPkg] {
-		t.Fatalf("internal/comment imports %s — the user comment path must be comment-ONLY and can never reach the operator credential (brief-23). "+
+		t.Fatalf("internal/comment imports %s — the user comment path must be comment-ONLY and can never reach the operator credential. "+
 			"A commenter reaching the answer credential would defeat the whole ladder.", custodyPkg)
 	}
 	// It also must not reach the answer package (which DOES import custody): a
@@ -67,7 +67,7 @@ func TestUserCommentPathUnreachableFromCustody(t *testing.T) {
 	}
 }
 
-// deskclientDir is where the web console client host (brief-25 task 5) would
+// deskclientDir is where the web console client host would
 // live if it existed on this branch. It does not: the increment-3 audit
 // (the authorization contract) named "TestClientBinaryServesNoMCP — go list -deps
 // ./cmd/deskclient contains no internal/mcp" as owed, but the SAME audit also

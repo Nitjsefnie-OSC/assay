@@ -1,4 +1,4 @@
-/* deskd console styles (brief-10, §7.6: states, contrast, keyboard, 44px
+/* deskd console styles (the answer flow, §7.6: states, contrast, keyboard, 44px
    targets). Colour is never the only carrier of state — every state also shows
    a glyph and a word (set in the HTML), so this file may use colour freely. */
 
@@ -158,7 +158,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-si
 }
 
 /* ==========================================================================
-   Altitude panes (brief-12): ambient strip, measures tiles, portfolio strip,
+   Altitude panes: ambient strip, measures tiles, portfolio strip,
    lifecycle ramp. Colour is never the only carrier of state — every state also
    ships a glyph + word (set in the HTML), so this section may use colour.
    ========================================================================== */

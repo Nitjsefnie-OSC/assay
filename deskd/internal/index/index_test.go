@@ -187,7 +187,7 @@ func TestUnreachableRepoDoesNotErasePreviousRows(t *testing.T) {
 	}
 }
 
-// ---- the pure-cache proof (brief-08 Verify row 7) -------------------------
+// ---- the pure-cache proof -------------------------
 
 // TestDerivedIndexIsAPureCache is Verify row 7, automated.
 //
@@ -248,7 +248,7 @@ func TestDerivedIndexIsAPureCache(t *testing.T) {
 	}
 }
 
-// TestSchemaCarriesTheDeferredColumns is brief-08 Verify row 6 as a Go test:
+// TestSchemaCarriesTheDeferredColumns is the read surface Verify row 6 as a Go test:
 // read_at, acked_at, updated_at and collapse_key are present as COLUMNS in
 // this build, with no setter and no folding (both the service contract).
 func TestSchemaCarriesTheDeferredColumns(t *testing.T) {
@@ -263,7 +263,7 @@ func TestSchemaCarriesTheDeferredColumns(t *testing.T) {
 	} {
 		if !hasColumn(t, db, want.table, want.column) {
 			t.Errorf("%s.%s is missing — fields are near-free at greenfield and cost a migration later, "+
-				"which is why brief-08 lands them and the service contract lands their behaviour", want.table, want.column)
+				"which is why the read surface lands them and the service contract lands their behaviour", want.table, want.column)
 		}
 	}
 }

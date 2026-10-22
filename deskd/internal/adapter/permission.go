@@ -11,9 +11,9 @@ import (
 )
 
 // This file is the deskd-side collaborator-permission query that decides a
-// viewer's capability tier (brief-23 task 2, Verify 6). The load-bearing
+// viewer's capability tier (the capability model task 2, Verify 6). The load-bearing
 // property: it is made with DESKD'S OWN read identity — the per-org read token
-// routed exactly as the escalation poll is (brief-18) — NEVER the viewer's
+// routed exactly as the escalation poll is — NEVER the viewer's
 // token. A viewer cannot influence their own tier, because the credential that
 // answers "what permission does this login hold?" is one the viewer does not
 // control.
@@ -103,7 +103,7 @@ func (p *PermissionRouter) Permission(ctx context.Context, owner, name, username
 }
 
 // RepoPrivate reports whether owner/name is a PRIVATE repo, queried with the
-// org's own read token. It is the input to the private-repo gate (brief-23
+// org's own read token. It is the input to the private-repo gate (the capability model
 // task 6): a cell containing any private repo login-gates its whole surface,
 // and an `allow_anonymous_read` opt-in is valid only when EVERY repo verifies
 // public here.

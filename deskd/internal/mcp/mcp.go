@@ -93,7 +93,7 @@ type Call struct {
 	CallerLogin string
 }
 
-// Server is the MCP surface over the brief-08 index.
+// Server is the MCP surface over the read surface index.
 type Server struct {
 	DB     *index.DB
 	Config *schema.File

@@ -42,13 +42,13 @@ func drain(t *testing.T, ch <-chan []byte, timeout time.Duration) []byte {
 // rather than a locally constructed *Driver value, so the test also proves
 // the registration this brief adds (task 2) actually resolves kind: local.
 // Raw scrollback-byte reads by cursor are internal/terminal's ring, reserved
-// for brief 17's SSE stream (see internal/terminal/doc.go) — this test reads
+// for the terminal stream's SSE stream (see internal/terminal/doc.go) — this test reads
 // the session's own byte channel directly, which is the driver's contract
 // regardless of which registry sits on top of it.
 func TestLocalDriverRoundTrip(t *testing.T) {
 	factory, ok := terminal.DriverFor(schema.TargetLocal)
 	if !ok {
-		t.Fatal("no driver registered for kind: local — terminal.RegisterDriver was not called (brief 15 task 2)")
+		t.Fatal("no driver registered for kind: local — terminal.RegisterDriver was not called")
 	}
 	drv, err := factory()
 	if err != nil {

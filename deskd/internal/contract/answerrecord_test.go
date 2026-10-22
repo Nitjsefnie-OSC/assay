@@ -16,7 +16,7 @@ func TestAnswerRecordRoundTrip(t *testing.T) {
 	}
 }
 
-// TestAnswerRecordNoMarker: a prose-only body (today's brief-10 close-as-answer
+// TestAnswerRecordNoMarker: a prose-only body (today's the answer flow close-as-answer
 // case) parses as NoMarker — unchanged, never invented as an answer record.
 func TestAnswerRecordNoMarker(t *testing.T) {
 	_, status := ParseAnswerRecord("Closing this — went with the obvious option, no ceremony.")

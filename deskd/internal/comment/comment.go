@@ -1,4 +1,4 @@
-// Package comment is the PER-USER comment write path (brief-23 task 4): the ONE
+// Package comment is the PER-USER comment write path: the ONE
 // place a viewer's own GitHub token posts an issue comment authored as THAT
 // viewer. It is the sibling of internal/answer — that package is the ONE operator
 // write path (custody-backed, comment+close); this is the ONE user write path
@@ -11,7 +11,7 @@
 //
 //  1. No custody import. Nothing in this package imports internal/custody, and
 //     nothing it imports does either — so a commenter can never reach the operator
-//     credential. internal/mcp's authority test is extended (brief-23 Verify 1)
+//     credential. internal/mcp's authority test is extended (the capability model Verify 1)
 //     to assert internal/comment has NO import path to internal/custody, exactly
 //     as it asserts the MCP surface does not.
 //  2. No close construction. The ONE outbound request builder here (github.go)

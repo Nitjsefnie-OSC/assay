@@ -1,4 +1,4 @@
-# Negative-path fixture for cellsvalidate (brief the service contract Task 1, the
+# Negative-path fixture for cellsvalidate (the service contract Task 1, the
 # fourth dev-only fixture: "bare-context").
 #
 # The entry scopes itself by CLUSTER alone and declares no namespaces. It

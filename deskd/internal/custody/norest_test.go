@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// This file is the PERSISTENCE AUDIT brief the service contract gate-why calls for
+// This file is the PERSISTENCE AUDIT the service contract gate-why calls for
 // (property 1 of custody rule (b)): "the service PERSISTS no human credential —
 // the per-request credential lives in no struct that outlives the request and
 // in no file under the data dir, asserted by a persistence-audit test".

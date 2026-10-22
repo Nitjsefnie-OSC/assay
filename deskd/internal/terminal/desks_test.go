@@ -106,7 +106,7 @@ func TestDeskRowsAppIsWriteAppOrDefault(t *testing.T) {
 
 // TestDeskRowsPeersAreLast — configured desks first, peers appended after,
 // each a could-not-check row carrying its url (this brief lists peers; it
-// does not dereference them — brief 26 makes them reachable).
+// does not dereference them — peer reachability makes them reachable).
 func TestDeskRowsPeersAreLast(t *testing.T) {
 	cfg := fourLoopCfg()
 	cfg.Cells[0].Peers = []schema.Peer{{Cell: "tracker", URL: "https://tracker.example.com"}}

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Client is the ONE HTTP client a client host (brief-26) uses to talk to the
+// Client is the ONE HTTP client a client host uses to talk to the
 // deskd service over the v1 contract. It performs reads, opens the SSE event
 // stream, and invokes the enumerated named actions.
 //

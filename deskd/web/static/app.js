@@ -1,5 +1,5 @@
 "use strict";
-// deskd console client (brief-10). Two hard rules this file lives by:
+// deskd console client. Two hard rules this file lives by:
 //   1. Digit answer-bindings come from the option ELEMENTS the server rendered
 //      from the typed enum — never from body text (§6.6). We read
 //      data-option-id / data-digit off <li class="option">, and nothing else.

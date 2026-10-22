@@ -11,9 +11,9 @@
 // path that proves it with every handle ErrUnreachable.
 //
 // Peers are listed (group: peer) but never dereferenced here: this brief has
-// no cross-deskd read (brief 26 adds one), so a peer row is always
+// no cross-deskd read (peer reachability adds one), so a peer row is always
 // could-not-check and carries only the identity + url a client needs to go
-// there directly (spec §7: deskd never proxies). Custom sessions (brief 18,
+// there directly (spec §7: deskd never proxies). Custom sessions (the send route,
 // sessions.go) are appended after the configured rows as group "custom"; with
 // none open the row count is exactly len(loops)+len(peers), as before.
 package terminal

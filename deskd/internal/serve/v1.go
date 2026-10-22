@@ -1,6 +1,6 @@
 // v1.go — the VERSIONED read surface (the service contract, increments 1-3).
 //
-// Brief the service contract task 2: mount the `/v1` route table declared in
+// The service contract task 2: mount the `/v1` route table declared in
 // internal/contract on deskd's server, so a client host reads the inbox and
 // item views — and now streams events and nudges a refresh — over the typed
 // HTTP/JSON seam ruled on #1819 instead of a shared *index.DB.
@@ -20,7 +20,7 @@
 //
 // # Read-only, structurally — the same two guarantees as the un-versioned surface
 //
-// [NewV1] reuses the exact [Server] the brief-08 surface uses (no GitHub
+// [NewV1] reuses the exact [Server] the read surface surface uses (no GitHub
 // client on the serving path) and wraps its mux in the same [methodGuard], so
 // the versioned surface cannot smuggle in a write any more than the
 // un-versioned one can. The per-repo private-repo filter ([Server.Authz]) is
@@ -97,7 +97,7 @@ func NewV1(db *index.DB, cfg *schema.File, authz SurfaceAuthorizer, actions *Nam
 	// (like /escalations/ above) because a desk id is "<cell>/<role>" — it
 	// carries a slash, so a single "{id}" path wildcard cannot capture it; the
 	// handler parses the id between /desks/ and /terminal and 404s any other
-	// shape. It is a READ only: no write sub-route is added here (brief 18 owns
+	// shape. It is a READ only: no write sub-route is added here (the send route owns
 	// send), so a POST is still 405 via the read tree's method guard.
 	reads.HandleFunc(contract.Prefix+"/desks/", s.handleV1Terminal)
 
@@ -496,7 +496,7 @@ func (s *Server) handleV1Portfolio(w http.ResponseWriter, r *http.Request) {
 		Meta:    s.meta(),
 		Streams: nil,
 		Assessment: domain.Unchecked(domain.Probe{
-			Source: "statusgen --json / --dora across programs (the declared source for the portfolio strip, brief-12)",
+			Source: "statusgen --json / --dora across programs (the declared source for the portfolio strip)",
 			Method: domain.MethodDelegated,
 			Window: "every program's stream/DORA substrate",
 			Limit:  0,
@@ -543,7 +543,7 @@ func (s *Server) handleV1Metrics(w http.ResponseWriter, r *http.Request) {
 	// this viewer may read, exactly as handleV1Inbox filters its listing. Without
 	// this a viewer denied a cell's private repo still sees that repo's escalation
 	// count, urgency histogram and ages (amplified across cells when cell==""),
-	// re-opening the authorization class Security-Review 5091037270 (brief-23) closed.
+	// re-opening the authorization class Security-Review 5091037270 closed.
 	rows = s.filterByCapability(r, rows)
 	probe := domain.Probe{
 		Source: "derived_escalations (SQLite) via /v1/metrics — the index only; the serving path makes no network call",

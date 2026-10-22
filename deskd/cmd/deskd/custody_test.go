@@ -42,7 +42,7 @@ func TestServiceConstructsNoCredentialStore(t *testing.T) {
 	// The guarantee must be STATED at startup, not merely true: the operator
 	// reading the banner is the person the gate asks to confirm it.
 	if !strings.Contains(src, "holds no human credential at rest") {
-		t.Error("the startup banner does not state that the service holds no human credential at rest — brief the service contract task 4 requires it to say so")
+		t.Error("the startup banner does not state that the service holds no human credential at rest — the service contract task 4 requires it to say so")
 	}
 }
 

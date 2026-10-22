@@ -38,7 +38,7 @@ func signedRecordFixture(t *testing.T, mutate func(*SignedIntent)) (AnswerRecord
 }
 
 // TestCredentialMarkerByteStable: a credential-path record (no Signed) still
-// marshals to EXACTLY the brief-24 marker — the item (4) extension changes
+// marshals to EXACTLY the answer-record grammar marker — the item (4) extension changes
 // nothing for it.
 func TestCredentialMarkerByteStable(t *testing.T) {
 	got := AnswerRecord{Login: "operator", OptionID: "ship-it", OptionsRev: "abc123"}.Marshal("Decision: `ship-it`")

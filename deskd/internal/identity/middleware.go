@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// This file is the SINGLE control the whole brief-23 model depends on
+// This file is the SINGLE control the whole the capability model model depends on
 // (SPOF-note): one capability derivation wrapped around every data and write
 // route. The layers behind it — GitHub's own enforcement on the user-token
 // comment path, the internal/comment package-graph separation, and the answer

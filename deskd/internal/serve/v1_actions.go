@@ -70,7 +70,7 @@ import (
 // shape for a read-only deployment — an absent route is a 404, never a route
 // that exists and refuses.
 type NamedActions struct {
-	// Service executes the brief-10 write. Its meaning is unchanged by the
+	// Service executes the answer flow write. Its meaning is unchanged by the
 	// relocation: same comment + close, same answer record, same race check.
 	Service *answer.Service
 	// Sessions validates the live-human session every write is gated on.
@@ -278,7 +278,7 @@ func peekIntent(r *http.Request) *contract.SignedIntent {
 
 // IntentAuthenticated is the capability middleware's stand-in for a viewer
 // session on the `/v1/` tree (identity.Route.Authenticated; ruling 3: "the
-// brief-23 middleware must let a request carrying a verified signed intent
+// the capability model middleware must let a request carrying a verified signed intent
 // through with NO viewer session"). It admits ONLY a POST to a named action
 // this file mounts (answer, ack) whose body carries an intent that verifies
 // against an enrolled key for that action on that escalation. It does not

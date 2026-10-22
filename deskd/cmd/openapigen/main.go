@@ -2,7 +2,7 @@
 // contract (internal/contract), so the OpenAPI document is generated from the
 // Go types rather than hand-drifted from them.
 //
-// Brief the service contract Task 2: the contract package (landed by brief-25
+// The service contract Task 2: the contract package (landed by the v1 contract
 // increment 1) is the single home of the wire types; this generator is the
 // contract-doc follow-up that package's WireTypes() comment points at. It reads
 // contract.Routes for the path table and reflects contract.WireTypes() for the

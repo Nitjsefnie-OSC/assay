@@ -41,7 +41,7 @@ func newIndex(t *testing.T) *index.DB {
 	return db
 }
 
-// TestCollapseFoldFiveToOne is brief-14 Verify row 2: escalating the same
+// TestCollapseFoldFiveToOne is the attention layer Verify row 2: escalating the same
 // (cell, automation, kind) 5× with an IDENTICAL option set folds to one row
 // with repeat 5 and a non-null updated.
 func TestCollapseFoldFiveToOne(t *testing.T) {
@@ -90,7 +90,7 @@ func TestCollapseFoldFiveToOne(t *testing.T) {
 	}
 }
 
-// TestCollapseChangedOptionsDoesNotMerge is brief-14 Verify row 3: filing #5
+// TestCollapseChangedOptionsDoesNotMerge is the attention layer Verify row 3: filing #5
 // carrying a CHANGED option set is a different decision (different OptionsRev)
 // and never merges — the inbox shows 2 rows.
 func TestCollapseChangedOptionsDoesNotMerge(t *testing.T) {

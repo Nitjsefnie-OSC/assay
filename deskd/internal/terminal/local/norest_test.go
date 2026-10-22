@@ -10,7 +10,7 @@ import (
 )
 
 // norest_test.go is internal/terminal/norest_test.go's SCROLLBACK-AT-REST
-// audit, scoped to this package (brief 15 Verify row 7: "the audit covers the
+// audit, scoped to this package (the local driver Verify row 7: "the audit covers the
 // local sub-package"). It is a SOURCE audit, not a happy-path runtime check,
 // because what must hold is that no code path in the local driver can spool
 // PTY output to disk — a property of the code, not of one run. The terminal

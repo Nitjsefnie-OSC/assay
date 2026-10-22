@@ -1,5 +1,5 @@
 // Package web is deskd's HTML console: the inbox, the item view, and the
-// answer flow the human drives (brief-10, design §7.3, §7.6). It is a RENDERING
+// answer flow the human drives (the answer flow, design §7.3, §7.6). It is a RENDERING
 // of the same derived index the JSON read surface serves — it derives nothing
 // itself — and every platform write it offers posts to the internal/answer
 // write path, which is the ONLY write path and is gated on a live session. The
@@ -19,7 +19,7 @@
 // # What is deliberately deferred (reported, not guessed)
 //
 // The D5 five-group taxonomy (Pinned → Ready for review → Needs input → Working
-// → Completed, spec §2.4) presupposes PR-review and work-item sources brief-08
+// → Completed, spec §2.4) presupposes PR-review and work-item sources the read surface
 // explicitly does not derive (see internal/serve sourcesNotRead). This build
 // ships the FLAT urgency-then-age view (the spec's guaranteed URL-filter view)
 // as default and an honest grouping over the derived attention vocabulary under
@@ -50,7 +50,7 @@ var assets embed.FS
 type Deps struct {
 	DB *index.DB
 	// Config is the cell/loop config the Portfolio running-automations strip
-	// derives its rows from (brief-12, §3.4). It is optional: with no config
+	// derives its rows from (§3.4). It is optional: with no config
 	// the strip renders empty and says so, never a fabricated row.
 	Config *schema.File
 	// Now is injectable for tests / stable age rendering.
@@ -66,7 +66,7 @@ type Deps struct {
 	// they are registered at all.
 	WebMCPDev bool
 	// Viewer derives the per-request capability the CHROME renders affordances
-	// from (brief-23 task 8). It is NOT a security control — every gate is
+	// from. It is NOT a security control — every gate is
 	// enforced server-side on the route by the capability middleware. This only
 	// decides which buttons the page draws; a page that draws the answer button
 	// for a non-answerer still gets a 403 from the server when it is pressed.
@@ -128,7 +128,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /inbox", s.handleInbox)
 	mux.HandleFunc("GET /item/{id}", s.handleItem)
-	// Altitude panes (brief-12). Each carries the §5.2 ambient strip at its own
+	// Altitude panes. Each carries the §5.2 ambient strip at its own
 	// scope; all reads are over the derived index.
 	mux.HandleFunc("GET /roadmap", s.handleRoadmap)
 	mux.HandleFunc("GET /epic/{id}", s.handleEpic)
@@ -224,7 +224,7 @@ type inboxVM struct {
 	// one page state; it must never be threaded into item.html or any view
 	// offering the answer-write path (facts: read-only + no mutating view).
 	WebMCPDev bool
-	// Viewer is the sign-in chrome state (brief-23): who is signed in. Not a
+	// Viewer is the sign-in chrome state: who is signed in. Not a
 	// control — the server gates every route.
 	Viewer identity.ViewerInfo
 }
@@ -296,12 +296,12 @@ func (s *Server) filterByCapability(r *http.Request, rows []rowVM) []rowVM {
 type itemVM struct {
 	Row rowVM
 	// Trail is the item-detail artifact trail (spec §2.5/§2.6). This build
-	// ingests only escalation issues (brief-08 sourcesNotRead: no artifact
+	// ingests only escalation issues (the read surface sourcesNotRead: no artifact
 	// plane yet), so the trail carries the escalation's own node — dashed-gold
 	// ⟡ while open, solid with its outcome colour once answered — and a standing
 	// note that the surrounding automation artifacts arrive with the plane.
 	Trail []trailNodeVM
-	// Viewer conditions the affordances this page draws (brief-23 task 8): the
+	// Viewer conditions the affordances this page draws: the
 	// comment box at commenter tier, the answer affordances at answerer tier.
 	// The server enforces both regardless — this is chrome, NOT a control.
 	Viewer identity.ViewerInfo

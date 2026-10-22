@@ -23,7 +23,7 @@ import (
 const defaultBindAddr = "127.0.0.1:8787"
 
 // defaultArgv is what an empty TargetSpec.Command resolves to: a login shell
-// in the operator's own HOME (brief 15 facts: "a desk with kind: local and no
+// in the operator's own HOME (the local driver facts: "a desk with kind: local and no
 // command gets the default bash -l in the operator's HOME").
 var defaultArgv = []string{"bash", "-l"}
 
@@ -90,7 +90,7 @@ func New() *Driver {
 }
 
 func init() {
-	// Self-registration (brief 15 task 2): the terminal package cannot import
+	// Self-registration: the terminal package cannot import
 	// this one without a cycle (this package imports terminal for
 	// Target/Session/ErrUnreachable), so — like database/sql drivers — this
 	// package registers itself when linked. A future brief's cmd/deskd wiring
@@ -219,8 +219,8 @@ func (d *Driver) resolveArgv0(name string) (string, error) {
 
 // filteredEnv returns env (as produced by os.Environ()) with every DESKD_*
 // variable, every variable whose name contains TOKEN, SECRET or KEY
-// (case-insensitive), and every name registered with [DenyEnvNames] removed. It is the deny-list a test asserts directly
-// (brief 15 Verify row 3): deskd's own GitHub read token
+// (case-insensitive), and every name registered with [DenyEnvNames] removed.
+// It is the deny-list a test asserts directly: deskd's own GitHub read token
 // (DESKD_GITHUB_TOKEN) must never reach a desk session's shell.
 func filteredEnv(env []string) []string {
 	out := make([]string, 0, len(env))

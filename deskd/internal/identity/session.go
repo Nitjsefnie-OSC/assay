@@ -26,7 +26,7 @@ var (
 // The token is UNEXPORTED and never serialised: it lives only here, in memory,
 // for the lifetime of the process. A deskd restart drops the whole map, which
 // logs everyone out — correct, because presence must be re-proven and no user
-// token is ever written at rest (brief-23 gate-why (5), §6.4).
+// token is ever written at rest (the capability model gate-why (5), §6.4).
 type Session struct {
 	// ID is the opaque cookie value. crypto/rand, so it is unguessable.
 	ID string

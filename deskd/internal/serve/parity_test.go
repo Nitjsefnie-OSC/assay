@@ -31,7 +31,7 @@ var readRouteToTool = map[string]string{
 	contract.Prefix + "/desks": "desk__desks",
 }
 
-// TestContractToolParity (brief-25 task 7) — every v1 READ route has an MCP tool
+// TestContractToolParity — every v1 READ route has an MCP tool
 // twin, and every mapped tool is actually registered on the MCP surface. A read
 // added to one side without the other fails here, so the HTTP contract and the
 // agent surface stay in lockstep. Named-action WRITE routes are asserted to have

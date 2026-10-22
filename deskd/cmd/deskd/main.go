@@ -1,5 +1,5 @@
 // Command deskd polls a cell's repos, derives an index of escalations, and
-// serves it over HTTP: a read-only surface (brief-08) plus the LOCAL-ONLY
+// serves it over HTTP: a read-only surface plus the LOCAL-ONLY
 // read/ack write endpoints (ruling D7) that write deskd's own SQLite and
 // nothing on the platform.
 //
@@ -58,7 +58,7 @@ import (
 	"github.com/medici-finance/assay/deskd/web"
 )
 
-// The PER-USER OAuth client (brief-23), DISTINCT from the operator device-flow
+// The PER-USER OAuth client, DISTINCT from the operator device-flow
 // client. A viewer authenticates through this client; the answer path still
 // authors with the operator credential. When these are unset, deskd serves but no
 // viewer can sign in — a private-repo cell then shows only the login prompt.
@@ -95,8 +95,8 @@ const (
 	recordAppEnv   = "DESKD_WRITE_ISSUES_APP"
 	// overrideConfigRepoEnv names the owner/name repo the cell's cells.yaml
 	// lives in — the record PR's target. Empty leaves the record PR unable to
-	// resolve a target (could-not-check); for the dogfood cells it is
-	// medici-finance/service.
+	// resolve a target (could-not-check). A deployment sets it to the repository
+	// that holds its cells.yaml.
 	overrideConfigRepoEnv = "DESKD_OVERRIDES_CONFIG_REPO"
 )
 
@@ -291,11 +291,11 @@ func main() {
 	go poller.Run(ctx)
 
 	// The HTTP surface is composed of two handlers on one mux:
-	//   - serve.New — the read-only surface (brief-08), unchanged and still
+	//   - serve.New — the read-only surface, unchanged and still
 	//     structurally incapable of a write.
 	//   - local.New — the LOCAL-ONLY read/ack write endpoints (ruling D7):
 	//     POST /escalations/{id}/read|ack, which write deskd's own SQLite and
-	//     NOTHING on the platform. They are the endpoints brief-10 will call.
+	//     NOTHING on the platform. They are the endpoints the answer flow will call.
 	// The /escalations/ prefix routes to the local writer; everything else to
 	// the read-only surface. No platform write path exists on either.
 	// The MCP surface (the service contract) — the AGENTIC-FIRST write path the
@@ -326,7 +326,7 @@ func main() {
 		Caller:   mcpCallerAuth(mode, validator),
 	})
 
-	// The human-gate ANSWER write path (brief-10) — the ONE path that produces a
+	// The human-gate ANSWER write path — the ONE path that produces a
 	// operator-authored mutation, behind a live session.
 	//
 	// P1: the writer holds NO credential. Under custody model (b) it resolves
@@ -338,7 +338,7 @@ func main() {
 	operatorWriter := answer.NewPerRequestHumanWriter(*apiBase)
 	sessions := answer.NewSessionStore(nil, func() bool { return false })
 	answerSvc := answer.NewService(operatorWriter, draftAdapter{db}, db, nil)
-	answerSvc.SetAnswerAs(resolveAnswerAs(cfg)) // the cell's authorized answerer (brief-23)
+	answerSvc.SetAnswerAs(resolveAnswerAs(cfg)) // the cell's authorized answerer
 
 	// The signed-intent path (the authorization contract gap 3): on ONLY when the
 	// reviewed intent-keys file enrols a key AND the bot gateway credential is
@@ -352,7 +352,7 @@ func main() {
 		operatorWriter.SetIntentGateway(intents.Gateway)
 	}
 
-	// ── Per-user identity + capability ladder (brief-23) ──────────────────
+	// ── Per-user identity + capability ladder ──────────────────
 	//
 	// The identity stack replaces the single-persona model: an OAuth session
 	// per viewer, a tier derived from that viewer's GitHub repo permission
@@ -460,8 +460,8 @@ func main() {
 	fmt.Fprintf(os.Stderr, "deskd: holds no human credential at rest; performs only the named actions %v — answer/ack with a credential supplied per request (custody model (b), #1819), send/session on the per-request viewer identity with no credential\n", contract.NamedActions)
 	fmt.Fprintln(os.Stderr, intents.Banner)
 
-	// The HTML console (brief-10 web/) is the human surface; the JSON read
-	// surface (brief-08 serve) is the machine surface. Both answer /inbox, so a
+	// The HTML console (the answer flow web/) is the human surface; the JSON read
+	// surface (the read surface serve) is the machine surface. Both answer /inbox, so a
 	// browser (Accept: text/html) gets the console and a machine gets JSON.
 	webMCPDev := os.Getenv(webMCPDevEnv) == "1"
 	if webMCPDev {
@@ -536,7 +536,7 @@ func main() {
 	}
 	v1API := serve.NewV1(db, cfg, guard, namedActions, overridesWiring, termRegistry, eventBus, refresher)
 
-	// The protected route table (brief-23 task 3): EVERY data and write route
+	// The protected route table: EVERY data and write route
 	// registers through the capability middleware. It is validated before
 	// mounting, so a route without the gate cannot ship (Verify 9 asserts the
 	// same rule structurally). The table itself lives in routes.go so the P2
@@ -843,7 +843,7 @@ func (a refreshAdapter) Refresh(ctx context.Context, id domain.EscalationID) err
 	return serve.ErrRefreshUnknownEscalation
 }
 
-// ── brief-23 wiring helpers ───────────────────────────────────────────────
+// ── the capability model wiring helpers ───────────────────────────────────────────────
 
 // resolveAnswerAs picks the Service-level authorized-answerer login. When every
 // cell shares one answer_as it is that value; otherwise it falls back to the

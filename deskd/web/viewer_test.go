@@ -53,7 +53,7 @@ func seedOne(t *testing.T) (*index.DB, string) {
 	return db, string(rows[0].ID)
 }
 
-// TestItemAffordancesByTier (brief-23 task 8): the answer block renders ONLY for
+// TestItemAffordancesByTier: the answer block renders ONLY for
 // an answerer; the comment box renders for a commenter; an unauthenticated
 // viewer sees the sign-in affordance and neither write surface. The server still
 // gates every route regardless — this only checks the CHROME matches the tier.
@@ -112,7 +112,7 @@ func (v denyRepoViewer) SurfaceAuthorizer(*http.Request) func(owner, name string
 	}
 }
 
-// TestInboxHidesRowsWithoutCapability (brief-23 security fix, Security-Review
+// TestInboxHidesRowsWithoutCapability (the capability model security fix, Security-Review
 // 5091037270): an authenticated viewer with NO read capability on a cell's
 // private repos must NOT receive that cell's inbox metadata. Pre-fix the surface
 // listing gated on login-presence alone (SurfaceLoginGated() && sess==nil) and

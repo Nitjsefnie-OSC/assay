@@ -6,7 +6,7 @@
 // (pan/zoom) on the canvas element already in the DOM, and a plain page
 // reload (a normal GET navigation, not a mutation) for auto-refresh. It is
 // deliberately a SEPARATE file from app.js, whose postForm() is the write
-// path for the answer flow (brief-10) this page must never share code with
+// path for the answer flow this page must never share code with
 // — a reviewer auditing "does /fleet write anything" can read this whole
 // file without also auditing app.js's write helpers.
 

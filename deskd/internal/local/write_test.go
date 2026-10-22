@@ -42,7 +42,7 @@ func seedOne(t *testing.T, db *index.DB) domain.EscalationID {
 }
 
 // TestReadAckEndpointsWriteLocalOnly proves the deskd write endpoints
-// (brief-10's target) set local read/ack state and touch nothing on the
+// (the answer flow's target) set local read/ack state and touch nothing on the
 // platform — the package holds no GitHub client, so the only effect a POST can
 // have is on local_attention.
 func TestReadAckEndpointsWriteLocalOnly(t *testing.T) {

@@ -173,7 +173,7 @@ func localLoop(role schema.LoopRole) schema.Loop {
 }
 
 func podLoop(role schema.LoopRole) schema.Loop {
-	return schema.Loop{Role: role, Target: &TargetSpec{Kind: schema.TargetPod, Namespace: "assay-loops", Pod: "desk-review-0"}}
+	return schema.Loop{Role: role, Target: &TargetSpec{Kind: schema.TargetPod, Namespace: "example-loops", Pod: "desk-review-0"}}
 }
 
 // waitStatus polls a desk's wire attach status until it reads want (status and

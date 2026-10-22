@@ -15,7 +15,7 @@ import (
 // AnswerRecord is the machine-readable half of a human answer, carried in the
 // GitHub write body as an HTML comment marker so the service can parse the
 // outcome back off GitHub on the next poll (§4: GitHub is the record). Its
-// grammar is fixed by brief-24 and unchanged from brief-10:
+// grammar is fixed by the answer-record grammar and unchanged from the answer flow:
 //
 //	<!-- assay:answer v1 login=<login> option=<id> options_rev=<R> -->
 //
@@ -25,7 +25,7 @@ import (
 //
 // Signed is the signed-intent extension (the authorization contract gap 3, item (4)):
 // nil on a credential-path record, which therefore stays byte-identical to the
-// brief-24 grammar above; set on an intent-path record, whose marker then
+// the answer-record grammar grammar above; set on an intent-path record, whose marker then
 // carries the fields [VerifyAnswerRecord] rebuilds the signed bytes from.
 type AnswerRecord struct {
 	Login      string
@@ -110,7 +110,7 @@ type ParseStatus int
 
 const (
 	// NoMarker: the body carries no answer marker. The outcome is derived from
-	// today's prose (close ⇒ answered by prose), unchanged from brief-10.
+	// today's prose (close ⇒ answered by prose), unchanged from the answer flow.
 	NoMarker ParseStatus = iota
 	// Answered: the marker is present and the record parsed.
 	Answered

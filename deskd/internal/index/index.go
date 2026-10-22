@@ -40,7 +40,7 @@ func Open(path string) (*DB, error) {
 // Close closes the underlying handle.
 func (d *DB) Close() error { return d.sql.Close() }
 
-// DropDerived implements "delete the derived index cache" (brief-08 Verify 7).
+// DropDerived implements "delete the derived index cache" (the read surface Verify 7).
 //
 // It iterates [derivedTables] and nothing else, so it CANNOT drop a local
 // table — the pure-cache invariant is enforced by what this function is able

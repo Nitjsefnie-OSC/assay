@@ -8,7 +8,7 @@
 // (a reviewer proves that by grepping exec.Command/NewClientWithOpts outside
 // it and finding zero — Verify row 9). The mechanism is the `docker` CLI via
 // os/exec, run under a locally-allocated pty (github.com/creack/pty — already
-// a direct dependency of this module, used the same way by the brief-11
+// a direct dependency of this module, used the same way by the terminal spike
 // spike): `docker inspect` answers reachability/liveness synchronously before
 // ever attaching, and `docker exec -i -t <container> bash -l` is the
 // attachment itself, started with [pty.StartWithSize] so its stdio is a real
@@ -26,21 +26,20 @@
 // container" existing at all) and reuses this module's existing pty library
 // rather than adding a second terminal abstraction.
 //
-// # What this driver adds vs. what brief 12 already shipped
+// # What this driver adds vs. what the terminal core already shipped
 //
 // The [terminal.Target]/[terminal.Session] interface, the registry, the
-// cursor-indexed ring, and the two-signal agent-state derivation are brief
-// 12's (the service contract, medici-finance/the authorization contract) — cited there,
-// not re-derived here. This package adds only the bytes-in/bytes-out over one
+// cursor-indexed ring, and the two-signal agent-state derivation belong to
+// the terminal package — cited there, not re-derived here. This package adds only the bytes-in/bytes-out over one
 // real transport. The ring's byte/line caps (~1 MiB / 10 000 lines) and the
-// ~200ms idle-plus-trailing-prompt heuristic are brief 11's spike answers,
+// ~200ms idle-plus-trailing-prompt heuristic are the terminal spike's spike answers,
 // consumed by the registry — this driver does not reimplement or
 // second-guess them; see the [terminal] package doc.
 //
-// # Two independent layers guard the exec (brief 13 SPOF)
+// # Two independent layers guard the exec (the container driver SPOF)
 //
 // The registry's [terminal.TargetSpec] — never a request — names the
-// container (brief 12's layer). This driver adds one of its own: the exec'd
+// container (the terminal core's layer). This driver adds one of its own: the exec'd
 // command is a fixed default login shell, never anything a caller supplies,
 // and the exec runs with the container's OWN user and environment — no
 // `-u`/`--user`, `-e`/`--env`, or `--privileged` flag is ever passed to

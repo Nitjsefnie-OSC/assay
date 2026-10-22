@@ -316,7 +316,7 @@ func TestItemAnonymousOptIn(t *testing.T) {
 	}
 }
 
-// TestSurfaceAuthorizer (brief-23 security fix): the surface/listing per-repo
+// TestSurfaceAuthorizer (the capability model security fix): the surface/listing per-repo
 // gate. It denies an authenticated viewer with no read on a private repo, allows
 // a commenter, allows anyone on a verified-public (anonymous-read) repo, denies
 // an unauthenticated viewer on a private repo, and fails closed on an

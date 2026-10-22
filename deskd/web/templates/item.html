@@ -52,7 +52,7 @@
 
   <!-- artifact trail (spec §2.5/§2.6): the escalation node renders at its
        position, dashed-gold ⟡ while open, solid + outcome colour once answered.
-       This build ingests only escalation issues (brief-08), so the surrounding
+       This build ingests only escalation issues, so the surrounding
        automation artifacts arrive with the artifact plane. -->
   <section class="trail-block">
     <h2>artifact trail</h2>
@@ -79,7 +79,7 @@
   {{else}}
   <!--
     Affordances below are rendered BY CAPABILITY, but the UI is NOT a security
-    control (brief-23 task 8). The server gates /answer on the answerer tier and
+    control. The server gates /answer on the answerer tier and
     /comment on the commenter tier regardless of what this page draws: a
     commenter never sees the answer block, and even a forged answer POST returns
     403 from the capability middleware (Verify 2), while the answer Service's own
@@ -119,7 +119,7 @@
   {{end}}{{/* .Viewer.CanAnswer */}}
 
   {{if .Viewer.CanComment}}
-  <!-- Comment tier (brief-23) — RETIRED FROM THE SERVICE (the service contract P2).
+  <!-- Comment tier — RETIRED FROM THE SERVICE (the service contract P2).
        A free-text comment is a human-authored platform write, and the service's
        enumerated allow-list is {answer, ack}: there is no general-write route on
        deskd any more, so there is nothing for this box to post to. The comment

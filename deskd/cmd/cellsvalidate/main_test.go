@@ -123,4 +123,3 @@ func TestAnswerRecordsBackendConfigRefusesAPastedKey(t *testing.T) {
 		t.Fatalf("the refusal does not name the field:\n%s", out)
 	}
 }
-

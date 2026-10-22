@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mutate-attach-controls.sh — fail-first evidence for deskd's attach lifecycle
-# (brief the service contract, worker-prompt kit §9).
+# (the service contract, worker-prompt kit §9).
 #
 # WHY MUTATION AND NOT A PRE-FIX RED RUN. Every test this brief adds pins code
 # the brief also adds (the Supervisor, the capability table, the attach
