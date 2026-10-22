@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
 // commentCellsPath is the shared table statusgen and verifycmd are held to; its
@@ -71,8 +73,9 @@ func TestRebaselineCommentCells(t *testing.T) {
 	for i, c := range cells {
 		n := len(probed)
 		f := gatherRowFacts(root, rows[i], false, "")
-		if rows[i].Command != c.Lift {
-			t.Errorf("%s: row %d lifted %q, want statusgen's lift %q", c.Name, rows[i].Num, rows[i].Command, c.Lift)
+		// The row's command is the lift with its escaped pipes un-escaped (#1953).
+		if want := verifycmd.UnescapePipes(c.Lift); rows[i].Command != want {
+			t.Errorf("%s: row %d lifted %q, want statusgen's lift %q", c.Name, rows[i].Num, rows[i].Command, want)
 		}
 		want := c.Desk == "runs" && (f.PathRef == "" || f.PathExists)
 		if f.CommandProbed != want || (len(probed) > n) != want {

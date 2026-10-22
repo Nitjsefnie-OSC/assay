@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
+	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
 // commentCellsPath is the shared table statusgen and verifycmd are held to; its
@@ -86,7 +87,7 @@ func TestRunBriefRowsCommentCells(t *testing.T) {
 	for i, c := range cells {
 		r := res[i]
 		refused := r.Exit == couldNotRunExit && strings.HasPrefix(r.Output, "could-not-run: ") && !ran[r.Command]
-		if want := c.Desk != "runs"; refused != want || (!want && (r.Exit != 0 || !ran[r.Command] || r.Command != c.Lift)) {
+		if want := c.Desk != "runs"; refused != want || (!want && (r.Exit != 0 || !ran[r.Command] || r.Command != verifycmd.UnescapePipes(c.Lift))) {
 			t.Errorf("%s: row %d command=%q exit=%d output=%q executed=%v; want %s", c.Name, r.Row, r.Command, r.Exit, r.Output, ran[r.Command], c.Desk)
 		}
 		if c.Desk == "comment-refused" && !strings.Contains(r.Output, "shell comment") {

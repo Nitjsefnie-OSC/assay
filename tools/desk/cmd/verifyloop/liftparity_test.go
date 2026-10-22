@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/medici-finance/assay/tools/desk/internal/loopengine"
+	"github.com/medici-finance/assay/tools/desk/internal/verifycmd"
 )
 
 // TestShellExecLiftParity — every shared cell through the real parse,
@@ -26,8 +27,8 @@ func TestShellExecLiftParity(t *testing.T) {
 		r := res[i]
 		refused := strings.HasPrefix(r.Output, "could-not-run: ")
 		switch {
-		case c.Desk == "runs" && (refused || r.Command != c.Lift):
-			t.Errorf("%s: row %d ran %q (refused=%v); want statusgen's lift %q executed", c.Name, r.Row, r.Command, refused, c.Lift)
+		case c.Desk == "runs" && (refused || r.Command != verifycmd.UnescapePipes(c.Lift)):
+			t.Errorf("%s: row %d ran %q (refused=%v); want statusgen's lift %q executed, its escaped pipes un-escaped", c.Name, r.Row, r.Command, refused, c.Lift)
 		case c.Desk == "runs" && (r.Exit == 0) != c.Passes:
 			t.Errorf("%s: row %d exit=%d output=%q; want passes=%v", c.Name, r.Row, r.Exit, r.Output, c.Passes)
 		case c.Desk != "runs" && (!refused || r.Exit == 0):

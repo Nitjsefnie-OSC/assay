@@ -1,5 +1,5 @@
 {
-  "test": "go test ./internal/verifycmd/ -count=1 -timeout 120s -run 'TestMarkedSharedVectors|TestLiftUnmarkedIsFirstSpan|TestCommentOnlySharedVectors|TestCommentCellSharedVectors|TestCommandRefusedBareLifts|TestCommandColumnLiftsViaLift'",
+  "test": "go test ./internal/verifycmd/ -count=1 -timeout 120s -run 'TestMarkedSharedVectors|TestLiftUnmarkedIsFirstSpan|TestCommentOnlySharedVectors|TestCommentCellSharedVectors|TestCommandRefusedBareLifts|TestCommandColumnLiftsViaLift|TestProseLedRuleMatchesStatusgen'",
   "control": {
     "name": "CONTROL — Marked never honours a marker (the pre-#1805 legacy lift)",
     "file": "internal/verifycmd/verifycmd.go",
@@ -156,6 +156,18 @@
       "file": "internal/verifycmd/verifycmd.go",
       "old": "\tcase NoOp(cmd):\n\t\treturn NoOpWhy",
       "new": "\tcase false:\n\t\treturn NoOpWhy"
+    },
+    {
+      "name": "ported prose-led table drops an extension statusgen keeps",
+      "file": "internal/verifycmd/verifycmd.go",
+      "old": "\t\".pdf\": true,\n}",
+      "new": "}"
+    },
+    {
+      "name": "ported bare-word pattern drifts from statusgen",
+      "file": "internal/verifycmd/verifycmd.go",
+      "old": "bareWordRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)",
+      "new": "bareWordRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)"
     }
   ]
 }
