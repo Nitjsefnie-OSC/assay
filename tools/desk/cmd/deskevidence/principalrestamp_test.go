@@ -20,9 +20,19 @@ import (
 
 const restampHead = "# Brief\n\n## Evidence\n\n| # | Command | Exit | Result | Date | Runner |\n|---|---|---|---|---|---|\n"
 
-// bracketParenRe is the container witness bracket's normalisation: delete every
-// ` (on-behalf-of …)` group, case-insensitive, with the one space before it.
-var bracketParenRe = regexp.MustCompile(`(?i) \(on-behalf-of [^()]*\)`)
+// bracketExactRe is the exact-form stamp a container witness bracket's digest drops from a
+// Runner cell (desktools-v2/71): `(on-behalf-of human:<subject>)`, the subject one or more
+// characters other than whitespace and parentheses, matched case-sensitively. No looser form
+// is dropped.
+var bracketExactRe = regexp.MustCompile(`\(on-behalf-of human:[^\s()]+\)`)
+
+var bracketSpaceRe = regexp.MustCompile(`[ \t]+`)
+
+// bracketRunner is that digest's Runner-cell normalisation: drop every exact-form stamp,
+// collapse each run of spaces and tabs to one space, trim.
+func bracketRunner(cell string) string {
+	return strings.TrimSpace(bracketSpaceRe.ReplaceAllString(bracketExactRe.ReplaceAllString(cell, ""), " "))
+}
 
 func restampRow(date, runner string) string {
 	return "| 2 | `b` | 0 | ok | " + date + " | " + runner + " |\n"
@@ -94,13 +104,22 @@ func TestPrincipalStamp(t *testing.T) {
 			if f.putContent != want {
 				t.Fatalf("landed:\n%s\nwant:\n%s", f.putContent, want)
 			}
-			// One parenthetical, rest of the row byte-identical: with every ` (on-behalf-of …)`
-			// group deleted (a witness bracket's digest normalisation), the landed row equals
-			// the raw one whenever the raw row's fragments were all of that shape.
-			raw := restampRow("2026-10-14", tc.runner)
-			if strings.Count(strings.ToLower(raw), onBehalfOfCellMarker) == len(bracketParenRe.FindAllString(raw, -1)) {
-				if a, b := bracketParenRe.ReplaceAllString(raw, ""), bracketParenRe.ReplaceAllString(restampRow("2026-10-14", tc.want), ""); a != b {
-					t.Fatalf("the stamp changed the row outside its parenthetical:\nraw:    %q\nlanded: %q", a, b)
+			// A cell the tool wrote carries the stamp only as ONE exact-form parenthetical, so a
+			// witness bracket's digest drops all of it. The digest is then unchanged exactly
+			// when every annotation in the raw cell was itself exact-form; a non-exact one
+			// (a desk role, an empty or spaced principal) stayed in the hash, so its restamp
+			// moves the digest and the bracket fails closed.
+			if tc.want != tc.runner {
+				if n := len(bracketExactRe.FindAllString(tc.want, -1)); n != 1 {
+					t.Fatalf("the written cell carries %d exact-form stamps, want 1: %q", n, tc.want)
+				}
+				landedNorm, rawNorm := bracketRunner(tc.want), bracketRunner(tc.runner)
+				if strings.Contains(strings.ToLower(landedNorm), onBehalfOfCellMarker) {
+					t.Fatalf("the written cell keeps an annotation the bracket digest does not drop: %q", landedNorm)
+				}
+				rawExact := !strings.Contains(strings.ToLower(rawNorm), onBehalfOfCellMarker)
+				if (landedNorm == rawNorm) != rawExact {
+					t.Fatalf("bracket digest: raw all exact-form = %v, but raw %q vs landed %q", rawExact, rawNorm, landedNorm)
 				}
 			}
 			if tc.repo == stampPublicRepo && strings.Contains(strings.TrimPrefix(f.putContent, restampHead+standing), "human:"+stampLogin) {

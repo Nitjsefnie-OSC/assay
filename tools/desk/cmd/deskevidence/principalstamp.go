@@ -41,10 +41,13 @@ package main
 //     so the tag itself is never rewritten; with no such tag it is appended to the cell.
 //   - The stamp is always ONE parenthetical, ` (on-behalf-of human:<who>)`, in the Runner
 //     cell, and a strip removes each old fragment with exactly one whitespace byte before it;
-//     every other byte of the row is left as it was. So deleting every ` (on-behalf-of …)`
-//     group from the row — what a container witness bracket's digest does — gives the same
-//     bytes before and after the stamp, for any cell whose old fragments were all
-//     parentheticals of that shape.
+//     every other byte of the row is left as it was. The written stamp is always the exact
+//     form `(on-behalf-of human:<who>)` and nothing broader, which is the only form a container
+//     witness bracket's digest drops from a Runner cell (it then collapses the cell's
+//     whitespace). So landing the stamp, or restamping one exact-form annotation to another,
+//     never moves that digest; restamping a non-exact annotation (a desk role, an empty
+//     principal) does, because the old annotation was inside the hash, and the bracket then
+//     fails closed.
 //
 // Table reading mirrors statusgen's parseEvidenceRows (header = the row followed by a
 // separator; Runner column by its header name, else the last cell; `\|` is cell content;
@@ -375,9 +378,8 @@ func onBehalfOfFragments(cell string) [][2]int {
 			}
 		}
 		// Exactly ONE whitespace byte before a fragment goes with it — the shape the stamp
-		// inserts (` (on-behalf-of human:<who>)`). So a canonical ` (on-behalf-of …)` group is
-		// removed byte-for-byte as a witness-bracket digest removes it, and stripping the old
-		// group then inserting the new one leaves every other byte of the row as it was.
+		// inserts (` (on-behalf-of human:<who>)`). So stripping an old exact-form stamp and
+		// inserting the new one leaves every other byte of the row as it was.
 		if start > off && (cell[start-1] == ' ' || cell[start-1] == '\t') {
 			start--
 		}

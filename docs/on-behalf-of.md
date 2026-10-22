@@ -211,8 +211,11 @@ same roster's human set:
 
 The stamp is always one ` (on-behalf-of human:<who>)` parenthetical in the Runner cell, and a
 strip removes each old fragment with exactly one whitespace byte before it, so the rest of the
-row is byte-identical: deleting every ` (on-behalf-of …)` group gives the same row before and
-after the stamp whenever the old fragments were parentheticals of that shape.
+row is byte-identical. The written stamp is exactly `(on-behalf-of human:<who>)` and nothing
+broader, the one form a container witness bracket's digest drops from a Runner cell, so
+landing it or restamping one exact-form annotation to another never moves that digest. A
+non-exact annotation (a desk role, an empty principal) was inside the hash, so restamping it
+does move the digest and that bracket fails closed.
 
 So a verifier leaves Runner cells unannotated and pre-checks with `deskevidence … --dry-run`,
 which runs every refusing gate on the stamped content and prints each row it stamped; a
