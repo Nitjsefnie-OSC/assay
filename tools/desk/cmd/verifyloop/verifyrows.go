@@ -83,7 +83,7 @@ func parseVerifyRowsMode(section string, scheduling bool) []verifyRow {
 			if sepRe.MatchString(row) {
 				continue
 			}
-			cells := splitRow(row)
+			cells := verifycmd.SplitRow(row)
 			cell := func(j int) string {
 				if j >= 0 && j < len(cells) {
 					return strings.TrimSpace(cells[j])
@@ -116,13 +116,15 @@ func parseVerifyRowsMode(section string, scheduling bool) []verifyRow {
 			}
 			// verifycmd.Lift honours the `cmd:` marker (spec §4.4, #1805) and
 			// otherwise lifts the first code span, exactly as statusgen does (#3147).
-			// verifycmd.Refused judges the RAW cell: what statusgen refuses as a
-			// comment, a no-op, a prose mention or a blank lift never runs here.
+			// The split kept `\|` in the cell; the runner executes the un-escaped
+			// pipeline (#1953). verifycmd.Refused judges the RAW cell: what statusgen
+			// refuses as a comment, a no-op, a prose mention or a blank lift never
+			// runs here.
 			rows = append(rows, verifyRow{
 				Num:     num,
 				ID:      id,
 				Class:   class,
-				Command: verifycmd.Lift(cell(cmdCol)),
+				Command: verifycmd.UnescapePipes(verifycmd.Lift(cell(cmdCol))),
 				Cell:    cell(cmdCol),
 				Refused: verifycmd.Refused(cell(cmdCol)),
 			})

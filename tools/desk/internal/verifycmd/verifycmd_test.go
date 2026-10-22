@@ -222,11 +222,11 @@ func TestLiftUnmarkedIsFirstSpan(t *testing.T) {
 
 // commandColumnFuncs parses every non-test .go file under root (skipping
 // testdata trees) and returns, for each function that reads a Verify table's
-// Command column by header name (an index expression keyed "command"), whether
-// that same function calls verifycmd.Lift and verifycmd.Refused.
-func commandColumnFuncs(t *testing.T, root string) map[string]columnUse {
+// Command column by header name (an index expression keyed "command"), the
+// verifycmd functions that same function calls.
+func commandColumnFuncs(t *testing.T, root string) map[string]map[string]bool {
 	t.Helper()
-	out := map[string]columnUse{}
+	out := map[string]map[string]bool{}
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -251,7 +251,7 @@ func commandColumnFuncs(t *testing.T, root string) map[string]columnUse {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			readsCommand, use := false, columnUse{}
+			readsCommand, calls := false, map[string]bool{}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.IndexExpr:
@@ -261,19 +261,14 @@ func commandColumnFuncs(t *testing.T, root string) map[string]columnUse {
 				case *ast.CallExpr:
 					if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
 						if id, ok := sel.X.(*ast.Ident); ok && id.Name == "verifycmd" {
-							switch sel.Sel.Name {
-							case "Lift":
-								use.lifts = true
-							case "Refused":
-								use.judges = true
-							}
+							calls[sel.Sel.Name] = true
 						}
 					}
 				}
 				return true
 			})
 			if readsCommand {
-				out[filepath.ToSlash(rel)+":"+fn.Name.Name] = use
+				out[filepath.ToSlash(rel)+":"+fn.Name.Name] = calls
 			}
 		}
 		return nil
@@ -284,29 +279,34 @@ func commandColumnFuncs(t *testing.T, root string) map[string]columnUse {
 	return out
 }
 
-// columnUse is what a function reading the Command column does with it.
-type columnUse struct{ lifts, judges bool }
-
 // TestCommandColumnLiftsViaLift — the CLASS guard for tools/desk (#1808 review,
 // SR-1808-2): "an executor lifts the command out of a Verify Command cell by a
 // rule other than the marker-aware one". Every function that reads a Verify
 // table's Command column must lift it through verifycmd.Lift; a new parser that
 // reads the column and hands the raw cell (or its own unwrap) to a shell fails
-// here, naming the site. The positive control proves the walker still finds the
-// two executors it exists to hold, so a broken matcher cannot report clean.
+// here, naming the site. The same function must split the row with
+// verifycmd.SplitRow and un-escape the command with verifycmd.UnescapePipes, so
+// a `\|` in the cell is neither a column break nor passed to the shell (#1953).
+// The positive control proves the walker still finds the two executors it
+// exists to hold, so a broken matcher cannot report clean.
+//
+// regression: #1953
 func TestCommandColumnLiftsViaLift(t *testing.T) {
 	found := commandColumnFuncs(t, filepath.Join("..", ".."))
 	var sites []string
-	for site, use := range found {
+	for site, calls := range found {
 		sites = append(sites, site)
-		if !use.lifts {
+		if !calls["Lift"] {
 			t.Errorf("%s reads a Verify table's Command column without verifycmd.Lift — lift the command through verifycmd.Lift so the `cmd:` marker is honoured (spec §4.4)", site)
 		}
 		// regression: #2684, #3147 — the class "an executor judges or runs a cell
 		// differently from statusgen" (review S1): the raw cell must be judged
 		// by verifycmd.Refused, never only the lift by CommentOnly.
-		if !use.judges {
+		if !calls["Refused"] {
 			t.Errorf("%s reads a Verify table's Command column without verifycmd.Refused — judge the RAW cell with verifycmd.Refused so a cell statusgen refuses is never executed (#2684, #3147)", site)
+		}
+		if !calls["SplitRow"] || !calls["UnescapePipes"] {
+			t.Errorf("%s reads a Verify table's Command column without verifycmd.SplitRow + verifycmd.UnescapePipes — an escaped `\\|` would cut or reach the command (#1953)", site)
 		}
 	}
 	sort.Strings(sites)
