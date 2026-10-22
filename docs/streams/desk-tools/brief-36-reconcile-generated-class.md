@@ -309,7 +309,7 @@ bytes, runsheet lines 29-30), and the patch base ca0dad5c4 (runsheet line 34).
 
 - RISK-VALUE: DERIVED — R-8 Sign-off = (empty) @ docs/streams/issue-flow/rulings.md:36. Mechanism B keeps the class out of the lane, so nothing may be enacted, and the line is still empty at 05dc9fbc8.
 - RISK-VALUE: DERIVED — reconcile-lane-hunk.diff sha256 = f4e3e0df93e1d7d47088021c61cf2e232cd4b9ca91564e919cb8687f9a866cd8, size = 112,747 @ docs/runsheets/reconcile-lane-hunk.md:29-30. Recomputed at 05dc9fbc8 with `shasum -a 256` and `wc -c`: same digest, 112747 bytes.
-- RISK-VALUE: NAMED, NOT DERIVED — runsheet base = ca0dad5c4162a7203167340c49d4c241e14060bb @ docs/runsheets/reconcile-lane-hunk.md:34. The base is accurate for the bytes, but the runsheet's clean-apply claim still fails at the tip. A re-serialization against a current base is still owed (help wanted on #2688), and a verifier cannot author it.
+- RISK-VALUE: NAMED, NOT DERIVED — runsheet base = ca0dad5c4162a7203167340c49d4c241e14060bb @ docs/runsheets/reconcile-lane-hunk.md:34. The base is accurate for the bytes, but the runsheet's clean-apply claim still fails at the tip. A re-serialization against a current base is still owed (help wanted on #2688), and a verifier cannot author it. Question filed: #4129.
 
 **VERIFY: FAIL** — row 3: at 05dc9fbc8 the reconcile class still lands as a pull request; the 23:59Z tick refreshed draft PR #3873, which now carries the authorization-needed label. The direct-CI conversion is unapplied and its carried diff still does not apply to main (tracked on open issue #2688). Rows 1 and 4 PASS; row 2 is could-not-check (not applicable under mechanism B).
 
