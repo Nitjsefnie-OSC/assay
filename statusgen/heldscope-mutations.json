@@ -652,8 +652,8 @@
     {
       "name": "#3841 element: an entry may end with an element open",
       "file": "heldscope.go",
-      "old": "\t\tif len(stack) > 0 {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\n// heldElementName",
-      "new": "\t}\n\treturn false\n}\n\n// heldElementName"
+      "old": "\t\tif len(stack) > 0 {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\n// heldElementCheck is",
+      "new": "\t}\n\treturn false\n}\n\n// heldElementCheck is"
     },
     {
       "name": "#3841 element: tag names are not case-folded",

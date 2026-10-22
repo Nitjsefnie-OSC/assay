@@ -616,10 +616,10 @@ func runHeldScanCasesOnce(t *testing.T, cases []heldScanCase) {
 	runHeldScanCases(t, cases)
 }
 
-// TestHeldUnclosedParagraphTag: a comment or declaration that ends on its own
+// TestHeldScopeParagraphTag: a comment or declaration that ends on its own
 // line leaves the next line a paragraph, where an unfinished tag is plain
 // text, so the block rule (heldHTMLUnclosed) finds no doubt there.
-func TestHeldUnclosedParagraphTag(t *testing.T) {
+func TestHeldScopeParagraphTag(t *testing.T) {
 	for _, x := range []string{"<!-- a -->\na <b title=\"", "<!DOCTYPE html>\na <b title=\""} {
 		lines := strings.Split(x, "\n")
 		if heldHTMLUnclosed(lines, make([]bool, len(lines))) {
@@ -733,7 +733,7 @@ func TestHeldScopeOpenElement(t *testing.T) {
 		// A comment or declaration that ends on its own line leaves the next
 		// line a paragraph, where an unfinished tag is plain text; the rule
 		// still counts the opener: over-refusal by design. The block rule
-		// alone admits both (TestHeldUnclosedParagraphTag).
+		// alone admits both (TestHeldScopeParagraphTag).
 		{"comment closed, paragraph tag", two("<!-- a -->\na <b title=\""), true},
 		{"declaration, paragraph tag", two("<!DOCTYPE html>\na <b title=\""), true},
 		{"close in an attribute", two("<span><img alt=\"</span>\">"), true},
