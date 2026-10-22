@@ -125,7 +125,7 @@ is the one contract; /15–/17 own its foundation, rollout and completion.
 | 68 | [Select perf-v4 in shared producers and qualify the direct migration](brief-68-select-perf-v4-in-shared-producers-and-qualify-the-direct-migration.md) | 4 | M | todo | — | — |
 | 69 | [Specify extensible JSON contracts and migration targets](brief-69-specify-extensible-json-contracts-and-migration-targets.md) | 1 | M | implemented | — | — |
 | 70 | [Exempt workflow-bound issue filings from the filing budget](brief-70-exempt-workflow-bound-issue-filings-from-the-filing-budget.md) | 1 | M | todo | — | — |
-| 71 | [Credit container witness rows bracketed by host verifier admission](brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md) | 1 | M | todo | — | — |
+| 71 | [Credit container witness rows bracketed by host verifier admission](brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md) | 1 | M | implemented | — | — |
 | 72 | [Land verifier outcome records from a dispatcher-named path outside the home](brief-72-land-verifier-outcome-records-from-a-dispatcher-named-path-outside-the-home.md) | 1 | M | implemented | — | — |
 | 73 | [Make deskevidence own the on-behalf-of principal on Runner cells](brief-73-make-deskevidence-own-the-on-behalf-of-principal-on-runner-cells.md) | 1 | M | todo | — | — |
 <!-- statusgen:briefs:end -->
