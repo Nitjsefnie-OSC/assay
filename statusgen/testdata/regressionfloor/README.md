@@ -68,7 +68,11 @@ use the existing testledger departure procedure when a test leaves.
 The named empty-selection check also covers a nonempty selection with a missing
 file and an unselected file. The named difference check covers known allowances,
 duplicate allowances, unknown case references and empty reasons in addition to
-staleness and exact outcomes. Each refusal has a behavioral mutation control.
+staleness and exact old/new outcomes. Both equal-adapter and allowed-difference
+paths independently enforce the hand-written old expectation. These comparison
+and case-selection refusals each have a behavioral mutation control. The
+inventory resolver has provenance checks; this statement does not claim mutation
+coverage for every inventory validation or file-decoding error.
 The authoring helper separately checks pinned revision/path syntax and ignores
 same-named methods when resolving a retained top-level test.
 

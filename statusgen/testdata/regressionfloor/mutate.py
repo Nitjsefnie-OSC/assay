@@ -19,6 +19,11 @@ controls = [
  ('duplicate-allowance', source, 'if match != nil {', 'if false && match != nil {', 'TestRegressionFloorUnlistedDifferenceFails', 'duplicate allowance guard did not refuse'),
  ('unknown-allowance', source, 'if !known[d.Case] {', 'if false && !known[d.Case] {', 'TestRegressionFloorUnlistedDifferenceFails', 'unknown allowance guard did not refuse'),
  ('empty-reason', source, 'strings.TrimSpace(match.Reason) == "" || ', '', 'TestRegressionFloorUnlistedDifferenceFails', 'empty reason guard did not refuse'),
+ ('shared-expectation', source, 'if !reflect.DeepEqual(old, expected) {\n\t\treturn fmt.Errorf("expectation mismatch', 'if false && !reflect.DeepEqual(old, expected) {\n\t\treturn fmt.Errorf("expectation mismatch', 'TestRegressionFloorUnlistedDifferenceFails', 'shared expected outcome guard did not refuse'),
+ ('allowed-expectation', source, 'if !reflect.DeepEqual(old, expected) {\n\t\t\treturn fmt.Errorf("old expectation mismatch', 'if false && !reflect.DeepEqual(old, expected) {\n\t\t\treturn fmt.Errorf("old expectation mismatch', 'TestRegressionFloorUnlistedDifferenceFails', 'allowed old expectation guard did not refuse'),
+ ('allowance-old-outcome', source, '!reflect.DeepEqual(old, match.Old) || ', '', 'TestRegressionFloorUnlistedDifferenceFails', 'different old outcome accepted'),
+ ('allowance-new-outcome', source, ' || !reflect.DeepEqual(newer, match.New)', '', 'TestRegressionFloorUnlistedDifferenceFails', 'different new outcome accepted'),
+ ('case-identity', source, 'if c.ID == "" || filepath.Base(p) != c.ID+".json" {', 'if false && (c.ID == "" || filepath.Base(p) != c.ID+".json") {', 'TestRegressionFloorZeroSelectedFails', 'case identity guard did not refuse'),
  ('freeze-source', module / 'testdata/regressionfloor/freeze.go', 'if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(source) {', 'if false && !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(source) {', 'TestFloorFreezeAuthoring', 'invalid pinned source accepted'),
  ('freeze-method', module / 'testdata/regressionfloor/freeze.go', 'fn.Recv == nil && ', '', 'TestFloorFreezeAuthoring', 'method selected instead of retained test function'),
 ]

@@ -367,9 +367,21 @@ func TestRegressionFloorUnlistedDifferenceFails(t *testing.T) {
 	if floorCompare("control", a, a, a, []floorDifference{d}) == nil {
 		t.Fatal("stale difference accepted")
 	}
-	d.New = a
-	if floorCompare("control", a, b, a, []floorDifference{d}) == nil {
-		t.Fatal("different outcomes accepted")
+	if floorCompare("control", a, a, b, nil) == nil {
+		t.Fatal("shared expected outcome guard did not refuse")
+	}
+	if floorCompare("control", a, b, b, []floorDifference{d}) == nil {
+		t.Fatal("allowed old expectation guard did not refuse")
+	}
+	bad := d
+	bad.Old = b
+	if floorCompare("control", a, b, a, []floorDifference{bad}) == nil {
+		t.Fatal("different old outcome accepted")
+	}
+	bad = d
+	bad.New = a
+	if floorCompare("control", a, b, a, []floorDifference{bad}) == nil {
+		t.Fatal("different new outcome accepted")
 	}
 }
 
@@ -434,6 +446,19 @@ func floorCaseGuards(t *testing.T) {
 	dir := floorFixture(t, []string{"known", "second"}, []string{"known", "second"}, nil)
 	if _, cases, _, err := floorLoad(dir); err != nil || len(cases) != 2 {
 		t.Fatalf("valid case selection refused: %v", err)
+	}
+	for _, id := range []string{"", "different"} {
+		dir := floorFixture(t, []string{"known"}, []string{"known"}, nil)
+		b, err := json.Marshal(floorCase{ID: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "cases", "known.json"), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := floorLoad(dir); err == nil || !strings.Contains(err.Error(), "invalid case identity") {
+			t.Fatalf("case identity guard did not refuse: %v", err)
+		}
 	}
 	for _, control := range []struct {
 		name            string
