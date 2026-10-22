@@ -113,6 +113,9 @@ func TestStampRefusesRunnerMarkup(t *testing.T) {
 		{"entity", renderApp + " (on-behalf-of human:&#111;perator)", "markup character `&`"},
 		{"backslash-escape", renderApp + ` (on-behalf-of human:op\_erator)`, "markup character `\\`"},
 		{"closing-angle", renderApp + " (on-behalf-of human:operator) >", "markup character `>`"},
+		{"strong-emphasis", "**example-app[bot]** @ abc1234 (on-behalf-of human:colleague)", "markup character `*`"},
+		{"underscore-emphasis", "_example-app[bot]_ @ abc1234 (on-behalf-of human:colleague)", "markup character `_`"},
+		{"code-span", "`example-app[bot]` @ abc1234 (on-behalf-of human:colleague)", "markup character ```"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

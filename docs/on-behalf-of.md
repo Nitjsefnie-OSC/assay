@@ -234,29 +234,56 @@ same roster's human set:
   line with the same Runner cell, so a base line re-landed under a header that moves the
   Runner column is checked like an added row. The heading line that ends the section is
   checked for control characters too, when the landing adds it;
-- a landing that shows rows on screen in a way the lint does not read refuses (exit 5),
-  naming the line and the reason; nothing is written. Each check applies only to what the
-  landing adds, so a brief that already carries a shape is not blocked from later landings:
-  - a heading a renderer shows as Evidence, other than the one `## Evidence` section the lint
-    reads: a second `## Evidence`, one at another level or in another case, or one a lone
-    carriage return puts on its own rendered line. Rows under it would show as Evidence and
-    never be checked. A landing may not raise the brief's count of such headings;
-  - a line inside a table that a renderer reads as a row but that does not begin with `|`
-    while holding one (a row, header or delimiter row without its leading pipe). A
-    renderer keeps a table going until a blank line; the lint reads only `|`-led lines. A
-    `|`-led row after such a line in the same table is refused too: the lint has dropped
-    the table's header by then and reads the Runner cell from another column. A pipe-less
-    note line ending a table, such as an attestation line, renders as a one-cell row with
-    no Runner cell and is left alone;
-  - markup in an App Runner cell: `<`, `>`, `&`, `~` or `\`, which can render a
-    struck-through or hidden annotation, or an entity or escape that shows a different
-    character. A Runner cell that only shows as an App runner once its markup is removed
-    (`<span>…[bot]</span>`) is refused the same way;
-  - an added table header that a reader can take as naming a different Runner column than
-    the lint reads: an invisible format character such as a bidi isolate, a non-ASCII
-    letter or mark, a cell whose letters spell `Runner` but that the lint does not read as
-    exactly `runner` (`**Runner**`), or more than one `Runner` column (the lint reads the
-    last).
+- the landed Evidence section must be one both readings agree on: what a Markdown (GFM)
+  renderer shows as Evidence rows is what the lint reads. A landing that adds anything else
+  refuses (exit 5), naming the line and the reason; nothing is written. The checks look at
+  what the landing adds (and at the table or heading it adds lines under), so a brief that
+  already carries an older shape is not blocked from landings that leave it alone. The tool
+  carries no Markdown parser; it holds the rules below, which are narrower than "every
+  shape a renderer could show", and the lint-way read of the landed section remains the
+  last check.
+  - **Lines in the section.** Every added line is a blank line, a `|`-led table row, or a
+    note line. A table is a `|`-led header, then a delimiter row a renderer accepts (cells of
+    dashes with optional edge colons, one per header cell), then `|`-led rows. In the middle
+    of a table, an added line the lint reads as a separator, or as a new header (a `|`-led
+    line with a separator line under it), is refused unless it repeats the table's own header
+    exactly; so is an added row read under such a header. A `|`-led line under no header is
+    read by the lint with its last cell as Runner, so it lands only when no other cell shows
+    as an App-run Runner cell; a separator line under no header is refused.
+  - **Rows.** Only the cell the lint reads as Runner may show as an App-run Runner cell. An
+    added row wider than its header is refused when the header has no exact `Runner` cell
+    (the lint then reads the row's last cell, which a renderer drops).
+  - **Lines without a leading `|`.** Inside a table, a line holding a `|` that does not begin
+    with one renders as a row the lint never reads, and is refused. A pipe-less line that
+    closes a table renders as a one-cell row: it lands when it shows no `[bot]` or
+    on-behalf-of text. After it the lint has dropped the table's header, so a `|`-led row
+    added later in that table is refused, unless a repeat of the table's own header (with its
+    separator line) comes first.
+    A table with a different header needs a blank line above it. The `--brief-path` merge
+    puts one there whenever the appended block opens with a header, so a witness table
+    appended after an attestation line lands as its own table.
+  - **Markup.** An added line may not hold a raw HTML table or heading tag, share its line
+    with an HTML comment that crosses a line break, or be a table line inside a block quote.
+    A Runner cell the lint does not read as App-run is refused when it shows as one once HTML
+    tags and comment markers are removed, entities decoded, and emphasis, strikethrough,
+    code-span and escape characters (`*`, `_`, `~`, a backtick, `\`) stripped; that covers
+    `<span>…[bot]</span>`, `**…[bot]**`, `_…[bot]_` and a login in a code span. An App Runner
+    cell holding `<`, `>`, `&`, `~` or `\` is refused as unreadable (above).
+  - **Headers.** A header the landing adds, or adds rows under, is refused when a reader can
+    take it as naming a different Runner column than the lint reads: an invisible format
+    character such as a bidi isolate, a non-ASCII letter or mark, a cell whose letters spell
+    `Runner` but that the lint does not read as exactly `runner` (`**Runner**`), or more than
+    one `Runner` column (the lint reads the last).
+  - **Headings.** The lint reads only the first `## Evidence` section. A heading a renderer
+    shows as Evidence anywhere else (ATX, setext or HTML, at any level or case, with entities
+    decoded and tags removed, or put on its own rendered line by a lone carriage return) may
+    not be added, and no line may be added under one that is already on the branch. An added
+    heading may not hold a non-ASCII letter or mark. Headings inside fenced or indented code
+    are code, not headings, and are not counted.
+  - **Outside the section.** An added line outside the section the lint reads (or anywhere
+    in the body, when there is no such section) may not show an App-run Runner cell in a
+    `|`-separated row, or hold a raw HTML table or heading tag outside a code span. Fenced
+    code is left alone.
 
 Like the lint, the tool looks for `## Evidence` only in the brief's body, after the
 frontmatter block: a `## Evidence` line inside the frontmatter is never taken as the section.
