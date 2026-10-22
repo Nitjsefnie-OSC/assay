@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/medici-finance/assay/gitquiet/goquiet"
 	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/gitquiet"
 	q "github.com/medici-finance/assay/tools/desk/internal/reviewtest"
@@ -57,7 +58,7 @@ func build(t *testing.T) string {
 			cmd := exec.CommandContext(ctx, "go", "test", "-c", "-o", filepath.Join(binaries.dir, tool+".test"), "./cmd/"+tool)
 			cmd.Dir = moduleRoot(t)
 			cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
-			b, e := cmd.CombinedOutput()
+			b, e := goquiet.Cmd(cmd).CombinedOutput()
 			cancel()
 			if e != nil {
 				binaries.err = fmt.Errorf("build %s: %w\n%s", tool, e, b)
@@ -366,7 +367,7 @@ func buildMutant(t *testing.T, tool, relative, old, replacement string) string {
 	cmd := exec.CommandContext(ctx, "go", "test", "-overlay", path, "-c", "-o", filepath.Join(dir, tool+".test"), "./cmd/"+tool)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
-	if b, err := cmd.CombinedOutput(); err != nil {
+	if b, err := goquiet.Cmd(cmd).CombinedOutput(); err != nil {
 		t.Fatalf("build production mutation: %v\n%s", err, b)
 	}
 	return dir
