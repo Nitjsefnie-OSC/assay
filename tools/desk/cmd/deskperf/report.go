@@ -55,7 +55,7 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	top := fs.Int("top", 10, "how many of the slowest invocations to list")
 	byDay := fs.Bool("by-day", false, "report a per-tool timeseries bucketed by UTC day instead of the pooled window")
 	profile := fs.String("perf-profile", os.Getenv("ASSAY_PERF_PROFILE"), "workflow permits local attribution grouping and filtering")
-	group := fs.String("group-by", "tool", "v3 group: tool, work, session, agent, deskRole, role")
+	group := fs.String("group-by", "tool", "v3 group: tool, work, session, agent, deskRole, role (--by-day groups by tool only)")
 	session := fs.String("session-id", "", "v3 workflow session filter")
 	agent := fs.String("agent-id", "", "v3 workflow agent filter")
 	deskRole := fs.String("desk-role", "", "v3 workflow originating desk filter")
@@ -70,6 +70,9 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 	}
 	if *top < 0 {
 		return deskkit.Refused(fmt.Sprintf("--top %d: must be 0 or more", *top))
+	}
+	if *byDay && *group != "tool" {
+		return deskkit.Refused(fmt.Sprintf("--group-by %s: --by-day rows are tool × UTC day, so --by-day takes no other grouping", *group))
 	}
 	filter := perfrec.V3Filter{SessionID: *session, AgentID: *agent, DeskRole: *deskRole, Role: *assigned}
 	if *work != "" {
@@ -162,6 +165,10 @@ func cmdReport(args []string, stdout, stderr io.Writer) error {
 		if err := forgeTable(stdout, forge); err != nil {
 			return err
 		}
+		if v3.Records > 0 {
+			fmt.Fprintln(stdout, "(the pooled forge section above leaves out perf-v3 http counters, which report their requests "+
+				"in the perf-v3 section; --by-day pools them into its per-day forge count, so its totals can be higher)")
+		}
 	}
 	if v3.Records > 0 || v3.Conflicts > 0 || v3.Invalid > 0 {
 		if sum.Records > 0 || v2.Records > 0 {
@@ -218,6 +225,14 @@ func dayTable(stdout io.Writer, s deskkit.PerfDaySummary, days int, tool, role s
 	}
 	fmt.Fprintln(stdout)
 	skippedLine(stdout, skipped)
+	if s.V3Records > 0 || s.V3Duplicates > 0 || s.V3Conflicts > 0 || s.V3Invalid > 0 {
+		fmt.Fprintf(stdout, "perf-v3 — %d record(s) kept; %d duplicate(s); %d conflicting identities excluded; %d invalid "+
+			"(selected over the whole window before any day bucket)\n", s.V3Records, s.V3Duplicates, s.V3Conflicts, s.V3Invalid)
+	}
+	if s.Unattributed > 0 {
+		fmt.Fprintf(stdout, "%d legacy/perf-v2 record(s) left out: the workflow filter matches perf-v3 attribution, which they do not carry\n",
+			s.Unattributed)
+	}
 	fmt.Fprintln(stdout, "walls stay per schema group (each schema measures over its own boundary — legacy, perf-v2 and "+
 		"perf-v3 walls are never mixed); the forge count pools legacy forgeCalls and the perf-v2/perf-v3 http counter as one budget")
 
@@ -240,6 +255,9 @@ func dayTable(stdout io.Writer, s deskkit.PerfDaySummary, days int, tool, role s
 	}
 
 	fmt.Fprintln(stdout, "\nforge calls by UTC day (pooled over every schema; unavailable = not observed, never zero):")
+	if s.V3Records > 0 {
+		fmt.Fprintln(stdout, "(the pooled report's forge section leaves out perf-v3 http counters, so these totals can be higher than it)")
+	}
 	tw = tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "DAY\tTOOL\tCALLS\tMEASURED RUNS\tUNAVAILABLE RUNS")
 	for _, row := range s.Rows {

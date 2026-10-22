@@ -60,7 +60,10 @@ usage:
       max per schema group (legacy, perf-v2 and perf-v3 walls are never mixed),
       the forge count pooled over every schema (legacy forgeCalls + the
       perf-v2/perf-v3 http counter), and the day's perf-v3 request rollup per
-      tool
+      tool. Rows are tool × day, so --by-day takes no --group-by other than
+      tool (refused). Every perf-v3 figure comes from one window-wide selection
+      (replays counted once, conflicting identities excluded); a workflow filter
+      leaves out legacy/perf-v2 records, which carry no attribution
   deskperf boot [--days N] [--role R] [--json]
       deskboot's per-step p50 / p90 / max and the summed boot cost, per role
   deskperf --version      print the build stamp

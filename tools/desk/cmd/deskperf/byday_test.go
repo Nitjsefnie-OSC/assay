@@ -40,45 +40,13 @@ func byDayRecords(t *testing.T, day0, day1 string) []perfrec.Record {
 			Boundary: perfrec.BoundaryProcess, WallMs: wall, CPU: perfrec.CPUUnsupported, Result: perfrec.ResultForExit(0),
 			Install: strings.Repeat("b", 32), SourceSHA: "unpinned", Counters: counters, Unavailable: un, Phases: []perfrec.PhaseStat{}}
 	}
-	// v3 builds one service-client record whose wall is exactly `wall` (the probe ticks the
-	// measurement interval once) and whose stamp is the given day. durs/pts describe
-	// repeated request observations of ONE group (measured points when pts != nil, unknown
-	// coverage otherwise); http < 0 leaves the http counter unavailable.
+	// v3: measured points when pts != nil, unknown coverage otherwise.
 	v3 := func(ts string, wall time.Duration, http int64, durs []int64, pts *int64) perfrec.Record {
-		var tick int64
-		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-		p := perfrec.Probe{
-			Now:   func() time.Time { tick++; return base.Add(time.Duration(tick) * wall) },
-			Stamp: func() time.Time { t, _ := time.Parse(time.RFC3339, ts); return t },
+		sp := v3Spec{ts: ts, wall: wall, http: http, durs: durs}
+		if pts != nil {
+			sp.points = perfrec.Points{Coverage: perfrec.CoverageMeasured, Unit: perfrec.UnitGitHubPoints, Value: pts}
 		}
-		c := perfrec.ResolveContext(perfrec.ContextInput{Profile: perfrec.Value{Value: "tool", Present: true},
-			LookupEnv: func(k string) (string, bool) {
-				if k == perfrec.EnvVar {
-					return "1", true
-				}
-				return "", false
-			}})
-		s := perfrec.BeginObservation(p, nil, c, perfrec.ObservationClient)
-		if http >= 0 {
-			s.Add(perfrec.CounterHTTP, http)
-		}
-		for _, d := range durs {
-			ms := d
-			obs := perfrec.RequestObservation{Class: perfrec.RequestProvider, Origin: perfrec.OriginDirect,
-				Protocol: "graphql", Resource: "graphql", Outcome: "2xx",
-				DurationMs: &ms, DurationCoverage: perfrec.CoverageMeasured,
-				Points: perfrec.Points{Coverage: perfrec.CoverageUnknown, Unit: perfrec.UnitGitHubPoints}}
-			if pts != nil {
-				obs.Points = perfrec.Points{Coverage: perfrec.CoverageMeasured, Unit: perfrec.UnitGitHubPoints, Value: pts}
-			}
-			if !s.ObserveRequest(obs) {
-				t.Fatalf("fixture request refused: %+v", obs)
-			}
-		}
-		s.ObserveRequests()
-		r := s.Finish("deskboard", "query", "", 0, "")
-		r.Install = strings.Repeat("c", 32)
-		return r
+		return buildV3(t, sp)
 	}
 	n := func(v int64) *int64 { return &v }
 	return []perfrec.Record{
@@ -100,6 +68,65 @@ func byDayRecords(t *testing.T, day0, day1 string) []perfrec.Record {
 		// Undated: a timestamp that does not parse — counted, never assigned a day.
 		v1("deskwt", "other", "not-a-timestamp", 100, 0),
 	}
+}
+
+// v3Spec describes one fixture perf-v3 deskboard service-client record: its stamp, its wall
+// (exactly `wall` — the probe ticks the measurement interval once), its http counter (< 0
+// leaves it unavailable), and repeated request observations of ONE group, one per duration,
+// carrying `points` (the zero value means unknown coverage). A non-empty session makes it a
+// workflow-profile record attributed to that session.
+type v3Spec struct {
+	ts      string
+	wall    time.Duration
+	http    int64
+	durs    []int64
+	points  perfrec.Points
+	session string
+}
+
+func buildV3(t *testing.T, sp v3Spec) perfrec.Record {
+	t.Helper()
+	var tick int64
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := perfrec.Probe{
+		Now:   func() time.Time { tick++; return base.Add(time.Duration(tick) * sp.wall) },
+		Stamp: func() time.Time { t, _ := time.Parse(time.RFC3339, sp.ts); return t },
+	}
+	in := perfrec.ContextInput{Profile: perfrec.Value{Value: "tool", Present: true},
+		LookupEnv: func(k string) (string, bool) {
+			if k == perfrec.EnvVar {
+				return "1", true
+			}
+			return "", false
+		}}
+	if sp.session != "" {
+		in.Profile = perfrec.Value{Value: "workflow", Present: true}
+		in.SessionID = perfrec.Value{Value: sp.session, Present: true}
+	}
+	s := perfrec.BeginObservation(p, nil, perfrec.ResolveContext(in), perfrec.ObservationClient)
+	if sp.http >= 0 {
+		s.Add(perfrec.CounterHTTP, sp.http)
+	}
+	pts := sp.points
+	if pts.Coverage == "" {
+		pts = perfrec.Points{Coverage: perfrec.CoverageUnknown, Unit: perfrec.UnitGitHubPoints}
+	}
+	for _, d := range sp.durs {
+		ms := d
+		obs := perfrec.RequestObservation{Class: perfrec.RequestProvider, Origin: perfrec.OriginDirect,
+			Protocol: "graphql", Resource: "graphql", Outcome: "2xx",
+			DurationMs: &ms, DurationCoverage: perfrec.CoverageMeasured, Points: pts}
+		if !s.ObserveRequest(obs) {
+			t.Fatalf("fixture request refused: %+v", obs)
+		}
+	}
+	s.ObserveRequests()
+	r := s.Finish("deskboard", "query", "", 0, "")
+	r.Install = strings.Repeat("c", 32)
+	if sp.session != "" && (r.V3 == nil || r.V3.Attribution.SessionID != sp.session) {
+		t.Fatalf("fixture record lost its session attribution: %+v", r.V3)
+	}
+	return r
 }
 
 func writePerfDay(t *testing.T, perfDir, day string, recs []perfrec.Record) {
@@ -363,5 +390,204 @@ func TestByDayReportRender(t *testing.T) {
 	rc, out, errOut = runDeskperf("report", "--by-day", "--tool", "deskclose")
 	if rc != deskkit.ExitRefused || out != "" || !strings.Contains(errOut, "no record matches --tool deskclose") {
 		t.Errorf("--by-day --tool deskclose: rc %d stdout %q stderr %q", rc, out, errOut)
+	}
+}
+
+// dayRow finds one tool × day row of a by-day summary.
+func dayRow(s deskkit.PerfDaySummary, day, tool string) (deskkit.PerfDayRow, bool) {
+	for _, r := range s.Rows {
+		if r.Day == day && r.Tool == tool {
+			return r, true
+		}
+	}
+	return deskkit.PerfDayRow{}, false
+}
+
+// TestByDayV3Duplicate replays one perf-v3 record byte-identically. ReduceV3 counts it
+// once, so EVERY figure of its day row — the invocation count, the perf-v3 wall and the
+// forge pool, not just the request rollup — must count it once.
+// regression: #3959
+func TestByDayV3Duplicate(t *testing.T) {
+	day0, day1 := "2026-01-05", "2026-01-04"
+	recs := byDayRecords(t, day0, day1)
+	recs = append(recs, recs[3]) // the first day-0 deskboard perf-v3 record, replayed
+	s, err := deskkit.SummarisePerfDays(recs, "", perfrec.V3Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Records != 10 || s.V3Records != 3 || s.V3Duplicates != 1 {
+		t.Errorf("summary = %d records, %d v3, %d duplicates; want 10, 3, 1", s.Records, s.V3Records, s.V3Duplicates)
+	}
+	d0b, _ := dayRow(s, day0, "deskboard")
+	if d0b.Count != 4 {
+		t.Errorf("day0 deskboard count = %d, want 4: the replay is one invocation", d0b.Count)
+	}
+	if w := d0b.PerfV3; w == nil || w.Records != 2 || w.SumMs != 600 {
+		t.Errorf("day0 deskboard perf-v3 wall = %+v, want 2 records summing 600 ms", w)
+	}
+	if d0b.ForgeCalls != 12 || d0b.ForgeMeasured != 4 {
+		t.Errorf("day0 deskboard forge = %d calls over %d runs, want 12 over 4", d0b.ForgeCalls, d0b.ForgeMeasured)
+	}
+}
+
+// TestByDayV3Conflict moves a copy of the day-1 perf-v3 record to day 0: one identity, two
+// different records. ReduceV3 excludes a conflicting identity completely, and the by-day
+// view must too — even though the two copies land in different day buckets.
+// regression: #3959
+func TestByDayV3Conflict(t *testing.T) {
+	day0, day1 := "2026-01-05", "2026-01-04"
+	recs := byDayRecords(t, day0, day1)
+	moved := recs[9] // the day-1 deskboard perf-v3 record
+	moved.TS = day0 + "T13:00:00Z"
+	recs = append(recs, moved)
+	s, err := deskkit.SummarisePerfDays(recs, "", perfrec.V3Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Records != 9 || s.V3Records != 2 || s.V3Conflicts != 1 {
+		t.Errorf("summary = %d records, %d v3, %d conflicts; want 9, 2, 1", s.Records, s.V3Records, s.V3Conflicts)
+	}
+	d0b, _ := dayRow(s, day0, "deskboard")
+	if d0b.Count != 4 || d0b.PerfV3 == nil || d0b.PerfV3.Records != 2 || d0b.ForgeCalls != 12 {
+		t.Errorf("day0 deskboard = %+v, want count 4, 2 perf-v3 walls, 12 forge calls", d0b)
+	}
+	d1b, _ := dayRow(s, day1, "deskboard")
+	if d1b.Count != 1 || d1b.PerfV3 != nil || d1b.ForgeUnavailable != 0 || len(d1b.Requests) != 0 {
+		t.Errorf("day1 deskboard = %+v, want count 1 (perf-v1 only): the conflicting identity is excluded", d1b)
+	}
+}
+
+// TestByToolCrossConflict: the pooled per-tool rollup selects window-wide too. One
+// invocation identity recorded under two tools with different contents is a conflict, so
+// neither tool may report its requests.
+// regression: #3959
+func TestByToolCrossConflict(t *testing.T) {
+	r := buildV3(t, v3Spec{ts: "2026-01-05T10:00:00Z", wall: time.Millisecond, http: 1, durs: []int64{10}})
+	other := r
+	other.Tool = "deskpr"
+	out, err := deskkit.SummarisePerfV3RequestsByTool([]perfrec.Record{r, other}, "", perfrec.V3Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 0 {
+		t.Errorf("per-tool rollup = %+v, want none: the conflicting identity is excluded", out)
+	}
+}
+
+// TestByDaySessionFilter filters to one workflow session. Session B's wall, forge calls and
+// requests must leave every figure of the row, not just the request rollup; a perf-v1
+// record, which carries no session, cannot be attributed to session A either.
+// regression: #3959
+func TestByDaySessionFilter(t *testing.T) {
+	day := "2026-01-05"
+	a, b := strings.Repeat("1", 32), strings.Repeat("2", 32)
+	recs := []perfrec.Record{
+		buildV3(t, v3Spec{ts: day + "T10:00:00Z", wall: 100 * time.Millisecond, http: 1, durs: []int64{10}, session: a}),
+		buildV3(t, v3Spec{ts: day + "T11:00:00Z", wall: 900 * time.Millisecond, http: 50, durs: []int64{20, 20}, session: b}),
+		{Schema: perfrec.Schema, TS: day + "T12:00:00Z", Tool: "deskboard", Verb: "query", Role: "worker-desk", WallMs: 400,
+			ForgeCalls: 2, Result: perfrec.ResultForExit(0), Install: strings.Repeat("a", 32), SourceSHA: "unpinned"},
+	}
+	s, err := deskkit.SummarisePerfDays(recs, perfrec.ProfileWorkflow, perfrec.V3Filter{SessionID: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Rows) != 1 {
+		t.Fatalf("rows = %+v, want one deskboard row", s.Rows)
+	}
+	if s.Records != 1 || s.V3Records != 1 || s.Unattributed != 1 {
+		t.Errorf("summary = %d records, %d v3, %d unattributed; want 1, 1, 1", s.Records, s.V3Records, s.Unattributed)
+	}
+	r := s.Rows[0]
+	if r.Count != 1 || r.PerfV1 != nil {
+		t.Errorf("row count %d, perf-v1 %+v; want 1 and none: only session A's record is in view", r.Count, r.PerfV1)
+	}
+	if w := r.PerfV3; w == nil || w.Records != 1 || w.SumMs != 100 || w.MaxMs != 100 {
+		t.Errorf("perf-v3 wall = %+v, want session A's one 100 ms record", w)
+	}
+	if r.ForgeCalls != 1 || r.ForgeMeasured != 1 {
+		t.Errorf("forge = %d calls over %d runs, want session A's 1 over 1", r.ForgeCalls, r.ForgeMeasured)
+	}
+	if len(r.Requests) != 1 || r.Requests[0].Attempts != 1 {
+		t.Errorf("requests = %+v, want session A's 1 attempt", r.Requests)
+	}
+}
+
+// TestByDayEstimatedPoints pins "points are summed only where measured": an
+// estimated-coverage group CARRIES a points value, and neither rollup may report it as a
+// measured sum, while the measured group beside it is summed.
+// regression: #3959
+func TestByDayEstimatedPoints(t *testing.T) {
+	day := "2026-01-05"
+	two, five := int64(2), int64(5)
+	recs := []perfrec.Record{
+		buildV3(t, v3Spec{ts: day + "T10:00:00Z", wall: time.Millisecond, http: 1, durs: []int64{10},
+			points: perfrec.Points{Coverage: perfrec.CoverageMeasured, Unit: perfrec.UnitGitHubPoints, Value: &two}}),
+		buildV3(t, v3Spec{ts: day + "T11:00:00Z", wall: time.Millisecond, http: 1, durs: []int64{10},
+			points: perfrec.Points{Coverage: perfrec.CoverageEstimated, Unit: perfrec.UnitGitHubPoints, Value: &five,
+				Method: "query-cost", Version: "v1"}}),
+	}
+	check := func(where string, rows []deskkit.PerfRequestRollup) {
+		t.Helper()
+		var measured, estimated *deskkit.PerfRequestRollup
+		for i := range rows {
+			switch rows[i].PointsCoverage {
+			case "measured":
+				measured = &rows[i]
+			case "estimated":
+				estimated = &rows[i]
+			}
+		}
+		if measured == nil || estimated == nil {
+			t.Fatalf("%s: want one measured and one estimated group: %+v", where, rows)
+		}
+		if measured.Points == nil || *measured.Points != 2 {
+			t.Errorf("%s: measured points = %v, want 2", where, measured.Points)
+		}
+		if estimated.Points != nil || estimated.PointsUnit != "" {
+			t.Errorf("%s: estimated points read as a measured sum: %d %s", where, *estimated.Points, estimated.PointsUnit)
+		}
+	}
+	s, err := deskkit.SummarisePerfDays(recs, "", perfrec.V3Filter{})
+	if err != nil || len(s.Rows) != 1 {
+		t.Fatalf("by-day = %+v, %v; want one row", s, err)
+	}
+	check("by-day", s.Rows[0].Requests)
+	byTool, err := deskkit.SummarisePerfV3RequestsByTool(recs, "", perfrec.V3Filter{})
+	if err != nil || len(byTool) != 1 {
+		t.Fatalf("per-tool = %+v, %v; want one tool", byTool, err)
+	}
+	check("per-tool", byTool[0].Requests)
+}
+
+// TestByDayGroupByRefused: --by-day always groups by tool, so another --group-by refuses
+// rather than exiting 0 with tool rows.
+// regression: #3959
+func TestByDayGroupByRefused(t *testing.T) {
+	seedByDay(t)
+	rc, out, errOut := runDeskperf("report", "--by-day", "--perf-profile", "workflow", "--group-by", "session")
+	if rc != deskkit.ExitRefused || out != "" || !strings.Contains(errOut, "--group-by session") {
+		t.Errorf("--by-day --group-by session: rc %d stdout %q stderr %q", rc, out, errOut)
+	}
+	rc, _, errOut = runDeskperf("report", "--by-day", "--group-by", "tool")
+	if rc != deskkit.ExitOK {
+		t.Errorf("--by-day --group-by tool (the default, spelled out): rc %d stderr %q", rc, errOut)
+	}
+}
+
+// TestPooledForgeV3Note: the pooled forge section reads perf-v1 and perf-v2 only, while the
+// by-day forge column also pools perf-v3 http. Both outputs say so when the window holds a
+// perf-v3 record, so their totals never silently disagree.
+// regression: #3959
+func TestPooledForgeV3Note(t *testing.T) {
+	seedByDay(t)
+	for _, args := range [][]string{{"report"}, {"report", "--by-day"}} {
+		rc, out, errOut := runDeskperf(args...)
+		if rc != deskkit.ExitOK {
+			t.Fatalf("%v: rc %d stderr %q", args, rc, errOut)
+		}
+		if !strings.Contains(out, "the pooled forge section above leaves out perf-v3") &&
+			!strings.Contains(out, "the pooled report's forge section leaves out perf-v3") {
+			t.Errorf("%v: no note on how the two forge totals differ:\n%s", args, out)
+		}
 	}
 }

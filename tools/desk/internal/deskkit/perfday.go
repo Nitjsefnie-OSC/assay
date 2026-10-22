@@ -13,12 +13,15 @@ package deskkit
 // same budget whichever schema recorded it; an unavailable counter stays not-observed,
 // never zero).
 //
-// The perf-v3 request rollup buckets records by tool — or by (day, tool) inside a day row —
-// and runs perfrec.ReduceV3 over each bucket, so request merging, identity dedup and the
-// workflow filter keep exactly ReduceV3's meaning. One caveat that buys: ReduceV3's
-// conflict detection works within one bucket, so the same invocation id in TWO buckets (a
-// duplicate whose timestamp moved; byte-identical duplicates share a day and are caught) is
-// not seen as a conflict. Request-latency p50/p90 are ESTIMATES from the merged duration
+// Every perf-v3 figure — the row count, the perf-v3 wall, the forge count and the request
+// rollup — is taken from ONE set: perfrec.SelectV3 over the WHOLE window (identity dedup
+// before filters, conflicting identities excluded, the workflow filter applied), the set
+// perfrec.ReduceV3 aggregates. Only then are the kept records bucketed by tool — or by
+// (day, tool) — and each bucket's requests merged by ReduceV3. Selecting before bucketing
+// means a replayed record is counted once and a conflict whose copies fall on different
+// days is still excluded. A workflow filter matches perf-v3 attribution only; perf-v1 and
+// perf-v2 records carry none, so a filtered view leaves them out (counted as Unattributed)
+// rather than add them to the filtered rows. Request-latency p50/p90 are ESTIMATES from the merged duration
 // histogram (perfrec.EstimateDurationPercentile), never observed durations; rate-limit
 // points are summed only where their coverage is measured.
 
@@ -85,12 +88,16 @@ type PerfDayRow struct {
 }
 
 // PerfDaySummary is the whole `deskperf report --by-day` aggregate. Records counts the
-// invocation records read (perf-v1/v2/v3, never steps); Undated the ones whose timestamp
-// did not parse (counted, never day-assigned). The V3* figures sum the per-bucket
-// perfrec.ReduceV3 outcomes. Rows sort by day, then tool.
+// invocation records the rows read (perf-v1/v2, and the perf-v3 records perfrec.SelectV3
+// keeps; never steps); Undated the ones whose timestamp did not parse (counted, never
+// day-assigned). V3Records is the kept perf-v3 count; V3Duplicates, V3Conflicts and
+// V3Invalid are the window-wide selection's exclusions. Unattributed counts the perf-v1/v2
+// records a workflow filter left out (they carry no attribution to match). Rows sort by day,
+// then tool.
 type PerfDaySummary struct {
 	Records      int          `json:"records"`
 	Undated      int          `json:"undated"`
+	Unattributed int          `json:"unattributed"`
 	V3Records    int          `json:"v3Records"`
 	V3Duplicates int          `json:"v3Duplicates"`
 	V3Conflicts  int          `json:"v3Conflicts"`
@@ -152,17 +159,32 @@ func requestRollup(rows []perfrec.V3RequestStats) []PerfRequestRollup {
 }
 
 // SummarisePerfDays aggregates invocation records into one row per tool × UTC day. Step
-// records subdivide an invocation that has its own record and are never read. The workflow
-// permission and filter pass through to each bucket's perfrec.ReduceV3 unchanged, so a
+// records subdivide an invocation that has its own record and are never read. The perf-v3
+// records are first selected window-wide by perfrec.SelectV3 under the report's permission
+// and workflow filter, and every per-day figure is then derived from that selection, so a
 // workflow filter means here exactly what it means in the pooled report.
 func SummarisePerfDays(recs []PerfRecord, permission perfrec.Profile, filter perfrec.V3Filter) (PerfDaySummary, error) {
 	var s PerfDaySummary
-	type key struct{ day, tool string }
-	buckets := map[key][]PerfRecord{}
+	kept, sel, err := perfrec.SelectV3(recs, permission, filter)
+	if err != nil {
+		return s, err
+	}
+	s.V3Records = len(kept)
+	s.V3Duplicates, s.V3Conflicts, s.V3Invalid = sel.Duplicates, sel.Conflicts, sel.Invalid
+	selected := append([]PerfRecord(nil), kept...)
 	for _, r := range recs {
-		if IsPerfStep(r) {
+		if IsPerfStep(r) || r.Schema == perfrec.SchemaV3 {
 			continue
 		}
+		if filter.Used() {
+			s.Unattributed++
+			continue
+		}
+		selected = append(selected, r)
+	}
+	type key struct{ day, tool string }
+	buckets := map[key][]PerfRecord{}
+	for _, r := range selected {
 		s.Records++
 		t, err := time.Parse(time.RFC3339, r.TS)
 		if err != nil {
@@ -217,14 +239,12 @@ func SummarisePerfDays(recs []PerfRecord, permission perfrec.Profile, filter per
 				row.ForgeUnavailable++
 			}
 		}
+		// rs holds only selected perf-v3 records, so this reduce re-applies a selection they
+		// already pass: it merges the requests and excludes nothing.
 		v3, err := perfrec.ReduceV3(rs, permission, "tool", filter)
 		if err != nil {
 			return s, err
 		}
-		s.V3Records += v3.Records
-		s.V3Duplicates += v3.Duplicates
-		s.V3Conflicts += v3.Conflicts
-		s.V3Invalid += v3.Invalid
 		row.Requests = requestRollup(v3.Requests)
 		s.Rows = append(s.Rows, row)
 	}
@@ -232,15 +252,18 @@ func SummarisePerfDays(recs []PerfRecord, permission perfrec.Profile, filter per
 }
 
 // SummarisePerfV3RequestsByTool is the pooled per-tool perf-v3 request rollup of
-// `deskperf report`: every perf-v3 record in the window, bucketed by tool and merged by
-// perfrec.ReduceV3 under the report's permission and workflow filter. Tools sort by name;
-// a tool whose records carry no request rows (or none the filter keeps) is absent.
+// `deskperf report`: the perf-v3 records perfrec.SelectV3 keeps over the whole window
+// (under the report's permission and workflow filter), bucketed by tool and merged by
+// perfrec.ReduceV3. Tools sort by name; a tool whose records carry no request rows (or none
+// the filter keeps) is absent.
 func SummarisePerfV3RequestsByTool(recs []PerfRecord, permission perfrec.Profile, filter perfrec.V3Filter) ([]PerfToolRequests, error) {
+	kept, _, err := perfrec.SelectV3(recs, permission, filter)
+	if err != nil {
+		return nil, err
+	}
 	byTool := map[string][]PerfRecord{}
-	for _, r := range recs {
-		if r.Schema == perfrec.SchemaV3 {
-			byTool[r.Tool] = append(byTool[r.Tool], r)
-		}
+	for _, r := range kept {
+		byTool[r.Tool] = append(byTool[r.Tool], r)
 	}
 	tools := make([]string, 0, len(byTool))
 	for tool := range byTool {
