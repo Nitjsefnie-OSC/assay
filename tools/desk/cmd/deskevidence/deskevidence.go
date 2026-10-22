@@ -224,7 +224,7 @@ func cmdEvidence(args []string, ac *auditCtx) (err error) {
 	// path RecordName derives from its bytes, retiring the shared appended
 	// docs/streams/verify-outcomes.jsonl log this flag replaces. Mutually exclusive with
 	// --evidence-file/--brief-path.
-	outcomeRecord := fs.String("outcome-record", "", "local JSON file holding ONE new verify-outcome record to commit at the path RecordName derives (mutually exclusive with --evidence-file/--brief-path)")
+	outcomeRecord := fs.String("outcome-record", "", "local JSON file holding ONE new verify-outcome record to commit at the path RecordName derives; with --root, an absolute file outside --root (mutually exclusive with --evidence-file/--brief-path)")
 	// --root binds the LOCAL read of a repo-relative --evidence-file to an explicit
 	// checkout, instead of the current working directory. #1709: a writeguard can reset a
 	// session's cwd to a SHARED checkout between shell calls, so a deskevidence run that did
