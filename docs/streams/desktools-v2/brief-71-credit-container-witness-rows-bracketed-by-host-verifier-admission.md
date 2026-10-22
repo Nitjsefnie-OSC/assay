@@ -37,7 +37,7 @@ consumers:
 
 ## Context
 
-files: statusgen/verifyrun.go, statusgen/verifieradmission.go, statusgen/verifysandbox.go and their tests; docs/brief-rules.md (rule 45); plugins/assay/skills/verify-desk/SKILL.md; plugins/assay/skills/pr-review-desk/SKILL.md; tools/desk/cmd/deskevidence/ (test only); tools/desk/internal/deskkit/verifierattestation.go (read only); statusgen/verifyflip.go and statusgen/evidenceactor.go (read only: the per-line history read Task 8 reuses); tools/desk/cmd/deskread/ (read only: the forge read Task 8 runs)
+files: statusgen/verifyrun.go, statusgen/verifieradmission.go, statusgen/verifysandbox.go and their tests; docs/brief-rules.md (rule 45); plugins/assay/skills/verify-desk/SKILL.md; plugins/assay/skills/pr-review-desk/SKILL.md; tools/desk/cmd/deskevidence/ (test only); tools/desk/internal/deskkit/verifierattestation.go (read only); statusgen/verifyflip.go and statusgen/evidenceactor.go (read only: the per-line history read Task 8 reuses); tools/desk/cmd/deskread/main.go and its tests (one additive field on the `trust` kind, Task 8); tools/desk/internal/deskkit/ (one new test file, row 11; no code change)
 
 facts:
 - Rule 45 (`docs/brief-rules.md:639`) admits `--sandbox=container-netns` as an explicit opt-in for a runner already inside a `--network none` container (`:649`-`:661`). Every sandboxed row records `sandbox=unshare` or `sandbox=container-netns` in its witness Result cell. `witnessSandboxOf` reads it (`statusgen/verifysandbox.go:148`).
@@ -63,10 +63,12 @@ line). The container bracket is therefore a required-proof capability on the
 attestation: a reader that does not support it refuses to credit the row. It is not an
 optional perf-v4 extension that a reader may skip. The verifier attestation format in
 deskkit is unchanged. No new verb is added: the credit check of Task 8 is a read-only flag
-on `verifyrun --bracket-digest`, and its one forge read goes through `deskread`, the read
-verb statusgen already reaches the forge through.
+on `verifyrun --bracket-digest`, and its forge reads (the record, its body history and its
+label history) go through `deskread`, the read verb statusgen already reaches the forge
+through. The one change to `deskread` is an additive field on its existing `trust` kind
+(Task 8(b)); it adds no kind and no forge operation.
 
-single-point-of-failure: the host close step's three-way tree-digest match (host at open, container before its rows, host at close), which binds the bytes the container ran to the admitted home — backed by the host's post-run admission check (the home and the binding did not move), the image digest that pins the `verifyrun` binary computing the in-container digest, and the landing-phase check `deskevidence` already repeats at `--root`. On the credit side, the bracket's digest is keyless and is computed from the brief's own bytes, so a match shows only that the bracket and its span agree with each other; credit rests on Task 8's per-line verifier provenance, attestation-record match and brief and source binding, which a bracket written outside the landing step fails even when its digest matches.
+single-point-of-failure: the host close step's three-way tree-digest match (host at open, container before its rows, host at close), which binds the bytes the container ran to the admitted home — backed by the host's post-run admission check (the home and the binding did not move), the image digest that pins the `verifyrun` binary computing the in-container digest, and the landing-phase check `deskevidence` already repeats at `--root`. On the credit side, the bracket's digest is keyless and is computed from the brief's own bytes, so a match shows only that the bracket and its span agree with each other. Credit rests on Task 8: the dispatcher-owned attestation record, read under `ReadVerifierAttestation`'s rules, which a brief editor cannot write; the brief and source binding; and per-line provenance, which reads the commit author git records. That provenance is tamper-evident, not tamper-proof: whoever can commit to the brief can write the verifier's author address. The check turns such a forgery into a named, diffable act in commit metadata and push events, but it does not prevent it. Server-side rules on who may push to the brief's branch are what close that residual, and they are not part of this brief.
 
 ## Human decision
 
@@ -226,9 +228,14 @@ Stop at implemented.
    does not match its record is not credit, even when the digest matches. State the known
    limits: version 2 receipts are refused; a linked worktree's git directory is not mounted
    in the container, so rows that need `git` history must run on the host; the
-   in-container digest is only as trustworthy as the pinned image that computes it; and
+   in-container digest is only as trustworthy as the pinned image that computes it;
    credit needs the brief's full history and a forge read, so a shallow clone or an
-   unreachable forge is could-not-check, never credit.
+   unreachable forge is could-not-check, never credit; and Task 8's per-line provenance
+   reads the commit author git records, which is tamper-evident, not tamper-proof
+   (`statusgen/evidenceactor.go:65`-`:74`): whoever can commit to the brief can write the
+   verifier's author address. The check makes that forgery a named, diffable act. Only
+   server-side rules on who may push to the brief's branch prevent it, and a verifier
+   roster entry with no numeric id leaves provenance could-not-check.
    Regenerate the Cursor mirror.
 8. Credit check: `statusgen verifyrun --bracket-digest --witness <brief> --credit --source
    <40 hex>`, a read-only flag on the existing verb. `--credit` requires `--source` and a
@@ -249,10 +256,16 @@ Stop at implemented.
       the bracket, and every record's author must classify as the roster's bound verifier
       under `evidenceActorPolicyFromRoster` (`evidenceactor.go:290`), which matches the
       commit author email's numeric id against the roster's `verifier=` binding and never
-      trusts a display name. Unlike the flip judge, a roster human does not qualify: the
-      verifier identity reaches a brief only through `deskevidence`, which checks that
-      the landed commit's author is the verifier App
-      (`tools/desk/cmd/deskevidence/deskevidence.go:73`). This is the per-line test, not
+      trusts a display name. The match must be id-pinned (`idPinned`,
+      `evidenceactor.go:262`): when the roster's verifier entry carries no numeric id, or
+      the verifier is on a forge whose commit address carries none, the match is
+      login-only and provenance is `could-not-check`, never `credited`. Unlike the flip
+      judge, a roster human does not qualify: in normal operation the verifier identity
+      writes a brief only through `deskevidence`, which checks that the landed commit's
+      author is the verifier App (`tools/desk/cmd/deskevidence/deskevidence.go:73`). Blame
+      reads the author recorded in each commit, not the identity that pushed it, so this
+      condition is tamper-evident, not tamper-proof (`evidenceactor.go:65`-`:74`; Task 7's
+      known limits). This is the per-line test, not
       the Evidence-actor lint's any-line test, under which one verifier line anywhere in
       Evidence covers every other line. Any span or bracket line whose working-tree bytes
       differ from `HEAD`'s is `not-credited`, because an uncommitted line has no author.
@@ -261,19 +274,49 @@ Stop at implemented.
       count other than the line count, or a record with no readable author is
       `could-not-check`.
    b. Record. The span's `Verification-Attestation:` line equals, byte for byte, the
-      line the verifier's own attestation record for that run renders. That record is
-      the forge issue the line names (`<repo>#<issue>`), written by the verifier at
-      admission, whose body is the binding `verifierBody` writes
-      (`tools/desk/internal/deskkit/verifierattestation.go:331`). It is read through
-      `deskread issue --issue <repo>#<issue>` and accepted only when its author is the
-      roster's verifier identity and its body parses as a version 1 binding. The
-      expected line is that binding rendered as `VerifierReceipt.EvidenceBinding`
-      renders it (`:487`-`:491`): the same comparison `deskevidence` makes before it
-      writes an outcome record (`tools/desk/cmd/deskevidence/outcomebinding.go:93`-`:96`).
-      The files under `docs/streams/verify-outcomes/` carry no `run=` and are written
-      after landing, so they are not the per-run record. A record by another author, or
-      a rendered line that differs in any field (run, source, brief, model or tier), is
-      `not-credited`. A failed read is `could-not-check`.
+      line rendered from the attestation record for that run. That record is the forge
+      issue the line names (`<repo>#<issue>`). It is dispatcher-owned: the dispatcher
+      writes it before the verifier's work, and the verifier does not
+      (`tools/desk/internal/deskkit/verifierattestation.go:331`-`:338`). It is admitted
+      only under every rule `ReadVerifierAttestation` applies
+      (`verifierattestation.go:501`-`:592`):
+      - its author is the dispatcher under `attestationAuthority("verifier")`
+        (`tools/desk/internal/deskkit/workerattestation.go:92`-`:101`): the roster binds
+        both a dispatcher and a verifier identity, the two are distinct actors, and the
+        author is the dispatcher. A record written by the verifier is refused, and so is
+        a roster that binds the two roles to one actor.
+      - it is an issue, not a pull request; its title is exactly
+        `[verification-attestation] <run>`; and its body is exactly the `verifierBody`
+        rendering of the binding it carries, decoded strictly, with no unknown field.
+      - the binding passes the field checks at `:535`-`:559`: an accepted version,
+        `repo` equal to the repository read, hex `run`, `source` and digests, a valid
+        evidence target, a valid model stamp label and a parseable checkout.
+      - its body history is known, complete and never edited
+        (`attestationRecordObserved`, `workerattestation.go:280`-`:292`).
+      - it is closed, and a second read made after the history read still shows the same
+        author, title, body and closed state (`:565`-`:581`).
+      - the dispatcher's model stamp in its label history is present and equals the
+        binding's model and tier (`:582`-`:589`).
+      statusgen does not link deskkit, and `deskread`'s kinds are transport only: they
+      map no author or edit time to accept or refuse
+      (`tools/desk/cmd/deskread/main.go:23`-`:25`). So the check reads the record with
+      `deskread issue`, its body history with `deskread trust` and its label history with
+      `deskread label-events`, and applies these rules itself. The `trust` kind today
+      carries `bodyEditedAt` and `complete` but not whether the forge reported body
+      history at all (`main.go:883`-`:887`, against `TrustPayload.BodyHistoryKnown`,
+      `tools/desk/internal/deskkit/forge.go:1157`-`:1158`), so an absent `bodyEditedAt`
+      cannot be told apart from an unreported one. Task 8 adds that value to the `trust`
+      kind's output as an additive field, `bodyHistoryKnown`, carried as the forge gave
+      it. The check refuses a record whose `bodyHistoryKnown` is false or absent, as
+      `attestationRecordObserved` does. Row 11 holds it to
+      `ReadVerifierAttestation` on shared fixtures. The expected line is the admitted
+      binding rendered as `VerifierReceipt.EvidenceBinding` renders it (`:487`-`:491`).
+      That is the same comparison `deskevidence` makes before it writes an outcome
+      record (`tools/desk/cmd/deskevidence/outcomebinding.go:93`-`:96`). The files under
+      `docs/streams/verify-outcomes/` carry no `run=` and are written after landing, so
+      they are not the per-run record. A record any rule refuses, or a rendered line
+      that differs in any field (run, source, brief, model or tier), is `not-credited`.
+      A failed read is `could-not-check`.
    c. Binding. The attestation's `brief=` equals the repository-relative path of the
       `--witness` file, so a block copied from another brief does not count. The
       attestation's `source=`, and therefore the bracket's (Task 1), equals `--source`,
@@ -284,7 +327,11 @@ Stop at implemented.
    `not-credited` (including any whose verdict is not `match`), and otherwise 2 when any
    is `could-not-check` or when the file cannot be read or carries no
    `Admission-Bracket:` line. Tests reach no network: they use fixture git repositories
-   with fixture author identities, a fixture roster, and a fake `deskread` on `PATH`.
+   with fixture author identities, a fixture roster, and a fake `deskread` on `PATH`. The
+   record fixtures the fake serves sit in one shared fixture directory,
+   `statusgen/testdata/credit-records/`, each with its expected admit or refuse, so that
+   row 11's deskkit test reads the same files. A `deskread` test pins the new
+   `bodyHistoryKnown` field for both forge backends.
 
 ## Verify
 
@@ -299,7 +346,8 @@ Stop at implemented.
 | 7 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
 | 8 | check | `statusgen --root . --consumers --brief desktools-v2/71 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
 | 9 | check | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
-| 10 | check:ci +mutation | `cd statusgen && go test -run '^TestBracketCredit$' -count=1 -v .` | exit 0 and named PASS; in a fixture git repository with a fixture roster binding a verifier identity and a fake `deskread` on `PATH` serving that verifier's attestation record (no network): a bracketed container witness committed by the verifier identity, whose attestation equals the record's rendered line and names this brief and `--source`, reports `credit=credited` and exits 0; the same bracket and span bytes committed by an identity that is not the verifier still report `verdict=match` and exit 0 under `--bracket-digest` without `--credit`, while with `--credit` they report `verdict=match` and `credit=not-credited` and exit 1; `credit=not-credited` with `verdict=match` is likewise reported for a span in which only the attestation line, or only the bracket line, is the verifier's and the rest another identity's, for one span line rewritten by another identity after landing, for a bracket and span present only in the working tree, for a roster human's commit, for a block copied byte for byte from another brief, for a `--source` that differs from the attestation's, for a record whose rendered line differs in run, model or tier, and for a record whose author is not the verifier; a shallow clone, a missing roster and a failing `deskread` each report `credit=could-not-check` and exit 2; mutation: replace the per-line author check with the any-line test (one verifier-owned line in the range suffices) — the attestation-line-only case is then credited and the named test must fail |
+| 10 | check:ci +mutation | `(cd statusgen && credit_out=$(mktemp) && trap 'rm -f "$credit_out"' 0 && go test -run '^TestBracketCredit$' -count=1 -v . > "$credit_out" 2>&1 && grep -q -- '--- PASS: TestBracketCredit ' "$credit_out")` | exit 0 and named PASS. The fixture setup is a git repository, a roster that binds distinct dispatcher and verifier identities with the verifier pinned by numeric id, and a fake `deskread` on `PATH` serving the shared record fixtures (no network). Base case: a bracketed container witness committed by the verifier identity, whose attestation equals the line rendered from an admitted dispatcher-written record and names this brief and `--source`, reports `credit=credited` and exits 0. Every negative changes exactly one condition from the base case. Each reports `verdict=match` and `credit=not-credited` and exits 1, unless it says otherwise. Condition (a): the same bytes committed by an identity that is not the verifier, which without `--credit` still reports `verdict=match` and exits 0; a span in which only the attestation line, or only the bracket line, is the verifier's and the rest is another identity's; one span line rewritten by another identity after landing; a bracket and span present only in the working tree; a roster human's commit; and a verifier roster entry with no numeric id, which reports `credit=could-not-check` and exits 2. Condition (b), all verifier-committed with this brief and source: a record whose rendered line differs from the span's in run, in source, in brief, in model and in tier (one case each); a record whose author is the verifier rather than the dispatcher; a roster binding dispatcher and verifier to one actor; a record whose title is not exact; a record whose body has an unknown field or is not the exact rendering; a record whose body history shows an edit, is incomplete, or carries no `bodyHistoryKnown`; a record still open; and a record whose dispatcher model stamp is missing or names another model or tier. Condition (c), verifier-committed, with a record that matches the span line: a block copied into this brief whose attestation and record name another brief; and a block whose attestation, record and bracket name a source other than `--source`. A shallow clone, a missing roster and a failing `deskread` each report `credit=could-not-check` and exit 2. Mutations, one per condition, each making the named test fail: (a) replace the per-line author check with the any-line test, which credits the attestation-line-only case; (b) skip the record check, which credits the record-mismatch cases; (c) skip the `brief=` check, which credits the copied-block case; and skip the `source=` check, which credits the other-source case |
+| 11 | check:ci | `(cd tools/desk && parity_out=$(mktemp) && trap 'rm -f "$parity_out"' 0 && go test ./internal/deskkit/ -run '^TestVerifierAttestationCreditParity$' -count=1 -v > "$parity_out" 2>&1 && grep -q -- '--- PASS: TestVerifierAttestationCreditParity ' "$parity_out")` | exit 0 and named PASS; every record fixture row 10 serves, read from the same shared fixture directory and fed to `ReadVerifierAttestation` through a fake forge, is admitted or refused exactly as that fixture's expectation says, which is what `--credit` must also do with it; a fixture that one reader admits and the other refuses fails the test |
 
 Pre-mortem: a container run that is still unattested when admission is not detected is
 caught by row 1. Re-running admission inside the container, or accepting a receipt for a
@@ -315,8 +363,11 @@ the run is caught by row 2's after-rows digest. Loosening the existing sandbox r
 while adding the flags is caught by row 5. A bracket and span written outside the landing
 step, by hand or in another identity's commit, which still report `verdict=match` because
 the digest is keyless, is caught by row 10, as are a bracketed block copied from another
-brief or an earlier source and an attestation that does not match the verifier's record
-for its run. A credit rule that names `verdict=match` alone is caught by row 6.
+brief or an earlier source and an attestation that does not match the record for its
+run. Row 10 isolates each condition, with one mutation per condition. A record written
+by the verifier itself, edited after it was written, or missing the dispatcher's stamp is
+caught by row 10. A `--credit` record check that drifts from `ReadVerifierAttestation`
+is caught by row 11. A credit rule that names `verdict=match` alone is caught by row 6.
 Mutation check for row 1: restore the conditional `required` path for container-netns and
 confirm row 1 goes red. Whether the receipt and close step together prove "immediately
 before and after" is for review to judge, with the human gate as the backstop.
