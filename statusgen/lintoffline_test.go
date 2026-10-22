@@ -379,14 +379,22 @@ func TestDriveLintOfflineNoClaims(t *testing.T) {
 	if code != 0 || strings.Contains(stderr, drift) {
 		t.Fatalf("offline --lint decided drift on claims it did not read (exit %d):\n%s", code, stderr)
 	}
-	if !strings.Contains(stderr, regionNotice) || !strings.Contains(stderr, "alpha/02") ||
+	if !strings.Contains(stderr, regionNotice) || !strings.Contains(stderr, "alpha/02 is claimed") ||
 		!strings.Contains(stderr, "could-not-check") {
 		t.Fatalf("offline --lint must report the claim-dependent region as could-not-check naming alpha/02:\n%s", stderr)
 	}
 
-	// Offline, a region that needs no claim: clean, with no region notice.
-	if code, stderr := lint(false, freeRegion); code != 0 || strings.Contains(stderr, "drive-region-drift") || reads != 0 {
-		t.Fatalf("a region matching the unclaimed render must be clean offline (exit %d, reads %d):\n%s", code, reads, stderr)
+	// Offline, a region matching the unclaimed render: no drift PROBLEM, but never a clean
+	// pass either. A live claim on the todo brief alpha/02 would move it to In-flight and
+	// make this region stale, and this run did not read the claim set, so it is
+	// could-not-check naming alpha/02 as assumed unclaimed. --forge decides it (below).
+	code, stderr = lint(false, freeRegion)
+	if code != 0 || strings.Contains(stderr, drift) || reads != 0 {
+		t.Fatalf("offline --lint decided drift on claims it did not read (exit %d, reads %d):\n%s", code, reads, stderr)
+	}
+	if !strings.Contains(stderr, regionNotice) || !strings.Contains(stderr, "alpha/02 is not claimed") ||
+		!strings.Contains(stderr, "could-not-check") {
+		t.Fatalf("offline --lint must not pass a region an unread claim could make stale; want a could-not-check naming alpha/02:\n%s", stderr)
 	}
 
 	// Offline strength: a hand edit no claim set explains is still drift.
@@ -401,5 +409,47 @@ func TestDriveLintOfflineNoClaims(t *testing.T) {
 	}
 	if code, stderr := lint(true, freeRegion); code == 0 || !strings.Contains(stderr, drift) {
 		t.Fatalf("--lint --forge must find the unclaimed region drifted from the live claim (exit %d):\n%s", code, stderr)
+	}
+}
+
+// TestDriveLintOfflineOwnInFlight pins the other half of the offline drive-region check:
+// a region no claim could change is checked clean. Here alpha/02 is in flight on the
+// board's own status (in-progress), so it is listed under In-flight with or without a
+// claim: it is never named as an assumed claim, and with no todo brief left in the drive
+// there is nothing an unread claim could move. The offline verdict is clean, with no
+// region notice.
+//
+// regression: #3323
+func TestDriveLintOfflineOwnInFlight(t *testing.T) {
+	pinNow(t, driveTestNow)
+	root := goodRepoRoot(t)
+	readme := filepath.Join(root, "docs", "streams", "alpha", "README.md")
+	b, err := os.ReadFile(readme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const todoRow = "| 02 | [Second](brief-02.md) | 1 | todo |"
+	if !strings.Contains(string(b), todoRow) {
+		t.Fatal("fixture: alpha/02's todo row not found")
+	}
+	inProgress := strings.Replace(string(b), todoRow, "| 02 | [Second](brief-02.md) | 1 | in-progress |", 1)
+	if err := os.WriteFile(readme, []byte(inProgress), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	region := alphaDriveRegion(t, root, nil)
+	if !strings.Contains(region, "- alpha/02") {
+		t.Fatalf("fixture: an in-progress alpha/02 must be listed under In-flight:\n%s", region)
+	}
+	writeAlphaPlan(t, root, region)
+
+	prevList, prevDecay := listRemoteBranches, listMergedClosedBranches
+	listRemoteBranches = func(string) ([]string, error) { t.Error("plain --lint listed remote branches"); return nil, nil }
+	listMergedClosedBranches = func(string) (map[string]bool, error) { t.Error("plain --lint decayed claims"); return nil, nil }
+	t.Cleanup(func() { listRemoteBranches, listMergedClosedBranches = prevList, prevDecay })
+	forgeReadsOptedIn = false
+
+	stderr := captureStderr(t, func() { run(root, "lint", nil, nil, "") })
+	if strings.Contains(stderr, "drive-region-drift") {
+		t.Fatalf("a region no claim could change must be clean offline, with no region notice:\n%s", stderr)
 	}
 }
