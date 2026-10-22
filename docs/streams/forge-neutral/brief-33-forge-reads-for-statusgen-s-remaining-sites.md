@@ -935,9 +935,9 @@ Risk-bearing literal values at 844b7807847c. The frontmatter risk answers are al
 
 RISK-VALUE: DERIVED — forgeChangeCommitsMaxPages = 3 @ tools/desk/internal/deskkit/forge_github.go:3560 — GitHub's pull-request commits list stops at 250 commits; with forgeFilePerPage = 100 (forge_github.go:532) that is 3 pages. Completeness comes from reconciling the listed count with the change's own commit count, not from this bound, and mutation M1 shows that reconciliation is load-bearing.
 
-RISK-VALUE: NAMED, NOT DERIVED — gitlabMaxChangeCommitPage = 25 @ tools/desk/internal/deskkit/forge_gitlab.go:4649 — follows the house 25-page convention (25 × gitlabPerPage 100 = 2500 commits) and comes from no GitLab limit. The brief requires only that GitLab at the ceiling reads Complete=false (row 6, gitlab_page_ceiling), and it does. Reversible.
+RISK-VALUE: NAMED, NOT DERIVED — gitlabMaxChangeCommitPage = 25 @ tools/desk/internal/deskkit/forge_gitlab.go:4649 — follows the house 25-page convention (25 × gitlabPerPage 100 = 2500 commits) and comes from no GitLab limit. The brief requires only that GitLab at the ceiling reads Complete=false (row 6, gitlab_page_ceiling), and it does. Reversible. Question filed: #4012
 
-RISK-VALUE: NAMED, NOT DERIVED — gitlabMaxNotePage = 25 @ tools/desk/internal/deskkit/forge_gitlab.go:453 — the same 25-page convention, bounding both GitLab IssueStateEvents walks. The brief names no ceiling for these reads, and overflow clears Complete (row 9). Reversible.
+RISK-VALUE: NAMED, NOT DERIVED — gitlabMaxNotePage = 25 @ tools/desk/internal/deskkit/forge_gitlab.go:453 — the same 25-page convention, bounding both GitLab IssueStateEvents walks. The brief names no ceiling for these reads, and overflow clears Complete (row 9). Reversible. Question filed: #4012
 
 RISK-VALUE: DERIVED — forgeMaxIssuePages = 100 @ tools/desk/internal/deskkit/forge_github.go:745, forgeIssuePerPage = 100 @ tools/desk/internal/deskkit/forge_github.go:740, gitlabMaxIssuePage = 25 @ tools/desk/internal/deskkit/forge_gitlab.go:468, gitlabPerPage = 100 @ tools/desk/internal/deskkit/forge_gitlab.go:443 — these are the ListIssues bounds the brief states (GitHub 100 pages of 100, GitLab 25 pages of 100), and 100 is each forge's page-size maximum. A population past the ceiling reads Incomplete=true with PageCap set (row 5), and 1,200 issues come back whole (row 21).
 
@@ -949,7 +949,7 @@ No timeout, host, endpoint, file mode or credential literal was introduced. The 
 
 Verification-Attestation: medici-finance/assay#3898 run=8aafdd4d426db101a9db522e9b46a075297832e92ea88db4d92d2ebf93c7a02d source=844b7807847c25e5c96979e10dd85fccb08dcbf1 brief=docs/streams/forge-neutral/brief-33-forge-reads-for-statusgen-s-remaining-sites.md model=claude-opus-5-5 tier=strong
 
-**VERIFY: BLOCKED** — 28 of 29 rows pass at 844b7807847c, and all 11 mutants are killed. Row 1 is could-not-check: the full `go test ./...` exited 1 in the network-off sandbox. The four failing packages are all outside the implementation diff, and the cause is environmental (ps exec denied, symlinked scratch TMPDIR). Diagnostic reruns outside the sandbox pass, but they are not acceptance credit. Row 1 needs a qualified Linux runner.
+**VERIFY: BLOCKED** — 28 of 29 rows pass at 844b7807847c, and all 11 mutants are killed. Row 1 is could-not-check: the full `go test ./...` exited 1 in the network-off sandbox. The four failing packages are all outside the implementation diff, and the cause is environmental (ps exec denied, symlinked scratch TMPDIR). Diagnostic reruns outside the sandbox pass, but they are not acceptance credit. Row 1 needs a qualified Linux runner (blocker: #4010).
 
 
 ## Review
