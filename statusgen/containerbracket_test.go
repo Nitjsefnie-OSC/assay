@@ -741,4 +741,22 @@ func TestRelWithinSymlinkedParent(t *testing.T) {
 	if rel, ok := relWithin(home, filepath.Join(outside, "missing", "receipt.json")); ok {
 		t.Fatalf("a path outside the home reads as inside it (%s)", rel)
 	}
+	// A ".." after a symlink steps out of the link's target, as the kernel
+	// resolves it, never out of the link's own directory.
+	sub := filepath.Join(home, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sub, filepath.Join(outside, "l")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(sub, "back")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := relWithin(home, outside+"/l/../w"); !ok {
+		t.Fatalf("<outside>/l/../w with l linking to <home>/sub lands in the home but reads as outside it")
+	}
+	if rel, ok := relWithin(home, sub+"/back/../w"); ok {
+		t.Fatalf("<home>/sub/back/../w with back linking outside lands outside the home but reads as inside it (%s)", rel)
+	}
 }

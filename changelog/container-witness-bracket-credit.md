@@ -20,8 +20,11 @@
   Rule 45, verify-desk and pr-review-desk now credit a container row only inside exactly one
   closed bracket whose verdict is `match`, and state that `verdict=match` shows only that the
   bracket is consistent with its span, not who wrote it: a row is credited only when the
-  bracket line and every span line were landed by the verifier's landing step, the span's
-  attestation matches the verifier's attestation record for that run, and that attestation
-  names the brief that contains it and the source under verification. No tool checks those
-  conditions yet.
+  bracket line and every span line were landed by the verifier's landing step (per-line
+  `author-mail` with the pinned id, never the display name), the span's whole attestation line
+  (run, source, brief, model and tier) matches the verifier's attestation record for that run
+  (the closed, never-edited `[verification-attestation] <run>` issue authored by the dispatcher
+  identity), and that attestation names the brief that contains it and the source under
+  verification. Per-line provenance is author-asserted attribution, not authorization; the
+  forge-attributed record is the anchor. No tool checks those conditions yet.
 - The driver's ruling of 2026-10-22 that bracketed container runs count as Linux witnesses, for ratification at merge: #4069

@@ -1071,18 +1071,34 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   exactly one bracket's span.
   **`verdict=match` shows only that the bracket is consistent with its span, not who wrote it.**
   The digest is keyless and computed from the file's own bytes. A row is credited only when all of
-  these conditions hold: (1) the bracket line and every span line were landed by the verifier's
-  landing step, read per line (`git blame` on the landed file: each line's commit is the verifier
-  App's), never the any-line Evidence-actor test; (2) the span's attestation matches the
-  verifier's attestation record for that run (the record its `<repo>#<issue>` names); and (3) that
-  attestation names the brief that contains it and the source under verification. A bracket and
-  span written outside the landing step, a bracketed block copied from another brief or an earlier
-  source, or an attestation that does not match its record is not credit, even when the digest
-  matches. `verifyrun` does not check these conditions; check them yourself.
+  these conditions hold:
+  1. The bracket line and every span line were landed by the verifier's landing step. On the
+     landed brief, `git blame --line-porcelain` must give every line from the header through the
+     bracket an `author-mail` that is the roster verifier's noreply address with its pinned
+     numeric id. Never judge by the display name, which anyone can set. A roster human does not
+     qualify, and one verifier line elsewhere in Evidence does not cover the rest.
+  2. The span's attestation matches the verifier's attestation record for that run. The whole
+     `Verification-Attestation:` line (run, source, brief, model and tier) must equal the line
+     rendered from the record its `<repo>#<issue>` names. That record must pass every rule
+     `ReadVerifierAttestation` applies: an issue titled exactly `[verification-attestation] <run>`,
+     authored by the roster's dispatcher identity (distinct from the verifier), closed, its body
+     never edited, and carrying the dispatcher's model stamp for that model and tier. A record by
+     any other author, the verifier included, is not credit: a look-alike issue anyone filed
+     would otherwise pass.
+  3. That attestation names the brief that contains it (`brief=`) and the source under
+     verification (`source=`).
+
+  A bracket and span written outside the landing step, a bracketed block copied from another
+  brief or an earlier source, or an attestation that does not match its record is not credit,
+  even when the digest matches. `verifyrun` does not check these conditions; check them yourself.
   Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
   refused in container mode; a linked worktree's git directory is not mounted in the container, so
-  rows that need git history must run on the host; and the in-container digest is only as
-  trustworthy as the pinned image that computes it. The sequence: rule 45 in the brief rules and
+  rows that need git history must run on the host; the in-container digest is only as
+  trustworthy as the pinned image that computes it; and condition 1 reads the commit author git
+  records, which is author-asserted attribution, not authorization: whoever can commit to the brief can write
+  the verifier's author address. The forge-attributed record in condition 2 is the anchor. Only
+  server-side rules on who may push to the brief's branch prevent the forgery, and a verifier
+  roster entry with no numeric id leaves condition 1 could-not-check. The sequence: rule 45 in the brief rules and
   verify-desk §Pre-work admission.
 
 ### Merge-time re-check + the body/Verify re-check

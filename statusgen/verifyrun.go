@@ -1763,8 +1763,10 @@ Flags:
                     computed from the file's own bytes. It is not credit on
                     its own: a row is credited only when the bracket line and
                     every span line were landed by the verifier's landing
-                    step, the span's attestation matches the verifier's
-                    attestation record for that run, and that attestation
+                    step (per-line author-mail, pinned id), the span's whole
+                    attestation line matches the verifier's attestation
+                    record for that run (the dispatcher-authored record, all
+                    five fields), and that attestation
                     names the brief that contains it and the source under
                     verification (rule 45). This verb checks none of those.
   --in-container    run the rows inside the PINNED harness container instead of on

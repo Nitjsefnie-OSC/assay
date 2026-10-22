@@ -180,25 +180,35 @@ func relWithin(root, p string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
-// resolveExisting makes s absolute and resolves symlinks in its longest
-// existing prefix, keeping the missing tail as written.
+// resolveExisting makes s absolute and resolves it one component at a time,
+// as the kernel does: each existing prefix has its symlinks resolved before
+// the next component, so a ".." after a symlink steps out of the link's
+// target, never out of the link's own directory. Once a component does not
+// exist, the rest is kept as written (cleaned lexically).
 func resolveExisting(s string) string {
-	if abs, err := filepath.Abs(s); err == nil {
-		s = abs
-	}
-	s = filepath.Clean(s)
-	rest := ""
-	for dir := s; ; {
-		if real, err := filepath.EvalSymlinks(dir); err == nil {
-			return filepath.Join(real, rest)
+	if !filepath.IsAbs(s) {
+		if wd, err := os.Getwd(); err == nil {
+			s = wd + string(filepath.Separator) + s
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return s
-		}
-		rest = filepath.Join(filepath.Base(dir), rest)
-		dir = parent
 	}
+	vol := filepath.VolumeName(s)
+	cur := vol + string(filepath.Separator)
+	if real, err := filepath.EvalSymlinks(cur); err == nil {
+		cur = real
+	}
+	parts := strings.Split(filepath.ToSlash(s[len(vol):]), "/")
+	for i, part := range parts {
+		if part == "" || part == "." {
+			continue
+		}
+		next := filepath.Join(cur, part)
+		real, err := filepath.EvalSymlinks(next)
+		if err != nil {
+			return filepath.Join(append([]string{cur}, parts[i:]...)...)
+		}
+		cur = real
+	}
+	return cur
 }
 
 // homeTreeDigest is the one tree digest every bracket step uses: sha256 over

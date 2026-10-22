@@ -713,21 +713,38 @@ passing run — which is why they are lint rules and not review vigilance.
       `verdict=match` shows only that the bracket is consistent with its
       span, not who wrote it: the digest is keyless and computed from the
       file's own bytes. A row is credited only when all of these conditions
-      hold: the bracket line and every span line were landed by the
-      verifier's landing step (read per line, never the any-line
-      Evidence-actor test), the span's attestation matches the verifier's
-      attestation record for that run, and that attestation names the brief
-      that contains it and the source under verification. A bracket and span
-      written outside the landing step, a bracketed block copied from another
-      brief or an earlier source, or an attestation that does not match its
-      record is not credit, even when the digest matches. `verifyrun` does
-      not check these conditions; the reviewer does. A
+      hold. (1) The bracket line and every span line were landed by the
+      verifier's landing step: on the landed brief, `git blame
+      --line-porcelain` gives every line an `author-mail` that is the roster
+      verifier's noreply address with its pinned numeric id, never judged by
+      the display name; a roster human does not qualify, and one verifier
+      line elsewhere does not cover the rest. (2) The span's attestation
+      matches the verifier's attestation record for that run: the whole
+      `Verification-Attestation:` line (run, source, brief, model and tier)
+      equals the line rendered from the record its `<repo>#<issue>` names,
+      and that record is admitted as `ReadVerifierAttestation` admits it: an
+      issue titled exactly `[verification-attestation] <run>`, authored by
+      the roster's dispatcher identity (distinct from the verifier), closed,
+      its body never edited, and carrying the dispatcher's model stamp for
+      that model and tier. A record by any other author, the verifier
+      included, is not credit. (3) That attestation names the brief that
+      contains it (`brief=`) and the source under verification (`source=`).
+      A bracket and span written outside the landing step, a bracketed block
+      copied from another brief or an earlier source, or an attestation that
+      does not match its record is not credit, even when the digest matches.
+      `verifyrun` does not check these conditions; the reviewer does. A
       container-netns run without
       `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
       Known limits: version 2 (cross-repository) receipts are refused; a
       linked worktree's git directory is not mounted in the container, so rows
-      that need git history run on the host; and the in-container digest is
-      only as trustworthy as the pinned image that computes it.
+      that need git history run on the host; the in-container digest is
+      only as trustworthy as the pinned image that computes it; and the
+      per-line provenance in (1) reads the commit author git records, which
+      is author-asserted attribution, not authorization: whoever can commit
+      to the brief can write the verifier's author address. The forge-attributed record
+      in (2) is the anchor; only server-side rules on who may push to the
+      brief's branch prevent the forgery, and a verifier roster entry with
+      no numeric id leaves provenance could-not-check.
     - `check` — deterministic but ENV-BOUND (a live PEM, a real queue, a tool on
       PATH). A runner executes it; CI skips an explicitly-classed one (its verdict
       rests on the verifier's authorship+signature, not on a CI re-run).

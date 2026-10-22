@@ -194,13 +194,29 @@ bracket's own `bracket=` line, and the bracket's `opened` must precede `closed`.
 
 `verdict=match` shows only that the bracket is consistent with its span, not who wrote it:
 the digest is keyless and computed from the file's own bytes. A row is credited only when
-all of these conditions hold: the bracket line and every span line were landed by the
-verifier's landing step (`deskevidence`, read per line, never the any-line Evidence-actor
-test), the span's attestation matches the verifier's attestation record for that run, and
-that attestation names the brief that contains it and the source under verification. A
-bracket and span written outside the landing step, a bracketed block copied from another
+all of these conditions hold:
+
+1. The bracket line and every span line were landed by the verifier's landing step
+   (`deskevidence`). Per line, `git blame --line-porcelain` gives an `author-mail` that is the
+   roster verifier's noreply address with its pinned numeric id, never judged by the display
+   name. A roster human does not qualify.
+2. The span's attestation matches the verifier's attestation record for that run. The whole
+   `Verification-Attestation:` line (run, source, brief, model and tier) equals the line
+   rendered from the record its `<repo>#<issue>` names. That record passes every rule
+   `ReadVerifierAttestation` applies: titled exactly `[verification-attestation] <run>`,
+   authored by the roster's dispatcher identity (distinct from the verifier), closed, never
+   edited, and carrying the dispatcher's model stamp for that model and tier. A record by any
+   other author, the verifier included, is not credit.
+3. That attestation names the brief that contains it and the source under verification.
+
+A bracket and span written outside the landing step, a bracketed block copied from another
 brief or an earlier source, or an attestation that does not match its record is not credit,
-even when the digest matches. `verifyrun` does not check these conditions. Version 2 (cross-repository) receipts are refused in container mode, and a linked
+even when the digest matches. `verifyrun` does not check these conditions. Condition 1 reads
+the commit author git records, which is author-asserted attribution, not authorization: whoever can commit
+to the brief can write the verifier's author address. The forge-attributed record in
+condition 2 is the anchor. Only server-side rules on who may push to the brief's branch
+prevent the forgery, and a verifier roster entry with no numeric id leaves condition 1
+could-not-check. Version 2 (cross-repository) receipts are refused in container mode, and a linked
 worktree's git directory is not mounted in the container, so rows that need git history
 run on the host.
 
