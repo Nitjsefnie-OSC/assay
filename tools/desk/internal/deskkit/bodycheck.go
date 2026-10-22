@@ -629,7 +629,8 @@ func scanSurface(surface string, content []byte, rulingClaim bool) error {
 		// Rule 7 (Go subtest-name arm) and Rule 8 (diffstat-bar arm). Each is NARROWER than
 		// the class it clears and bounded by paired positive controls: isGoSubtestName admits
 		// `TestX/sub` only when the head is already an exempt identifier and the tail is
-		// words plus at most four other characters (TestSubtestNameControls keeps a token
+		// at most 16 characters of words plus at most four other characters
+		// (TestSubtestNameControls and TestSubtestTailCostOnRandom keep a token
 		// glued behind a test name refused); isDiffstatBar admits a run of nothing but '+'
 		// (TestDiffstatBarControls keeps a mixed run and a repeated letter refused).
 		if isGoSubtestName(run) || isDiffstatBar(run) {
@@ -643,7 +644,7 @@ func scanSurface(surface string, content []byte, rulingClaim bool) error {
 				"acronym, optionally plural like PRs, a V plus 1-2 digits like V1, the "+
 				"numeronyms K8s/I18n/L10n/A11y and OAuth "+
 				"count as words), Go subtest names (TestX/sub) whose head is such an "+
-				"identifier and whose subtests are words, "+
+				"identifier and whose subtest path is words of at most 16 chars, "+
 				"key=<sha|path|identifier> assignments whose key is short "+
 				"or word-shaped, a git SHA behind an ALL-CAPS digest key (…_SHA, …_DIGEST, "+
 				"…_DIGEST_HEX; never a credential-named variable), all-'=' banner separators, "+
@@ -782,6 +783,15 @@ var goTestPrefixes = []string{"Test", "Benchmark", "Fuzz", "Example"}
 // so `…/ab/cd/ef/gh` cannot assemble a token out of short pieces.
 const maxSubtestOpaque = maxAcronym
 
+// maxSubtestTail caps the WHOLE subtest path after the first slash — every segment and
+// the slashes between them — at half runThreshold. A tail that short is a fragment the
+// scanner would never flag on its own, so gluing it behind an already-exempt head adds no
+// run the scanner was holding back. Without it the word-shaped arm (looksLikeWords) has no
+// cap below maxWordSegment, and a random all-lowercase run is one long "word": a 32-char
+// lowercase tail behind a valid test name would pass (TestSubtestTailCostOnRandom). The
+// longest tail the admitted fixtures need is 13 (`rejects/stale`).
+const maxSubtestTail = runThreshold / 2
+
 // isGoSubtestName reports whether run is a Go test name with a subtest path —
 // `TestX/sub`, as `go test -run` and the test output print it — whose top-level name is
 // itself an exempt identifier and whose subtest segments are words (Rule 7).
@@ -798,19 +808,22 @@ const maxSubtestOpaque = maxAcronym
 //
 //   - the head must open with a goTestPrefixes entry AND pass isIdentifierLike by itself,
 //     i.e. it is already exempt as a bare run;
+//   - the tail (everything after the first slash) is at most maxSubtestTail (16)
+//     characters long;
 //   - every tail segment must be non-empty and either word-shaped by the same test a
 //     path segment gets (looksLikeWords) or a short lowercase-alphanumeric piece (`no`,
 //     `go`, `v2`); the short pieces together may carry at most maxSubtestOpaque
 //     characters.
 //
-// So the run can carry no more payload than an exempt identifier plus four characters.
+// So the run can carry no more payload than an exempt identifier plus a 16-character
+// tail — a sub-threshold fragment — of which at most four characters are not word-shaped.
 // A credential glued behind a test name (`TestFoo/<token>`), a random head that merely
 // starts with `Test`, and a tail split into many short pieces all still refuse
 // (TestSubtestNameControls), and on uniformly random base64 runs the rule admits nothing
 // (TestSubtestRuleCostOnRandom).
 func isGoSubtestName(run string) bool {
 	head, tail, ok := strings.Cut(run, "/")
-	if !ok || !hasGoTestPrefix(head) || !isIdentifierLike(head) {
+	if !ok || len(tail) > maxSubtestTail || !hasGoTestPrefix(head) || !isIdentifierLike(head) {
 		return false
 	}
 	opaque := 0
@@ -1965,13 +1978,13 @@ func versionUnit(seg string, k, acronymsSoFar int) (int, bool) {
 	return 0, false
 }
 
-// numeronymAt returns the length of the closed-list numeronym (or mixedCaseWords entry)
-// starting at i, or 0. The unit must end the run or be followed by a capital, so `K8s` is
-// a word while `K8sx` and `K8s9` are not — the unit never ends mid-token.
 // closedListUnits is numeronyms followed by mixedCaseWords: every closed-list unit
 // numeronymAt may consume.
 var closedListUnits = append(append([]string{}, numeronyms...), mixedCaseWords...)
 
+// numeronymAt returns the length of the closed-list numeronym (or mixedCaseWords entry)
+// starting at i, or 0. The unit must end the run or be followed by a capital, so `K8s` is
+// a word while `K8sx` and `K8s9` are not — the unit never ends mid-token.
 func numeronymAt(seg string, i int) int {
 	for _, w := range closedListUnits {
 		if strings.HasPrefix(seg[i:], w) {

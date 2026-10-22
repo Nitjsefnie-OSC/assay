@@ -20,16 +20,18 @@ var (
 	subLong    = "TestLongIdentifierThatGoes" + "OnAndOnForeverMore/no" // 47, head past 48-char path cap
 	subNested  = "BenchmarkSupersede" + "MarkerCitation/ok/go"          // 38, two short pieces = 4 chars
 	subWords   = "TestSupersedeMarker" + "Citation/rejects/stale"       // 41, word subtests
+	subTail16  = "TestSupersedeMarker" + "Citation/rejects/outdated"    // 44, tail at the 16-char cap
 	subCommand = "go test -run 'TestSupersedeMarker" + "HeldSideRejects/no' ./internal/"
 
 	// Refused: credential-shaped material of the same length and charset.
-	subRandom     = "Qx7pLk2wZt9mNc4bYf6R" + "hVs8Ju3XoAe/G5nTq"   // 37, random base64 with a slash
-	subRandomHead = "Test" + "Qx7pLk2wZt9mNc4bYf6Rh" + "Vs8J/no"   // 32+, Test prefix, random head
-	subTokenTail  = "TestSupersedeMarker/" + scanSecret40          // token glued behind a test name
-	subShortTail  = "TestSupersedeMarker" + "Rejects/ab12/cd34"    // 8 opaque chars, budget is 4
-	subPadTail    = "TestSupersedeMarker" + "CitationRejects/a+b=" // '+'/'=' in a subtest
-	subLowerHead  = "Testsupersedemarker" + "citationrejects/go"   // not a Go test name
-	subEmptySeg   = "TestSupersedeMarker" + "CitationRejects//go"  // empty segment
+	subRandom     = "Qx7pLk2wZt9mNc4bYf6R" + "hVs8Ju3XoAe/G5nTq"       // 37, random base64 with a slash
+	subRandomHead = "Test" + "Qx7pLk2wZt9mNc4bYf6Rh" + "Vs8J/no"       // 32+, Test prefix, random head
+	subTokenTail  = "TestSupersedeMarker/" + scanSecret40              // token glued behind a test name
+	subShortTail  = "TestSupersedeMarker" + "Rejects/ab12/cd34"        // 8 opaque chars, budget is 4
+	subPadTail    = "TestSupersedeMarker" + "CitationRejects/a+b="     // '+'/'=' in a subtest
+	subLowerHead  = "Testsupersedemarker" + "citationrejects/go"       // not a Go test name
+	subEmptySeg   = "TestSupersedeMarker" + "CitationRejects//go"      // empty segment
+	subLongTail   = "TestCIRequired" + "Matches/rejectsoutdatedmarker" // acronym head, 21-char tail past the 16 cap
 
 	// Diffstat bar: admitted, and its controls.
 	statBar      = "docs/loom-design.md | 108 " + strings.Repeat("+", 52)
@@ -49,7 +51,7 @@ var (
 
 // regression: #4076
 func TestSubtestNamesAdmitted(t *testing.T) {
-	for _, s := range []string{subGo, subNo, subV2, subK8s, subLong, subNested, subWords, subCommand} {
+	for _, s := range []string{subGo, subNo, subV2, subK8s, subLong, subNested, subWords, subTail16, subCommand} {
 		if err := BodyCheck([]byte("Expect: " + s + " passes\n")); err != nil {
 			t.Errorf("Go subtest name %q refused: %v", s, err)
 		}
@@ -58,7 +60,7 @@ func TestSubtestNamesAdmitted(t *testing.T) {
 
 // regression: #4076
 func TestSubtestNameControls(t *testing.T) {
-	for _, s := range []string{subRandom, subRandomHead, subTokenTail, subShortTail, subPadTail, subLowerHead, subEmptySeg} {
+	for _, s := range []string{subRandom, subRandomHead, subTokenTail, subShortTail, subPadTail, subLowerHead, subEmptySeg, subLongTail} {
 		if err := BodyCheck([]byte("Expect: " + s + "\n")); !IsRefused(err) {
 			t.Errorf("credential-shaped run %q admitted (err=%v)", s, err)
 		}
@@ -104,6 +106,44 @@ func TestSubtestRuleCostOnRandom(t *testing.T) {
 		}
 		if marginal > 5 {
 			t.Errorf("%d-char TestX-prefixed runs newly admitted: %d of %d (ceiling 5)", n, marginal, trials)
+		}
+	}
+}
+
+// TestSubtestTailCostOnRandom pins the tail half of isGoSubtestName on token material: a
+// VALID, acronym-bearing test-name head followed by a slash and a random 32-char tail
+// drawn from the lowercase alphabet, and from the lowercase-alphanumeric alphabet. The
+// head is exempt on its own, so this measures exactly what the tail rule admits; every
+// sample must still refuse through the full scanner (BodyCheck), as on main.
+func TestSubtestTailCostOnRandom(t *testing.T) {
+	const (
+		trials = 3000
+		tail   = 32
+		lower  = "abcdefghijklmnopqrstuvwxyz"
+	)
+	head := "TestCIRequired" + "Matches" // acronym-bearing, exempt as a bare identifier
+	if err := BodyCheck([]byte("Expect: " + head + "\n")); err != nil {
+		t.Fatalf("control head %q refused on its own: %v", head, err)
+	}
+	for _, alpha := range []struct{ name, chars string }{
+		{"lowercase", lower},
+		{"lowercase-alnum", lower + "0123456789"},
+	} {
+		rng := rand.New(rand.NewSource(20261022))
+		admitted := 0
+		for i := 0; i < trials; i++ {
+			b := make([]byte, tail)
+			for j := range b {
+				b[j] = alpha.chars[rng.Intn(len(alpha.chars))]
+			}
+			if err := BodyCheck([]byte("Expect: " + head + "/" + string(b) + "\n")); !IsRefused(err) {
+				admitted++
+			}
+		}
+		t.Logf("%s %d-char tails behind %q: admitted %d of %d", alpha.name, tail, head, admitted, trials)
+		if admitted > 0 {
+			t.Errorf("%s %d-char random tails admitted behind a valid test name: %d of %d (ceiling 0)",
+				alpha.name, tail, admitted, trials)
 		}
 	}
 }
