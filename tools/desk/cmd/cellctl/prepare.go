@@ -17,6 +17,9 @@ import (
 // leases remain with the existing per-role launch owner on every invocation.
 func (c *Cell) prepareLaunch() (bool, error) {
 	began := time.Now()
+	if _, err := c.scratchPolicy(); err != nil {
+		return false, err
+	}
 	if err := c.cacheAdmission(); err != nil {
 		return false, err
 	}

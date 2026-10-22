@@ -138,6 +138,14 @@ func TestCellPrepFences(t *testing.T) {
 	t.Run("profile content", cellProfileChanges)
 	t.Run("cache accounting", TestCellCacheEnrollmentBounded)
 	c := preparedCell(t)
+	c.Env.Put("CELL_SCRATCH_MAX_BYTES", "invalid")
+	if _, err := c.prepareLaunch(); err == nil {
+		t.Fatal("invalid scratch policy published preparation")
+	}
+	if _, err := os.Stat(filepath.Join(c.Dir, "run", "scratch", "preparation.json")); !os.IsNotExist(err) {
+		t.Fatal("failed preparation left a reusable receipt")
+	}
+	c.Env.Put("CELL_SCRATCH_MAX_BYTES", "")
 	hashes := retainedHistory(t, c, 10)
 	var wg sync.WaitGroup
 	fresh := make(chan bool, 8)

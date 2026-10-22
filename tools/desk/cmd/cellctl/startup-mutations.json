@@ -4,7 +4,7 @@
     "name": "remove preparation fence",
     "file": "internal/cellscratch/prepare.go",
     "old": "if err == nil && string(before) == string(want) {",
-    "new": "if err == nil {"
+    "new": "if err == nil && len(before) >= 0 {"
   },
   "mutations": [
     {
@@ -60,6 +60,12 @@
       "file": "internal/cellcache/cache.go",
       "old": "if m.lock != nil {\n\t\tm.lock.Release()\n\t\tm.lock = nil\n\t}\n\tv := Measurement",
       "new": "if m.lock != nil { m.lock = m.lock }\n\tv := Measurement"
+    },
+    {
+      "name": "plant independent cache admission walk",
+      "file": "internal/cellcache/admit.go",
+      "old": "const AdmitMaxAge =",
+      "new": "func secondCacheAdmission(m *manager) Report {return m.check(false)}\n\nconst AdmitMaxAge ="
     }
   ],
   "timeout": {
