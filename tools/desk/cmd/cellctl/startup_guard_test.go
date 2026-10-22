@@ -14,6 +14,12 @@ func startupWalkSites(name string, src []byte) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	cacheNames := map[string]bool{"cellcache": true}
+	for _, spec := range f.Imports {
+		if strings.HasSuffix(strings.Trim(spec.Path.Value, "\""), "/cellcache") && spec.Name != nil {
+			cacheNames[spec.Name.Name] = true
+		}
+	}
 	var bad []string
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
@@ -29,15 +35,26 @@ func startupWalkSites(name string, src []byte) ([]string, error) {
 			if ok && sel.Sel.Name == "Sweep" && fn.Name.Name != "sweepScratch" {
 				bad = append(bad, name+":"+fn.Name.Name)
 			}
+			if ok {
+				pkg, isPackage := sel.X.(*ast.Ident)
+				if isPackage && cacheNames[pkg.Name] {
+					switch sel.Sel.Name {
+					case "Check", "CheckRecorded", "Admit", "AdmitRecorded", "Wipe":
+						if fn.Name.Name != "cmdCache" && fn.Name.Name != "resetCell" {
+							bad = append(bad, name+":"+fn.Name.Name)
+						}
+					}
+				}
+			}
 			return true
 		})
 	}
 	return bad, nil
 }
 func startupWalkGuard(t *testing.T) {
-	planted, err := startupWalkSites("second.go", []byte("package main;func secondStartup(){s.Sweep(p,true)}"))
+	planted, err := startupWalkSites("second.go", []byte("package main;import cache \"github.com/medici-finance/assay/tools/desk/internal/cellcache\";func secondStartup(){s.Sweep(p,true)};func secondCacheStartup(){cache.Check(p,true)}"))
 	must(t, err)
-	if len(planted) != 1 || planted[0] != "second.go:secondStartup" {
+	if len(planted) != 2 || planted[0] != "second.go:secondStartup" || planted[1] != "second.go:secondCacheStartup" {
 		t.Fatal("planted second walking caller escaped", planted)
 	}
 	entries, err := os.ReadDir(".")
@@ -51,7 +68,7 @@ func startupWalkGuard(t *testing.T) {
 		bad, err := startupWalkSites(entry.Name(), src)
 		must(t, err)
 		if len(bad) > 0 {
-			t.Fatalf("recursive scratch walk outside explicit maintenance: %v", bad)
+			t.Fatalf("recursive history walk outside explicit maintenance: %v", bad)
 		}
 	}
 }

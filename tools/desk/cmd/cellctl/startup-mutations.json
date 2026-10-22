@@ -78,6 +78,12 @@
       "file": "internal/cellscratch/store.go",
       "old": "if len(errs) > 0 {\n\t\trep.Partial = true",
       "new": "if false && len(errs) > 0 {\n\t\trep.Partial = true"
+    },
+    {
+      "name": "plant independent public cache walk caller",
+      "file": "cmd/cellctl/cache.go",
+      "old": "func (c *Cell) cacheAdmission() error {",
+      "new": "func secondPublicCacheWalk(){cellcache.Check(cellcache.Policy{},true)}\n\nfunc (c *Cell) cacheAdmission() error {"
     }
   ],
   "timeout": {
