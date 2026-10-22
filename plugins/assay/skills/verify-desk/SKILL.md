@@ -163,6 +163,29 @@ and stamp but no Evidence already landed. The record admits
 Evidence only for its own brief: that brief, its stream-index row, or an outcome record
 keyed to it. Landing Evidence for any other brief refuses, even with a valid record.
 
+A runner inside a `--network none` container cannot reach the forge, so it never runs
+the check itself. The host brackets the container run instead, within one dispatch and
+with no edit to the home between the steps:
+
+1. Host open: `statusgen verifyrun --open-bracket --root <home> --brief <path> --out
+   <receipt>`, with `<receipt>` outside the home. It runs the check, digests the home's
+   tree and writes the receipt. A refused check writes nothing.
+2. Container run: `statusgen verifyrun --sandbox=container-netns --brief <path>
+   --admission-receipt <receipt> --container-image-digest sha256:<64 hex> --witness
+   <file>`, with the receipt mounted read-only and `<file>` a new file outside the home.
+   It refuses before any row unless the mounted root digests to the receipt's tree, and
+   refuses after the rows if they changed it. Without a receipt it refuses outright.
+3. Host close: `statusgen verifyrun --close-bracket --root <home> --brief <path>
+   --admission-receipt <receipt> --witness <file>`. It re-runs the check and appends one
+   `Admission-Bracket:` line only when the check re-admits the run the witness names and
+   the home still digests to both the receipt's tree and the witness's `Tree-Digest`.
+
+Land the closed witness file's bytes, bracket line included, as the Evidence block. A
+container row without its `Admission-Bracket` line is unattested and is not a Linux
+witness. Version 2 (cross-repository) receipts are refused in container mode, and a linked
+worktree's git directory is not mounted in the container, so rows that need git history
+run on the host.
+
 On failed pre-work stamping, no verifier prompt is emitted and the claim is released.
 Keep the retained worktree for recovery; return its real dispatch receipt to the coordinator
 desk, which runs `deskdispatch --attest-verifier --root <home>`. This creates no replacement
@@ -374,6 +397,8 @@ hold. The SHA recorded in Evidence is the one the cross-check confirmed, not the
   verifyrun re-executes each Verify row in a fresh subshell at the repo root and writes back the
   command, exit code, an output hash, the date and the runner identity; that witness table is what
   turns an Evidence row from prose into something a reviewer can re-run and compare.
+  In a `--network none` container, run it only inside the admission bracket (§Pre-work
+  admission); the closed witness file, `Admission-Bracket` line included, is what lands.
   A `verified`/`done` closure this branch makes with no witness for a Verify row is a hard lint
   PROBLEM, not the softer per-stream NOTICE the inherited backlog still gets.
 - **Fail-first: a risk-bearing row must red on the base.** When the table has a risk-bearing row

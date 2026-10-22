@@ -1048,6 +1048,20 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   (`references/leak-audience-check.md`); on a purely internal diff both are silent — say so rather
   than omitting them. **The verdict itself is a real GitHub review by the reviewer App**, posted via
   `deskpost` under the body schema deskpost enforces (`references/verdict-format.md`).
+- **A container row counts only inside a closed admission bracket.** A `sandbox=container-netns`
+  witness row counts as a Linux witness only when the same Evidence block carries, below its
+  table, the `Verification-Attestation:` line, a `Container-Image: sha256:…` digest, a
+  `Tree-Digest: sha256:…` line and an `Admission-Bracket:` line whose `tree=` equals the
+  `Tree-Digest`, whose `opened=` precedes `closed=`, and whose `witness=` matches the block. The
+  `witness=` span is explicit: the witness header line (`| # | Command | …`) through the
+  `Tree-Digest:` line, one newline per line, with every ` (on-behalf-of …)` annotation deleted, so
+  the landing's principal stamp leaves it unchanged. Save that span to `span.txt` and compare
+  `sed -E 's/ \(on-behalf-of [^()]*\)//g' span.txt | sha256sum` with the `witness=` value.
+  Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
+  refused in container mode; a linked worktree's git directory is not mounted in the container, so
+  rows that need git history must run on the host; and the in-container digest is only as
+  trustworthy as the pinned image that computes it. The sequence: rule 45 in the brief rules and
+  verify-desk §Pre-work admission.
 
 ### Merge-time re-check + the body/Verify re-check
 

@@ -1665,6 +1665,11 @@ Usage:
   statusgen verifyrun --brief <path> [--dry-run] [--timeout <dur>] [--root <dir>] [--sandbox <mode>]
   statusgen verifyrun --brief <path> --fail-first [--base <rev>] [--dry-run]
   statusgen verifyrun --check <path>
+  statusgen verifyrun --open-bracket --root <home> --brief <path> --out <receipt>
+  statusgen verifyrun --sandbox=container-netns --brief <path> --admission-receipt <receipt>
+                      --container-image-digest sha256:<64 hex> --witness <file>
+  statusgen verifyrun --close-bracket --root <home> --brief <path> --admission-receipt <receipt>
+                      --witness <file>
 
 Runs each Verify row's Command in a fresh subshell at the repo root and appends
 one witness row per Verify row to the brief's ` + "`## Evidence`" + ` section:
@@ -1699,6 +1704,29 @@ Flags:
                     run (every row could-not-run). Each sandboxed row's Result
                     records sandbox=<mode>. Refused with --ci, under
                     GITHUB_ACTIONS=true, and with --in-container.
+                    container-netns needs --admission-receipt and
+                    --container-image-digest (whatever DESK_LOOP says), never
+                    runs admission itself, and writes its witness to --witness.
+  --open-bracket    host step before a container run: run deskdispatch
+                    --check-verifier, digest the home's tree, and write the
+                    receipt (check JSON, tree, opened) to --out, outside the home.
+  --admission-receipt <file>  the --open-bracket receipt, read-only and outside the
+                    home. The container run refuses before any row unless its
+                    --root digests to the receipt's tree and the receipt admits
+                    this brief (version 1 only), and refuses after the rows if
+                    they changed that tree.
+  --container-image-digest sha256:<64 hex>  the image the rows run in, named by
+                    the host; recorded as Container-Image on the witness.
+  --witness <file>  container-netns: a NEW file outside the home the witness
+                    (table, attestation, Container-Image, Tree-Digest) is written
+                    to. --close-bracket: that file.
+  --close-bracket   host step after a container run: re-run the check, recompute
+                    the home's tree digest, and append one Admission-Bracket line
+                    to --witness only when the check re-admits the run the
+                    witness names and the digest equals both the receipt's tree
+                    and the witness's Tree-Digest. witness= is the sha256 of the
+                    span from the witness header line through Tree-Digest, with
+                    every " (on-behalf-of ...)" annotation deleted.
   --in-container    run the rows inside the PINNED harness container instead of on
                     the host — the supported execution-witness runner on Windows,
                     where a native pipefail bash is unreliable (#1418). Reads the
@@ -1788,6 +1816,12 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	failFirstMode := fs.Bool("fail-first", false, "run each risk-bearing row at the merge-base first and record red/green in a Base column")
 	baseRev := fs.String("base", "", "base revision for --fail-first (default: the merge-base of HEAD and origin/main)")
 	envFile := fs.String("env-file", "", "role env-file passed to the container as --env-file (path only; contents never read/logged); defaults to $"+inContainerEnvFileVar)
+	admissionReceipt := fs.String("admission-receipt", "", "container-netns and --close-bracket: the receipt file --open-bracket wrote, read-only and outside the home")
+	imageDigest := fs.String("container-image-digest", "", "container-netns only (required): sha256:<64 hex> digest of the image the rows run in, supplied by the host")
+	openBracket := fs.Bool("open-bracket", false, "host open step of a container run: run the admission check, digest the home and write the receipt to --out")
+	openOut := fs.String("out", "", "with --open-bracket: the receipt file to write, outside the home")
+	closeBracket := fs.Bool("close-bracket", false, "host close step of a container run: re-check admission and the tree digest, then append Admission-Bracket to --witness")
+	witnessFile := fs.String("witness", "", "container-netns: the new file outside the home the witness is written to; with --close-bracket: that file")
 	// --help is handled by ContinueOnError returning flag.ErrHelp; print the
 	// usage and exit 0, because asking for help is not an error.
 	if err := fs.Parse(args); err != nil {
@@ -1804,6 +1838,50 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	// --in-container is a usage refusal (issue #2350).
 	if why := sandboxRefusal(*sandbox, *ci, *inContainer); why != "" {
 		fmt.Fprintln(stderr, "statusgen verifyrun:", why)
+		return verifyrunExitUsageError
+	}
+
+	// The container bracket (desktools-v2/71): the close step is its own mode,
+	// and a row-running container-netns invocation needs the host's receipt
+	// and image digest before anything else happens.
+	if *openBracket || *closeBracket || *openOut != "" {
+		path := *briefPath
+		if path == "" && fs.NArg() > 0 {
+			path = fs.Arg(0)
+		}
+		hostStep := "statusgen verifyrun: --open-bracket and --close-bracket are host steps around a container run; they run no rows and take no --sandbox, --container-image-digest, --check, --dry-run, --fail-first, --in-container or --acceptance-record"
+		switch {
+		case *openBracket && *closeBracket:
+			fmt.Fprintln(stderr, "statusgen verifyrun: --open-bracket and --close-bracket are separate steps")
+			return verifyrunExitUsageError
+		case *openOut != "" && !*openBracket:
+			fmt.Fprintln(stderr, "statusgen verifyrun: --out only applies to --open-bracket")
+			return verifyrunExitUsageError
+		case *sandbox != sandboxUnshare || *imageDigest != "" || *checkMode || *dryRun || *failFirstMode || *inContainer || *transitionRecord != "":
+			fmt.Fprintln(stderr, hostStep)
+			return verifyrunExitUsageError
+		case *openBracket && (*rootDir == "" || path == "" || *openOut == "" || *admissionReceipt != "" || *witnessFile != ""):
+			fmt.Fprintln(stderr, "statusgen verifyrun: --open-bracket takes exactly --root <home>, --brief <brief> and --out <file>")
+			return verifyrunExitUsageError
+		case *closeBracket && (*rootDir == "" || path == "" || *admissionReceipt == "" || *witnessFile == ""):
+			fmt.Fprintln(stderr, "statusgen verifyrun: --close-bracket needs --root <home>, --brief <brief>, --admission-receipt <file> and --witness <file>")
+			return verifyrunExitUsageError
+		}
+		if *openBracket {
+			return runOpenBracket(*rootDir, path, *openOut, stdout, stderr)
+		}
+		return runCloseBracket(*rootDir, path, *admissionReceipt, *witnessFile, stdout, stderr)
+	}
+	if why := containerBracketRefusal(*sandbox, *admissionReceipt, *imageDigest); why != "" {
+		fmt.Fprintln(stderr, "statusgen verifyrun:", why)
+		return verifyrunExitUsageError
+	}
+	if *sandbox != sandboxContainerNetns && *witnessFile != "" {
+		fmt.Fprintln(stderr, "statusgen verifyrun: --witness applies only with --sandbox="+sandboxContainerNetns+" and --close-bracket")
+		return verifyrunExitUsageError
+	}
+	if *sandbox == sandboxContainerNetns && !*checkMode && !*dryRun && *witnessFile == "" {
+		fmt.Fprintln(stderr, "statusgen verifyrun: refusing --sandbox="+sandboxContainerNetns+" without --witness <file> (or --dry-run): the witness is written to a new file outside the home, since writing it into the brief would change the tree the bracket binds. No row ran")
 		return verifyrunExitUsageError
 	}
 
@@ -1825,8 +1903,31 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		return verifyrunExitUsageError
 	}
 
-	attestation, admittedHome := "", ""
-	if !*checkMode {
+	attestation, admittedHome, containerTree := "", "", ""
+	if *sandbox == sandboxContainerNetns && !*checkMode {
+		// Inside a --network none container admission is never run: the host's
+		// receipt is read instead, and the host closes the bracket afterwards.
+		root := *rootDir
+		if root == "" {
+			root = repoRootFor(path)
+		}
+		var admissionErr error
+		if *witnessFile != "" {
+			if rel, inside := relWithin(root, *witnessFile); inside {
+				fmt.Fprintf(stderr, "statusgen verifyrun: refusing --witness %s: it sits inside the home (%s), which would change the tree the bracket binds. No row ran\n", *witnessFile, rel)
+				return verifyrunExitUsageError
+			}
+			if _, err := os.Lstat(*witnessFile); err == nil {
+				fmt.Fprintf(stderr, "statusgen verifyrun: refusing --witness %s: the file exists; a container witness is written to a new file. No row ran\n", *witnessFile)
+				return verifyrunExitUsageError
+			}
+		}
+		attestation, containerTree, admissionErr = containerAdmission(*admissionReceipt, root, path)
+		if admissionErr != nil {
+			fmt.Fprintln(stderr, "statusgen verifyrun:", admissionErr)
+			return verifyrunExitCouldNot
+		}
+	} else if !*checkMode {
 		admissionRoot := *rootDir
 		if admissionRoot == "" {
 			admissionRoot = repoRootFor(path)
@@ -2022,6 +2123,17 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	if attestation != "" {
 		table += "\n" + attestation + "\n"
 	}
+	if containerTree != "" {
+		// The pre-row digest says which tree the rows started on; this one says
+		// they left it as they found it. A row that changed the mounted home
+		// leaves a witness the host could not close, so none is written.
+		after, err := homeTreeDigest(root)
+		if err != nil || after != containerTree {
+			fmt.Fprintf(stderr, "statusgen verifyrun: the rows changed the mounted home (tree %s before the rows, %s after, %v); no witness written\n", containerTree, after, err)
+			return verifyrunExitCouldNot
+		}
+		table += containerWitnessLines(*imageDigest, containerTree)
+	}
 
 	worst := verifyrunExitPass
 	for _, w := range ws {
@@ -2053,6 +2165,14 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 
 	if *dryRun {
 		fmt.Fprintf(stdout, "\n--dry-run: the table above was NOT written to %s\n", path)
+		return worst
+	}
+	if containerTree != "" {
+		if err := writeContainerWitness(*witnessFile, root, table); err != nil {
+			fmt.Fprintln(stderr, "statusgen verifyrun:", err)
+			return verifyrunExitCouldNot
+		}
+		fmt.Fprintf(stdout, "\nwitness written to %s; close the bracket on the host with --close-bracket\n", *witnessFile)
 		return worst
 	}
 	if err := appendWitnessTable(path, table); err != nil {

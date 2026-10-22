@@ -659,6 +659,37 @@ passing run — which is why they are lint rules and not review vigilance.
       behind records which one in its witness Result cell — `sandbox=unshare`
       (namespace-wrapped) or `sandbox=container-netns` (container-sandboxed) —
       so a reader can tell the two apart.
+      A `sandbox=container-netns` row is credited only inside a closed
+      **admission bracket** (desktools-v2/71), run within one dispatch with no
+      edit to the home between its steps: (1) on the host, `statusgen verifyrun
+      --open-bracket --root <home> --brief <path> --out <receipt>` runs the
+      admission check, digests the home's tree and writes the receipt (check
+      JSON, `tree`, `opened`) outside the home; (2) in the container,
+      `verifyrun --sandbox=container-netns --admission-receipt <receipt>
+      --container-image-digest sha256:<64 hex> --witness <file>` never runs
+      admission itself, refuses before any row unless its mounted root digests
+      to the receipt's `tree` and the receipt admits this brief, refuses after
+      the rows if they changed that tree, and writes the witness table, the
+      `Verification-Attestation:` line, `Container-Image:` and `Tree-Digest:`
+      to a new file outside the home; (3) on the host, `verifyrun
+      --close-bracket --root <home> --brief <path> --admission-receipt
+      <receipt> --witness <file>` re-runs the check and appends one
+      `Admission-Bracket: run=… source=… tree=sha256:… witness=sha256:…
+      opened=… closed=… before=receipt after=check-verifier` line only when the
+      check re-admits the run the witness names and the home still digests to
+      both the receipt's `tree` and the witness's `Tree-Digest`. The tree
+      digest is sha256 over the sorted `<path> NUL <mode> NUL <sha256 of
+      content or link target> NUL` entries of every regular file and symlink
+      under the root, top-level `.git` excluded. `witness=` hashes an explicit
+      span: the witness header line (`| # | Command | …`) through the
+      `Tree-Digest:` line, one newline per line, with every
+      ` (on-behalf-of …)` annotation deleted first, so the Evidence landing's
+      principal stamp leaves it unchanged. A container-netns run without
+      `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
+      Known limits: version 2 (cross-repository) receipts are refused; a
+      linked worktree's git directory is not mounted in the container, so rows
+      that need git history run on the host; and the in-container digest is
+      only as trustworthy as the pinned image that computes it.
     - `check` — deterministic but ENV-BOUND (a live PEM, a real queue, a tool on
       PATH). A runner executes it; CI skips an explicitly-classed one (its verdict
       rests on the verifier's authorship+signature, not on a CI re-run).
