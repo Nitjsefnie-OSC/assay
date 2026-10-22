@@ -372,8 +372,6 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		{"hold in a fence", two("```\nrow 3 HELD — runner offline\n```") + rerun2, false},
 		{"closed HTML block after a prose hold",
 			two("- row 3 could-not-check.\n\n<div title=\"a\">note</div>") + rerun2, false},
-		{"inline tag in a list item",
-			two("- row 3 could-not-check.\n- <b>x</b> done") + rerun2, false},
 		{"attribute closed in its own block",
 			two("- row 3 could-not-check.\n\n<div title=\"\nx\" y>") + rerun2, false},
 		{"div block runs past a closed tag",
@@ -382,6 +380,11 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 			eight("```\n| # | Result |\n|---|---|\n| 9 | exit 2 |\n```\n\n- row 9 could-not-check.") + final, false},
 		{"pipe in a code span, prose hold", two("- `a | b` could-not-check: runner offline.") + rerun2, false},
 		{"escaped pipe, prose hold", two("- a \\| b could-not-check: runner offline.") + rerun2, false},
+
+		// Refused by design (heldContainerDoubt over-refuses): a tag start in
+		// a list item. Admitted before the container rule.
+		{"inline tag in a list item",
+			two("- row 3 could-not-check.\n- <b>x</b> done") + rerun2, true},
 
 		// Refused: a row recorded in a table the scan cannot key.
 		{"pipeless table row held",

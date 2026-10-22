@@ -178,8 +178,8 @@
     {
       "name": "over-strict: an HTML paragraph never ends (no line after it is live)",
       "file": "heldscope.go",
-      "old": "\t\t\t\thtml = false",
-      "new": "\t\t\t\thtml = true"
+      "old": "\t\t\tif isBlankLine(l) {\n\t\t\t\thtml = false\n\t\t\t} else if toggle {",
+      "new": "\t\t\tif isBlankLine(l) {\n\t\t\t\thtml = true\n\t\t\t} else if toggle {"
     },
     {
       "name": "over-strict: a multi-line HTML comment never ends",
@@ -332,24 +332,6 @@
       "new": "\tcell = strikethroughRe.ReplaceAllString(cell, \"\")\n"
     },
     {
-      "name": "#3841: an opener at any indentation opens a comment",
-      "file": "heldscope.go",
-      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
-      "new": "return true"
-    },
-    {
-      "name": "#3841: a tab-indented opener opens a comment",
-      "file": "heldscope.go",
-      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
-      "new": "return len(lead) <= 3"
-    },
-    {
-      "name": "#3841: an opener indented four spaces opens a comment",
-      "file": "heldscope.go",
-      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
-      "new": "return !strings.Contains(lead, \"\\t\")"
-    },
-    {
       "name": "#3841: a comment's end is searched after the four-byte opener (<!--> stays open)",
       "file": "heldscope.go",
       "old": "j, n := heldCommentEnd(t)",
@@ -360,12 +342,6 @@
       "file": "heldscope.go",
       "old": "j, n := heldCommentEnd(t)",
       "new": "j, n := heldCommentEnd(t[3:])"
-    },
-    {
-      "name": "#3841: the indent limit admits four spaces (Q4)",
-      "file": "heldscope.go",
-      "old": "return len(lead) <= 3 && !strings.Contains(lead, \"\\t\")",
-      "new": "return len(lead) <= 4 && !strings.Contains(lead, \"\\t\")"
     },
     {
       "name": "#3841: \"--!>\" does not end a comment",
@@ -416,12 +392,6 @@
       "new": "covered)"
     },
     {
-      "name": "#3841: an HTML block inside a container is not seen",
-      "file": "heldscope.go",
-      "old": "t := heldContainerStrip(l)",
-      "new": "t := l"
-    },
-    {
       "name": "#3841: a list marker is not stripped",
       "file": "heldscope.go",
       "old": "case len(t) > 1 && strings.IndexByte(\"-*+\", t[0]) >= 0",
@@ -460,8 +430,8 @@
     {
       "name": "#3841: the tokenizer is checked only at the end",
       "file": "heldscope.go",
-      "old": "if (!in || nested) && st != 0 {\n\t\t\treturn true",
-      "new": "if (!in || nested) && st < 0 {\n\t\t\treturn true"
+      "old": "if (!in || !sure) && st != 0 {\n\t\t\treturn true",
+      "new": "if (!in || !sure) && st < 0 {\n\t\t\treturn true"
     },
     {
       "name": "#3841: an opener-line end is ignored",
@@ -482,28 +452,118 @@
       "new": "\t\t\treturn true, \"\", false\n\t\t}\n\t\treturn true, \">\", false"
     },
     {
-      "name": "#3841: a container block is read as top-level",
+      "name": "#3841: a block the page may end early is checked only at its end",
       "file": "heldscope.go",
-      "old": "in, end, closed, nested = true, e, c, t != l",
-      "new": "in, end, closed, nested = true, e, c, false"
-    },
-    {
-      "name": "#3841: a container block is checked only at its end",
-      "file": "heldscope.go",
-      "old": "if (!in || nested) && st != 0 {",
+      "old": "if (!in || !sure) && st != 0 {",
       "new": "if !in && st != 0 {"
     },
     {
-      "name": "#3841: a top-level block's later lines are stripped",
+      "name": "#3841: a carriage return is no render doubt",
       "file": "heldscope.go",
-      "old": "\t\t\tt = l // a top-level block's later lines reach the page whole",
-      "new": "\t\t\t_ = l"
+      "old": "case strings.IndexByte(l, '\\r') >= 0:\n\t\t\tdoubt = true",
+      "new": "case false && strings.IndexByte(l, '\\r') >= 0:\n\t\t\tdoubt = true"
     },
     {
-      "name": "#3841: a bare CR is no render doubt",
+      "name": "#3841: container doubt does not stop whole supersession",
       "file": "heldscope.go",
-      "old": "case hasBareCR(l):\n\t\t\tdoubt = true",
-      "new": "case false && hasBareCR(l):\n\t\t\tdoubt = true"
+      "old": "!heldHTMLUnclosed(lines, inFence) && !heldContainerDoubt(lines, inFence)",
+      "new": "!heldHTMLUnclosed(lines, inFence)"
+    },
+    {
+      "name": "#3841: a fence in a container is no doubt",
+      "file": "heldscope.go",
+      "old": "if heldFenceToggle(t) || !inFence[i] && heldTagStartRe.MatchString(l) {",
+      "new": "if !inFence[i] && heldTagStartRe.MatchString(l) {"
+    },
+    {
+      "name": "#3841: a fence after a container marker is not seen",
+      "file": "heldscope.go",
+      "old": "if heldFenceToggle(t) || !inFence[i]",
+      "new": "if heldFenceToggle(l) || !inFence[i]"
+    },
+    {
+      "name": "#3841: a tag in a container is no doubt",
+      "file": "heldscope.go",
+      "old": "if heldFenceToggle(t) || !inFence[i] && heldTagStartRe.MatchString(l) {",
+      "new": "if heldFenceToggle(t) || false && !inFence[i] && heldTagStartRe.MatchString(l) {"
+    },
+    {
+      "name": "#3841: container doubt skips no fenced line",
+      "file": "heldscope.go",
+      "old": "|| !inFence[i] && heldTagStartRe",
+      "new": "|| (!inFence[i] || true) && heldTagStartRe"
+    },
+    {
+      "name": "#3841: a column-0 line counts as a container",
+      "file": "heldscope.go",
+      "old": "\t\tif t == l {\n\t\t\tcontinue\n\t\t}\n\t\tif heldFenceToggle(t)",
+      "new": "\t\tif false && t == l {\n\t\t\tcontinue\n\t\t}\n\t\tif heldFenceToggle(t)"
+    },
+    {
+      "name": "#3841: no tag counts as a kind-6 opener",
+      "file": "heldscope.go",
+      "old": "\tif !heldKind6Tags[strings.ToLower(t[:n])] {\n\t\treturn false",
+      "new": "\tif true {\n\t\treturn false"
+    },
+    {
+      "name": "#3841: every tag counts as a kind-6 opener",
+      "file": "heldscope.go",
+      "old": "\tif !heldKind6Tags[strings.ToLower(t[:n])] {\n\t\treturn false",
+      "new": "\tif false {\n\t\treturn false"
+    },
+    {
+      "name": "#3841: an opener that names an end marker is never sure",
+      "file": "heldscope.go",
+      "old": "sure = e != \"\" || heldHTMLKind6(l)",
+      "new": "sure = heldHTMLKind6(l)"
+    },
+    {
+      "name": "#3841: every block opener is sure",
+      "file": "heldscope.go",
+      "old": "sure = e != \"\" || heldHTMLKind6(l)",
+      "new": "sure = true"
+    },
+    {
+      "name": "#3841: an end-marker block opened inside stays sure",
+      "file": "heldscope.go",
+      "old": "\t\t\tsure = false // the page may run this block on to that end marker",
+      "new": "\t\t\t_ = 0"
+    },
+    {
+      "name": "#3841: an end-marker opener inside a block is not seen",
+      "file": "heldscope.go",
+      "old": "\t\tcase heldHTMLOpenEnds(l):\n\t\t\t_, end, _ = heldHTMLOpenEnd(l)",
+      "new": "\t\tcase false && heldHTMLOpenEnds(l):\n\t\t\t_, end, _ = heldHTMLOpenEnd(l)"
+    },
+    {
+      "name": "#3841: render ignores an end marker opened in a block",
+      "file": "heldscope.go",
+      "old": "\t\t\t} else if heldHTMLOpenEnds(l) {\n\t\t\t\t_, htmlEnd = heldHTMLOpen(l)",
+      "new": "\t\t\t} else if false && heldHTMLOpenEnds(l) {\n\t\t\t\t_, htmlEnd = heldHTMLOpen(l)"
+    },
+    {
+      "name": "#3841: HTML lines ignore an end marker opened in a block",
+      "file": "heldscope.go",
+      "old": "\t\t\tif heldHTMLOpenEnds(l) {\n\t\t\t\t_, end = heldHTMLOpen(l)",
+      "new": "\t\t\tif false && heldHTMLOpenEnds(l) {\n\t\t\t\t_, end = heldHTMLOpen(l)"
+    },
+    {
+      "name": "#3841: the brief reader rewrites line endings twice",
+      "file": "brieffile.go",
+      "old": "fmRaw, body, err := splitFrontmatter(string(raw))",
+      "new": "fmRaw, body, err := splitFrontmatter(content)"
+    },
+    {
+      "name": "#3841: the section reader rewrites line endings twice",
+      "file": "verifyrun.go",
+      "old": "if _, b, ferr := splitFrontmatter(raw); ferr == nil {",
+      "new": "if _, b, ferr := splitFrontmatter(content); ferr == nil {"
+    },
+    {
+      "name": "#3841: the awaiting reader rewrites line endings twice",
+      "file": "awaiting_bucket.go",
+      "old": "if _, bd, ferr := splitFrontmatter(string(raw)); ferr == nil {",
+      "new": "if _, bd, ferr := splitFrontmatter(content); ferr == nil {"
     }
   ]
 }
