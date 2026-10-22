@@ -385,6 +385,34 @@ The implementation must create the exact named tests; an empty go-test match is 
 
 <!-- Independent postmerge verifier records actual commands, source and outcomes here. -->
 
+### Postmerge verification, 2026-10-22, source 8f103c4712
+
+Evidence only for a gate: human brief; status is left where it is. Source 8f103c4712 (merged main, contains delivery merge f7ad98d584 and its 37-file diff). Pre-work admission check exit 0.
+
+Network-off credit for the check:ci rows goes only through the admitted offline container route, run once. It refused with exit 1 before any container started: `admitted-runner: refused: execution bytes/mode differ from source: scripts/windows-bootstrap-hashcheck-smoke.ps1` (that file carries eol=crlf; the raw-byte closure check sees the CRLF checkout against the LF blob, a known open gap of that route, tracked in #4112; #4106 is related and retires that one file only). No witness was produced, so every check:ci row and its mutation obligation is could-not-check, covered by #4112. The host results in the supplemental column come from the same row commands run on the host with GOPROXY=off; they show the named tests exist and pass, and give no acceptance credit.
+
+| # | Class | Command | Acceptance result | Supplemental host result (no credit) |
+|---|---|---|---|---|
+| 1 | check:ci +mutation | `cd statusgen && go test -run '^TestContainerNetnsRequiresAdmissionReceipt$' -count=1 -v .` | could-not-check: admitted offline route refused at its closure check; mutation obligation not exercised | exit 0, `--- PASS: TestContainerNetnsRequiresAdmissionReceipt (0.28s)` |
+| 2 | check:ci | `cd statusgen && go test -run '^TestContainerNetnsReceipt$' -count=1 -v .` | could-not-check: admitted offline route refused at its closure check | exit 0, `--- PASS: TestContainerNetnsReceipt (0.47s)` |
+| 3 | check:ci | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | could-not-check: admitted offline route refused at its closure check | exit 0, `--- PASS: TestCloseBracket (0.84s)` |
+| 4 | check:ci +flow +mutation | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestBracketedWitnessSurvivesLanding$' -count=1 -v` | could-not-check: admitted offline route refused at its closure check; mutation obligation not exercised | exit 0, `--- PASS: TestBracketedWitnessSurvivesLanding (3.14s)` |
+| 5 | check:ci | `cd statusgen && go test -run '^TestSandbox' -count=1 -v .` | could-not-check: admitted offline route refused at its closure check | exit 0, seven PASS lines: PrecheckLoopback, PrecheckExtraIface, RunRefusedNoExec, WitnessRecordsMode, CILaneRefuses, FlagRefusals, OfReadsResultOnly |
+| 6 | check:ci | `grep -n -e 'Admission-Bracket' -e 'credit=credited' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | could-not-check: admitted offline route refused at its closure check | exit 0; Admission-Bracket / credit=credited match lines per file: brief-rules 1 / 3, verify-desk 3 / 2, pr-review-desk 1 / 2 |
+| 7 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | could-not-check: admitted offline route refused at its closure check | exit 0, `deskinstall --harness cursor --check: clean` |
+| 8 | check | `statusgen --root . --consumers --brief desktools-v2/71 --base $(git merge-base origin/main HEAD)` | could-not-check: exit 2 on merged main, `COULD-NOT-CHECK: assay:assay:desktools-v2:71 is not in the diff against 8f103c4712…`; the row's Expect is pre-merge on the implementation branch, which a postmerge home cannot reproduce | probe with base d8b64df87c (merge-base of the delivery merge's parents): exit 0, `0 corroborated, 0 disproved, 6 unchecked` |
+| 9 | check | `statusgen --root . --lint` | pass: exit 0, `LINT: PASS`, no PROBLEM line names this brief | none |
+| 10 | check:ci +mutation | `(cd statusgen && credit_out=$(mktemp) && trap 'rm -f "$credit_out"' 0 && go test -run '^TestBracketCredit$' -count=1 -v . > "$credit_out" 2>&1 && grep -q -- '--- PASS: TestBracketCredit ' "$credit_out")` | could-not-check: admitted offline route refused at its closure check; four mutation obligations not exercised | exit 0, no output (grep -q found the PASS line) |
+| 11 | check:ci | `(cd tools/desk && parity_out=$(mktemp) && trap 'rm -f "$parity_out"' 0 && go test ./internal/deskkit/ -run '^TestVerifierAttestationCreditParity$' -count=1 -v > "$parity_out" 2>&1 && grep -q -- '--- PASS: TestVerifierAttestationCreditParity ' "$parity_out")` | could-not-check: admitted offline route refused at its closure check | exit 0, no output (grep -q found the PASS line) |
+
+Accounting: 11 rows; 1 pass (row 9); 10 could-not-check (rows 1-8, 10, 11; the check:ci rows among them per #4112); 0 failed.
+
+RISK-VALUE: DERIVED — onBehalfOfStampRe = `\(on-behalf-of human:[^\s()]+\)` @ statusgen/containerbracket.go:796 — matches Task 1's exclusion exactly: literal case-sensitive `(on-behalf-of human:`, a subject of one or more characters other than whitespace and parentheses, closing `)`; looser forms stay in the hash.
+RISK-VALUE: DERIVED — sha256DigestRe = `^sha256:[0-9a-f]{64}$` @ statusgen/containerbracket.go:57 — sha256 is 32 bytes, 64 lowercase hex as hex.EncodeToString renders it; the brief's `sha256:<64 hex>` form.
+RISK-VALUE: DERIVED — receipt version gate `b.Version == 2` refused, `b.Version != 1` refused @ statusgen/containerbracket.go:130 and :133 — Task 3 admits version 1 only and refuses version 2 by name.
+
+**VERIFY: BLOCKED** — 1 / 11 rows passed at source 8f103c4712; check:ci rows lack network-off credit (admitted route closure refusal, #4112), row 8 is a pre-merge-only check
+
 ## Review
 
 Gate: human (gate-why above). Independent correctness and security review of the exact head.
