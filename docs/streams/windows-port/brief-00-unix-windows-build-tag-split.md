@@ -862,7 +862,7 @@ RISK-VALUE: DERIVED — roster mode mask = 0o022 @ statusgen/rosterowner_unix.go
 RISK-VALUE: DERIVED — owner binding = int(st.Uid) != os.Getuid() @ statusgen/rosterowner_unix.go:40 (deskkit copy @ tools/desk/internal/deskkit/rosterowner_unix.go:39) — the roster must be owned by the account running the tool; a verbatim move of the pre-split check.
 RISK-VALUE: DERIVED — process-group kill = Setpgid: true @ statusgen/procgroup_unix.go:21 with Kill(-pid, SIGKILL) @ statusgen/procgroup_unix.go:23 — the child leads its own group and a negative pid signals the whole group, reaching orphaned remote helpers; a verbatim move.
 RISK-VALUE: DERIVED — world SID = "S-1-1-0" @ statusgen/rosterowner_windows.go:62 (deskkit copy @ tools/desk/internal/deskkit/rosterowner_windows.go:81) — S-1-1-0 is the Windows well-known Everyone SID; a nil DACL grants everyone full access, so modelling it as a write-granting World ACE makes the evaluator refuse it.
-RISK-VALUE: NAMED, NOT DERIVED — runtime effect of the windows lock values on a Windows host @ tools/desk/internal/deskkit/filelock_windows.go:28 — derived above from the API contract and source only; no Verify row executes the windows lock and this darwin host cannot, so a contended-lock run on native Windows is the missing observation.
+RISK-VALUE: NAMED, NOT DERIVED — runtime effect of the windows lock values on a Windows host @ tools/desk/internal/deskkit/filelock_windows.go:28 — derived above from the API contract and source only; no Verify row executes the windows lock and this darwin host cannot, so a contended-lock run on native Windows is the missing observation. Question filed: #4131.
 
 **VERIFY: PASS** — 16/16 rows pass at 05dc9fbc88f2 by the statusgen verifyrun execution witness; 0 fail, 0 could-not-check.
 
