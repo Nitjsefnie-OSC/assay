@@ -367,7 +367,7 @@ func findContainerBlock(text string) (containerBlock, error) {
 	// that ends at the append position, never with another table's: a span
 	// holding more than one of them is refused before anything else is read.
 	if _, header := witnessSpanDigest(lines, n); header >= 0 {
-		if _, problem := spanOwnLines(lines[header:n]); problem != "" {
+		if _, _, problem := spanOwnLines(lines[header:n]); problem != "" {
 			return containerBlock{}, fmt.Errorf("the span that ends at the append position is not bound to one run: %s", problem)
 		}
 	}
@@ -464,7 +464,9 @@ func runCloseBracket(home, brief, receiptPath, witnessPath string, stdout, stder
 	m := attestationV1Re.FindStringSubmatch(block.attestation)
 	line := fmt.Sprintf("%srun=%s source=%s tree=%s witness=%s opened=%s closed=%s before=receipt after=check-verifier",
 		admissionBracketPrefix, m[3], m[4], tree, witness, receipt.Opened, closed.Format(time.RFC3339))
-	if err := os.WriteFile(witnessPath, []byte(above+line+"\n"), info.Mode().Perm()); err != nil {
+	// Temp file and rename, so an interrupted close never truncates a witness
+	// that was already complete.
+	if err := writeAtomicPerm(witnessPath, []byte(above+line+"\n"), info.Mode().Perm()); err != nil {
 		return refuse("%v", err)
 	}
 	fmt.Fprintln(stdout, line)
@@ -580,7 +582,7 @@ func bracketChecks(text string) []bracketCheck {
 		digest, header := witnessSpanDigest(lines, i)
 		if header >= 0 {
 			trees, images, attestations := spanLineCounts(lines[header:i])
-			c.counts = []int{len(trees), images, attestations}
+			c.counts = []int{len(trees), images, len(attestations)}
 			if digest == c.recorded {
 				c.why = spanBindingProblem(lines[header:i], l)
 			}
@@ -606,44 +608,78 @@ func bracketChecks(text string) []bracketCheck {
 	return checks
 }
 
-// bracketTreeRe reads an Admission-Bracket line's tree= value.
-var bracketTreeRe = regexp.MustCompile(`(?:^|\s)tree=(\S+)`)
+// bracketLineRe is the whole Admission-Bracket line the close step writes,
+// field for field, after trimming: run, source, tree, witness, opened and
+// closed, then the fixed before=receipt after=check-verifier.
+var bracketLineRe = regexp.MustCompile(`^Admission-Bracket: run=(\S+) source=(\S+) tree=(\S+) witness=(\S+) opened=(\S+) closed=(\S+) before=receipt after=check-verifier$`)
 
 // spanBindingProblem says why a bracket whose digest matches is still not
 // bound to its own span: the Tree-Digest, Container-Image and attestation lines
 // credited with it must be the ones inside that span, one of each, and the
-// bracket's tree= must equal that span's Tree-Digest, never a line from
-// another bracket's span. It is "" when the span binds.
+// bracket line must be the close step's form with its tree= equal to that
+// span's Tree-Digest and its run= and source= equal to that span's
+// attestation, never a line from another bracket's span. Its opened= and
+// closed= must be UTC RFC 3339 times with opened not after closed. The span's
+// digest does not cover the bracket line itself, so without these checks an
+// edit to run=, source=, opened= or closed= after landing would go unnoticed.
+// It is "" when the span binds.
 func spanBindingProblem(span []string, bracket string) string {
-	tree, problem := spanOwnLines(span)
+	tree, attestation, problem := spanOwnLines(span)
 	if problem != "" {
 		return problem
 	}
-	m := bracketTreeRe.FindStringSubmatch(bracket)
-	if m == nil || m[1] != tree {
-		got := "none"
-		if m != nil {
-			got = m[1]
-		}
-		return fmt.Sprintf("the bracket's tree=%s is not its own span's %s %s", got, strings.TrimSpace(treeDigestPrefix), tree)
+	b := bracketLineRe.FindStringSubmatch(strings.TrimSpace(bracket))
+	if b == nil {
+		return "the bracket line is not the form the close step writes (run= source= tree= witness= opened= closed= before=receipt after=check-verifier)"
+	}
+	if b[3] != tree {
+		return fmt.Sprintf("the bracket's tree=%s is not its own span's %s %s", b[3], strings.TrimSpace(treeDigestPrefix), tree)
+	}
+	a := attestationV1Re.FindStringSubmatch(attestation)
+	if a == nil {
+		return "its own span's attestation line is not the version-1 form a container run records"
+	}
+	if b[1] != a[3] || b[2] != a[4] {
+		return fmt.Sprintf("the bracket's run=%s source=%s are not its own span's attestation run=%s source=%s", b[1], b[2], a[3], a[4])
+	}
+	opened, err := parseBracketTime(b[5])
+	if err != nil {
+		return fmt.Sprintf("the bracket's opened=%s %v", b[5], err)
+	}
+	closed, err := parseBracketTime(b[6])
+	if err != nil {
+		return fmt.Sprintf("the bracket's closed=%s %v", b[6], err)
+	}
+	if closed.Before(opened) {
+		return fmt.Sprintf("the bracket's opened=%s is after its closed=%s", b[5], b[6])
 	}
 	return ""
 }
 
-// spanOwnLines counts a span's Tree-Digest, Container-Image and attestation
-// lines. It returns the span's one Tree-Digest value, or why the span does not
-// hold exactly one line of each kind.
-func spanOwnLines(span []string) (tree, problem string) {
-	trees, images, attestations := spanLineCounts(span)
-	if len(trees) != 1 || images != 1 || attestations != 1 {
-		return "", fmt.Sprintf("the span holds %d %s, %d %s and %d attestation lines, not one of each", len(trees), strings.TrimSpace(treeDigestPrefix), images, strings.TrimSpace(containerImagePrefix), attestations)
+// parseBracketTime reads an opened= or closed= value: the UTC RFC 3339 form
+// the open and close steps write, and nothing else.
+func parseBracketTime(v string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil || t.UTC().Format(time.RFC3339) != v {
+		return time.Time{}, fmt.Errorf("is not a UTC RFC 3339 time")
 	}
-	return trees[0], ""
+	return t, nil
 }
 
-// spanLineCounts returns a span's Tree-Digest values and its Container-Image
-// and attestation line counts.
-func spanLineCounts(span []string) (trees []string, images, attestations int) {
+// spanOwnLines reads a span's Tree-Digest, Container-Image and attestation
+// lines. It returns the span's one Tree-Digest value and its one attestation
+// line, or why the span does not hold exactly one line of each kind.
+func spanOwnLines(span []string) (tree, attestation, problem string) {
+	trees, images, attestations := spanLineCounts(span)
+	if len(trees) != 1 || images != 1 || len(attestations) != 1 {
+		return "", "", fmt.Sprintf("the span holds %d %s, %d %s and %d attestation lines, not one of each", len(trees), strings.TrimSpace(treeDigestPrefix), images, strings.TrimSpace(containerImagePrefix), len(attestations))
+	}
+	return trees[0], attestations[0], ""
+}
+
+// spanLineCounts returns a span's Tree-Digest values, its Container-Image line
+// count and its attestation lines, each trimmed.
+func spanLineCounts(span []string) (trees []string, images int, attestations []string) {
 	for _, l := range span {
 		l = strings.TrimSpace(l)
 		switch {
@@ -652,7 +688,7 @@ func spanLineCounts(span []string) (trees []string, images, attestations int) {
 		case strings.HasPrefix(l, strings.TrimSpace(containerImagePrefix)):
 			images++
 		case strings.HasPrefix(l, attestationPrefix):
-			attestations++
+			attestations = append(attestations, l)
 		}
 	}
 	return trees, images, attestations

@@ -392,9 +392,32 @@ func TestCloseBracket(t *testing.T) {
 	putFile(t, fx.witness, witness)
 	t.Setenv("FAKE_DD_EXIT", "0")
 	preClose := digestOf(t, witness)
+	if err := os.Chmod(fx.witness, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	preInfo, err := os.Stat(fx.witness)
+	if err != nil {
+		t.Fatal(err)
+	}
 	res, stderr := captureVerifyrun(t, closeArgs)
 	if res.code != verifyrunExitPass {
 		t.Fatalf("matching close: exit %d stderr %q", res.code, stderr)
+	}
+	// The close replaces the witness by temp file and rename, never by
+	// rewriting it in place: the path names a new file with the old file's
+	// permission bits, and no temporary file is left behind.
+	postInfo, err := os.Stat(fx.witness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(preInfo, postInfo) {
+		t.Fatal("the close rewrote the witness in place; an interrupted write could truncate it")
+	}
+	if postInfo.Mode().Perm() != 0o640 {
+		t.Fatalf("the close changed the witness's permission bits to %v, want 0640", postInfo.Mode().Perm())
+	}
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(fx.witness), ".*.tmp-*")); len(left) != 0 {
+		t.Fatalf("the close left temporary files: %q", left)
 	}
 	got := getFile(t, fx.witness)
 	above, line, _ := strings.Cut(got, admissionBracketPrefix)
@@ -516,6 +539,32 @@ func TestCloseBracket(t *testing.T) {
 		if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, forged)}); res.code != verifyrunExitFail ||
 			!strings.Contains(out, " verdict=mismatch span-lines="+dup.counts) || !strings.Contains(out, "not one of each") {
 			t.Fatalf("a span with two %s lines: exit %d output %q", dup.name, res.code, out)
+		}
+	}
+	// The bracket line's own fields sit outside the span's digest, so the
+	// verb binds them to the span instead: run= and source= must equal the
+	// span's attestation, the line must be the close step's form, and opened=
+	// and closed= must be UTC RFC 3339 times with opened not after closed. An
+	// edit to any of them after landing is a mismatch.
+	closedAt := regexp.MustCompile(` closed=(\S+) `).FindStringSubmatch(line)[1]
+	openedAt := regexp.MustCompile(` opened=(\S+) `).FindStringSubmatch(line)[1]
+	for _, edit := range []struct{ name, from, to, why string }{
+		{"run", "run=" + fixtureRun, "run=" + strings.Repeat("d", 64), "are not its own span's attestation"},
+		{"source", "source=" + fixtureSource, "source=" + strings.Repeat("c", 40), "are not its own span's attestation"},
+		{"opened after closed", "opened=" + openedAt, "opened=2999-01-01T00:00:00Z", "is after its closed="},
+		{"closed before opened", "closed=" + closedAt, "closed=2000-01-01T00:00:00Z", "is after its closed="},
+		{"opened not UTC RFC 3339", "opened=" + openedAt, "opened=" + strings.TrimSuffix(openedAt, "Z") + "+00:00", "is not a UTC RFC 3339 time"},
+		{"closed not a time", "closed=" + closedAt, "closed=yesterday", "is not a UTC RFC 3339 time"},
+		{"fixed tail dropped", " before=receipt after=check-verifier", "", "not the form the close step writes"},
+		{"extra field", " before=receipt", " note=x before=receipt", "not the form the close step writes"},
+	} {
+		edited := strings.Replace(line, edit.from, edit.to, 1)
+		if edited == line {
+			t.Fatalf("%s: fixture edit did not apply to %q", edit.name, line)
+		}
+		res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, witness+admissionBracketPrefix+edited)})
+		if res.code != verifyrunExitFail || !strings.Contains(out, "witness="+preClose+" recorded="+preClose+" verdict=mismatch") || !strings.Contains(out, edit.why) {
+			t.Fatalf("a bracket with its %s edited: exit %d output %q, want a mismatch naming %q", edit.name, res.code, out, edit.why)
 		}
 	}
 	// S10: an escaped \| is cell content, never a delimiter, as in the
