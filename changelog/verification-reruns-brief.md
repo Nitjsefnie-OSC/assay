@@ -1,0 +1,2 @@
+### Added
+- Brief desk-supervision/36 plans an optional `attempts` list on verification outcome records. Each entry marks a run of the Verify table as credited, uncredited or discarded, with a closed reason. A read-only `deskperf reruns` report then answers "brief N needed X verification runs, Y uncredited" and joins each attempt to the cost and time already in the local perf history, without adding a new cost measure (#4163).
