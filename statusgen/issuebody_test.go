@@ -38,7 +38,7 @@ func TestForgeBodyLen(t *testing.T) {
 }
 
 // regression: #4091
-func TestCapIssueBodyFitsUnchanged(t *testing.T) {
+func TestCapBodyFitsUnchanged(t *testing.T) {
 	head, tail := "<!-- verify-gate: x/01 -->\n\n## H\n\n", "### Before you close\n"
 	sections := []string{"### Verify\n\nrow\n\n", "### Evidence\n\nrow\n\n"}
 	called := false
@@ -51,11 +51,11 @@ func TestCapIssueBodyFitsUnchanged(t *testing.T) {
 	}
 }
 
-// TestCapIssueBodyCutsLargestFirst pins the water-filling: a small section
+// TestCapBodyCutsLargestFirst pins the water-filling: a small section
 // (Trade-offs) after a huge one stays whole, and only the huge one is cut.
 //
 // regression: #4091
-func TestCapIssueBodyCutsLargestFirst(t *testing.T) {
+func TestCapBodyCutsLargestFirst(t *testing.T) {
 	head := "<!-- verify-gate: x/01 -->\n\n## Human sign-off required — x/01\n\n"
 	tail := "### Before you close\n\n- [ ] I accept this brief as done\n"
 	big := ibFill("### Recorded results (Evidence)", 3000)
@@ -83,12 +83,12 @@ func TestCapIssueBodyCutsLargestFirst(t *testing.T) {
 	}
 }
 
-// TestCapIssueBodyClosesOpenConstructs: a cut inside a fenced code block or an
+// TestCapBodyClosesConstructs: a cut inside a fenced code block or an
 // HTML comment would swallow the notice and everything after it (the
 // checklist), so the cut closes the construct before the notice.
 //
 // regression: #4091
-func TestCapIssueBodyClosesOpenConstructs(t *testing.T) {
+func TestCapBodyClosesConstructs(t *testing.T) {
 	head := "<!-- verify-gate: x/01 -->\n\n"
 	tail := "### Before you close\n"
 	for name, open := range map[string]string{
@@ -121,11 +121,11 @@ func TestCapIssueBodyClosesOpenConstructs(t *testing.T) {
 	}
 }
 
-// TestCapIssueBodyBackstop: a head that alone overruns the cap (an enormous
+// TestCapBodyBackstop: a head that alone overruns the cap (an enormous
 // rationale) is still cut under the cap, keeping the marker on line one.
 //
 // regression: #4091
-func TestCapIssueBodyBackstop(t *testing.T) {
+func TestCapBodyBackstop(t *testing.T) {
 	marker := "<!-- verify-gate: x/01 -->"
 	head := marker + "\n\n> **Why:** " + strings.Repeat("long rationale 😀 ", 9000) + "\n\n"
 	got := capIssueBody(head, []string{"### Verify\n\nrow\n\n"}, "### Before you close\n", ibLinkFn)
