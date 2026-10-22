@@ -1,0 +1,2 @@
+### Fixed
+- The verify-runner image now carries what its rows need offline: a Go module cache for `tools/desk` (including the `gopkg.in/yaml.v3` module the `containers/k8s` YAML adapter uses) and for `statusgen`, which `tools/desk` tests build from source, at the image's `GOMODCACHE`, and kustomize v5.8.3, kubeconform v0.8.0 and gitleaks 8.30.1, each checked against a pinned sha256 at build time. Rows run with no network and a read-only root no longer stop at module or tool resolution before reaching their commands.
