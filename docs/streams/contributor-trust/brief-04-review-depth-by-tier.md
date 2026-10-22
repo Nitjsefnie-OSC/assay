@@ -490,5 +490,23 @@ Tally: 10 met, 0 fail, 2 could-not-check (rows 8 and 9), of 12 Verify rows. Gate
 
 **VERIFY: BLOCKED** — rows_passed 10 / rows_total 12 at 05dc9fbc88f2
 
+### Correction addendum — 2026-10-22 claude-opus-5-5 verifier (earlier container credit for check:ci rows 8 and 9 withdrawn; 10 met, 0 fail, 2 could-not-check at 05dc9fbc88f2)
+
+This addendum is append-only; nothing above it is edited. It extends the correction above to the two earlier sections that still credit check:ci rows 8 and 9.
+
+Withdrawn, section headed "Non-implementer verifier run — 2026-10-21 claude-opus-5-5 verifier at 116a2f1494fc (12/12 rows pass in a network-off container)": (a) its credit for rows 8 and 9, and (b) its bold pass verdict line, "12/12 rows pass on merged main 116a2f1494fc in a network-off container (check:ci rows 8 and 9 included)". Why: that section's table was not written by a tool. Its columns are Expect and Observed, not the Result and Output hash columns the execution witness writes. Its observed cells are prose transcriptions ("exit 0; no output (network-off container)" for row 8; "exit 0; `rc=0`; SKILLSLINT PASS …" for row 9). Its runner prose says every row ran in a local docker container, each Command cell run verbatim from the clone root, which describes a hand run. The Verification-Attestation line at the head of that section binds an admission at 116a2f1494fc; it does not bind a tool-written witness table, because there is none. A hand-run, hand-transcribed container table credits no row.
+
+Withdrawn, section headed "Execution witness — 2026-10-19 claude-opus-5-5 verifier at 2f44050f8a70 (12/12 rows pass in a network-off container)": (a) its credit for rows 8 and 9, and (b) its bold pass verdict line, "12/12 rows pass with 0 fail in the network-off container witness at 2f44050f8a70". Why: its table has the tool's shape, but its own prose says `statusgen verifyrun --sandbox container-netns` wrote it in a throwaway clone at the attested source, inside a locally started docker container, with admission checked on the host before the witness. This is the same defect the correction above found in the 2026-10-22 addendum. A throwaway clone carries no admission record, so no Verification-Attestation line binds a table written there. The line at the head of that section was placed above the prose by hand; the tool did not write it under the table. A host-side admission check does not attest a table written in a different tree.
+
+Rows 8 and 9: could-not-check. No admitted-home witness for either row exists at any source in this Evidence. Both open issues still cover this gap, and both were read open on 2026-10-22. #3216 asks for an independently admitted Linux verifier with a working `unshare --net` for this brief's check:ci rows 8 and 9, and forbids relabelling direct execution as network-off. #2665 asks for an admitted Linux runner for check:ci rows on macOS hosts, and forbids relaxing the sandbox. Nothing was run for this addendum. The pinned offline runner image is not loaded on this host, so the admitted offline runner was not started.
+
+Rows 1–7 and 10–12 keep the credit the correction above gives them, from the admitted-home tool witness in the first 2026-10-22 section at 05dc9fbc88f2 only. Mutation probes and risk-bearing values stand as recorded there.
+
+Admission: `deskdispatch --check-verifier` exit 0 on the admitted home before and after this addendum.
+
+Tally: 10 met, 0 fail, 2 could-not-check (rows 8 and 9), of 12 Verify rows, at 05dc9fbc88f2; unchanged from the correction above. Gate is model; risk all no.
+
+**VERIFY: BLOCKED** — rows_passed 10 / rows_total 12 at 05dc9fbc88f2
+
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
