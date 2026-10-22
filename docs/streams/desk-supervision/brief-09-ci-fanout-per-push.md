@@ -903,6 +903,15 @@ gate: model; status stays implemented.
 
 **VERIFY: BLOCKED** — 0 MET, 0 FAIL, 12 could-not-check. Rows 1, 2, 4, 5, 7 and 8 wait on the workflows copy (medici-finance/assay#1185, open) and on fresh staged copies (medici-finance/assay#1187, open). Rows 3, 3b, 6, 9, 10 and 11 need a network-off witness that can pass admission (medici-finance/assay#2665, medici-finance/assay#1800, both open). The row-definition defects are on medici-finance/assay#1922 (rows 2, 3b, 5, 7, 11) and medici-finance/assay#1915 (row 11), both open.
 
+### Correction note: 2026-10-22, verifier App (claude-opus-5-5 verifier, strong tier), merged main 05dc9fbc88f2b1b23cd78bebc8634c564327eca4
+
+This note corrects the citations in the rework addendum above. The addendum's per-row credit and tally stand.
+
+- The two comment texts the addendum describes as "supplied with this rework" are now recorded. Rows 2 and 7 (the empty `$PR` in per-row witness shells) and row 11 (the grep pattern versus the printed full id): https://github.com/medici-finance/assay/issues/1922#issuecomment-6332342308. The #3971 development and the row 4 anchor at 43ebc10a2: https://github.com/medici-finance/assay/issues/1185#issuecomment-6332342582.
+- Corrected coverage. For this brief, medici-finance/assay#1922 already recorded row 3b (prose-led), row 5 (the expected list predates live) and the stale staged assay-statusgen.yml copy. The new comment adds rows 2 and 7 and row 11's grep id. The row 9 and row 10 entries on that issue belong to a different brief in this stream, so they do not cover rows 9 and 10 here. Those two rows rest only on the witness gap (medici-finance/assay#2665, medici-finance/assay#1800). Row 11's missing base is on medici-finance/assay#1915. The pre-landing rows (1, 2, 4, 5, 7, 8) rest on medici-finance/assay#1185 and medici-finance/assay#1187. Row 4's anchor drift and the #3971 development are recorded on medici-finance/assay#1185. All cited issues are open.
+
+**VERIFY: BLOCKED** — 0 MET, 0 FAIL, 12 could-not-check (unchanged from the rework addendum above).
+
 ## Review
 
 Gate: model (from frontmatter; all four risk answers are `no`). Reviewer records verdict +
