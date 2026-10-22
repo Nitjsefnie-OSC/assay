@@ -127,6 +127,12 @@ func (c *Cell) childStarted(scratch *scratchLaunch) func(int) error {
 		c.recordRoleChild(pid)
 		err := scratch.run.Started(pid)
 		c.recordLaunchStep("launch-child-start", time.Since(began), err)
+		if err == nil && !c.launchStarted.IsZero() {
+			elapsed := time.Since(c.launchStarted)
+			c.recordLaunchStep("launch-first-start", elapsed, nil)
+			c.recordLaunchStep("launch-all-starts", elapsed, nil)
+			c.launchStarted = time.Time{}
+		}
 		return err
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/medici-finance/assay/perfrec"
 	"github.com/medici-finance/assay/tools/desk/internal/cellcache"
 	"github.com/medici-finance/assay/tools/desk/internal/cellcadence"
 	"github.com/medici-finance/assay/tools/desk/internal/cellscratch"
@@ -77,6 +78,9 @@ func TestCellPrepBounded(t *testing.T) {
 				must(t, deskkit.TryLockExclusive(f))
 				defer f.Close()
 				began := time.Now()
+				probe := perfrec.SystemProbe()
+				measurement := perfrec.Begin(probe, probe.Mark(), nil)
+				var lockWait time.Duration
 				var probes []upProbe
 				for i := 0; i < roles; i++ {
 					probes = append(probes, upProbe{Role: knownRoles[i], Kind: probeAbsent})
@@ -89,6 +93,7 @@ func TestCellPrepBounded(t *testing.T) {
 					}
 					result := cellcadence.Result{ExitCode: 0}
 					s.finish(&result)
+					lockWait += s.store.LockWait()
 					if result.Err != nil {
 						return result.Err
 					}
@@ -115,7 +120,12 @@ func TestCellPrepBounded(t *testing.T) {
 					t.Fatal(result)
 				}
 				assertHistory(t, hashes)
-				t.Logf("build=current workload=protected-files:%d roles:%d samples=1 wall=%s", history*50, roles, time.Since(began))
+				sample := measurement.Finish("cellctl", "desk", "none", 0, "")
+				cpu := "could-not-check"
+				if sample.CPUMs != nil {
+					cpu = fmt.Sprint(*sample.CPUMs)
+				}
+				t.Logf("build=current workload=protected-files:%d roles:%d samples=1 wall=%s cpu_ms=%s cpu_coverage=%s lock_wait=%s", history*50, roles, time.Since(began), cpu, sample.CPU, lockWait)
 			})
 		}
 	}
@@ -123,6 +133,9 @@ func TestCellPrepBounded(t *testing.T) {
 
 // regression: #3353
 func TestCellPrepFences(t *testing.T) {
+	t.Run("actual concurrent starts and down", cellConcurrentStarts)
+	t.Run("interrupted owner", TestInteractiveOwnerCrashRefusesCadence)
+	t.Run("profile content", cellProfileChanges)
 	t.Run("cache accounting", TestCellCacheEnrollmentBounded)
 	c := preparedCell(t)
 	hashes := retainedHistory(t, c, 10)
@@ -213,5 +226,30 @@ func TestCellCacheEnrollmentBounded(t *testing.T) {
 		if _, err = cellcache.Prepare(*p); err == nil {
 			t.Fatal("missing/corrupt accounting treated as zero")
 		}
+	}
+}
+
+func cellProfileChanges(t *testing.T) {
+	f := newPolicyFixture(t, "2.1.278")
+	c := preparedCell(t)
+	c.Env.Put("CELL_MODEL_POLICY", f.policy)
+	fresh, err := c.prepareLaunch()
+	must(t, err)
+	if !fresh {
+		t.Fatal("profile preparation absent")
+	}
+	f.rewritePolicy(t, func(m map[string]any) {
+		roles := m["roles"].(map[string]any)
+		worker := roles["worker-desk"].(map[string]any)
+		worker["tier"] = "top"
+	})
+	fresh, err = c.prepareLaunch()
+	must(t, err)
+	if !fresh {
+		t.Fatal("changed profile content reused stale receipt")
+	}
+	must(t, os.WriteFile(f.policy, []byte("corrupt"), 0600))
+	if _, err = c.prepareLaunch(); err == nil {
+		t.Fatal("corrupt profile published preparation success")
 	}
 }

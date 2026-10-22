@@ -243,7 +243,10 @@ func (c *Cell) awaitRoleLease(role string, wait time.Duration, since time.Time) 
 // state was just cleared by an applied plan.
 func (c *Cell) convergeRoles(probes []upProbe, reconciled map[string]bool, gate func(role string, since time.Time) (string, error), open func(role string) error) []upRow {
 	var rows []upRow
-	began := time.Now()
+	began := c.launchStarted
+	if began.IsZero() {
+		began = time.Now()
+	}
 	confirmed := 0
 	requested := 0
 	for _, p := range probes {

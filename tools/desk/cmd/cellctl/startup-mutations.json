@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/cellctl ./internal/cellcache -run '^TestCellPrepBounded$/(walking_callers|cache_enrollment|history)|^TestCellPrepFences$|^TestCellLaunchTelemetry$|^TestCacheScanAdmission$' -count=1 -timeout=60s",
+  "test": "go test ./cmd/cellctl ./internal/cellcache ./internal/deskkit -run '^TestCellPrepBounded$/(walking_callers|cache_enrollment|history)|^TestCellPrepFences$|^TestCellLaunchTelemetry$|^TestCacheScanAdmission$' -count=1 -timeout=60s",
   "control": {
     "name": "remove preparation fence",
     "file": "internal/cellscratch/prepare.go",
@@ -45,9 +45,9 @@
     },
     {
       "name": "ignore resolved telemetry consent",
-      "file": "cmd/cellctl/perf.go",
-      "old": "enabled := c.Env != nil && c.telemetryValue() == \"1\"",
-      "new": "enabled := deskkit.PerfEnabled()"
+      "file": "internal/deskkit/perf.go",
+      "old": "if perfActive.Load() {\n\t\tif selected := perfSelectedConsent.Load(); selected != nil {",
+      "new": "if false && perfActive.Load() {\n\t\tif selected := perfSelectedConsent.Load(); selected != nil {"
     },
     {
       "name": "forget consumer admitted during scan",
@@ -61,5 +61,10 @@
       "old": "if m.lock != nil {\n\t\tm.lock.Release()\n\t\tm.lock = nil\n\t}\n\tv := Measurement",
       "new": "if m.lock != nil { m.lock = m.lock }\n\tv := Measurement"
     }
-  ]
+  ],
+  "timeout": {
+    "multiplier": 3,
+    "floor": "30s",
+    "baseline": "3m"
+  }
 }

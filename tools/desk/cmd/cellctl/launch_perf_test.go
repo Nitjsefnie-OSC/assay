@@ -28,7 +28,11 @@ func TestCellLaunchTelemetry(t *testing.T) {
 				value = "1"
 			}
 			must(t, os.WriteFile(path, append(base, []byte("\nASSAY_TELEMETRY="+value+"\n")...), 0600))
-			r := f.run(t, []string{"CELLCTL_DESKWT=0", "ASSAY_TELEMETRY=0"}, "desk", "example", "worker-desk", "--cadence", "off")
+			ambient := "0"
+			if !enabled {
+				ambient = "1"
+			}
+			r := f.run(t, []string{"CELLCTL_DESKWT=0", "ASSAY_TELEMETRY=" + ambient}, "desk", "example", "worker-desk", "--cadence", "off")
 			if r.code != 0 {
 				t.Fatalf("launch exit=%d stderr=%s", r.code, r.stderr)
 			}
@@ -40,7 +44,7 @@ func TestCellLaunchTelemetry(t *testing.T) {
 				}
 				return
 			}
-			for _, step := range []string{"launch-preparation", "launch-scratch-lock-wait", "launch-scratch-admission", "launch-cache-enrollment", "launch-child-start"} {
+			for _, step := range []string{"launch-preparation", "launch-scratch-lock-wait", "launch-scratch-admission", "launch-cache-enrollment", "launch-child-start", "launch-first-start", "launch-all-starts"} {
 				if !slices.Contains(got, "step:"+step) {
 					t.Fatalf("config-only launch omitted %s; got %v", step, got)
 				}

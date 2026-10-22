@@ -69,7 +69,14 @@ type PerfRecord = perfrec.Record
 
 // PerfEnabled reports whether local perf logging is armed: ASSAY_TELEMETRY compared to "1"
 // EXACTLY (perfrec.Enabled).
-func PerfEnabled() bool { return perfrec.Enabled() }
+func PerfEnabled() bool {
+	if perfActive.Load() {
+		if selected := perfSelectedConsent.Load(); selected != nil {
+			return *selected
+		}
+	}
+	return perfrec.Enabled()
+}
 
 // The in-process counters PerfRun reads. They are incremented unconditionally (an atomic add
 // is cheaper than the branch that would skip it) and reset at PerfRun entry; with the switch

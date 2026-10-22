@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/medici-finance/assay/perfrec"
 	"os"
 	"os/exec"
 	"runtime"
@@ -311,6 +312,7 @@ func cmdUp(c *Cell, v *cli.Values, cfgIn string, ctl upControl) {
 	ctl.toStderr()
 	defer ctl.restore()
 	started0 := time.Now()
+	c.launchStarted = perfrec.ProcessEntry().At()
 	noTheDesk, attach, persist := v.Bool("no-the-desk"), !v.Bool("no-attach") && !ctl.json && ctl.applyID == "", v.Bool("set")
 	wait := v.Duration("lease-wait")
 	if wait <= 0 {
