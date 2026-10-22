@@ -15,8 +15,12 @@ package main
 // The last two are always on, so they are the only bound while the cap is off.
 //
 // The counted role is the one whose App token performs the write — deskkit.SessionTokenRole,
-// the same custody that mints the token — never --raised-by, --to or any other flag or
-// variable. It is recorded in the audit line's Detail prefix and read back from there.
+// which maps the session's desk loop (DESK_LOOP) to a role, the same custody that mints the
+// token. It is never taken from --raised-by, --to or a per-role cap override. It is the first
+// field after the PR in the audit line's Detail prefix and is read back from there.
+//
+// The cap's resolved value and its source layer are recorded on every bound line
+// (boundConfigNote), so a cap raised or switched off from the environment stays visible.
 //
 // What the binding does NOT do: --for-pr does not bind the filer to the PR's author, its
 // reviewer or the holder of its dispatch claim. Any role may bind a filing to any open PR in
@@ -53,9 +57,19 @@ const briefNone = "none"
 
 var forPRRe = regexp.MustCompile(`^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([1-9][0-9]{0,9})$`)
 
-// boundPrefixRe reads back the Detail prefix boundPrefix writes. (?s) so a multi-line
-// remainder still matches.
-var boundPrefixRe = regexp.MustCompile(`(?s)^for-pr (\S+)#([0-9]+) brief (\S+) role (\S+) \| (.*)$`)
+// boundPrefixRe reads back the Detail prefix boundPrefix writes. The role is the field
+// right after the PR reference, ahead of the brief id, so it is read before any value that a
+// brief file supplies. (?s) so a multi-line remainder still matches.
+var boundPrefixRe = regexp.MustCompile(`(?s)^for-pr (\S+)#([0-9]+) role ([a-z0-9][a-z0-9._-]*) brief (\S+) \| (.*)$`)
+
+// briefIDRe is the strict grammar of a recorded brief id: lower-case segments of letters,
+// digits, '.', '_' and '-', joined by ':' or '/'. No whitespace and no '|' can reach the
+// audit prefix: a brief id may come from a brief file in the change request's own diff, so
+// it is text the PR author controls.
+var briefIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(?:[:/][a-z0-9][a-z0-9._-]*)+$`)
+
+// roleRe is the grammar of a counted role.
+var roleRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 // prRef is a parsed --for-pr reference.
 type prRef struct {
@@ -81,8 +95,20 @@ func parseForPR(s string) (prRef, error) {
 
 // boundPrefix is the Detail prefix of every audit line of a bound filing. It leads the line,
 // ahead of createSentMarker, and boundCharged strips it before applying chargedNewEntry.
-func boundPrefix(pr prRef, brief, role string) string {
-	return fmt.Sprintf("for-pr %s brief %s role %s | ", pr, brief, role)
+// Every field is checked against its grammar here, whatever its origin, so a value that could
+// change how the prefix reads back is refused rather than written.
+func boundPrefix(pr prRef, brief, role string) (string, error) {
+	if !forPRRe.MatchString(pr.String()) {
+		return "", deskkit.Refused(fmt.Sprintf("refused: --for-pr %q cannot be recorded", pr.String()))
+	}
+	if brief != briefNone && !briefIDRe.MatchString(brief) {
+		return "", deskkit.Refused(fmt.Sprintf("refused: brief id %q is not well formed "+
+			"(lower-case segments joined by ':' or '/', no spaces or '|')", brief))
+	}
+	if !roleRe.MatchString(role) {
+		return "", deskkit.Unverifiable(fmt.Sprintf("deskfile new --for-pr: counted role %q is not well formed", role), nil)
+	}
+	return fmt.Sprintf("for-pr %s role %s brief %s | ", pr, role, brief), nil
 }
 
 // boundRole resolves the counted role: the App role this session's write token is minted
@@ -98,23 +124,33 @@ func boundRole() (string, error) {
 	return role, nil
 }
 
-// boundLimits resolves the per-PR cap and its window for role from deskcore/config. A
-// resolution error (an out-of-bounds value, an unknown ASSAY_DESK_* variable) holds (exit 6):
-// a cap that cannot be read is never read as off.
-func boundLimits(role string) (config.Value, time.Duration, error) {
+// boundLimits resolves the per-PR cap and its window for role from deskcore/config. The
+// layers are the environment and the defaults only: deskfile reads no config file, so the
+// driver sets the cap through ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR[__<ROLE>] in the desk's
+// environment. A resolution error (an out-of-bounds value, an unknown ASSAY_DESK_* variable)
+// holds (exit 6): a cap that cannot be read is never read as off.
+func boundLimits(role string) (config.Value, config.Value, error) {
 	r, err := config.Resolve(config.EnvFromList(os.Environ()), config.KnobFile{}, config.Table())
 	if err != nil {
-		return config.Value{}, 0, deskkit.Unverifiable("deskfile new --for-pr: cannot resolve "+boundCapKnob, err)
+		return config.Value{}, config.Value{}, deskkit.Unverifiable("deskfile new --for-pr: cannot resolve "+boundCapKnob, err)
 	}
 	c, err := r.Get(boundCapKnob, role)
 	if err != nil {
-		return config.Value{}, 0, deskkit.Unverifiable("deskfile new --for-pr: cannot resolve "+boundCapKnob, err)
+		return config.Value{}, config.Value{}, deskkit.Unverifiable("deskfile new --for-pr: cannot resolve "+boundCapKnob, err)
 	}
 	w, err := r.Get(boundWindowKnob, role)
 	if err != nil {
-		return config.Value{}, 0, deskkit.Unverifiable("deskfile new --for-pr: cannot resolve "+boundWindowKnob, err)
+		return config.Value{}, config.Value{}, deskkit.Unverifiable("deskfile new --for-pr: cannot resolve "+boundWindowKnob, err)
 	}
-	return c, w.Duration(), nil
+	return c, w, nil
+}
+
+// boundConfigNote is the cap's provenance, recorded on every bound audit line once the cap
+// resolves: the value in force and the layer it came from (the environment variable that set
+// it, or the default), for the cap and its window. An override, including one that turns the
+// cap off, is therefore always on the line it governs.
+func boundConfigNote(c, w config.Value) string {
+	return "bound-config: " + c.String() + "; " + w.String()
 }
 
 // boundCharged reports whether a bound audit entry charges the per-PR cap, and which PR and
@@ -132,7 +168,7 @@ func boundCharged(e deskkit.Entry) (pr prRef, role string, charged bool, err err
 	}
 	rest := e
 	rest.Detail = m[5]
-	return prRef{Repo: m[1], N: n}, m[4], chargedNewEntry(rest), nil
+	return prRef{Repo: m[1], N: n}, m[3], chargedNewEntry(rest), nil
 }
 
 // checkBoundBudget applies the per-role, per-PR cap on bound filings. It returns nil when
@@ -283,7 +319,11 @@ func verifyBinding(pr prRef, briefArg string) (boundBinding, error) {
 }
 
 // prHasBrief reports whether a change request carries a brief: a Brief:, Cross-repo-brief:
-// or Authors: trailer, or a diff that touches any brief file.
+// or Authors: trailer, or a diff that touches any brief file. An Authors: change request (one
+// that authors briefs) therefore needs --brief; isPRsBrief then admits only a brief whose
+// file its diff touches, since an authoring change carries each authored brief's file.
+// Several Brief:, Cross-repo-brief: or Authors: trailers, or a mix of kinds, never reach
+// here: deskkit.ParseTrailers refuses them (exit 5).
 func prHasBrief(trailers []deskkit.Trailer, files []deskkit.ChangedFile) bool {
 	for _, t := range trailers {
 		switch t.Kind {
@@ -410,12 +450,28 @@ func frontmatterBrief(b []byte) string {
 // qualifiedBriefID is the id the audit records: the brief file's own frontmatter id when it
 // names the same stream/NN, else the canonical stream/NN. A qualified --brief whose prefix
 // disagrees with the frontmatter id names a different brief and is refused.
+//
+// The brief file may come from the change request's own diff, so its frontmatter id is
+// untrusted: one that names this brief but is not well formed (briefIDRe) is refused, and a
+// qualified --brief on a brief whose file carries no frontmatter id cannot be checked and is
+// refused too.
 func qualifiedBriefID(arg, id, fm string) (string, error) {
 	fm = strings.ToLower(strings.TrimSpace(fm))
-	if fm == "" || deskkit.CanonicalBriefID(fm) != id {
+	a := strings.Split(strings.ToLower(strings.TrimSpace(arg)), ":")
+	if fm == "" {
+		if len(a) > 2 {
+			return "", deskkit.Refused(fmt.Sprintf("refused: --brief %q is qualified, but brief %s carries no "+
+				"frontmatter brief: id to check the qualifier against — pass %s", arg, id, id))
+		}
 		return id, nil
 	}
-	a := strings.Split(strings.ToLower(strings.TrimSpace(arg)), ":")
+	if deskkit.CanonicalBriefID(fm) != id {
+		return id, nil
+	}
+	if !briefIDRe.MatchString(fm) {
+		return "", deskkit.Refused(fmt.Sprintf("refused: brief %s's frontmatter id %q is not a well-formed brief id "+
+			"(lower-case segments joined by ':' or '/', no spaces or '|')", id, fm))
+	}
 	f := strings.Split(fm, ":")
 	if len(a) > 2 {
 		if len(a) > len(f) {

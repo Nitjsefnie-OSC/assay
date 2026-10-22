@@ -683,11 +683,14 @@ type auditCtx struct {
 	readOnly bool
 
 	// bound is the Detail prefix of a workflow-bound filing (boundPrefix: `for-pr <owner/repo#N>
-	// brief <id> role <role> | `), set only once the binding and the counted role are both
+	// role <role> brief <id> | `), set only once the binding and the counted role are both
 	// resolved. It LEADS the line, ahead of createSentMarker: checkBoundBudget strips it and then
 	// applies chargedNewEntry to the rest, so the create-sent discriminator is read in the same
 	// place on a bound line as on an unbound one.
 	bound string
+	// boundCfg is the bound cap's provenance (boundConfigNote), appended to every bound line
+	// once the cap resolves, so an override of the cap is never off the line it governs.
+	boundCfg string
 }
 
 func (a *auditCtx) log(result, detail string) {
@@ -696,6 +699,9 @@ func (a *auditCtx) log(result, detail string) {
 	}
 	if a.bound != "" {
 		detail = a.bound + detail
+	}
+	if a.boundCfg != "" {
+		detail = strings.TrimSpace(detail + " | " + a.boundCfg)
 	}
 	if a.raisedBy != "" {
 		detail = strings.TrimSpace(detail + " | " + a.raisedBy)
@@ -907,6 +913,13 @@ func cmdNew(args []string) (err error) {
 		}
 		if !deskkit.IsAllowedRepo(p.Repo) {
 			return deskkit.Refused("refused: --for-pr repository " + p.Repo + " is not in the desk-tools repo set")
+		}
+		// The bound line is charged to (-R repo, PR number), so the two must be one repository:
+		// otherwise the PR's own per-change tier is under-charged and an unrelated item with the
+		// same number in -R is charged instead.
+		if p.Repo != *repo {
+			return deskkit.Refused("refused: --for-pr " + p.String() + " is in " + p.Repo + ", but -R is " + *repo +
+				" — a bound filing is filed in the change request's own repository (-R " + p.Repo + ")")
 		}
 		role, rerr := boundRole()
 		if rerr != nil {
@@ -1260,16 +1273,21 @@ func cmdNew(args []string) (err error) {
 			return berr
 		}
 		binding = b
+		prefix, perr := boundPrefix(b.pr, b.brief, boundAs)
+		if perr != nil {
+			return perr
+		}
 		ac.verb = boundVerb
-		ac.bound = boundPrefix(b.pr, b.brief, boundAs)
+		ac.bound = prefix
 		bn := b.pr.N
 		ac.target = &bn
 		limit, bwindow, lerr := boundLimits(boundAs)
 		if lerr != nil {
 			return lerr
 		}
+		ac.boundCfg = boundConfigNote(limit, bwindow)
 		if !limit.Off() {
-			if cerr := checkBoundBudget(b.pr, boundAs, time.Now(), limit.Value, bwindow); cerr != nil {
+			if cerr := checkBoundBudget(b.pr, boundAs, time.Now(), limit.Value, bwindow.Duration()); cerr != nil {
 				return cerr
 			}
 		}

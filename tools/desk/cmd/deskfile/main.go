@@ -45,17 +45,24 @@ new    — file a new issue. Runs a dedupe search against the repo's OPEN issues
          against the per-session budget above. The PR must be open, and --brief (or, when
          omitted, the PR's own brief, if any) must resolve to a brief file that is the PR's
          brief; otherwise the filing is REFUSED (exit 5; an unreadable PR or brief exits 6).
-         --brief without --for-pr, and --force-file with --for-pr, are refused (exit 5).
+         --brief without --for-pr, --force-file with --for-pr, and a -R other than the PR's
+         own repository are refused (exit 5). A PR with an Authors: trailer needs --brief
+         naming a brief whose file its diff touches; a qualified --brief needs the brief file
+         to carry a frontmatter brief: id, and a malformed frontmatter id is refused.
          --for-pr does NOT bind the filer to the PR — any session may name any open PR. The
          bound is the counting instead: a per-role, per-PR cap (knob
-         issue.file.bound_per_pr over issue.file.window; 0 = off), where the role is the
-         App identity that performs the write (from the session's token, never from
-         --raised-by, --to or the environment; an unresolvable role exits 6); the per-PR and
-         repo-wide outward-write tiers, which still charge every bound filing; and the audit
-         log, where each bound filing is its own verb (new-bound) naming the PR, brief and
-         role. Over the cap: exit 4 with a retry-after. After filing, a back-link comment is
-         posted on the PR; if it cannot be confirmed the issue still stands and the command
-         exits 6 naming the URL — do not re-file.
+         issue.file.bound_per_pr over issue.file.window; 0 = off, the default), where the
+         role is the one whose App token the session mints (selected by its desk loop,
+         DESK_LOOP), never --raised-by, --to or a per-role cap override; an unresolvable role
+         exits 6. The cap is read from the environment
+         (ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR[__<ROLE>]) and the defaults only, and every
+         bound audit line records the cap in force and its source. The per-PR and repo-wide
+         outward-write tiers still charge every bound filing, twice (the filing and its
+         back-link), so with the cap off they admit about half their write figure in
+         bound filings per hour. Each bound filing is its own audit verb (new-bound) naming
+         the PR, role and brief. Over the cap: exit 4 with a retry-after. After filing, a
+         back-link comment is posted on the PR; if it cannot be confirmed the issue still
+         stands and the command exits 6 naming the URL — do not re-file.
 
          --raised-by <role> stamps the provenance label raised-by:<role> so the by-desk
          issue metric can attribute the filing. The role vocabulary is DERIVED from the

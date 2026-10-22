@@ -1102,8 +1102,8 @@ issue the receiving desk's sweep leads with — and a spent filing budget never 
 relay onto the tracker, nor does a durable escalation ride the lane alone. A filing that an open
 PR's own review or verification requires (a blocker, a question) is workflow-bound: file it with
 `deskfile new --for-pr <owner>/<repo>#<N> --brief <id> …`, which the per-session budget does not
-count, so a spent budget never defers it — its bounds are a per-role, per-PR cap and the
-outward-write ceiling, and `--for-pr` does not bind the filer to that PR. With comms enabled, read your own lane
+count, so a spent budget never defers it — its bounds are a per-role, per-PR cap (off unless
+configured) and the outward-write ceiling, and `-R` must be that PR's repo; `--for-pr` does not bind the filer to that PR. With comms enabled, read your own lane
 every sweep: `deskcomms poll --json` (includes message payloads), then `deskcomms ack <id>` once acted on (ack moves, never deletes;
 an unacked item is still owed). The sender's cell and role come from the session context, never
 from a flag; the gateway address and signing key resolve from the project's house layer by NAME
