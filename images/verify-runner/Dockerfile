@@ -49,19 +49,26 @@ RUN set -eu; \
     test "$(gitleaks version)" = 8.30.1
 
 # Go module cache for tools/desk (which also holds the gopkg.in/yaml.v3 module
-# the containers/k8s YAML adapter runs on). Only module files are copied; the
-# downloads are checked against tools/desk/go.sum. Rows need no proxy, and the
-# cache stays read-only and world-readable for a non-root row user.
+# the containers/k8s YAML adapter runs on) and for statusgen, which tools/desk
+# tests build from source. Only module files are copied; the downloads are
+# checked against each module's go.sum. Rows need no proxy, and the cache stays
+# read-only and world-readable for a non-root row user.
 ENV GOMODCACHE=/go/pkg/mod
 COPY tools/desk/go.mod tools/desk/go.sum /tmp/modsrc/tools/desk/
+COPY statusgen/go.mod statusgen/go.sum /tmp/modsrc/statusgen/
 COPY comms/go.mod /tmp/modsrc/comms/
 COPY deskcore/go.mod /tmp/modsrc/deskcore/
 COPY forgeread/go.mod /tmp/modsrc/forgeread/
 COPY gitquiet/go.mod /tmp/modsrc/gitquiet/
 COPY perfrec/go.mod /tmp/modsrc/perfrec/
-RUN cd /tmp/modsrc/tools/desk \
- && GOWORK=off GOFLAGS=-mod=readonly GOTOOLCHAIN=local go mod download \
- && GOWORK=off GOFLAGS=-mod=readonly GOTOOLCHAIN=local go mod download gopkg.in/yaml.v3 \
- && cd / && rm -rf /tmp/modsrc /root/.cache
+RUN set -eu; \
+    export GOWORK=off GOFLAGS=-mod=readonly GOTOOLCHAIN=local; \
+    cd /tmp/modsrc/tools/desk; \
+    go mod download; \
+    go mod download gopkg.in/yaml.v3; \
+    cd /tmp/modsrc/statusgen; \
+    go mod download; \
+    cd /; \
+    rm -rf /tmp/modsrc /root/.cache
 
 COPY .release-images/harness/statusgen /usr/local/bin/statusgen
