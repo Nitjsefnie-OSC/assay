@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/cellctl ./internal/cellcache ./internal/deskkit -run '^TestCellPrepBounded$/(walking_callers|cache_enrollment|history)|^TestCellPrepFences$|^TestCellLaunchTelemetry$|^TestCacheScanAdmission$' -count=1 -timeout=60s",
+  "test": "go test ./cmd/cellctl ./internal/cellcache ./internal/deskkit ./internal/cellscratch -run '^TestCellPrepBounded$/(walking_callers|cache_enrollment|history)|^TestCellPrepFences$|^TestCellLaunchTelemetry$|^TestCacheScanAdmission$|^TestMaintenanceScanBound$' -count=1 -timeout=60s",
   "control": {
     "name": "remove preparation fence",
     "file": "internal/cellscratch/prepare.go",
@@ -66,6 +66,18 @@
       "file": "internal/cellcache/admit.go",
       "old": "const AdmitMaxAge =",
       "new": "func secondCacheAdmission(m *manager) Report {return m.check(false)}\n\nconst AdmitMaxAge ="
+    },
+    {
+      "name": "ignore finite scan inventory budget",
+      "file": "internal/deskkit/boundedwalk.go",
+      "old": "if remaining <= 0 || depth >= maintenanceDepth {",
+      "new": "if false && (remaining <= 0 || depth >= maintenanceDepth) {"
+    },
+    {
+      "name": "reclaim from partial scratch inventory",
+      "file": "internal/cellscratch/store.go",
+      "old": "if len(errs) > 0 {\n\t\trep.Partial = true",
+      "new": "if false && len(errs) > 0 {\n\t\trep.Partial = true"
     }
   ],
   "timeout": {

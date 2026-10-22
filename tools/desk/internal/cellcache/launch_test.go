@@ -5,6 +5,7 @@ package cellcache
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,4 +126,49 @@ func TestCacheAdmissionFences(t *testing.T) {
 			}
 		})
 	}
+}
+
+// regression: #3353
+func TestMaintenanceScanBound(t *testing.T) {
+	p := fixture(t)
+	if _, err := Prepare(p); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 65; i++ {
+		if err := os.WriteFile(filepath.Join(p.Root, "mod", fmt.Sprintf("wide-%03d", i)), []byte("retain"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, err := open(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.close()
+	t.Setenv("ASSAY_MAINTENANCE_ENTRY_LIMIT", "32")
+	rep := m.check(false)
+	if rep.Outcome != "could-not-check" || rep.Before.LogicalBytes != nil || rep.Reclaimed != 0 {
+		t.Fatalf("incomplete inventory gained authority: %+v", rep)
+	}
+	if _, err := os.Stat(filepath.Join(p.Root, "mod", "wide-000")); err != nil {
+		t.Fatal(err)
+	}
+	m.lock.Release()
+	m.lock = nil
+	if _, err := Acquire(p.Env()); err == nil {
+		t.Fatal("incomplete accounting admitted consumer")
+	}
+	t.Setenv("ASSAY_MAINTENANCE_ENTRY_LIMIT", "256")
+	time.Sleep(AdmitMtimeSlack)
+	rep, err = Check(p, false)
+	if err != nil || rep.Outcome != "checked-clean" || rep.Before.LogicalBytes == nil {
+		t.Fatalf("finite raised-budget recovery failed: %+v %v", rep, err)
+	}
+	lease, err := Acquire(p.Env())
+	if err != nil {
+		t.Fatalf("recovered accounting refused: %v", err)
+	}
+	if err := lease.Finish(true); err != nil {
+		t.Fatal(err)
+	}
+
 }

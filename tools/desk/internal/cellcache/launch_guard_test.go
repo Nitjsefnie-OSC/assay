@@ -15,10 +15,11 @@ func cacheInventorySites(name string, src []byte) ([]string, error) {
 		return nil, err
 	}
 	allowed := map[string]map[string]bool{
-		"check":     {"Check": true, "CheckRecorded": true},
-		"checkMode": {"check": true, "Wipe": true},
-		"measure":   {"checkMode": true},
-		"WalkDir":   {"measure": true, "verifiedTreeSize": true, "removeTree": true},
+		"check":          {"Check": true, "CheckRecorded": true},
+		"checkMode":      {"check": true, "Wipe": true},
+		"measure":        {"checkMode": true},
+		"BoundedWalkDir": {"measure": true, "verifiedTreeSize": true, "removeTree": true},
+		"WalkDir":        {"measure": true, "verifiedTreeSize": true, "removeTree": true},
 	}
 	var bad []string
 	for _, decl := range f.Decls {

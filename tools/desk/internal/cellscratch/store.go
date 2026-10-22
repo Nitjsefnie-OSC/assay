@@ -47,6 +47,7 @@ type Store struct {
 	lockWait   time.Duration
 	waited     time.Duration
 	walks      uint64
+	scanLimit  int
 	// Tests inject deletion failure at this single destruction boundary.
 	remove func(string) error
 }
@@ -398,6 +399,15 @@ func (s *Store) Sweep(p Policy, apply bool) (Report, error) {
 	if p.MaxAge < 0 || p.MaxBytes < 0 {
 		return rep, errors.New("negative scratch budget")
 	}
+	if s.scanLimit == 0 {
+		limit, err := deskkit.MaintenanceEntryLimit()
+		if err != nil {
+			rep.Partial = true
+			return rep, err
+		}
+		s.scanLimit = limit
+		defer func() { s.scanLimit = 0 }()
+	}
 	// Maintenance serializes other maintenance, never admission. Task leases
 	// protect candidates while recursive accounting runs outside the root lock.
 	maintenance, err := s.lock(maintenanceLockName)
@@ -409,9 +419,15 @@ func (s *Store) Sweep(p Policy, apply bool) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	entries, err := fs.ReadDir(s.root.FS(), ".")
+	f, err := s.root.Open(".")
+	var entries []fs.DirEntry
+	if err == nil {
+		entries, err = deskkit.ReadDirBounded(f, s.inventoryLimit())
+		f.Close()
+	}
 	lock.Release()
 	if err != nil {
+		rep.Partial = true
 		return rep, err
 	}
 	type candidate struct {
@@ -499,6 +515,12 @@ func (s *Store) Sweep(p Policy, apply bool) (Report, error) {
 			c.lease.Close()
 		}
 	}()
+	// Incomplete accounting grants no reclamation authority, even for earlier
+	// fully observed candidates. Their leases close through the defer above.
+	if len(errs) > 0 {
+		rep.Partial = true
+		return rep, errors.Join(errs...)
+	}
 	// Oldest retained diagnostics leave first. Successful acknowledged tasks need no
 	// local evidence; failed/recovered records retain exit status, receipt and bounded tail.
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].r.Created.Before(candidates[j].r.Created) })
@@ -618,7 +640,7 @@ func (s *Store) measure(name string) (int64, bool, error) {
 	}
 	var n int64
 	git := false
-	err = fs.WalkDir(s.root.FS(), name, func(p string, d fs.DirEntry, err error) error {
+	err = deskkit.BoundedWalkDir(s.root.FS(), name, s.inventoryLimit(), func(p string, d fs.DirEntry, err error) error {
 		if os.IsNotExist(err) && p == name {
 			return nil
 		}
@@ -671,7 +693,16 @@ func (s *Store) gitMarker(path, name string) (bool, error) {
 // Inventory is intentionally read-only and has no adoption or deletion flag. Legacy
 // directories have no enrollment proof and cannot be promoted by age or a matching name.
 func Inventory(path string) ([]Entry, error) {
-	entries, err := os.ReadDir(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	limit, err := deskkit.MaintenanceEntryLimit()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := deskkit.ReadDirBounded(f, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -680,4 +711,11 @@ func Inventory(path string) ([]Entry, error) {
 		out = append(out, Entry{ID: e.Name(), Action: "keep", Reason: "legacy/unmarked; verified ownership required"})
 	}
 	return out, nil
+}
+
+func (s *Store) inventoryLimit() int {
+	if s.scanLimit > 0 {
+		return s.scanLimit
+	}
+	return deskkit.MaintenanceEntries
 }

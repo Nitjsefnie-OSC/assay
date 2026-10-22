@@ -80,6 +80,7 @@ type manager struct {
 	free          func(string) (uint64, error)
 	refreshPolicy bool
 	walks         uint64
+	scanLimit     int
 	remove        func(string) error
 }
 
@@ -178,6 +179,11 @@ func (m *manager) close() {
 }
 
 func (m *manager) takeCustody() error {
+	if m.lock != nil {
+		m.lock.Release()
+		m.lock = nil
+		return errors.New("inventory retained admission custody")
+	}
 	f, err := m.r.OpenFile("lock", os.O_RDWR|noFollow, 0600)
 	if err != nil {
 		return err
@@ -230,7 +236,7 @@ func (m *manager) measure() (Measurement, []string) {
 		if _, err := m.r.Lstat(name); os.IsNotExist(err) {
 			continue
 		}
-		err := fs.WalkDir(m.r.FS(), name, func(path string, d fs.DirEntry, err error) error {
+		err := deskkit.BoundedWalkDir(m.r.FS(), name, m.inventoryLimit(), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -289,7 +295,7 @@ func (m *manager) active() ([]string, error) {
 		return nil, err
 	}
 	defer f.Close()
-	entries, err := f.ReadDir(-1)
+	entries, err := deskkit.ReadDirBounded(f, m.inventoryLimit())
 	if err != nil {
 		return nil, err
 	}
@@ -317,6 +323,17 @@ func (m *manager) check(dry bool) Report {
 
 func (m *manager) checkMode(dry, wipe bool) Report {
 	r := Report{Schema: schema, Policy: m.p, Filesystem: filesystemName(m.dev), DryRun: dry, Outcome: "checked-clean"}
+	if m.scanLimit == 0 {
+		limit, err := deskkit.MaintenanceEntryLimit()
+		if err != nil {
+			r.Outcome = "could-not-check"
+			r.Reason = err.Error()
+			r.Failures = []string{err.Error()}
+			return r
+		}
+		m.scanLimit = limit
+		defer func() { m.scanLimit = 0 }()
+	}
 	r.Before, r.Failures = m.measure()
 	if m.lock == nil {
 		r.Outcome = "could-not-check"
@@ -520,6 +537,9 @@ func (m *manager) trimBuild(now time.Time, est, target int64) trimResult {
 				refused = append(refused, err)
 				continue
 			}
+			if len(cands) >= m.inventoryLimit() {
+				return trimResult{err: deskkit.ErrScanLimit}
+			}
 			cands = append(cands, trimCandidate{path: sub + "/" + name, mtime: fi.ModTime()})
 		}
 	}
@@ -621,7 +641,15 @@ func (m *manager) subdirNames(sub string) ([]string, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return f.Readdirnames(-1)
+	entries, err := deskkit.ReadDirBounded(f, m.inventoryLimit())
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names, nil
 }
 
 // trimEntry removes one selected entry if it is older than cutoff, returning
@@ -665,7 +693,7 @@ func (m *manager) trimEntry(path string, cutoff time.Time) (int64, bool, error) 
 // refuses the whole directory before a byte of it is removed.
 func (m *manager) verifiedTreeSize(name string) (int64, error) {
 	var total int64
-	err := fs.WalkDir(m.r.FS(), name, func(path string, d fs.DirEntry, err error) error {
+	err := deskkit.BoundedWalkDir(m.r.FS(), name, m.inventoryLimit(), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -691,7 +719,7 @@ func (m *manager) removeTree(name string) error {
 	if _, err := m.r.Lstat(name); os.IsNotExist(err) {
 		return nil
 	}
-	err := fs.WalkDir(m.r.FS(), name, func(path string, d fs.DirEntry, err error) error {
+	err := deskkit.BoundedWalkDir(m.r.FS(), name, m.inventoryLimit(), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -980,3 +1008,10 @@ func Recover(p Policy, confirmed bool) error {
 
 // Paths are diagnostic only, never an invitation to adopt host cache locations.
 func (p Policy) ReportPath() string { return filepath.Join(p.Root, "report.json") }
+
+func (m *manager) inventoryLimit() int {
+	if m.scanLimit > 0 {
+		return m.scanLimit
+	}
+	return deskkit.MaintenanceEntries
+}
