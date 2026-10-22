@@ -11,7 +11,9 @@ import (
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
-// regression: verifier outcome records written inside the home refuse admission
+// regression: F-outcome-record-inside-home
+//
+// (A verifier outcome record written inside the home refuses verifier admission.)
 //
 // TestOutcomeRecordOutsideRoot: with --root (the verifier home), --outcome-record mirrors the
 // --brief-path fragment guard. A relative path, an absolute path inside the home, and an

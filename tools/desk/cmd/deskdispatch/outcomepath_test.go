@@ -27,7 +27,9 @@ func outcomeDirLines(t *testing.T, prompt string) []string {
 	return dirs
 }
 
-// regression: verifier outcome records written inside the home refuse admission
+// regression: F-outcome-record-inside-home
+//
+// (A verifier outcome record written inside the home refuses verifier admission.)
 //
 // TestVerifierOutcomePath: the verifier prompt names ONE absolute outcome directory outside
 // the home and the dispatcher root, with the exact `deskevidence --outcome-record … --root`
