@@ -234,9 +234,16 @@ COPY plugins/assay/ /opt/assay/plugin/
 
 # Non-root user. Home is routed onto the persistent volume (see ENV below) so
 # the parts of $HOME that must survive a container restart live on /work.
+# UID/GID 999 are PINNED, not left to system-ID allocation: the Kubernetes
+# manifests (containers/k8s/base/*.yaml) run as 999:999 with fsGroup 999, so the
+# number is a contract with them. groupadd/useradd fail if 999 is already taken,
+# and the id check fails the build if the account resolves to anything else.
+# tools/desk/internal/deskkit/deskuid_test.go holds this line and the manifests
+# to the same value on every PR.
 RUN set -eux; \
-    groupadd --system desk; \
-    useradd --system --gid desk --create-home --home-dir /home/desk --shell /bin/bash desk
+    groupadd --system --gid 999 desk; \
+    useradd --system --uid 999 --gid desk --create-home --home-dir /home/desk --shell /bin/bash desk; \
+    test "$(id -u desk):$(id -g desk)" = "999:999"
 
 # First-run installer for the interactive agent CLI. The CLI is proprietary and
 # is NOT redistributed inside this public image; this script installs it into

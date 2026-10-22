@@ -23,6 +23,82 @@ Pending notable changes are recorded as one-file-per-PR fragments under
 here at release time. This section is written only by the release workflow;
 do not add highlight bullets to it directly.
 
+## v1.0.56 — 2026-10-22
+
+### Fixed
+- The verify-runner image now carries what its rows need offline: a Go module cache for `tools/desk` (including the `gopkg.in/yaml.v3` module the `containers/k8s` YAML adapter uses) and for `statusgen`, which `tools/desk` tests build from source, at the image's `GOMODCACHE`, and kustomize v5.8.3, kubeconform v0.8.0 and gitleaks 8.30.1, each checked against a pinned sha256 at build time. Rows run with no network and a read-only root no longer stop at module or tool resolution before reaching their commands.
+
+### Changed
+- `deskevidence --dry-run` prints each row the stamp wrote. The verify-desk skill now says to leave Runner cells unannotated and to pre-check with `--dry-run`.
+- `deskevidence` now owns the on-behalf-of principal on the Runner cells of App-run Evidence rows a landing adds. It reads an existing annotation the way the attribution lint does. A cell carrying exactly the stamp the tool writes, naming the roster's principal, is left as it is. A planted or non-principal annotation, including a desk role, an unknown name, the same human in the other form, or the principal in another spelling, is stripped and restamped in place, keeping any source tag after it. A row naming a different roster human is refused, and nothing is written. So is a row whose Runner cell the lint would read differently from its text: an HTML comment in the cell or across the row's line break, invalid UTF-8, an invisible format character, a character whose lowercase form changes byte length, or any other non-ASCII character. Any line a landing adds to the body's Evidence section (a data row, header, separator or non-table line) holding a C0, DEL or C1 control character other than a tab is refused too; a line the base's Evidence section already holds is left. Like the lint, the tool finds the Evidence section only in the brief's body, never inside the frontmatter, and the `--brief-path` merge places new rows with the same body-only rule; the tool refuses a landing that carries an Evidence heading under a frontmatter block that never closes.
+
+## v1.0.55 — 2026-10-22
+
+### Added
+- A source-pinned git-ai research report covering caching, derived data, landing and storage concepts for future reuse.
+- The test ledger reads a `// characterization: <module> <oracle-file>` tag and reports `characterization-untriaged` for a tagged test its oracle's triage table does not list.
+- `deskfile new --for-pr <owner>/<repo>#<N> [--brief <id>]` files a workflow-bound issue (one an
+  open PR's review or verification requires) that the per-session filing budget does not count.
+  The PR must be open and the brief must be the PR's own brief. Bound filings audit as
+  `new-bound`, are capped per role and per PR by the new `issue.file.bound_per_pr` knob (default 0,
+  off; the cap and its source are recorded on every bound audit line), are filed in the PR's own
+  repository, still charge the per-PR and repo-wide outward-write tiers (two writes each: the
+  filing and the back-link comment on the PR). `--for-pr` does not bind the filer to the PR; the
+  counting is the bound.
+- `deskperf report --by-day` takes every perf-v3 figure — row count, perf-v3 wall, forge count and request rollup — from one window-wide selection: a replayed record counts once, a conflicting identity is excluded even when its copies fall on different days, and a workflow filter leaves out legacy/perf-v2 records (reported as unattributed). It refuses a `--group-by` other than `tool`, and both forge views note that the pooled forge section leaves out the perf-v3 http counter the by-day view counts.
+- `deskperf report --by-day`: the perf history reads as a timeseries — one row per tool × UTC day with invocation count, wall p50/p90/max per schema group (legacy, perf-v2 and perf-v3 walls stay separate), the forge count pooled over every schema, and the day's perf-v3 request rollup; text and `--json`.
+- `deskperf report` gains a perf-v3 requests-by-tool section: request attempts by protocol/resource class, request-latency p50/p90 estimated from the merged duration histogram, and rate-limit points summed where measured.
+- `deskrun log` prints a run's log once per job (every job of a GitHub run or GitLab pipeline; a job over the 4 MiB cap keeps its true last 4 MiB, and a log past the read, job-count or archive bounds is could-not-check rather than a shortened log; terminal control sequences stripped) under the calling worker or reviewer role's own read token, without reaching the write verbs' per-repo budget or circuit breaker (reads record under their own audit key, `deskrun-read`), and `deskrun retry` re-runs only the failed jobs of one run under the roster-bound run credential, refusing a human-bound repo before any mint. Both ride two new forge operations, `RunLog` and `RetryRun`, on the GitHub and GitLab backends. A `log` or `status` read writes its one audit line before it prints, so a reader that stops early (`| head`) still leaves the record, and a read that ends with no outcome is recorded as could-not-check, never ok. A GitLab retry that fails part-way names the jobs it had already retried. A GitHub job whose log the archive carries only as step files is still printed when other jobs have whole-job files.
+- `docs/refactor-oracle-template.md`: the refactor oracle a `redesign` is coded against — intent (bound to pinned and candidate sources), failure modes mapped to `// regression:` tests, triaged characterization tests (`keep` / `drop` / `unknown`), invariants, and five runnable acceptance rows that refuse on an `unknown` or an untested failure mode.
+- `perfrec` exports `EstimateDurationPercentile` and `DurationBinBounds`, so histogram percentile estimates reuse the writer's own bucket-edge definition instead of a second copy.
+- `perfrec` exports `SelectV3` (with `V3Selection` and `V3Filter.Used`): the deduplicated, filtered perf-v3 set `ReduceV3` aggregates, so a bucketing reader counts what the reducer counts.
+- `statusgen context discover|recheck|check --snapshot DIR [--json]`: an offline resolver over an explicit snapshot directory. It discovers the owners and consumers of a target from declared edges, plan frontmatter, `consumers:` fields, directory enumeration and prose candidates, and emits a context-handoff-v1 receipt that covers architecture only. It rechecks a prior receipt against a new snapshot (preserved / reconcile / hold); partial coverage on either side, such as a query truncated at its result limit, holds and is never reported current. It also checks amendment patches: a patch is refused when it is unbound, does not apply exactly, rewrites Evidence or dated history, silently rebinds an active claim, patches a delivered brief, or conflicts with an approved rival. See `docs/context-handoff.md`.
+
+### Fixed
+- Clarify verifier-domain consumer routing and Context field boundaries while preserving recorded verification holds and declared file scope.
+- Rename proof and row rewrites preserve similarly named guard paths. Comment rows cannot establish rename proof, and explicit numeric exits take precedence over explanatory non-zero prose; numeric overflow remains undecided.
+- Tests that move HOME to a scratch directory and run the go command no longer risk failing with "TempDir RemoveAll cleanup: directory not empty" after every assertion held: each such go command now runs through a shared test helper (`gitquiet/goquiet`) that turns Go telemetry off in the scratch home first, so no detached telemetry child is left writing there while the directory is removed. This widens the fix the cell Go cache tests got to every package whose tests do this, and a repository-wide guard with a positive control fails any new package that moves HOME and runs go without the helper.
+- The GitLab forge backend, the GitLab account-liveness read when it is handed a client, and `desktoken`'s GitLab rotation and post-rotation self-check now refuse every redirect. GitLab's `PRIVATE-TOKEN` header is forwarded on a redirect to another host, and a 307/308 re-sends a trigger token in the request body, so a redirecting instance could receive the credential; a 3xx is now a could-not-check (or a non-200 answer) and is never followed. `deskrun log` folds whitespace in a job name to single spaces, so a name can no longer print a section rule of its own; it now opens with a header marking the output as forge-origin data, prefixes every log line with `| `, escapes C1, bidi and zero-width codepoints, refuses a run keeping more than 64 MiB of log across its jobs, and withholds its output when its audit line cannot be written. A GitHub log download that fails in transport no longer carries the signed archive URL's query into the error text. `deskrun log` refuses any role but the worker or reviewer before it reads a credential on every forge, and each write verb's `--dry-run` is recorded before it prints.
+- The cell Go cache build tests no longer fail intermittently with "TempDir RemoveAll cleanup: directory not empty": each scratch HOME they hand to `go build` now has Go telemetry turned off first, so no detached telemetry child is left writing into the test's temporary directory while it is removed. A package guard keeps any new test from building a scratch HOME any other way.
+- The desk tools' body/diff secret scanner no longer refuses three everyday shapes as "high-entropy runs": a Go test name with a subtest path (`TestX/sub`, as Verify Expect cells and `go test -run` quote it), the all-`+` change bar of a pasted `git diff --stat` line, and CamelCase identifiers containing `OAuth`. Each admission is structural and bounded, and a credential glued behind a test name, a bar glued to a token, or a lone capital in place of `OAuth` still refuses.
+- The review cost fixture now checks every cohort's result against a literal expectation and reads each board observation's degraded-row and truncation signals, so a partial cohort can no longer be reported as `ok` while the test passes. Each issue-enumeration invocation must also record its own HTTP attempts.
+- `deskdispatch --kit verifier` now allocates a per-claim outcome-record directory outside the
+  verifier home and the dispatcher root (`<prompt dir>/outcomes/<claim key>/` beside
+  `--prompt-file`, else `<user cache>/assay/outcomes/<claim key>/`, owner-only, cache form
+  pruned after a week) and names it in the verifier
+  prompt with the exact `deskevidence --outcome-record … --root <home>` landing command; an
+  allocation that resolves inside either tree is refused, never moved. A claim key that is
+  not a single directory name (a separator, a `..`) is refused on both forms, never rewritten.
+  An outcomes directory (or, in the cache form, `<user cache>/assay`) that is a symlink or not
+  a directory, or that other users can write to, is refused before anything is pruned or
+  created, so the week-prune can never reach another tree.
+- `deskevidence --outcome-record` with `--root` refuses a relative path, or an absolute one
+  inside the verifier home (symlink aliases included), before any forge read, mirroring the
+  Evidence-fragment guard. Without `--root`, behaviour is unchanged.
+- `deskrebaseline` and the `verifyloop` runner no longer cut a Verify row at an escaped pipe (`\|`): the whole pipeline is parsed and run, as `statusgen` does.
+- `deskrebaseline` re-runs a renamed row against the renamed file before calling it `safe:rename`, and judges the behaviour probe against the row's Expect cell instead of treating any non-zero exit as a changed result. An Expect it cannot decide (prose only, or a "non-zero" exit without a number) is never proof: the row is `refused:unclassified`.
+- `verify-gate-close`: a refused human close now posts statusgen's own refusal text on the gate card, sanitized and fenced, instead of a fixed "not currently verified" line that hid the real reason (a HELD or could-not-check row, for example).
+
+### Changed
+- Amend forge-neutral briefs 42 and 44 with git-ai cache techniques, correctness controls and measured comparisons before proposing another service.
+- Batch pending-Evidence verifier PR metadata and complete file-list observations per planning pass through the existing Forge transport, preserving trust and fresh-head checks; add bounded native fallbacks and a repeatable busy-PR request-budget benchmark.
+- CI load on the shared self-hosted runner pool is cut without changing any required check: `ci` and `winparity` now run on push to `main` only (pull requests keep their `pull_request` run), superseded `ci` runs on a pull request are cancelled (main runs never are), `winparity` runs only when the Makefile, `scripts/build-windows.ps1`, its own source or its workflow changes, and `desk-platform-compile` skips its compile on pull requests that touch neither `tools/desk` nor a module it replaces, `go.work` or `ci.yml`.
+- On a pull request opened by the verifier App whose every changed file is under `docs/`, the `ci` jobs that read nothing under `docs/` (`desk-platform-compile`, `plugin-shell-suites`, `skillslint`, `cursor-generated`) are skipped by a job-level decision. The required `build-test` suite and `harnesslint` read `docs/` and still run on every pull request, and a new deskkit guard fails if a job that reads `docs/` becomes skippable. Any other author, any file outside `docs/`, or an unreadable change set runs every job.
+- Reject fabricated or omitted unknown costs on each review-workflow fixture invocation and HTTP attempt, with source mutations covering command-only and Git-reviewer corruption.
+- Reuse one repository-scoped authenticated reader per issueboard collection, preserving all projected populations, original history reads and fail-closed outcomes.
+- The `cell-api` stream is unparked and active for implementation. Its seven briefs keep their declared dependencies and human gates. Amendment 21 now records that the maintainer merge of medici-finance/assay#2890 ratified it, and the maintainer's own unpark request is cited where the stream is scheduled.
+- The author-brief skill and the review kit's design-fit section name the `oracle:` line: a design brief from a `redesign` carries it, and its `## Oracle` triage table is a material claim at review.
+- The driver's full-scope approval ruling: https://github.com/medici-finance/assay/pull/3381#issuecomment-6322683460
+- The native Windows leg (`windows-ci-leg`) now also runs nightly on GitHub-hosted runners, not only on release tags and manual dispatch.
+- The performance-collection stream is unparked and active, and its spec is approved at full scope. Every brief is dispatchable once its dependencies are met, the remote-path briefs /03, /04, /05 and /06 included, with the local-first path /01 → /02 → /07 → /08 as the delivery priority. Consent, verification, deployment gates and brief completion states are unchanged.
+- The standing truth suite (`truth-suite`) runs nightly and on manual dispatch instead of on every push to `main`. It produces no required check.
+- The standing truth suite's staged twin (`ci/staged-workflows/truth-suite.yml`) adds the
+  `cellctl` plan/apply mutation spec (`tools/desk/internal/cellop/mutations.json`) to its
+  mutation-gate matrix, so those guards are re-mutated on every push to main and daily once a
+  maintainer promotes it; until then no workflow runs that sweep.
+- `build-test` is sharded: a four-leg `build-test-shard` matrix runs the suite (tools/desk's packages split three ways, each tested exactly once), and a `build-test` job keeps the required check name, passing only when every leg passed (a skipped or cancelled leg fails it).
+- derived-board/10 brief amended (version 6) for the two holds found at pickup on #2703. Amendment A: the candidate cohort is committed as a hash-bound inventory, and the exact matcher bytes stay in a private replay checked against it. Amendment B: a PR that only mentions brief 07, under a trailer naming another brief or an issue, is never its backfill witness. Planning only; no code changes.
+
 ## v1.0.54 — 2026-10-21
 
 ### Added

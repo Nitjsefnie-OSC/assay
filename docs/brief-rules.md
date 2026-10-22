@@ -659,6 +659,101 @@ passing run — which is why they are lint rules and not review vigilance.
       behind records which one in its witness Result cell — `sandbox=unshare`
       (namespace-wrapped) or `sandbox=container-netns` (container-sandboxed) —
       so a reader can tell the two apart.
+      A `sandbox=container-netns` row is credited only inside a closed
+      **admission bracket** (desktools-v2/71), run within one dispatch with no
+      edit to the home between its steps: (1) on the host, `statusgen verifyrun
+      --open-bracket --root <home> --brief <path> --out <receipt>` runs the
+      admission check, digests the home's tree and writes the receipt (check
+      JSON, `tree`, `opened`) outside the home; (2) in the container,
+      `verifyrun --sandbox=container-netns --admission-receipt <receipt>
+      --container-image-digest sha256:<64 hex> --witness <file>` never runs
+      admission itself, refuses before any row unless its mounted root digests
+      to the receipt's `tree` and the receipt admits this brief, refuses after
+      the rows if they changed that tree (then no attestation or
+      `Tree-Digest` is written), and writes the witness table, then
+      `Tree-Digest:`, `Container-Image:` and the `Verification-Attestation:`
+      line to a new file outside the home; (3) on the host, `verifyrun
+      --close-bracket --root <home> --brief <path> --admission-receipt
+      <receipt> --witness <file>` re-runs the check and appends one
+      `Admission-Bracket: run=… source=… tree=sha256:… witness=sha256:…
+      opened=… closed=… before=receipt after=check-verifier` line only when the
+      check re-admits the run the witness names and the home still digests to
+      both the receipt's `tree` and the witness's `Tree-Digest`, read only
+      from the span that ends at the append position (a span with more than
+      one `Tree-Digest`, `Container-Image` or attestation line is refused). The tree
+      digest is sha256 over the sorted `<path> NUL <mode> NUL <sha256 of
+      content or link target> NUL` entries of every regular file and symlink
+      under the root, top-level `.git` excluded. `witness=` is the witness
+      digest `statusgen verifyrun --bracket-digest --witness <file>` prints:
+      sha256 over the span from the nearest witness header line
+      (`| # | Command | …`) above the bracket to the line before it, with
+      trailing whitespace stripped, blank lines dropped and lines joined with
+      LF, and each row's Runner cell (an escaped `\|` is never a cell
+      delimiter, as in the landing) normalised in three steps (remove the
+      exact `(on-behalf-of human:<subject>)` stamp, collapse whitespace runs,
+      trim), so the Evidence landing's principal stamp leaves it unchanged.
+      The `Tree-Digest`, `Container-Image` and attestation lines credited
+      with a bracket are the ones inside its own span, one of each, and its
+      `tree=` is compared with that span's `Tree-Digest`, never a line from
+      another bracket's span; the bracket's `run=` and `source=` must equal
+      that span's attestation and its `opened=` must be strictly before
+      `closed=` (both UTC RFC 3339), and the span's `Tree-Digest` and
+      `Container-Image` values must be `sha256:<64 hex>`; the verb reports
+      `mismatch` otherwise.
+      The verb prints one line per bracket in the file (`bracket=` and
+      `header=` line numbers, `witness=`, `recorded=`,
+      `verdict=match|mismatch|no-table|shared` where `shared` means another
+      bracket covers the same table, and `span-lines=`, the span's
+      `Tree-Digest`, `Container-Image` and attestation line counts) and
+      exits 0 only when every verdict is
+      `match` and no `sandbox=container-netns` row lies in no bracket's
+      span. Check it with that verb on the landed file, never a raw
+      `sha256sum`. A container row is credited only inside exactly one
+      bracket's span, and only when that bracket's verdict is `match`.
+      `verdict=match` shows only that the bracket is consistent with its
+      span, not who wrote it: the digest is keyless and computed from the
+      file's own bytes. A row is credited only when all of these conditions
+      hold. (1) The bracket line and every span line were landed by the
+      verifier's landing step: on the landed brief, `git blame
+      --line-porcelain` gives every line an `author-mail` that is the roster
+      verifier's noreply address with its pinned numeric id, never judged by
+      the display name; a roster human does not qualify, and one verifier
+      line elsewhere does not cover the rest. (2) The span's attestation
+      matches the verifier's attestation record for that run: the whole
+      `Verification-Attestation:` line (run, source, brief, model and tier)
+      equals the line rendered from the record its `<repo>#<issue>` names,
+      and that record is admitted as `ReadVerifierAttestation` admits it: an
+      issue titled exactly `[verification-attestation] <run>`, authored by
+      the roster's dispatcher identity (distinct from the verifier), closed,
+      its body never edited, and carrying the dispatcher's model stamp for
+      that model and tier. A record by any other author, the verifier
+      included, is not credit. (3) That attestation names the brief that
+      contains it (`brief=`) and the source under verification (`source=`).
+      A bracket and span written outside the landing step, a bracketed block
+      copied from another brief or an earlier source, or an attestation that
+      does not match its record is not credit, even when the digest matches.
+      `statusgen verifyrun --bracket-digest --witness <brief> --credit
+      --source <40 hex>` checks all three, read-only: each bracket's line
+      ends `credit=credited`, `credit=not-credited` or
+      `credit=could-not-check`, with the reason on standard error, and it
+      exits 0 only when every bracket is `credit=credited`. A row is
+      credited only on `credit=credited`, never on `verdict=match` alone.
+      The record must be in the brief's own repository, authored by the
+      dispatcher; a login-only verifier match, a shallow clone, a missing
+      roster or an unreadable record is `credit=could-not-check`, which is
+      not credit. A
+      container-netns run without
+      `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
+      Known limits: version 2 (cross-repository) receipts are refused; a
+      linked worktree's git directory is not mounted in the container, so rows
+      that need git history run on the host; the in-container digest is
+      only as trustworthy as the pinned image that computes it; and the
+      per-line provenance in (1) reads the commit author git records, which
+      is author-asserted attribution, not authorization: whoever can commit
+      to the brief can write the verifier's author address. The forge-attributed record
+      in (2) is the anchor; only server-side rules on who may push to the
+      brief's branch prevent the forgery, and a verifier roster entry with
+      no numeric id leaves provenance could-not-check.
     - `check` — deterministic but ENV-BOUND (a live PEM, a real queue, a tool on
       PATH). A runner executes it; CI skips an explicitly-classed one (its verdict
       rests on the verifier's authorship+signature, not on a CI re-run).

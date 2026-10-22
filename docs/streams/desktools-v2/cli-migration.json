@@ -183,6 +183,11 @@
     },
     {
       "class": "test",
+      "pattern": ".github/scripts/go-test-shard.py",
+      "reason": "CI test-partition helper run only by ci.yml's build-test-shard legs (and its own --self-test there); splits go list output across shards and refuses a partition that drops or repeats a package; never installed or released as an operator entrypoint"
+    },
+    {
+      "class": "test",
       "pattern": "tools/desk/internal/gremlintriage",
       "reason": "plan and triage helper built and run only by tools/gremlins/run.sh (issue #2647); not released and not an operator entrypoint"
     },
