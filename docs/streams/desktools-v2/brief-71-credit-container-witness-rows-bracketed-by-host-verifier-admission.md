@@ -37,7 +37,7 @@ consumers:
 
 ## Context
 
-files: statusgen/verifyrun.go, statusgen/verifieradmission.go, statusgen/verifysandbox.go and their tests; docs/brief-rules.md (rule 45); plugins/assay/skills/verify-desk/SKILL.md; plugins/assay/skills/pr-review-desk/SKILL.md; tools/desk/cmd/deskevidence/ (test only); tools/desk/internal/deskkit/verifierattestation.go (read only)
+files: statusgen/verifyrun.go, statusgen/verifieradmission.go, statusgen/verifysandbox.go and their tests; docs/brief-rules.md (rule 45); plugins/assay/skills/verify-desk/SKILL.md; plugins/assay/skills/pr-review-desk/SKILL.md; tools/desk/cmd/deskevidence/ (test only); tools/desk/internal/deskkit/verifierattestation.go (read only); statusgen/verifyflip.go and statusgen/evidenceactor.go (read only: the per-line history read Task 8 reuses); tools/desk/cmd/deskread/ (read only: the forge read Task 8 runs)
 
 facts:
 - Rule 45 (`docs/brief-rules.md:639`) admits `--sandbox=container-netns` as an explicit opt-in for a runner already inside a `--network none` container (`:649`-`:661`). Every sandboxed row records `sandbox=unshare` or `sandbox=container-netns` in its witness Result cell. `witnessSandboxOf` reads it (`statusgen/verifysandbox.go:148`).
@@ -62,9 +62,11 @@ again at the close) and the witness it closes (a hash of the witness on the brac
 line). The container bracket is therefore a required-proof capability on the
 attestation: a reader that does not support it refuses to credit the row. It is not an
 optional perf-v4 extension that a reader may skip. The verifier attestation format in
-deskkit is unchanged. No new verb is added.
+deskkit is unchanged. No new verb is added: the credit check of Task 8 is a read-only flag
+on `verifyrun --bracket-digest`, and its one forge read goes through `deskread`, the read
+verb statusgen already reaches the forge through.
 
-single-point-of-failure: the host close step's three-way tree-digest match (host at open, container before its rows, host at close), which binds the bytes the container ran to the admitted home — backed by the host's post-run admission check (the home and the binding did not move), the image digest that pins the `verifyrun` binary computing the in-container digest, and the landing-phase check `deskevidence` already repeats at `--root`.
+single-point-of-failure: the host close step's three-way tree-digest match (host at open, container before its rows, host at close), which binds the bytes the container ran to the admitted home — backed by the host's post-run admission check (the home and the binding did not move), the image digest that pins the `verifyrun` binary computing the in-container digest, and the landing-phase check `deskevidence` already repeats at `--root`. On the credit side, the bracket's digest is keyless and is computed from the brief's own bytes, so a match shows only that the bracket and its span agree with each other; credit rests on Task 8's per-line verifier provenance, attestation-record match and brief and source binding, which a bracket written outside the landing step fails even when its digest matches.
 
 ## Human decision
 
@@ -144,8 +146,12 @@ Stop at implemented.
    inside that bracket's span. A bracket with no span prints `header=none witness=none`
    and `span-lines=none`. Task 7's exactly-one check is read from this output rather than
    counted by hand. The counts drive the verdict. The verdict is `match` only when the
-   computed and recorded digests are equal, every count is 1, and the bracket's `tree=`
-   equals that span's one `Tree-Digest` value. It is `mismatch` otherwise, including a span
+   computed and recorded digests are equal, every count is 1, the bracket's `tree=`
+   equals that span's one `Tree-Digest` value, the bracket line has exactly the form the
+   close step writes (Task 6), its `run=` and `source=` equal that span's attestation's
+   `run=` and `source=`, and its `opened=` and `closed=` are UTC RFC 3339 times with
+   `opened` not after `closed`. The span digest does not cover the bracket line itself, so
+   these checks are what catch an edit to the bracket line after landing. It is `mismatch` otherwise, including a span
    whose digests are equal but where any count is other than 1; the verb then also names
    the reason on standard error. It is `no-table` when no witness table header lies above
    the bracket, and `shared`, in place of `match` or `mismatch`, when another bracket in
@@ -153,7 +159,11 @@ Stop at implemented.
    `match`, exits 1 when any verdict is `mismatch`, `no-table` or `shared`, and exits 2
    when the file cannot be read or carries no `Admission-Bracket:` line. A container row is credited only when it lies inside exactly one bracket's
    span. Rows under a table that two brackets both cover lie in two spans and are not
-   credited; that is what `shared` reports.
+   credited; that is what `shared` reports. The digest has no key and is computed from the
+   file's own bytes, so anyone who can edit the file can write a bracket whose verdict is
+   `match`: `verdict=match` shows only that a bracket is consistent with its own span, never
+   who wrote it or which run it belongs to. It is necessary for credit, not sufficient;
+   Task 8 decides credit. The `--bracket-digest` usage text says so.
 2. Host open step: `statusgen verifyrun --open-bracket --root <home> --brief <brief> --out
    <file>`. It runs `deskdispatch --check-verifier` on the host, refuses if `--out` lies
    inside the home, computes the home's tree digest, and writes the receipt file: the check's
@@ -202,11 +212,79 @@ Stop at implemented.
    `tree` must equal that span's `Tree-Digest`, never a `Tree-Digest` belonging to another
    table. `statusgen verifyrun --bracket-digest` run on the landed Evidence block must
    report `verdict=match` and `span-lines=tree-digest:1,container-image:1,attestation:1` on that bracket's own `bracket=` line (never a raw `sha256sum`,
-   which the landing stamp would break), and the bracket's `opened` must precede `closed`. Otherwise it is rejected as unattested. State the known
+   which the landing stamp would break), and the bracket's `opened` must precede `closed`.
+   The same run with `--credit --source <the source under verification>` (Task 8), on the
+   landed brief at the commit being judged, must report `credit=credited` on that same
+   `bracket=` line. Otherwise it is rejected as unattested. Rule 45, verify-desk and
+   pr-review-desk each state that `verdict=match` shows only that the bracket is
+   consistent with its span, not who wrote it, and that a row is credited only when all
+   of Task 8's conditions hold: the bracket line and every span line were landed by the
+   verifier's landing step, the span's attestation matches the verifier's attestation
+   record for that run, and that attestation names the brief that contains it and the
+   source under verification. A bracket and span written outside the landing step, a
+   bracketed block copied from another brief or an earlier source, or an attestation that
+   does not match its record is not credit, even when the digest matches. State the known
    limits: version 2 receipts are refused; a linked worktree's git directory is not mounted
-   in the container, so rows that need `git` history must run on the host; and the
-   in-container digest is only as trustworthy as the pinned image that computes it.
+   in the container, so rows that need `git` history must run on the host; the
+   in-container digest is only as trustworthy as the pinned image that computes it; and
+   credit needs the brief's full history and a forge read, so a shallow clone or an
+   unreachable forge is could-not-check, never credit.
    Regenerate the Cursor mirror.
+8. Credit check: `statusgen verifyrun --bracket-digest --witness <brief> --credit --source
+   <40 hex>`, a read-only flag on the existing verb. `--credit` requires `--source` and a
+   `--witness` file inside a git work tree. Each bracket's output line gains a final field
+   `credit=credited`, `credit=not-credited` or `credit=could-not-check`, and the reason is
+   named on standard error. Without `--credit` the output and exit status of Task 1 are
+   unchanged. A bracket is `credited` only when its verdict is `match` and all three of
+   these hold:
+   a. Provenance. The bracket line and every line of its span were landed by the
+      verifier's landing step. The history read that establishes this is the one the
+      verified-flip judge makes for a PASS stamp (`flipProvenance`,
+      `statusgen/verifyflip.go:756`-`:776`): on the brief file's committed `HEAD`,
+      `git blame --line-porcelain -L <header line>,<bracket line> -- <brief>` run through
+      `historyGit` (`statusgen/evidenceactor.go:932`), read with
+      `blameRawLines(dir, out, false)` (`:763`) so that each record's author is its commit
+      object's own, and judged line by line as `flipJudgeBlame` (`verifyflip.go:829`)
+      judges: the output must hold exactly one record per line from the header through
+      the bracket, and every record's author must classify as the roster's bound verifier
+      under `evidenceActorPolicyFromRoster` (`evidenceactor.go:290`), which matches the
+      commit author email's numeric id against the roster's `verifier=` binding and never
+      trusts a display name. Unlike the flip judge, a roster human does not qualify: the
+      verifier identity reaches a brief only through `deskevidence`, which checks that
+      the landed commit's author is the verifier App
+      (`tools/desk/cmd/deskevidence/deskevidence.go:73`). This is the per-line test, not
+      the Evidence-actor lint's any-line test, under which one verifier line anywhere in
+      Evidence covers every other line. Any span or bracket line whose working-tree bytes
+      differ from `HEAD`'s is `not-credited`, because an uncommitted line has no author.
+      A record by any other identity is `not-credited`. A shallow clone
+      (`isShallowRepository`, `evidenceactor.go:947`), an unavailable roster, a record
+      count other than the line count, or a record with no readable author is
+      `could-not-check`.
+   b. Record. The span's `Verification-Attestation:` line equals, byte for byte, the
+      line the verifier's own attestation record for that run renders. That record is
+      the forge issue the line names (`<repo>#<issue>`), written by the verifier at
+      admission, whose body is the binding `verifierBody` writes
+      (`tools/desk/internal/deskkit/verifierattestation.go:331`). It is read through
+      `deskread issue --issue <repo>#<issue>` and accepted only when its author is the
+      roster's verifier identity and its body parses as a version 1 binding. The
+      expected line is that binding rendered as `VerifierReceipt.EvidenceBinding`
+      renders it (`:487`-`:491`): the same comparison `deskevidence` makes before it
+      writes an outcome record (`tools/desk/cmd/deskevidence/outcomebinding.go:93`-`:96`).
+      The files under `docs/streams/verify-outcomes/` carry no `run=` and are written
+      after landing, so they are not the per-run record. A record by another author, or
+      a rendered line that differs in any field (run, source, brief, model or tier), is
+      `not-credited`. A failed read is `could-not-check`.
+   c. Binding. The attestation's `brief=` equals the repository-relative path of the
+      `--witness` file, so a block copied from another brief does not count. The
+      attestation's `source=`, and therefore the bracket's (Task 1), equals `--source`,
+      so a block from an earlier source of the same brief does not count. The bracket
+      line carries no `brief=` of its own; it is bound to the brief through its span's
+      attestation, which Task 1's verdict ties to the bracket's `run=` and `source=`.
+   It exits 0 only when every bracket is `credited`, 1 when any bracket is
+   `not-credited` (including any whose verdict is not `match`), and otherwise 2 when any
+   is `could-not-check` or when the file cannot be read or carries no
+   `Admission-Bracket:` line. Tests reach no network: they use fixture git repositories
+   with fixture author identities, a fixture roster, and a fake `deskread` on `PATH`.
 
 ## Verify
 
@@ -217,10 +295,11 @@ Stop at implemented.
 | 3 | check:ci | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | exit 0 and named PASS; a matching host check appends one `Admission-Bracket:` line carrying `tree=`, `witness=` (equal to `--bracket-digest` of the span above it), `opened=` and `closed=`; the witness digest is unchanged when an `(on-behalf-of human:<p>)` parenthetical is added to or replaced in a Runner cell, changes when a Result, Command or Date cell changes, and changes when a non-exact form such as `(on-behalf-of <desk role>)` or `(On-Behalf-Of human:x)` is added; a Runner cell carrying a `(git-config)` source tag digests the same unstamped and with the stamp inserted before the tag; in a file with two witness tables, each bracketed, `--bracket-digest` prints one line per bracket naming its own `bracket=` and nearest `header=` line, and a change in the first table changes only the first bracket's digest; a second bracket under the same table reports `verdict=shared` for both and exits non-zero; a bracket with no witness table header above it reports `verdict=no-table`; each printed line ends, after `verdict=`, with the span's `span-lines=tree-digest:<n>,container-image:<n>,attestation:<n>` counts, and a bracket with no witness table header above it prints `span-lines=none`; a bracket whose `witness=` equals its span's digest but whose span holds two `Tree-Digest:`, two `Container-Image:` or two `Verification-Attestation:` lines reports that count as 2 with `verdict=mismatch` and exits 1, and a second `Container-Image:` or `Verification-Attestation:` line added after the close likewise reports `verdict=mismatch`, so the row is not credited; a witness `Tree-Digest` that differs from the home's recomputed digest, a home whose digest changed between open and close, a changed source, a different run, a witness that already carries a bracket line, a span whose only `Tree-Digest:` or `Verification-Attestation:` line belongs to another table, a span with two `Tree-Digest:` lines, a span with two `Container-Image:` lines, a span with two `Verification-Attestation:` lines, or a refused host check each appends nothing and exits non-zero |
 | 4 | check:ci +flow +mutation | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestBracketedWitnessSurvivesLanding$' -count=1 -v` | exit 0 and named PASS; a bracketed container witness fixture with unannotated App Runner cells, at least one of which ends in a runner-source tag such as `(git-config)`, and at least one row whose Command cell contains an escaped pipe (`grep -e a \| wc -l`), is passed through `deskevidence`'s landing stamp (`stampEvidencePrincipal` with a fixture roster through the existing `principalSubjectFn` seam, no forge), which adds the annotation before the tag; `statusgen verifyrun --bracket-digest`, built from this branch by the test, on the stamped block reports `verdict=match` and its `witness=` equals the bracket's; the same fixture with one Result cell edited does not; mutation: make the digest split on every `|`, escaped or not; the escaped-pipe row's stamp is then not normalised away, the stamped block reports `verdict=mismatch`, and the named test must fail |
 | 5 | check:ci | `cd statusgen && go test -run '^TestSandbox' -count=1 -v .` | exit 0 and all seven existing `TestSandbox*` tests PASS; the existing loopback precheck, CI-lane and `--in-container` refusals are unchanged |
-| 6 | check:ci | `grep -n 'Admission-Bracket' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | all three files match |
+| 6 | check:ci | `grep -n -e 'Admission-Bracket' -e 'credit=credited' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | all three files match both patterns: each names the bracket and states that a row is credited only on `credit=credited`, not on `verdict=match` alone |
 | 7 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
 | 8 | check | `statusgen --root . --consumers --brief desktools-v2/71 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
 | 9 | check | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
+| 10 | check:ci +mutation | `cd statusgen && go test -run '^TestBracketCredit$' -count=1 -v .` | exit 0 and named PASS; in a fixture git repository with a fixture roster binding a verifier identity and a fake `deskread` on `PATH` serving that verifier's attestation record (no network): a bracketed container witness committed by the verifier identity, whose attestation equals the record's rendered line and names this brief and `--source`, reports `credit=credited` and exits 0; the same bracket and span bytes committed by an identity that is not the verifier still report `verdict=match` and exit 0 under `--bracket-digest` without `--credit`, while with `--credit` they report `verdict=match` and `credit=not-credited` and exit 1; `credit=not-credited` with `verdict=match` is likewise reported for a span in which only the attestation line, or only the bracket line, is the verifier's and the rest another identity's, for one span line rewritten by another identity after landing, for a bracket and span present only in the working tree, for a roster human's commit, for a block copied byte for byte from another brief, for a `--source` that differs from the attestation's, for a record whose rendered line differs in run, model or tier, and for a record whose author is not the verifier; a shallow clone, a missing roster and a failing `deskread` each report `credit=could-not-check` and exit 2; mutation: replace the per-line author check with the any-line test (one verifier-owned line in the range suffices) — the attestation-line-only case is then credited and the named test must fail |
 
 Pre-mortem: a container run that is still unattested when admission is not detected is
 caught by row 1. Re-running admission inside the container, or accepting a receipt for a
@@ -233,7 +312,11 @@ runner-source tag, is caught by rows 3 and 4. A bracket checked against the wron
 witness table, two brackets crediting one table, or a span carrying a duplicate
 `Container-Image:` or attestation line, is caught by row 3. A copied mount changed during
 the run is caught by row 2's after-rows digest. Loosening the existing sandbox refusals
-while adding the flags is caught by row 5.
+while adding the flags is caught by row 5. A bracket and span written outside the landing
+step, by hand or in another identity's commit, which still report `verdict=match` because
+the digest is keyless, is caught by row 10, as are a bracketed block copied from another
+brief or an earlier source and an attestation that does not match the verifier's record
+for its run. A credit rule that names `verdict=match` alone is caught by row 6.
 Mutation check for row 1: restore the conditional `required` path for container-netns and
 confirm row 1 goes red. Whether the receipt and close step together prove "immediately
 before and after" is for review to judge, with the human gate as the backstop.
