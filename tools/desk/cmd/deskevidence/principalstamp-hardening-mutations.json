@@ -1,0 +1,59 @@
+{
+  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop)$' -count=1 -timeout=300s",
+  "control": {
+    "name": "unreadable-cell refusal not consulted",
+    "file": "cmd/deskevidence/principalstamp.go",
+    "old": "if why := unreadableRunnerCell(cell, orig[sp[0]:sp[1]], joined[i]); why != \"\" {",
+    "new": "if why := unreadableRunnerCell(cell, orig[sp[0]:sp[1]], joined[i]); false && why != \"\" {"
+  },
+  "mutations": [
+    {
+      "name": "a comment crossing a line break is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tif joined {\n",
+      "new": "\tif false && joined {\n"
+    },
+    {
+      "name": "a comment inside the cell is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tif view != orig {\n",
+      "new": "\tif false && view != orig {\n"
+    },
+    {
+      "name": "invalid UTF-8 is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if r == utf8.RuneError && size == 1 {",
+      "new": "if false && r == utf8.RuneError && size == 1 {"
+    },
+    {
+      "name": "a format character is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if unicode.Is(unicode.Cf, r) {",
+      "new": "if false && unicode.Is(unicode.Cf, r) {"
+    },
+    {
+      "name": "a lowercase length change is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if utf8.RuneLen(unicode.ToLower(r)) != size {",
+      "new": "if false && utf8.RuneLen(unicode.ToLower(r)) != size {"
+    },
+    {
+      "name": "the backstop accepts any recognised-looking principal",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tcase p != strings.ToLower(subject):\n",
+      "new": "\tcase false && p != strings.ToLower(subject):\n"
+    },
+    {
+      "name": "the backstop accepts a second or non-exact annotation",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "strings.Count(strings.ToLower(runner), onBehalfOfCellMarker) != 1 || strings.Count(runner, canonicalStamp(subject)) != 1:",
+      "new": "false:"
+    },
+    {
+      "name": "the lint-way read keeps closed comments instead of removing them",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "lines := strings.Split(evidenceCommentRe.ReplaceAllString(section, \"\"), \"\\n\")",
+      "new": "lines := strings.Split(section, \"\\n\")"
+    }
+  ]
+}

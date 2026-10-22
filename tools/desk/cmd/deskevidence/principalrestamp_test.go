@@ -51,7 +51,8 @@ func restampCases() []restampCase {
 	return []restampCase{
 		{"public/bare", pub, app + " (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
 		{"public/same-subject", pub, app + " (on-behalf-of human:operator) (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
-		{"public/same-subject-case", pub, app + " (On-Behalf-Of human:Operator)", app + " (On-Behalf-Of human:Operator)"},
+		{"public/same-subject-case", pub, app + " (On-Behalf-Of human:Operator)", app + " (on-behalf-of human:operator)"},
+		{"public/same-subject-extra-words", pub, app + " (on-behalf-of human:operator and colleague)", app + " (on-behalf-of human:operator)"},
 		{"public/desk-role", pub, app + " (on-behalf-of verify-desk) (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
 		{"public/desk-role-bare", pub, app + " on-behalf-of verify-desk", app + " (on-behalf-of human:operator)"},
 		{"public/empty-human", pub, app + " (on-behalf-of human:) (ci-env)", app + " (on-behalf-of human:operator) (ci-env)"},
@@ -59,10 +60,17 @@ func restampCases() []restampCase {
 		{"public/login-form", pub, app + " (on-behalf-of human:example-operator) (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
 		{"public/first-occurrence-spoof", pub, app + " (on-behalf-of human:operator) (on-behalf-of human:someone) (git-config)", app + " (on-behalf-of human:operator) (git-config)"},
 		{"public/unclosed", pub, app + " (on-behalf-of verify-desk", app + " (on-behalf-of human:operator)"},
+		{"public/unclosed-before-tag", pub, app + " (on-behalf-of verify-desk (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
+		{"public/unclosed-human-before-tag", pub, app + " (on-behalf-of human:x (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
+		{"public/glued-tag-login", pub, app + " (on-behalf-of human:example-operator)(git-config)", app + " (on-behalf-of human:operator)(git-config)"},
+		{"public/glued-before-login", pub, app + "(on-behalf-of human:example-operator) (forge-identity)", app + "(on-behalf-of human:operator) (forge-identity)"},
+		{"public/tab-led-tag", pub, app + "\t(ci-env)", app + " (on-behalf-of human:operator)\t(ci-env)"},
+		{"public/tab-led-tag-desk-role", pub, app + " (on-behalf-of verify-desk)\t(ci-env)", app + " (on-behalf-of human:operator)\t(ci-env)"},
 		{"public/different-human", pub, app + " (on-behalf-of human:colleague) (forge-identity)", ""},
 		{"public/different-human-login", pub, app + " (on-behalf-of human:example-colleague)", ""},
 		{"public/different-human-shadowed", pub, app + " (on-behalf-of human:colleague) (on-behalf-of human:operator)", ""},
 		{"private/login", priv, app + " (on-behalf-of human:example-operator) (forge-identity)", app + " (on-behalf-of human:example-operator) (forge-identity)"},
+		{"private/glued-tag-neutral", priv, app + " (on-behalf-of human:operator)(forge-identity)", app + " (on-behalf-of human:example-operator)(forge-identity)"},
 		{"private/neutral-form", priv, app + " (on-behalf-of human:operator) (forge-identity)", app + " (on-behalf-of human:example-operator) (forge-identity)"},
 		{"private/desk-role", priv, app + " (on-behalf-of the-desk)", app + " (on-behalf-of human:example-operator)"},
 		{"private/different-human", priv, app + " (on-behalf-of human:colleague)", ""},
@@ -156,8 +164,11 @@ func TestPrincipalStampLintParity(t *testing.T) {
 		"public/bare": true, "public/desk-role": true, "public/desk-role-bare": true,
 		"public/empty-human": true, "public/unknown-human": true, "public/first-occurrence-spoof": true,
 		"public/unclosed": true, "private/desk-role": true,
+		"public/unclosed-before-tag": true, "public/unclosed-human-before-tag": true,
+		"public/tab-led-tag": true, "public/tab-led-tag-desk-role": true,
 	}
-	anyDateProblem := map[string]bool{"public/unknown-human": true, "public/first-occurrence-spoof": true}
+	anyDateProblem := map[string]bool{"public/unknown-human": true, "public/first-occurrence-spoof": true,
+		"public/unclosed-human-before-tag": true}
 	for _, date := range []string{"2026-10-14", "2026-09-01"} {
 		for _, tc := range restampCases() {
 			t.Run(date+"/"+tc.name, func(t *testing.T) {
@@ -269,5 +280,48 @@ func TestDryRunRestampsPlantedPrincipal(t *testing.T) {
 	}
 	if strings.Contains(out, "verify-desk") {
 		t.Fatalf("dry-run output still shows the planted annotation:\n%s", out)
+	}
+}
+
+// TestPrincipalStampRefusesUnreadable: an added App-run row whose Runner cell the lint would
+// read differently from its rendered text is refused before any write, never stamped:
+//   - an HTML comment crossing a line break (the lint removes it and reads the two lines as
+//     one row, so a different annotation becomes this row's principal);
+//   - a character whose lowercase form has a different byte length (the lint matches in a
+//     lowercased copy and slices the original at those offsets — Ⱥ grows, the Kelvin sign
+//     shrinks — so it would read a principal the cell does not render);
+//   - an invisible format character in the marker, and a comment inside the cell (the
+//     rendered marker and the one the lint matches are different text).
+//
+// regression: #4070
+func TestPrincipalStampRefusesUnreadable(t *testing.T) {
+	const app = "example-app[bot] @ abc1234"
+	const crosses, inside, length = "crosses a line break", "sits inside the cell", "lowercase form has a different byte length"
+	cases := []struct{ name, row, why string }{
+		{"comment-join-colleague", "| 2 | `b` | 0 | ok | 2026-10-14 | " + app + " <!--\n--> (on-behalf-of human:colleague) |\n", crosses},
+		{"comment-join-unknown", "| 2 | `b` | 0 | ok | 2026-10-14 | " + app + " <!--\n--> (on-behalf-of human:someone) |\n", crosses},
+		{"lowercase-grows-10", restampRow("2026-10-14", app+" "+strings.Repeat("\u023a", 10)+" (on-behalf-of human:colleague)operator)"), length},
+		{"lowercase-grows-18", restampRow("2026-10-14", app+" "+strings.Repeat("\u023a", 18)+" (on-behalf-of human:example-colleague)operator)"), length},
+		{"lowercase-shrinks", restampRow("2026-10-14", app+" \u212a\u212a (on-behalf-of human:operator)"), length},
+		{"zero-width-in-marker", restampRow("2026-10-14", app+" (on-behalf\u200b-of human:colleague)"), "invisible format character U+200B"},
+		{"comment-in-marker", restampRow("2026-10-14", app+" (on-behalf-<!-- -->of human:colleague) (forge-identity)"), inside},
+		{"invalid-utf8", restampRow("2026-10-14", app+" \xff (on-behalf-of human:operator)"), "not valid UTF-8"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setupStamp(t, true)
+			f.setFile(stampBrief, restampHead)
+			root := rootWithFile(t, stampBrief, restampHead+tc.row)
+			if code := run([]string{stampPublicRepo, "main", "--evidence-file", stampBrief, "--root", root}); code != deskkit.ExitRefused {
+				t.Fatalf("exit = %d, want %d (refused); landed:\n%s", code, deskkit.ExitRefused, f.putContent)
+			}
+			if f.putCalls != 0 {
+				t.Fatalf("an unreadable Runner cell still wrote %d time(s):\n%s", f.putCalls, f.putContent)
+			}
+			if got := lastAudit(t).Detail; !strings.Contains(got, "cannot read the way the lint does") || !strings.Contains(got, "line 7") ||
+				!strings.Contains(got, tc.why) {
+				t.Fatalf("refusal is not the unreadable-cell refusal for the row: %q", got)
+			}
+		})
 	}
 }

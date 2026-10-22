@@ -198,20 +198,35 @@ An added App cell that already carries `on-behalf-of` text is read the way the l
 it (the last `on-behalf-of human:<p>`, case-insensitive) and checked against `<who>` and the
 same roster's human set:
 
-- exactly one annotation naming `<who>` is left byte-identical;
+- exactly one annotation, written exactly `(on-behalf-of human:<who>)` byte for byte, is
+  left byte-identical;
 - an annotation not in the `human:` form (a desk role, a bare word), one naming no
-  recognised roster human, more than one annotation, or the same human in the other form
-  (the login on a public target, the neutral name on a private one) has every
-  `on-behalf-of` fragment stripped and `<who>` stamped — the trailer's strip-then-append
-  rule, so a planted annotation never survives and a login never stays on a public target;
+  recognised roster human, more than one annotation, the same human in the other form
+  (the login on a public target, the neutral name on a private one), or `<who>` in any other
+  spelling (other case, extra words after the name) has every `on-behalf-of` fragment
+  stripped and `<who>` stamped — the trailer's strip-then-append rule, so a planted
+  annotation never survives and a login never stays on a public target. An unclosed
+  fragment (`(on-behalf-of desk` with no `)`) ends before the next `(`, so a source tag after
+  it is kept;
 - any `human:` annotation naming a *different* recognised roster human refuses the landing
   (exit 5), naming the row; nothing is written. This is deliberately stricter than the lint,
   which accepts any recognised human: one human's attribution is never overwritten with
-  another's automatically.
+  another's automatically;
+- a Runner cell the tool cannot read the way the lint reads it refuses the landing (exit 5),
+  naming the row and the reason; nothing is written. That is an HTML comment inside the
+  cell, or one crossing a line break on the row's line (the lint removes comments, which
+  joins the lines around one into a single row); invalid UTF-8; an invisible format
+  character such as a zero-width space; or a character whose lowercase form has a different
+  byte length (the lint matches in a lowercased copy and slices the original at the same
+  offsets). As a last check, the landed section is read the way the lint reads it, and every
+  added App row must carry exactly one annotation, in the exact written form, naming `<who>`.
 
-The stamp is always one ` (on-behalf-of human:<who>)` parenthetical in the Runner cell, and a
-strip removes each old fragment with exactly one whitespace byte before it, so the rest of the
-row is byte-identical. The written stamp is exactly `(on-behalf-of human:<who>)` and nothing
+The stamp is always one `(on-behalf-of human:<who>)` parenthetical in the Runner cell. A
+restamp writes it where the last stripped fragment stood, with the whitespace byte that
+fragment carried (none, if it was glued to the text before it), and a strip removes each
+old fragment with that one byte, so the rest of the row is byte-identical. A fresh stamp
+goes before a trailing source tag, ahead of any spaces or tab between the text and the tag
+(a tag glued to the text gets the stamp glued too), or at the end of the cell. The written stamp is exactly `(on-behalf-of human:<who>)` and nothing
 broader, the one form a container witness bracket's digest drops from a Runner cell, so
 landing it or restamping one exact-form annotation to another never moves that digest. A
 non-exact annotation (a desk role, an empty principal) was inside the hash, so restamping it

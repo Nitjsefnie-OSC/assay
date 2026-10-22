@@ -194,3 +194,32 @@ func TestStampRefusesNoRoster(t *testing.T) {
 		t.Fatalf("refusal is not the stamp's own: %q", got)
 	}
 }
+
+// TestLandedPrincipalBackstop: the landing's last check reads the landed Evidence section the
+// way the lint does — closed comments REMOVED, so a comment crossing a line break joins the
+// lines around it — and accepts an added App-run Runner cell only when that reading carries
+// exactly one annotation, in the exact form the stamp writes, naming the resolved subject.
+//
+// regression: #4070
+func TestLandedPrincipalBackstop(t *testing.T) {
+	section := "## Evidence\n\n| # | Result | Runner |\n|---|---|---|\n" +
+		"| 1 | ok | example-app[bot] @ abc1234 <!--\n--> (on-behalf-of human:colleague) |\n"
+	rows := lintEvidenceRunners(section)
+	if len(rows) != 1 || rows[0].runner != "example-app[bot] @ abc1234  (on-behalf-of human:colleague)" {
+		t.Fatalf("the lint-way read did not join the commented lines into one row: %+v", rows)
+	}
+	for runner, wantOK := range map[string]bool{
+		"example-app[bot] @ abc1234 (on-behalf-of human:operator) (forge-identity)":                            true,
+		"example-app[bot] @ abc1234 (forge-identity)":                                                          false,
+		"example-app[bot] @ abc1234 (on-behalf-of human:colleague)":                                            false,
+		"example-app[bot] @ abc1234 (On-Behalf-Of human:Operator)":                                             false,
+		"example-app[bot] @ abc1234 (on-behalf-of human:operator) (on-behalf-of human:operator)":               false,
+		"example-app[bot] @ abc1234 on-behalf-of human:operator":                                               false,
+		"example-app[bot] @ abc1234 \u212a\u212a (on-behalf-of human:operator)":                                false,
+		"example-app[bot] @ abc1234 (on-behalf-of human:colleague) (on-behalf-of human:operator) (git-config)": false,
+	} {
+		if got := landedPrincipalProblem(runner, stampName); (got == "") != wantOK {
+			t.Fatalf("landedPrincipalProblem(%q) = %q, want accepted = %v", runner, got, wantOK)
+		}
+	}
+}
