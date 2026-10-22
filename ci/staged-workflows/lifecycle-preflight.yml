@@ -84,6 +84,7 @@ jobs:
       - name: Validate the proposed lifecycle transition
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           ASSAY_HUMAN_LOGIN_MAP: ${{ vars.ASSAY_HUMAN_LOGIN_MAP }}
           ASSAY_TRUSTED_BOT_SLUGS: ${{ vars.ASSAY_TRUSTED_BOT_SLUGS }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
