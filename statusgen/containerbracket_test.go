@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The container bracket (desktools-v2/71). Every test here runs on fixtures:
@@ -313,6 +314,12 @@ func TestContainerNetnsReceipt(t *testing.T) {
 func TestCloseBracket(t *testing.T) {
 	fx := newContainerFixture(t)
 	t.Setenv("DESK_LOOP", "")
+	// The clock is the test's: the open runs at clock, the close a minute
+	// later, so opened= strictly precedes closed= however fast the run is.
+	clock := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	savedNow := nowFunc
+	nowFunc = func() time.Time { return clock }
+	t.Cleanup(func() { nowFunc = savedNow })
 	openArgs := []string{"--open-bracket", "--root", fx.home, "--brief", fx.brief, "--out", fx.receipt}
 
 	// A refused open check writes no receipt.
@@ -328,6 +335,7 @@ func TestCloseBracket(t *testing.T) {
 	if res, stderr := captureVerifyrun(t, openArgs); res.code != verifyrunExitPass {
 		t.Fatalf("open: exit %d stderr %q", res.code, stderr)
 	}
+	clock = clock.Add(time.Minute)
 	if res, stderr := captureVerifyrun(t, fx.runArgs()); res.code != verifyrunExitPass {
 		t.Fatalf("container run: exit %d stderr %q", res.code, stderr)
 	}
@@ -387,6 +395,29 @@ func TestCloseBracket(t *testing.T) {
 			putFile(t, source, "attested source\n")
 		}
 	}
+
+	// The close's own time check: a receipt opened at the close's time, or
+	// after it, is refused and nothing is appended, so a written bracket's
+	// opened= always strictly precedes its closed=.
+	putFile(t, fx.check, validCheck)
+	putFile(t, fx.witness, witness)
+	t.Setenv("FAKE_DD_EXIT", "0")
+	receiptBody := getFile(t, fx.receipt)
+	receiptOpened := regexp.MustCompile(`"opened":"([^"]+)"`).FindStringSubmatch(receiptBody)
+	if receiptOpened == nil {
+		t.Fatalf("fixture: no opened time in the receipt %q", receiptBody)
+	}
+	for name, at := range map[string]time.Time{"opened at the close": clock, "opened after the close": clock.Add(time.Hour)} {
+		putFile(t, fx.receipt, strings.Replace(receiptBody, receiptOpened[0], `"opened":"`+at.Format(time.RFC3339)+`"`, 1))
+		res, stderr := captureVerifyrun(t, closeArgs)
+		if res.code == verifyrunExitPass || !strings.Contains(stderr, "is not after the receipt's opened time") {
+			t.Fatalf("%s: exit %d stderr %q, want the close refused", name, res.code, stderr)
+		}
+		if got := getFile(t, fx.witness); got != witness {
+			t.Fatalf("%s: a refused close changed the witness:\n%s", name, got)
+		}
+	}
+	putFile(t, fx.receipt, receiptBody)
 
 	putFile(t, fx.check, validCheck)
 	putFile(t, fx.witness, witness)
@@ -541,22 +572,55 @@ func TestCloseBracket(t *testing.T) {
 			t.Fatalf("a span with two %s lines: exit %d output %q", dup.name, res.code, out)
 		}
 	}
+	// The span's Tree-Digest and Container-Image values must be sha256
+	// digests, even under a recomputed witness= and a matching tree=.
+	imageLine := regexp.MustCompile(`(?m)^Container-Image: (\S+)$`).FindStringSubmatch(witness)
+	if imageLine == nil {
+		t.Fatalf("fixture: no Container-Image line in the witness:\n%s", witness)
+	}
+	for _, bad := range []struct{ name, from, to string }{
+		{"Container-Image", containerImagePrefix + imageLine[1], containerImagePrefix + "example/image:latest"},
+		{"Tree-Digest", tree[1], "sha256:short"},
+	} {
+		badWitness := strings.Replace(witness, bad.from, bad.to, 1)
+		badLine := strings.Replace(line, preClose, digestOf(t, badWitness), 1)
+		if bad.name == "Tree-Digest" {
+			badLine = strings.Replace(badLine, "tree="+tree[1], "tree="+bad.to, 1)
+		}
+		res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, badWitness+admissionBracketPrefix+badLine)})
+		if res.code != verifyrunExitFail || !strings.Contains(out, " verdict=mismatch ") || !strings.Contains(out, "is not a sha256:<64 hex> digest") {
+			t.Fatalf("a span whose %s is not a digest: exit %d output %q", bad.name, res.code, out)
+		}
+	}
+	// A sandbox=container-netns row in no bracket's span is never credited,
+	// so the verb does not exit 0 while one is in the file, even when every
+	// bracket matches; it names the rows' lines.
+	if witnessSandboxOf(row) != sandboxContainerNetns {
+		t.Fatalf("fixture row is not a container row: %q", row)
+	}
+	orphan := got + "\nprose between\n\n" + witness
+	if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, orphan)}); res.code != verifyrunExitFail ||
+		!strings.Contains(out, " verdict=match ") || !strings.Contains(out, "lie in no bracket's span (L") {
+		t.Fatalf("a container row outside every span: exit %d output %q", res.code, out)
+	}
 	// The bracket line's own fields sit outside the span's digest, so the
 	// verb binds them to the span instead: run= and source= must equal the
 	// span's attestation, the line must be the close step's form, and opened=
-	// and closed= must be UTC RFC 3339 times with opened not after closed. An
+	// and closed= must be UTC RFC 3339 times with opened strictly before closed. An
 	// edit to any of them after landing is a mismatch.
 	closedAt := regexp.MustCompile(` closed=(\S+) `).FindStringSubmatch(line)[1]
 	openedAt := regexp.MustCompile(` opened=(\S+) `).FindStringSubmatch(line)[1]
 	for _, edit := range []struct{ name, from, to, why string }{
 		{"run", "run=" + fixtureRun, "run=" + strings.Repeat("d", 64), "are not its own span's attestation"},
 		{"source", "source=" + fixtureSource, "source=" + strings.Repeat("c", 40), "are not its own span's attestation"},
-		{"opened after closed", "opened=" + openedAt, "opened=2999-01-01T00:00:00Z", "is after its closed="},
-		{"closed before opened", "closed=" + closedAt, "closed=2000-01-01T00:00:00Z", "is after its closed="},
+		{"opened after closed", "opened=" + openedAt, "opened=2999-01-01T00:00:00Z", "is not before its closed="},
+		{"closed before opened", "closed=" + closedAt, "closed=2000-01-01T00:00:00Z", "is not before its closed="},
+		{"opened equal to closed", "opened=" + openedAt, "opened=" + closedAt, "is not before its closed="},
 		{"opened not UTC RFC 3339", "opened=" + openedAt, "opened=" + strings.TrimSuffix(openedAt, "Z") + "+00:00", "is not a UTC RFC 3339 time"},
 		{"closed not a time", "closed=" + closedAt, "closed=yesterday", "is not a UTC RFC 3339 time"},
 		{"fixed tail dropped", " before=receipt after=check-verifier", "", "not the form the close step writes"},
 		{"extra field", " before=receipt", " note=x before=receipt", "not the form the close step writes"},
+		{"trailing field", " after=check-verifier", " after=check-verifier note=x", "not the form the close step writes"},
 	} {
 		edited := strings.Replace(line, edit.from, edit.to, 1)
 		if edited == line {
@@ -658,4 +722,23 @@ func captureVerifyrunOut(t *testing.T, args []string) (verifyrunResult, string) 
 	code := runVerifyrun(args, f, f)
 	f.Sync()
 	return verifyrunResult{code}, getFile(t, path)
+}
+
+// A receipt or witness path that does not exist yet is inside the home when a
+// symlinked parent directory leads into it, so the outside-home refusals name
+// the real cause.
+func TestRelWithinSymlinkedParent(t *testing.T) {
+	home, outside := t.TempDir(), t.TempDir()
+	link := filepath.Join(outside, "into-home")
+	if err := os.Symlink(home, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	for _, p := range []string{filepath.Join(link, "receipt.json"), filepath.Join(link, "missing", "dir", "witness.md")} {
+		if _, ok := relWithin(home, p); !ok {
+			t.Fatalf("%s leads into the home through a symlinked parent but reads as outside it", p)
+		}
+	}
+	if rel, ok := relWithin(home, filepath.Join(outside, "missing", "receipt.json")); ok {
+		t.Fatalf("a path outside the home reads as inside it (%s)", rel)
+	}
 }

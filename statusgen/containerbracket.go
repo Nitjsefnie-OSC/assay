@@ -37,7 +37,12 @@ import (
 //     Tree-Digest appends an Admission-Bracket line whose witness= is
 //     bracketDigest of the span above it.
 //
-// A container-sandboxed row is credited only inside a closed bracket.
+// A container-sandboxed row is credited only inside a closed bracket. The
+// bracket digest is keyless and computed from the file's own bytes, so a
+// match shows only that a bracket agrees with its span, never who wrote it:
+// credit also needs the bracket and its span landed by the verifier identity
+// line by line, and an attestation the verifier's record for that run backs,
+// naming the brief that holds it and the source under verification (rule 45).
 
 const (
 	containerImagePrefix   = "Container-Image: "
@@ -161,22 +166,37 @@ func containerAdmission(receiptPath, root, brief string) (string, string, error)
 }
 
 // relWithin returns p's slash path relative to root when p lies inside root,
-// after resolving symlinks on both.
+// after resolving symlinks on both. A path that does not exist yet (a receipt
+// or witness about to be written) is resolved through its nearest existing
+// ancestor, so a symlinked parent directory that leads into root counts as
+// inside it.
 func relWithin(root, p string) (string, bool) {
-	resolve := func(s string) string {
-		if abs, err := filepath.Abs(s); err == nil {
-			s = abs
-		}
-		if real, err := filepath.EvalSymlinks(s); err == nil {
-			return real
-		}
-		return filepath.Clean(s)
-	}
-	rel, err := filepath.Rel(resolve(root), resolve(p))
+	rel, err := filepath.Rel(resolveExisting(root), resolveExisting(p))
 	if err != nil || !filepath.IsLocal(rel) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+// resolveExisting makes s absolute and resolves symlinks in its longest
+// existing prefix, keeping the missing tail as written.
+func resolveExisting(s string) string {
+	if abs, err := filepath.Abs(s); err == nil {
+		s = abs
+	}
+	s = filepath.Clean(s)
+	rest := ""
+	for dir := s; ; {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return s
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+	}
 }
 
 // homeTreeDigest is the one tree digest every bracket step uses: sha256 over
@@ -453,8 +473,8 @@ func runCloseBracket(home, brief, receiptPath, witnessPath string, stdout, stder
 	}
 	opened, _ := time.Parse(time.RFC3339, receipt.Opened)
 	closed := nowFunc().UTC()
-	if closed.Before(opened) {
-		return refuse("the receipt's opened time %s is after the close %s", receipt.Opened, closed.Format(time.RFC3339))
+	if !closed.Truncate(time.Second).After(opened) {
+		return refuse("the close at %s is not after the receipt's opened time %s; the bracket's opened= must precede its closed=, so re-run the close once the clock has passed the open", closed.Format(time.RFC3339), receipt.Opened)
 	}
 	above := strings.Join(block.lines, "\n") + "\n"
 	witness, err := bracketDigest(above)
@@ -608,6 +628,30 @@ func bracketChecks(text string) []bracketCheck {
 	return checks
 }
 
+// containerRowsOutsideSpans returns the 1-based line numbers of the table rows
+// that record sandbox=container-netns and lie in no bracket's span (from a
+// bracket's header to the line before it). Such a row is never credited, so
+// --bracket-digest does not exit 0 while one is in the file.
+func containerRowsOutsideSpans(text string, checks []bracketCheck) []int {
+	lines := strings.Split(text, "\n")
+	inSpan := make([]bool, len(lines))
+	for _, c := range checks {
+		if c.header > 0 {
+			for i := c.header - 1; i < c.bracket-1 && i < len(lines); i++ {
+				inSpan[i] = true
+			}
+		}
+	}
+	var out []int
+	for i, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "|") && !isWitnessHeaderLine(l) && witnessSandboxOf(l) == sandboxContainerNetns && !inSpan[i] {
+			out = append(out, i+1)
+		}
+	}
+	return out
+}
+
 // bracketLineRe is the whole Admission-Bracket line the close step writes,
 // field for field, after trimming: run, source, tree, witness, opened and
 // closed, then the fixed before=receipt after=check-verifier.
@@ -619,7 +663,8 @@ var bracketLineRe = regexp.MustCompile(`^Admission-Bracket: run=(\S+) source=(\S
 // bracket line must be the close step's form with its tree= equal to that
 // span's Tree-Digest and its run= and source= equal to that span's
 // attestation, never a line from another bracket's span. Its opened= and
-// closed= must be UTC RFC 3339 times with opened not after closed. The span's
+// closed= must be UTC RFC 3339 times with opened strictly before closed, and
+// the span's Tree-Digest and Container-Image values sha256 digests. The span's
 // digest does not cover the bracket line itself, so without these checks an
 // edit to run=, source=, opened= or closed= after landing would go unnoticed.
 // It is "" when the span binds.
@@ -627,6 +672,12 @@ func spanBindingProblem(span []string, bracket string) string {
 	tree, attestation, problem := spanOwnLines(span)
 	if problem != "" {
 		return problem
+	}
+	if !sha256DigestRe.MatchString(tree) {
+		return fmt.Sprintf("its own span's %s %s is not a sha256:<64 hex> digest", strings.TrimSpace(treeDigestPrefix), tree)
+	}
+	if image := spanImage(span); !sha256DigestRe.MatchString(image) {
+		return fmt.Sprintf("its own span's %s %s is not a sha256:<64 hex> digest", strings.TrimSpace(containerImagePrefix), image)
 	}
 	b := bracketLineRe.FindStringSubmatch(strings.TrimSpace(bracket))
 	if b == nil {
@@ -650,8 +701,8 @@ func spanBindingProblem(span []string, bracket string) string {
 	if err != nil {
 		return fmt.Sprintf("the bracket's closed=%s %v", b[6], err)
 	}
-	if closed.Before(opened) {
-		return fmt.Sprintf("the bracket's opened=%s is after its closed=%s", b[5], b[6])
+	if !closed.After(opened) {
+		return fmt.Sprintf("the bracket's opened=%s is not before its closed=%s", b[5], b[6])
 	}
 	return ""
 }
@@ -692,6 +743,17 @@ func spanLineCounts(span []string) (trees []string, images int, attestations []s
 		}
 	}
 	return trees, images, attestations
+}
+
+// spanImage returns the value of a span's first Container-Image line, trimmed.
+func spanImage(span []string) string {
+	for _, l := range span {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, strings.TrimSpace(containerImagePrefix)) {
+			return strings.TrimSpace(strings.TrimPrefix(l, strings.TrimSpace(containerImagePrefix)))
+		}
+	}
+	return ""
 }
 
 // isWitnessHeaderLine reports whether a line, trimmed, is the first line of a

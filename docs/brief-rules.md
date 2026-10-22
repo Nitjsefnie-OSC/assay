@@ -696,17 +696,30 @@ passing run — which is why they are lint rules and not review vigilance.
       with a bracket are the ones inside its own span, one of each, and its
       `tree=` is compared with that span's `Tree-Digest`, never a line from
       another bracket's span; the bracket's `run=` and `source=` must equal
-      that span's attestation and its `opened=` must not be after `closed=`
-      (both UTC RFC 3339); the verb reports `mismatch` otherwise.
+      that span's attestation and its `opened=` must be strictly before
+      `closed=` (both UTC RFC 3339), and the span's `Tree-Digest` and
+      `Container-Image` values must be `sha256:<64 hex>`; the verb reports
+      `mismatch` otherwise.
       The verb prints one line per bracket in the file (`bracket=` and
       `header=` line numbers, `witness=`, `recorded=`,
       `verdict=match|mismatch|no-table|shared` where `shared` means another
       bracket covers the same table, and `span-lines=`, the span's
       `Tree-Digest`, `Container-Image` and attestation line counts) and
       exits 0 only when every verdict is
-      `match`. Check it with that verb on the landed file, never a raw
+      `match` and no `sandbox=container-netns` row lies in no bracket's
+      span. Check it with that verb on the landed file, never a raw
       `sha256sum`. A container row is credited only inside exactly one
-      bracket's span, and only when that bracket's verdict is `match`. A
+      bracket's span, and only when that bracket's verdict is `match`.
+      `match` is consistency, not authorship: the digest is keyless and
+      computed from the file's own bytes, so it never shows that the close
+      step ran or who wrote the lines. The row is credited only when, in
+      addition, the bracket line and every line of its span were landed by
+      the verifier identity (read per line on the landed file, never the
+      any-line Evidence-actor test), the span's attestation is the one the
+      verifier's attestation record for that `run=` renders, and its
+      `brief=` is the brief whose Evidence holds it and its `source=` the
+      source under verification. A block copied from another brief or an
+      earlier source, or written by hand, is never credit. A
       container-netns run without
       `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
       Known limits: version 2 (cross-repository) receipts are refused; a

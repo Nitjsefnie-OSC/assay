@@ -1054,7 +1054,7 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   line's span and that same span, not merely the same Evidence block, carries below its table one
   `Tree-Digest: sha256:…` line, one `Container-Image: sha256:…` digest and one
   `Verification-Attestation:` line, with a bracket whose `tree=` equals that span's `Tree-Digest`,
-  whose `run=` and `source=` equal that span's attestation, whose `opened=` precedes `closed=`, and
+  whose `run=` and `source=` equal that span's attestation, whose `opened=` strictly precedes `closed=`, and
   whose `witness=` equals what
   `statusgen verifyrun --bracket-digest --witness <file>` reports for it: `verdict=match` on that
   bracket's own `bracket=` line, run on the landed file. Never compare a raw `sha256sum`: the
@@ -1065,10 +1065,21 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   that bracket's own span, one of each, and its `tree=` is compared with that span's
   `Tree-Digest`, never a line from another bracket. The bracket line itself is outside the
   digest, so the verb also reports `mismatch` when its `run=`/`source=` differ from that span's
-  attestation or its `opened=`/`closed=` are not UTC times in order; the verdict line's
+  attestation or its `opened=` is not a UTC time strictly before `closed=`; the verdict line's
   `span-lines=tree-digest:1,container-image:1,attestation:1` shows those counts. `shared` (two brackets on one table),
-  `no-table` and `mismatch` are never credit. Credit a row only when it sits inside
+  `no-table` and `mismatch` are never credit, and the verb exits non-zero while any
+  `sandbox=container-netns` row lies in no bracket's span. Credit a row only when it sits inside
   exactly one bracket's span.
+  **`verdict=match` is consistency, not authorship.** The digest is keyless and computed from
+  the file's own bytes, so a hand-written bracket can match; the verb never shows that the close
+  step ran or who wrote the lines. Credit the row only when, in addition: (1) the bracket line and
+  every line of its span were landed by the verifier identity, read per line on the landed file
+  (`git blame`: each line's landing commit is an accepted verifier's), never the any-line
+  Evidence-actor test; (2) the span's `Verification-Attestation:` line is the one the verifier's
+  attestation record for that `run=` renders (the record the line's `<repo>#<issue>` names
+  carries the same run, source and brief); and (3) its `brief=` is the brief whose Evidence holds
+  it and its `source=` is the source under verification. A block copied from another brief or an
+  earlier source, or written by hand, is never credit, whatever the verb prints.
   Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
   refused in container mode; a linked worktree's git directory is not mounted in the container, so
   rows that need git history must run on the host; and the in-container digest is only as

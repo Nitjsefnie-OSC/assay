@@ -1746,13 +1746,26 @@ Flags:
                     its whitespace runs collapsed and is trimmed, so the
                     landing stamp never changes it. A digest match is still a
                     mismatch unless the span holds exactly one Tree-Digest,
-                    Container-Image and attestation line and the bracket's
-                    tree= equals that span's Tree-Digest (the reason goes to
-                    stderr). verdict is match, mismatch, no-table
-                    (no header above) or shared (another bracket has the same
+                    Container-Image and attestation line (both digests
+                    sha256:<64 hex>), the bracket line is the close step's
+                    form, its tree= equals that span's Tree-Digest, its run=
+                    and source= equal that span's attestation and its opened=
+                    is strictly before closed= (the reason goes to stderr).
+                    verdict is match, mismatch, no-table (no header above) or
+                    shared (another bracket has the same
                     header; neither credits the rows). Exit 0 only when every
-                    verdict is match; a file with no bracket is could-not-check.
+                    verdict is match and no sandbox=container-netns row lies
+                    outside every bracket's span (those rows are named on
+                    stderr); a file with no bracket is could-not-check.
                     A raw sha256sum of the landed bytes will not match.
+                    verdict=match shows only that a bracket agrees with its
+                    own span: the digest is keyless, computed from the file's
+                    own bytes, so it never shows who wrote the bracket or that
+                    the close step ran. Credit also needs the bracket and its
+                    span landed by the verifier identity line by line, the
+                    span's attestation equal to the verifier's attestation
+                    record for that run, and its brief= and source= the brief
+                    holding it and the source under verification (rule 45).
   --in-container    run the rows inside the PINNED harness container instead of on
                     the host — the supported execution-witness runner on Windows,
                     where a native pipefail bash is unreliable (#1418). Reads the
@@ -1892,6 +1905,14 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			if c.verdict != "match" {
 				code = verifyrunExitFail
 			}
+		}
+		if outside := containerRowsOutsideSpans(string(raw), checks); len(outside) > 0 {
+			var at []string
+			for _, n := range outside {
+				at = append(at, fmt.Sprintf("L%d", n))
+			}
+			fmt.Fprintf(stderr, "statusgen verifyrun --bracket-digest: %d sandbox=container-netns row(s) lie in no bracket's span (%s); they are never credited\n", len(outside), strings.Join(at, ","))
+			code = verifyrunExitFail
 		}
 		return code
 	}
