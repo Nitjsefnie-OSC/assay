@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/medici-finance/assay/gitquiet/goquiet"
 	rf "github.com/medici-finance/assay/tools/desk/internal/reviewflow"
 )
 
@@ -332,7 +333,7 @@ func contractMutation(t *testing.T, relative, old, replacement, run, diagnostic 
 	cmd := exec.CommandContext(ctx, "go", "test", "-overlay", path, "-count=1", "-timeout=60s", "-v", "-run", run, "./internal/reviewtest")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
-	out, e := cmd.CombinedOutput()
+	out, e := goquiet.Cmd(cmd).CombinedOutput()
 	if e == nil || !strings.Contains(string(out), diagnostic) || !strings.Contains(string(out), "--- FAIL: TestReview") {
 		t.Fatalf("mutation did not fail designated assertion: %v\n%s", e, out)
 	}
