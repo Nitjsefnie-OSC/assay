@@ -339,10 +339,17 @@ func (w *Writer) Append(stateDir string, rec Record) { _ = w.Write(stateDir, rec
 // Write is Append's body with the error kept, for the tests that need to see WHY a write did
 // not land. Production callers go through Append, which discards it.
 func (w *Writer) Write(stateDir string, rec Record) error {
+	return w.WriteEnabled(rec.Schema != SchemaV3 || Enabled(), stateDir, rec)
+}
+
+// WriteEnabled records with the application's resolved consent. Applications
+// that resolve configuration after process entry use the same writer and sink;
+// this value changes no retention, schema, redaction or observation contract.
+func (w *Writer) WriteEnabled(enabled bool, stateDir string, rec Record) error {
+	if !enabled {
+		return errors.New("perfrec: recording is disabled")
+	}
 	if rec.Schema == SchemaV3 {
-		if !Enabled() {
-			return errors.New("perfrec: v3 recording is disabled")
-		}
 		if err := validV3(rec); err != nil {
 			return err
 		}

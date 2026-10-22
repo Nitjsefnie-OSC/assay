@@ -607,6 +607,7 @@ func loadCell(name string) *Cell {
 			die("reset state unreadable: %v", err)
 		}
 	}
+	deskkit.PerfSelectConsent(c.telemetryValue() == "1")
 	return c
 }
 

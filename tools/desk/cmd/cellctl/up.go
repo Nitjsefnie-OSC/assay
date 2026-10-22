@@ -584,6 +584,14 @@ func cmdUp(c *Cell, v *cli.Values, cfgIn string, ctl upControl) {
 		}
 		c.commsPreflightStale(commsCfg, false)
 		probes, _ := probe(rs)
+		for _, p := range probes {
+			if p.Kind == probeAbsent {
+				if _, err := c.prepareLaunch(); err != nil {
+					die("up preparation: %v; no windows launched", err)
+				}
+				break
+			}
+		}
 		if o.Comms && res.Cockpit != "tmux" {
 			if err := c.startComms(res.Cockpit); err != nil {
 				die("up comms: %v", err)

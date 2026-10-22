@@ -122,9 +122,12 @@ func (c *Cell) runCadencedHarness(role, harness string, argv, env []string, wt s
 // record. The lease record is what lets a blocked sibling launch tell a holder
 // with a live role session (current) from one whose child has exited (stale).
 func (c *Cell) childStarted(scratch *scratchLaunch) func(int) error {
+	began := time.Now()
 	return func(pid int) error {
 		c.recordRoleChild(pid)
-		return scratch.run.Started(pid)
+		err := scratch.run.Started(pid)
+		c.recordLaunchStep("launch-child-start", time.Since(began), err)
+		return err
 	}
 }
 

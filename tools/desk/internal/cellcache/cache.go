@@ -70,17 +70,22 @@ type LowWaterTrim struct {
 }
 
 type manager struct {
-	p    Policy
-	r    *os.Root
-	lock *deskkit.HeldLock
-	dev  uint64
+	p       Policy
+	created bool
+	r       *os.Root
+	lock    *deskkit.HeldLock
+	dev     uint64
 	// Instance-local seams make unavailable measurements/removal deterministic
 	// in fixtures without mutating globals or touching host caches.
-	free   func(string) (uint64, error)
-	remove func(string) error
+	free          func(string) (uint64, error)
+	refreshPolicy bool
+	walks         uint64
+	remove        func(string) error
 }
 
-func open(p Policy, create bool) (*manager, error) {
+func open(p Policy, create bool) (*manager, error) { return openWithWait(p, create, LockWait) }
+
+func openWithWait(p Policy, create bool, wait time.Duration) (*manager, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -157,22 +162,68 @@ func open(p Policy, create bool) (*manager, error) {
 	// Bounded wait, with backoff, for short measurement/cleanup transactions.
 	// Busy is unknown, never permission to proceed without custody; a lasting
 	// busy read names the lock and its holder and says it is retryable.
-	held, err := deskkit.AcquireHeld(r, "lock", lock, deskkit.LockSpec{Name: "cell Go cache", Wait: LockWait, Log: os.Stderr})
+	held, err := deskkit.AcquireHeld(r, "lock", lock, deskkit.LockSpec{Name: "cell Go cache", Wait: wait, Log: os.Stderr})
 	if err != nil {
 		return fail(err)
 	}
-	m := &manager{p: p, r: r, lock: held, dev: dev, free: diskFree}
+	m := &manager{p: p, created: created, r: r, lock: held, dev: dev, free: diskFree}
 	m.remove = m.removeTree
 	return m, nil
 }
-func (m *manager) close() { m.lock.Release(); m.r.Close() }
+func (m *manager) close() {
+	if m.lock != nil {
+		m.lock.Release()
+	}
+	m.r.Close()
+}
+
+func (m *manager) takeCustody() error {
+	f, err := m.r.OpenFile("lock", os.O_RDWR|noFollow, 0600)
+	if err != nil {
+		return err
+	}
+	st, err := f.Stat()
+	if err == nil {
+		err = checkEntry(st, m.dev)
+	}
+	if err != nil {
+		f.Close()
+		return err
+	}
+	held, err := deskkit.AcquireHeld(m.r, "lock", f, deskkit.LockSpec{Name: "cell Go cache", Wait: LockWait, Log: os.Stderr})
+	if err != nil {
+		return err
+	}
+	m.lock = held
+	current, err := os.Lstat(m.p.Root)
+	opened, rootErr := m.r.Stat(".")
+	owner, ownerErr := readMetaBounded(m.r, m.dev, "owner", 1024)
+	if err != nil || rootErr != nil || !os.SameFile(current, opened) || ownerErr != nil || string(owner) != schema+"\n"+m.p.Domain+"\n" {
+		m.lock.Release()
+		m.lock = nil
+		return fmt.Errorf("cache root or ownership changed during inventory")
+	}
+	return nil
+}
 
 // LockWait bounds how long one cache transaction waits for a sibling's.
 var LockWait = time.Minute
 
 func (m *manager) measure() (Measurement, []string) {
+	m.walks++
+	epoch, epochErr := m.enrollmentEpoch()
+	// Inventory observes bytes, never authorizes deletion. Releasing custody
+	// keeps launches independent of historical size; active ownership is read
+	// again only AFTER reacquiring custody in checkMode.
+	if m.lock != nil {
+		m.lock.Release()
+		m.lock = nil
+	}
 	v := Measurement{At: time.Now().UTC()}
 	var failures []string
+	if epochErr != nil {
+		failures = append(failures, epochErr.Error())
+	}
 	var total int64
 	seen := map[[2]uint64]bool{}
 	for _, name := range []string{"build", "mod"} {
@@ -220,6 +271,15 @@ func (m *manager) measure() (Measurement, []string) {
 	} else {
 		v.AvailableBytes = &free
 	}
+	if err := m.takeCustody(); err != nil {
+		failures = append(failures, "reacquire cache custody: "+err.Error())
+	}
+	if m.lock != nil {
+		after, err := m.enrollmentEpoch()
+		if err != nil || epoch != after {
+			failures = append(failures, "consumer enrollment changed during inventory; retry maintenance")
+		}
+	}
 	return v, failures
 }
 
@@ -258,6 +318,28 @@ func (m *manager) check(dry bool) Report {
 func (m *manager) checkMode(dry, wipe bool) Report {
 	r := Report{Schema: schema, Policy: m.p, Filesystem: filesystemName(m.dev), DryRun: dry, Outcome: "checked-clean"}
 	r.Before, r.Failures = m.measure()
+	if m.lock == nil {
+		r.Outcome = "could-not-check"
+		r.Reason = "cache custody unavailable after inventory"
+		return r
+	}
+	if m.refreshPolicy {
+		current, err := m.recordedPolicy()
+		if err != nil {
+			r.Failures = append(r.Failures, "current policy: "+err.Error())
+		} else {
+			m.p = *current
+			r.Policy = *current
+		}
+	}
+	// The filesystem floor is current at the destructive/admission boundary,
+	// rather than a value cached before a potentially long inventory.
+	if free, err := m.free(m.p.Root); err != nil {
+		r.Before.AvailableBytes = nil
+		r.Failures = append(r.Failures, "available bytes: "+err.Error())
+	} else {
+		r.Before.AvailableBytes = &free
+	}
 	var err error
 	r.SkippedActive, err = m.active()
 	if err != nil {
@@ -643,8 +725,17 @@ func (m *manager) record(r Report) error {
 	if err != nil {
 		return err
 	}
+	if err = m.r.Rename("report.json", "previous.json"); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return m.writeMeta("report.json", append(b, '\n'))
+}
+
+// writeMeta is the existing bounded atomic metadata writer, shared by full
+// reports and the enrollment invalidation token. It never measures payloads.
+func (m *manager) writeMeta(target string, b []byte) error {
 	id := make([]byte, 16)
-	if _, err = rand.Read(id); err != nil {
+	if _, err := rand.Read(id); err != nil {
 		return err
 	}
 	name := "report-" + hex.EncodeToString(id) + ".tmp"
@@ -653,18 +744,23 @@ func (m *manager) record(r Report) error {
 		return err
 	}
 	defer m.r.Remove(name)
-	_, err = f.Write(append(b, '\n'))
+	_, err = f.Write(b)
 	err = errors.Join(err, f.Sync(), f.Close())
 	if err != nil {
 		return err
 	}
-	if err = m.r.Rename("report.json", "previous.json"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return m.r.Rename(name, "report.json")
+	return m.r.Rename(name, target)
 }
+func (m *manager) enrollmentEpoch() (string, error) {
+	b, err := readMetaBounded(m.r, m.dev, "enrollment", 128)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	return string(b), err
+}
+
 func finish(m *manager, r Report) (Report, error) {
-	if !r.DryRun {
+	if !r.DryRun && m.lock != nil {
 		if err := m.record(r); err != nil {
 			r.Outcome = "could-not-check"
 			r.Reason = "could not persist storage measurement"
@@ -766,6 +862,7 @@ func CheckRecorded(root string, dry bool) (Report, error) {
 		return r, &Deferred{r}
 	}
 	m.p = *fresh
+	m.refreshPolicy = true
 	return finish(m, m.check(dry))
 }
 
@@ -803,12 +900,12 @@ func Acquire(env []string) (*Lease, error) {
 			return nil, fmt.Errorf("cache environment needs exactly one %s", key)
 		}
 	}
-	m, err := open(*p, true)
+	m, err := openWithWait(*p, true, admissionWait)
 	if err != nil {
 		return nil, err
 	}
 	defer m.close()
-	if _, err = finish(m, m.check(false)); err != nil {
+	if _, err = m.launchCheck(); err != nil {
 		return nil, err
 	}
 	for _, name := range []string{"build", "mod", "gopath"} {
@@ -834,6 +931,11 @@ func Acquire(env []string) (*Lease, error) {
 	}
 	_, err = f.WriteString(time.Now().UTC().Format(time.RFC3339Nano) + "\n")
 	if err = errors.Join(err, f.Sync(), f.Close()); err != nil {
+		return nil, err
+	}
+	// A new enrollment invalidates an in-flight inventory even if the child
+	// exits and releases its active record before that inventory reacquires.
+	if err = m.writeMeta("enrollment", []byte(name)); err != nil {
 		return nil, err
 	}
 	return &Lease{policy: *p, record: name}, nil
