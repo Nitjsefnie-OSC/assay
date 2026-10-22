@@ -178,3 +178,57 @@ Other tables are not reported. The `Failure mode of the work | Caught by` map th
 skill allows beside the Verify table, a `Row | The mutation that must redden it` map and a legend
 (`Class | Meaning`) are not Verify-shaped, so they stay where the skill tells authors to put them.
 Registry entry: `verify-unplaced-rows`.
+
+## Notice ratchet on changed briefs (`--diff-base`)
+
+`statusgen --lint --diff-base <ref>` compares problems: a problem the diff introduces fires, one
+already at the merge-base is demoted. That left a gap for findings that are NOTICEs. A branch
+could add a brief, or edit one, and introduce a second broken Verify row or an unrouted
+`consumers:` entry; every one of them printed as a NOTICE and the run stayed green, so the same
+defects came back after each cleanup.
+
+The ratchet closes that gap on the briefs the diff adds or edits, in the same differential, not a
+new command. A finding is **actionable** when it is a member of the set below, it sits on a brief
+file the diff added, edited or renamed, and the brief's merge-base copy did not carry it. An
+actionable finding the base did not carry is reported as
+`PROBLEM: [notice-ratchet] new actionable finding on a changed brief, absent at the merge-base`
+and counts toward the exit code. One carried over from the base stays a NOTICE and is counted in
+the summary line `diff-lint: notice-ratchet: N new actionable notice(s) promoted to PROBLEM across
+M changed brief(s), K already at the base stay NOTICE`.
+
+**What is compared.** A single classifier turns each NOTICE into a structured finding: the rule,
+the repository-relative path, the Verify row number (or, for a brief-level finding, the
+identifier, declared path or consumers entry it names). Two findings are the same when those
+agree. Message wording and the absolute root of the tree that rendered them are not part of the
+identity, so rewording a message, or checking the base out under another directory, creates no
+finding. A renamed brief is compared with the copy at its old path. The classifier is the only
+place that reads rendered text, and the test matrix drives every included emitter.
+
+**Actionable (family A and B of the public rule-family inventory in the statusgen README).**
+
+- Structural Verify-row rules: `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`,
+  `rE2-literal-pipe`, `unsubstituted-metavar`, `gorun-exit`, `bre-alternation`, `shredded-cell`,
+  `moving-ref`, `gnu-only`, `gotest-run-vacuous`, `prose-led-command`, the `cmd-marker-*` rules,
+  `grep-pipe-zero-count` and `verify-row-portability`.
+- Row strength and dereference: `trivially-green`, `no-output-assertion`,
+  `table-touches-no-files`, `id-dereference`.
+- Risk and rationale metadata: `risk-files-crossread`, a brief with no `why:`, a `why:` that fails
+  the substance floor, and `exec-tier: strong` with no `exec-tier-why`.
+- Consumers routing: `consumers-unrouted`, `consumers-followup-no-target`,
+  `consumers-followup-one-way`, `consumers-prose`, `consumers-no-verify-row` and
+  `consumers-out-of-scope-no-reason`.
+
+**Classified and left as NOTICE, so they cannot fail a run by accident.** Every `COULD-NOT-CHECK`
+line of any rule (an unknown is reported as unknown, never as a finding); the heuristic
+`consumers-missing-list` prompt; `consumer-delivery-range`; closed-record and historical summary
+lines; the ordering-gate, no-outcome and decision-issue notices; eligibility unknowns; the
+board-ownership and attribution rules (family C); and any line with no brief path. Adding a rule
+to the ratchet is an amendment of the inventory, not an edit of the classifier alone.
+
+**When the comparison cannot be made.** If the base cannot be resolved, resolves to `HEAD`, or the
+list of changed briefs cannot be read, nothing is promoted and the run prints
+`NOTICE: notice-ratchet could-not-check` and `notice-ratchet comparison UNAVAILABLE`; it never
+prints a "0 new notices" line it did not compute. The existing full-strength problem behaviour
+for an unavailable base is unchanged. Untouched briefs are never gated, so the frozen history of
+closed records stays as it is: this ratchet stops new debt on the briefs a branch touches and does
+not retire the debt already in the register.

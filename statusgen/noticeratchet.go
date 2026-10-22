@@ -1,0 +1,335 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// Notice ratchet (statusgen/27).
+//
+// The differential lint (difflint.go) compares PROBLEMs only: a NOTICE the diff
+// introduces used to pass through with a green result, so new verification
+// defects replenished every cleanup. The ratchet closes that on the briefs the
+// diff touches: an ACTIONABLE finding that is on an added or edited brief at
+// head and was not on that brief at the merge-base is promoted to PROBLEM.
+// Everything else stays a visible NOTICE.
+//
+// One classifier owns the decision (parseLintNotice). It turns a rendered NOTICE
+// line into a structured finding (rule, repository-relative path, row identity,
+// subject) and compares THOSE, never the rendered line, so explanatory wording
+// and a temporary absolute root cannot mint a "new" finding. The classifier is
+// the only parser of rendered text in this file; the emitters that feed it are
+// listed in ratchetActionable below and every one is exercised by
+// TestNoticeRatchet.
+//
+// Inclusion set (the public rule-family inventory in
+// docs/streams/statusgen/README.md, "A/B findings on changed briefs"):
+//
+//   - Family A, structural Verify rows (verifyrows.go, verifyportability.go).
+//   - Family B, row strength (strength.go) and identifier dereference
+//     (linkcheck.go).
+//   - Family B, risk x files (riskfilescrossread.go) and the brief-file
+//     rationale checks in checkBriefFiles: absent or substance-invalid why,
+//     absent exec-tier-why.
+//   - Family B, consumer routing (consumers.go), except the heuristic prompt.
+//
+// Explicitly NOT members, so they stay visible and can never become an
+// authoring failure by accident:
+//
+//   - COULD-NOT-CHECK lines of any rule: an unknown is reported as unknown, it
+//     is neither a finding nor a clean read.
+//   - consumers-missing-list: a heuristic prompt, "never a verdict".
+//   - consumer-delivery-range and the outcome / decision-issue / sign-off
+//     metadata notices: not in the inventory's A or B rows.
+//   - Family C (board ownership, merged delivery, attribution, register links)
+//     and the ordering-gate suggestions: they belong to their existing loop
+//     owners and are not attributable to one brief file.
+//   - Historical and closed-record summaries, operational debt counters and
+//     informational lines: they carry no brief path and no row identity.
+//
+// Adding a rule to the ratchet is an inventory amendment, not a code edit here.
+
+// ratchetRowRules are the bracket tags of per-row findings that are actionable.
+// They are spelled through the emitters' own constants so a rename breaks the
+// build instead of silently dropping a rule from the gate.
+var ratchetRowRules = map[string]bool{
+	// Family A.
+	ruleERELiteralPipe:       true,
+	ruleGrepZeroCount:        true,
+	ruleExitSwallowed:        true,
+	ruleRE2LiteralPipe:       true,
+	ruleMetavar:              true,
+	ruleGoRunExit:            true,
+	ruleBREAlternation:       true,
+	ruleShreddedCell:         true,
+	ruleMovingRef:            true,
+	rulePortability:          true,
+	ruleGoTestRunVacuous:     true,
+	ruleProseLedCommand:      true,
+	ruleCmdMarkerAmbiguous:   true,
+	ruleCmdMarkerOverrides:   true,
+	ruleCmdMarkerNotHonoured: true,
+	ruleCmdMarkerVacuous:     true,
+	ruleGrepPipeZeroCount:    true,
+	"verify-row-portability": true, // verifyportability.go has no constant
+	// Family B, row strength.
+	ruleTriviallyGreen: true,
+	ruleNoOutputAssert: true,
+}
+
+// ratchetBriefRules are the bracket tags of brief-level findings that carry a
+// path and a subject (the identifier, or the declared path).
+var ratchetBriefRules = map[string]bool{
+	"id-dereference":       true, // linkcheck.go
+	ruleRiskFilesCrossRead: true,
+	ruleTableNoFiles:       true,
+}
+
+// ratchetUntagged are the actionable emitters whose NOTICE carries no bracket
+// tag. Each is keyed by the registry identity the inventory names (consumers)
+// or by the checkBriefFiles function plus its condition (the inventory's rule
+// for an unregistered check). Order matters only for readability: the patterns
+// do not overlap.
+var ratchetUntagged = []struct {
+	rule string
+	re   *regexp.Regexp
+}{
+	{"consumers-prose", regexp.MustCompile(`^consumers: is a prose paragraph`)},
+	{"consumers-no-verify-row", regexp.MustCompile(`^brief \S+ carries consumers: but no Verify row runs `)},
+	{"consumers-unrouted", regexp.MustCompile(`^consumers entry ("(?:[^"\\]|\\.)*") names no routing`)},
+	{"consumers-followup-no-target", regexp.MustCompile(`^consumers entry ("(?:[^"\\]|\\.)*") routes to a follow-up but names no`)},
+	{"consumers-followup-one-way", regexp.MustCompile(`^consumers entry ("(?:[^"\\]|\\.)*") routes to follow-up \S+, but \S+ never references `)},
+	{"consumers-out-of-scope-no-reason", regexp.MustCompile(`^consumers entry ("(?:[^"\\]|\\.)*") is routed out-of-scope with no substantive reason`)},
+	{"checkBriefFiles/why-absent", regexp.MustCompile(`^brief \S+ has no why:`)},
+	{"checkBriefFiles/why-substance", regexp.MustCompile(`^brief \S+ has a why: that fails the substance floor`)},
+	{"checkBriefFiles/exec-tier-why-absent", regexp.MustCompile(`^brief \S+ has exec-tier: strong but no exec-tier-why`)},
+}
+
+var (
+	// "<path>: Verify row <id> [<rule>] ..." (or "a Verify row" when unnumbered).
+	ratchetRowRe = regexp.MustCompile(`^(\S+\.md): (?:Verify row (\S+)|a Verify row) \[([A-Za-z0-9-]+)\] `)
+	// "[<rule>] <path>: ..." (id-dereference, risk-files-crossread).
+	ratchetLeadTagRe = regexp.MustCompile(`^\[([A-Za-z0-9-]+)\] (\S+\.md): (.*)$`)
+	// "<path>: [<rule>] ..." (table-touches-no-files).
+	ratchetPathTagRe = regexp.MustCompile(`^(\S+\.md): \[([A-Za-z0-9-]+)\] (.*)$`)
+	// "<path>: <message>" (the untagged emitters).
+	ratchetPlainRe = regexp.MustCompile(`^(\S+\.md): (.*)$`)
+
+	ratchetBacktickRe = regexp.MustCompile("`([^`]*)`")
+	ratchetDeclaredRe = regexp.MustCompile(`declares path ("(?:[^"\\]|\\.)*")`)
+)
+
+// lintFinding is the structured form of one actionable NOTICE. Equality of the
+// (rule, row, subject) triple at one path is the whole comparison; the rendered
+// wording is kept only for display.
+type lintFinding struct {
+	rule    string
+	path    string // repository-relative, slash-separated
+	row     string // Verify row id, "" for a brief-level finding
+	subject string // discriminator for brief-level findings (identifier, declared path, consumers entry)
+	raw     string // the original line, prefix stripped, for display
+}
+
+// identity is the comparison key WITHOUT the path, so a renamed brief can be
+// compared at its base path.
+func (f lintFinding) identity() string {
+	return f.rule + "\x00" + f.row + "\x00" + f.subject
+}
+
+// relativizeNoticeLine strips the PROBLEM:/NOTICE: prefix and the tree's own
+// root from one line, leaving repository-relative paths. Unlike a bare replace
+// of the root string it leaves a "." root alone (replacing "." deletes every
+// dot in the line, ".md" included).
+func relativizeNoticeLine(line, treeRoot string) string {
+	s := stripProblemPrefix(line)
+	if abs, err := filepath.Abs(treeRoot); err == nil && abs != "" && abs != "/" {
+		s = strings.ReplaceAll(s, abs+string(filepath.Separator), "")
+	}
+	if tr := filepath.Clean(treeRoot); tr != "." && tr != "" && tr != "/" {
+		s = strings.ReplaceAll(s, tr+string(filepath.Separator), "")
+	}
+	s = strings.ReplaceAll(s, "./docs/", "docs/")
+	return filepath.ToSlash(s)
+}
+
+func isBriefPath(p string) bool {
+	b := filepath.Base(filepath.FromSlash(p))
+	return strings.HasPrefix(b, "brief-") && strings.HasSuffix(b, ".md")
+}
+
+// parseLintNotice is the single classifier. ok is true only for an actionable
+// finding on a brief file; every other line (a could-not-check, a heuristic
+// prompt, a summary, a non-member rule, a notice with no brief path) returns
+// false and stays a plain NOTICE.
+func parseLintNotice(line, treeRoot string) (lintFinding, bool) {
+	s := strings.TrimSpace(relativizeNoticeLine(line, treeRoot))
+	if strings.Contains(s, "COULD-NOT-CHECK") {
+		return lintFinding{}, false
+	}
+	f := lintFinding{raw: s}
+	if m := ratchetRowRe.FindStringSubmatch(s); m != nil {
+		if !ratchetRowRules[m[3]] || !isBriefPath(m[1]) {
+			return lintFinding{}, false
+		}
+		f.path, f.row, f.rule = m[1], m[2], m[3]
+		if f.row == "" { // an unnumbered row: the first code span is its identity
+			f.subject = firstBacktick(s[len(m[0]):])
+		}
+		return f, true
+	}
+	if m := ratchetLeadTagRe.FindStringSubmatch(s); m != nil {
+		if !ratchetBriefRules[m[1]] || !isBriefPath(m[2]) {
+			return lintFinding{}, false
+		}
+		f.rule, f.path = m[1], m[2]
+		switch m[1] {
+		case "id-dereference":
+			f.subject = firstBacktick(m[3])
+		case ruleRiskFilesCrossRead:
+			if d := ratchetDeclaredRe.FindStringSubmatch(m[3]); d != nil {
+				f.subject = d[1]
+			}
+		}
+		return f, true
+	}
+	if m := ratchetPathTagRe.FindStringSubmatch(s); m != nil {
+		if !ratchetBriefRules[m[2]] || !isBriefPath(m[1]) {
+			return lintFinding{}, false
+		}
+		f.path, f.rule = m[1], m[2]
+		return f, true
+	}
+	if m := ratchetPlainRe.FindStringSubmatch(s); m != nil && isBriefPath(m[1]) {
+		for _, u := range ratchetUntagged {
+			if um := u.re.FindStringSubmatch(m[2]); um != nil {
+				f.path, f.rule = m[1], u.rule
+				if len(um) > 1 {
+					f.subject = um[1]
+				}
+				return f, true
+			}
+		}
+	}
+	return lintFinding{}, false
+}
+
+func firstBacktick(s string) string {
+	if m := ratchetBacktickRe.FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// noticeRatchetResult is the outcome of one root's notice comparison.
+type noticeRatchetResult struct {
+	introduced []string // original NOTICE lines promoted to PROBLEM
+	carried    int      // actionable findings on changed briefs already present at the base (stay NOTICE)
+	examined   int      // changed briefs the comparison covered
+}
+
+// evaluateNoticeRatchet compares the actionable findings of the changed briefs
+// at head against the base. changed maps each head brief path to its base path
+// ("" for an added brief). A head finding is carried when the same
+// (rule, row, subject) is at the brief's base path, and introduced otherwise.
+func evaluateNoticeRatchet(headNotices, baseNotices []string, headRoot, baseRoot string, changed map[string]string) noticeRatchetResult {
+	res := noticeRatchetResult{}
+	for p := range changed {
+		if isBriefPath(p) {
+			res.examined++
+		}
+	}
+	baseSet := map[string]map[string]bool{} // base path -> identity set
+	for _, n := range baseNotices {
+		if f, ok := parseLintNotice(n, baseRoot); ok {
+			if baseSet[f.path] == nil {
+				baseSet[f.path] = map[string]bool{}
+			}
+			baseSet[f.path][f.identity()] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, n := range headNotices {
+		f, ok := parseLintNotice(n, headRoot)
+		if !ok {
+			continue
+		}
+		basePath, isChanged := changed[f.path]
+		if !isChanged {
+			continue
+		}
+		key := f.path + "\x00" + f.identity()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if basePath != "" && baseSet[basePath][f.identity()] {
+			res.carried++
+			continue
+		}
+		res.introduced = append(res.introduced, n)
+	}
+	sort.Strings(res.introduced)
+	return res
+}
+
+// productionChangedBriefs lists the brief files the working tree adds or edits
+// relative to baseSHA, as head path -> base path ("" when added). Paths are
+// relative to root. A rename carries its old path so debt that merely moved is
+// not re-counted as new. Untracked brief files count as added.
+func productionChangedBriefs(root, baseSHA string) (map[string]string, error) {
+	out, err := exec.Command("git", "-C", root, "diff", "--name-status", "-M", "-z", "--relative", "--no-color", baseSHA, "--", ".").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff --name-status %s: %w", short(baseSHA), err)
+	}
+	changed := map[string]string{}
+	tok := bytes.Split(bytes.TrimRight(out, "\x00"), []byte{0})
+	for i := 0; i < len(tok); {
+		status := string(tok[i])
+		i++
+		if status == "" {
+			continue
+		}
+		need := 1
+		if status[0] == 'R' || status[0] == 'C' {
+			need = 2
+		}
+		if i+need > len(tok) {
+			return nil, fmt.Errorf("git diff --name-status: truncated record %q", status)
+		}
+		switch status[0] {
+		case 'D':
+		case 'R':
+			if np := filepath.ToSlash(string(tok[i+1])); isBriefPath(np) {
+				changed[np] = filepath.ToSlash(string(tok[i]))
+			}
+		case 'C':
+			if np := filepath.ToSlash(string(tok[i+1])); isBriefPath(np) {
+				changed[np] = ""
+			}
+		default:
+			if p := filepath.ToSlash(string(tok[i])); isBriefPath(p) {
+				if status[0] == 'A' {
+					changed[p] = ""
+				} else {
+					changed[p] = p
+				}
+			}
+		}
+		i += need
+	}
+	un, err := exec.Command("git", "-C", root, "ls-files", "--others", "--exclude-standard", "-z").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files --others: %w", err)
+	}
+	for _, p := range bytes.Split(bytes.TrimRight(un, "\x00"), []byte{0}) {
+		if sp := filepath.ToSlash(string(p)); isBriefPath(sp) {
+			changed[sp] = ""
+		}
+	}
+	return changed, nil
+}
