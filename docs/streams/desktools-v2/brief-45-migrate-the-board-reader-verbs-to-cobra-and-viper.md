@@ -284,5 +284,15 @@ Verification-Attestation: medici-finance/assay#3986 run=4975641cc629b1e995f48445
 
 **VERIFY: BLOCKED** — 8 of 9 rows pass at merged main 471fa0feb in the network-off assay-verify:go1.27-py container. Row 8 is could-not-check: the regression floor exits 1 in that image on cellctl seed TestReg1145ShimCredential, whose no-gh fixture case needs an image without gh at /usr/bin. That is an executor or fixture-hermeticity mismatch, not an observed failure of this brief's obligations, and the supplemental run in the gh-free go1.27 image passed all 26 seeds. Row 9 keeps its existing unpinned-consumers caveat.
 
+### Citation addendum — 2026-10-22, verify-desk (non-implementer), to the 2026-10-21 re-pass at merged main 471fa0feb
+
+Append-only addendum to the "Verifier re-pass — 2026-10-21 … merged main 471fa0feb" section above. It edits nothing above it and re-runs no Verify row. It answers this PR's blocking review finding F-blocked-no-issue and the advisory finding on row 8's seed count.
+
+Blocker: the row 8 could-not-check is tracked on #4008 (open). That issue records that the no-gh fixture case in the cellctl suite gen-shims-gh-token.test.sh (lines 220-222) sets PATH=/usr/bin:/bin and asserts GH_CALL_RC=127, so it assumes gh is absent from /usr/bin. The admitted assay-verify:go1.27-py image ships gh at /usr/bin/gh, so the case fails in that image for a reason this brief's change does not own. Row 8 clears when #4008 is fixed or when row 8 re-runs, with its own witness, on an executor that has no gh in /usr/bin.
+
+Seed count for row 8 in the admitted image. check-floor.sh runs under `set -euo pipefail` and exits 1 at the first failing seed. The floor manifest at 471fa0feb lists 26 seeds, and TestReg1145ShimCredential is the 18th. So in the admitted image 18 of the 26 seeds ran: 17 printed PASS, 1 failed, and the 8 after it (seeds 19 to 26) did not run. The 26/26 figure (`seed passes=26`) comes only from the supplemental probe in the gh-free assay-verify:go1.27 image, which earns no acceptance credit.
+
+**VERIFY: BLOCKED** — 8 of 9 rows pass at merged main 471fa0feb in the network-off assay-verify:go1.27-py container. Row 8 is could-not-check, tracked on #4008. Row 9 keeps its existing unpinned-consumers caveat.
+
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.
