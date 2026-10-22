@@ -88,6 +88,7 @@ func TestBudgetCountedPerRole(t *testing.T) {
 
 // TestBoundPerPRKnobPerRole: the bound-filing cap is a per-role budget, off by default, and a
 // value set for one role leaves every other role at its own value.
+// regression: #4072
 func TestBoundPerPRKnobPerRole(t *testing.T) {
 	r := resolve(t, map[string]string{"ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR__WORKER": "2"}, KnobFile{})
 	if v := get(t, r, "issue.file.bound_per_pr", "worker"); v.Value != 2 || v.Off() || v.Layer != LayerEnv {

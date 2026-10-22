@@ -124,6 +124,7 @@ func boundEntries(t *testing.T) []deskkit.Entry {
 }
 
 // TestBoundFiling: the binding, its refusals and its exemption from the per-session rate.
+// regression: #4072
 func TestBoundFiling(t *testing.T) {
 	t.Run("spent budget, bound files", func(t *testing.T) {
 		calls := boundEnv(t)
@@ -229,6 +230,7 @@ func TestBoundFiling(t *testing.T) {
 }
 
 // TestBoundFilingCap: the per-role, per-change cap and how its role is chosen.
+// regression: #4072
 func TestBoundFilingCap(t *testing.T) {
 	boundEnv(t)
 	t.Setenv("ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR__WORKER", "2")
@@ -299,6 +301,7 @@ func TestBoundFilingCap(t *testing.T) {
 
 // TestBoundFilingStillChargesRepoCeiling: with the cap off, the repo-wide deskfile write
 // ceiling still refuses a bound filing.
+// regression: #4072
 func TestBoundFilingStillChargesRepoCeiling(t *testing.T) {
 	calls := boundEnv(t)
 	seedRepoWrites(t, deskkit.RateLimitPerPRPerHour)
