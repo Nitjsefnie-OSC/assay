@@ -249,7 +249,7 @@ Row 10 stays a real deliverable defect, the same as the 2026-10-18 and 2026-10-1
 RISK-VALUE: DERIVED — UsageExit = deskkit.ExitRefused (5) @ tools/desk/cmd/deskboard/main.go:225, constant at tools/desk/internal/deskkit/exitcodes.go:51 — the CLI contract maps unknown flags and bad values to the shared refused exit, the code the hand-rolled parser returned, so callers that branch on exit 5 keep working.
 RISK-VALUE: DERIVED — min-age-hours Default "48", merge-now-threshold Default "20m", unreviewed-threshold Default "30m" @ tools/desk/cmd/deskboard/main.go:110-112 — equal to the pre-migration values (stalledMinAgeDefault = 48 at tools/desk/cmd/deskboard/stalled.go:50, 20 and 30 minutes); reversible operational knobs.
 
-**VERIFY: FAIL** — row 10: TestCLIHelpDoesNotDiscoverManifests is still absent from ./cmd/deskboard at c82a8c5f807b (exit=1, no PASS line); rows 1-9 pass (row 8 on host; its container red is the fixture's environment assumption).
+**VERIFY: FAIL** — row 10: TestCLIHelpDoesNotDiscoverManifests is still absent from ./cmd/deskboard at c82a8c5f807b (exit=1, no PASS line); rows 1-9 pass (row 8 on host; its container red is the fixture's environment assumption). (blocker: #2111)
 
 
 ## Review
