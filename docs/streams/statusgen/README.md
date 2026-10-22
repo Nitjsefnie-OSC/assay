@@ -65,7 +65,7 @@ Operations admission remains a blocker for /25; the verifier runtime does not wa
 | 29 | [Run the existing structural row checks before writing a new brief](brief-29-run-the-existing-structural-row-checks-before-writing-a-new-brief.md) | 2 | M | todo | — | — |
 | 30 | [Repair deterministic defects in active Verify rows with a reviewed dry run](brief-30-repair-deterministic-defects-in-active-verify-rows-with-a-reviewed-dry-run.md) | 2 | M | todo | — | — |
 | 31 | [Backfill derivable active brief metadata without fabricating evidence](brief-31-backfill-derivable-active-brief-metadata-without-fabricating-evidence.md) | 2 | M | todo | — | — |
-| 32 | [Connect board drift notices to the existing reconciliation owners](brief-32-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 | M | todo | — | — |
+| 32 | [Connect board drift notices to the existing reconciliation owners](brief-32-connect-board-drift-notices-to-the-existing-reconciliation-owners.md) | 1 | M | implemented | — | — |
 | 33 | [Drive active notice severity from the existing registry after cleanup](brief-33-drive-active-notice-severity-from-the-existing-registry-after-cleanup.md) | 4 | M | todo | — | — |
 | 34 | [One owned scratch path for Verify rows](brief-34-one-owned-scratch-path-for-verify-rows.md) | 1 | L | todo | — | — |
 | 35 | [Drain actionable notice debt in this repository without rewriting closed records](brief-35-drain-actionable-notice-debt-in-this-repository-without-rewriting-closed-records.md) | 3 | M | todo | — | — |
