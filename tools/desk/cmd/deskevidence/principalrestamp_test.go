@@ -59,10 +59,10 @@ func restampCases() []restampCase {
 	}
 }
 
-// regression: #4070
 // TestPrincipalStamp: every added App-run row is stamped, left or refused per the rule above,
 // through the real landing path; a refusal writes nothing and names the row; a human runner
 // and a row already on the branch are never touched, whatever they carry.
+// regression: #4070
 func TestPrincipalStamp(t *testing.T) {
 	standing := "| 1 | `a` | 0 | ok | 2026-10-01 | example-app[bot] @ abc1234 (on-behalf-of verify-desk) |\n"
 	human := "| 3 | `c` | 0 | ok | 2026-10-14 | human:operator @ abc1234 (on-behalf-of human:colleague) |\n"
@@ -110,7 +110,6 @@ func TestPrincipalStamp(t *testing.T) {
 	}
 }
 
-// regression: #4070
 // TestPrincipalStampLintParity runs the REAL statusgen --lint, with the same fixture roster
 // configured, over each fixture's row before and after the stamp:
 //   - wherever the stamp succeeds, the landed row carries no attribution PROBLEM — on both
@@ -121,6 +120,8 @@ func TestPrincipalStamp(t *testing.T) {
 //   - a refusal (a different recognised human) is a row the lint ACCEPTS: the lint checks
 //     only that a principal is recognised, never that it is this landing's principal, so the
 //     refusal is the tool being deliberately stricter than the lint, not a lint verdict.
+//
+// regression: #4070
 func TestPrincipalStampLintParity(t *testing.T) {
 	landedStatusgenOnPath(t)
 	setupStamp(t, true)
@@ -219,11 +220,11 @@ func parityLint(t *testing.T, evidence string) []string {
 	return out
 }
 
-// regression: #4070
 // TestDryRunRestampsPlantedPrincipal: a --dry-run of a landing whose App row carries a planted
 // desk-role annotation runs the PROBLEM-diff on the RESTAMPED content, prints the restamped
 // row as it would land, and writes nothing — so the dry-run, not a lint of the home, is the
 // verifier's pre-check.
+// regression: #4070
 func TestDryRunRestampsPlantedPrincipal(t *testing.T) {
 	f := setupStamp(t, true)
 	planted := restampRow("2026-10-14", "example-app[bot] @ abc1234 (on-behalf-of verify-desk) (forge-identity)")
