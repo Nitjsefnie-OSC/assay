@@ -261,8 +261,10 @@ identity registry rather than introducing another cross-root registry.
 Author-spec would author outcome, scope, criteria and authority; author-brief would map
 contributors and start requirements and validate cycles; trace-path-to-live would select
 outcomes and explain evidence and remaining work. Stream scaffolding and generated README
-views must agree with these contracts. Update those skills and consumers in implementation
-work after the contract is ruled, not by treating this draft as operational support.
+views must agree with these contracts. Authoring skills may capture clearly labelled
+scoping proposals while support is absent. Operational authoring and consuming behavior
+must follow coordinated implementation after the contract is ruled; this draft alone
+does not establish operational support.
 
 Pilot one stream with multiple useful outcomes and one cross-stream capability dependency
 before any broader adoption. Kubernetes is an illustrative candidate: a runnable test cell,
