@@ -174,11 +174,15 @@ with no edit to the home between the steps:
    --admission-receipt <receipt> --container-image-digest sha256:<64 hex> --witness
    <file>`, with the receipt mounted read-only and `<file>` a new file outside the home.
    It refuses before any row unless the mounted root digests to the receipt's tree, and
-   refuses after the rows if they changed it. Without a receipt it refuses outright.
+   refuses after the rows if they changed it, writing no attestation or `Tree-Digest`.
+   Without a receipt it refuses outright.
 3. Host close: `statusgen verifyrun --close-bracket --root <home> --brief <path>
    --admission-receipt <receipt> --witness <file>`. It re-runs the check and appends one
    `Admission-Bracket:` line only when the check re-admits the run the witness names and
-   the home still digests to both the receipt's tree and the witness's `Tree-Digest`.
+   the home still digests to both the receipt's tree and the witness's `Tree-Digest`. Its
+   `witness=` value is the digest `statusgen verifyrun --bracket-digest --witness <file>`
+   prints for that bracket (`verdict=match` once closed), which the landing's on-behalf-of
+   stamp does not change.
 
 Land the closed witness file's bytes, bracket line included, as the Evidence block. A
 container row without its `Admission-Bracket` line is unattested and is not a Linux

@@ -28,11 +28,14 @@ import (
 //  2. container: `verifyrun --sandbox=container-netns --admission-receipt
 //     <file> --container-image-digest sha256:<…>` reads that receipt (no
 //     admission of its own), digests its own root and refuses unless it equals
-//     the receipt's tree, then runs the rows and records Tree-Digest;
+//     the receipt's tree, runs the rows, digests its root again, and only when
+//     the rows left it unchanged records Tree-Digest, Container-Image and the
+//     attestation line under the table;
 //  3. host close: `verifyrun --close-bracket` re-runs the check, compares it
 //     with the witness's attestation line, recomputes the home's digest, and
 //     only when it equals both the receipt's tree and the witness's
-//     Tree-Digest appends an Admission-Bracket line.
+//     Tree-Digest appends an Admission-Bracket line whose witness= is
+//     bracketDigest of the span above it.
 //
 // A container-sandboxed row is credited only inside a closed bracket.
 
@@ -244,10 +247,11 @@ func homeTreeDigest(root string) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// containerWitnessLines are the lines a container run adds under its
-// attestation line.
-func containerWitnessLines(image, tree string) string {
-	return containerImagePrefix + image + "\n" + treeDigestPrefix + tree + "\n"
+// containerWitnessLines are the lines a container run writes under its
+// witness table: Tree-Digest between the table and the attestation line (Task
+// 3), the image digest beside it, the attestation last.
+func containerWitnessLines(image, tree, attestation string) string {
+	return treeDigestPrefix + tree + "\n" + containerImagePrefix + image + "\n" + attestation + "\n"
 }
 
 // writeContainerWitness writes a container run's witness to its own new file
@@ -321,58 +325,66 @@ func hostCheckVerifier(home, brief string) ([]byte, error) {
 // containerBlock is the container witness at the end of a witness file.
 type containerBlock struct {
 	lines       []string // the file's lines, without the final newline's empty tail
-	span        []string // the hashed span: witness header line through Tree-Digest
 	attestation string
 	brief       string // the attestation's home-relative brief
 	tree        string
 }
 
 // findContainerBlock reads a container witness file: it must END with the
-// witness table, the version-1 attestation line and the Container-Image and
-// Tree-Digest lines, in that order, with at least one sandbox=container-netns
-// row in the table. A file that already carries a bracket line is refused.
+// witness table and then the Tree-Digest, Container-Image and version-1
+// attestation lines, in that order, with at least one sandbox=container-netns
+// row in the table directly above. A file that already carries a bracket line
+// is refused.
 func findContainerBlock(text string) (containerBlock, error) {
 	if strings.Contains(text, "\r") {
-		return containerBlock{}, fmt.Errorf("the witness contains carriage returns; its bytes would not hash as written")
+		return containerBlock{}, fmt.Errorf("the witness contains carriage returns; a container run writes LF lines")
 	}
 	if !strings.HasSuffix(text, "\n") {
 		return containerBlock{}, fmt.Errorf("the witness does not end with a newline")
 	}
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	for _, l := range lines {
-		if strings.HasPrefix(l, admissionBracketPrefix) {
+		if strings.HasPrefix(strings.TrimSpace(l), strings.TrimSpace(admissionBracketPrefix)) {
 			return containerBlock{}, fmt.Errorf("this witness already carries an %sline", admissionBracketPrefix)
 		}
 	}
 	n := len(lines)
-	if n < 4 || !strings.HasPrefix(lines[n-3], attestationPrefix) || !strings.HasPrefix(lines[n-2], containerImagePrefix) || !strings.HasPrefix(lines[n-1], treeDigestPrefix) {
-		return containerBlock{}, fmt.Errorf("the witness does not end with the attestation, %s and %slines a container run records", strings.TrimSpace(containerImagePrefix), treeDigestPrefix)
+	if n < 4 || !strings.HasPrefix(lines[n-3], treeDigestPrefix) || !strings.HasPrefix(lines[n-2], containerImagePrefix) || !strings.HasPrefix(lines[n-1], attestationPrefix) {
+		return containerBlock{}, fmt.Errorf("the witness does not end with the %s, %sand attestation lines a container run records", strings.TrimSpace(treeDigestPrefix), containerImagePrefix)
 	}
-	m := attestationV1Re.FindStringSubmatch(lines[n-3])
-	if m == nil {
-		return containerBlock{}, fmt.Errorf("the witness's attestation line is not the version-1 form a container run records: %q", lines[n-3])
+	tree := strings.TrimPrefix(lines[n-3], treeDigestPrefix)
+	if !sha256DigestRe.MatchString(tree) {
+		return containerBlock{}, fmt.Errorf("malformed %q", lines[n-3])
 	}
 	if !sha256DigestRe.MatchString(strings.TrimPrefix(lines[n-2], containerImagePrefix)) {
 		return containerBlock{}, fmt.Errorf("malformed %q", lines[n-2])
 	}
-	tree := strings.TrimPrefix(lines[n-1], treeDigestPrefix)
-	if !sha256DigestRe.MatchString(tree) {
-		return containerBlock{}, fmt.Errorf("malformed %q", lines[n-1])
+	m := attestationV1Re.FindStringSubmatch(lines[n-1])
+	if m == nil {
+		return containerBlock{}, fmt.Errorf("the witness's attestation line is not the version-1 form a container run records: %q", lines[n-1])
 	}
-	containerRows, start := 0, n-3
+	containerRows, ownHeader := 0, false
 	for i := n - 4; i >= 0 && strings.HasPrefix(lines[i], "|"); i-- {
-		start = i
+		if isWitnessHeaderLine(lines[i]) {
+			ownHeader = true
+			break
+		}
 		if witnessSandboxOf(lines[i]) == sandboxContainerNetns {
 			containerRows++
 		}
 	}
 	if containerRows == 0 {
-		return containerBlock{}, fmt.Errorf("no witness row with sandbox=%s sits directly above the attestation line", sandboxContainerNetns)
+		return containerBlock{}, fmt.Errorf("no witness row with sandbox=%s sits directly above the %sline", sandboxContainerNetns, treeDigestPrefix)
 	}
-	if !witnessHeaderAt(lines, start) {
-		return containerBlock{}, fmt.Errorf("the table above the attestation line does not start with the verifyrun witness header, so the hashed span has no defined start")
+	if !ownHeader {
+		if _, header := witnessSpanDigest(lines, n); header < 0 {
+			return containerBlock{}, fmt.Errorf("no witness table header lies above the append position, so the bracket would have no span")
+		}
+		// The span would start at another table's header and take in that
+		// table's Tree-Digest, image and attestation lines.
+		return containerBlock{}, fmt.Errorf("the container rows above the %sline carry no witness table header of their own, so the bracket's span would start at another table", treeDigestPrefix)
 	}
-	return containerBlock{lines: lines, span: lines[start:], attestation: lines[n-3], brief: m[5], tree: tree}, nil
+	return containerBlock{lines: lines, attestation: lines[n-1], brief: m[5], tree: tree}, nil
 }
 
 // runCloseBracket is `verifyrun --close-bracket`: the host's second half. It
@@ -437,7 +449,10 @@ func runCloseBracket(home, brief, receiptPath, witnessPath string, stdout, stder
 		return refuse("the receipt's opened time %s is after the close %s", receipt.Opened, closed.Format(time.RFC3339))
 	}
 	above := strings.Join(block.lines, "\n") + "\n"
-	witness := witnessSpanHash(block.span)
+	witness, err := bracketDigest(above)
+	if err != nil {
+		return refuse("%v", err)
+	}
 	m := attestationV1Re.FindStringSubmatch(block.attestation)
 	line := fmt.Sprintf("%srun=%s source=%s tree=%s witness=%s opened=%s closed=%s before=receipt after=check-verifier",
 		admissionBracketPrefix, m[3], m[4], tree, witness, receipt.Opened, closed.Format(time.RFC3339))
@@ -448,47 +463,218 @@ func runCloseBracket(home, brief, receiptPath, witnessPath string, stdout, stder
 	return verifyrunExitPass
 }
 
-// The witness= hash of an Admission-Bracket line covers an explicit span,
-// normalised so a landing does not break it (desktools-v2/71):
+// The witness digest of an Admission-Bracket line (desktools-v2/71 Task 1).
+// The close step writes it as witness= and the credit rule recomputes it with
+// the read-only `statusgen verifyrun --bracket-digest --witness <file>`, so both
+// go through witnessSpanDigest.
 //
-//   - span: from the verifyrun witness header line (`| # | Command | ...`) of
-//     the table directly above the attestation line, through the Tree-Digest
-//     line, each line ending in one newline. Nothing above the header (Evidence
-//     prose, other tables, an acceptance descriptor) is in it.
-//   - normalisation: every ` (on-behalf-of ...)` parenthetical in a table line
-//     is deleted before hashing. deskevidence stamps exactly that annotation
-//     into an App-run Runner cell that carries none when it lands Evidence, and
-//     verifyrun writes the same annotation only when a principal resolves,
-//     which inside a network-less container it may not. Deleting it from every
-//     row makes the hash the same before and after a landing; the stamp itself
-//     is bound by the landing, not by the bracket.
+//   - header: a line equal, after trimming, to the first line of witnessHeader
+//     or witnessHeaderFailFirst.
+//   - span: fixed by the bracket's position alone. It starts at the nearest
+//     witness header ABOVE the position and ends at the line immediately
+//     before it. For an existing Admission-Bracket line the position is that
+//     line; for the close step it is the line about to be appended. Other
+//     witness tables in the same file, above or below, are outside the span.
+//     A position with no header above it has no span.
+//   - normalisation: trailing whitespace stripped, blank lines dropped, lines
+//     joined with LF (no final LF), and each table row's Runner cell (the
+//     column the span's header names Runner) rewritten in three steps: every
+//     exact `(on-behalf-of human:<subject>)` removed (case-sensitive; subject
+//     one or more characters other than whitespace and parentheses), every run
+//     of spaces and tabs collapsed to one space, the cell trimmed. The bytes
+//     between the cell's two delimiters become one space, the value and one
+//     space; every other byte of the row is kept. deskevidence stamps exactly
+//     that form, before any trailing source tag such as `(git-config)`, so the
+//     stamp is outside the digest while every other byte of the span is in it.
 //
-// A reviewer recomputes it with
-//
-//	sed -E 's/ \(on-behalf-of [^()]*\)//g' span.txt | sha256sum
-//
-// where span.txt holds the span's lines exactly.
-var onBehalfOfParenRe = regexp.MustCompile(` \(on-behalf-of [^()]*\)`)
+// It is never a raw sha256sum of the landed bytes, which the stamp changes.
 
-func witnessSpanHash(span []string) string {
-	h := sha256.New()
-	for _, l := range span {
-		if strings.HasPrefix(l, "|") {
-			l = onBehalfOfParenRe.ReplaceAllString(l, "")
+// witnessSpanDigest digests the span that ends just above lines[pos]. header
+// is the span's header line index, -1 when no witness header lies above pos.
+func witnessSpanDigest(lines []string, pos int) (digest string, header int) {
+	header = -1
+	for i := pos - 1; i >= 0; i-- {
+		if isWitnessHeaderLine(lines[i]) {
+			header = i
+			break
 		}
-		io.WriteString(h, l+"\n")
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+	if header < 0 {
+		return "", -1
+	}
+	runner := witnessRunnerColumn(lines[header])
+	var kept []string
+	for i := header; i < pos; i++ {
+		l := strings.TrimRight(lines[i], " \t\r\v\f")
+		if l == "" {
+			continue
+		}
+		if i > header && strings.HasPrefix(strings.TrimSpace(l), "|") {
+			l = normaliseRunnerCell(l, runner)
+		}
+		kept = append(kept, l)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(kept, "\n")))
+	return "sha256:" + hex.EncodeToString(sum[:]), header
 }
 
-// witnessHeaderAt reports whether lines[i:] starts with a verifyrun witness
-// header (the plain or the fail-first form, both two lines).
-func witnessHeaderAt(lines []string, i int) bool {
+// bracketDigest is the close step's digest: the span above the line it is
+// about to append to text.
+func bracketDigest(text string) (string, error) {
+	lines := strings.Split(text, "\n")
+	digest, header := witnessSpanDigest(lines, len(lines))
+	if header < 0 {
+		return "", fmt.Errorf("no witness table header lies above the append position, so the bracket would have no span")
+	}
+	return digest, nil
+}
+
+// bracketCheck is one `--bracket-digest` output line.
+type bracketCheck struct {
+	bracket, header   int // 1-based line numbers; header 0 when there is none
+	witness, recorded string
+	verdict           string // match | mismatch | no-table | shared
+	why               string // a digest match the span's own lines do not support
+}
+
+func (c bracketCheck) String() string {
+	header, witness := "none", "none"
+	if c.header > 0 {
+		header, witness = fmt.Sprintf("L%d", c.header), c.witness
+	}
+	return fmt.Sprintf("bracket=L%d header=%s witness=%s recorded=%s verdict=%s", c.bracket, header, witness, c.recorded, c.verdict)
+}
+
+var bracketWitnessRe = regexp.MustCompile(`(?:^|\s)witness=(\S+)`)
+
+// bracketChecks checks every Admission-Bracket line in text, in file order.
+// A bracket whose nearest header another bracket also has is `shared` (its
+// rows would lie in two spans, so neither credits them).
+func bracketChecks(text string) []bracketCheck {
+	lines := strings.Split(text, "\n")
+	var checks []bracketCheck
+	byHeader := map[int]int{}
+	for i, l := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(l), strings.TrimSpace(admissionBracketPrefix)) {
+			continue
+		}
+		c := bracketCheck{bracket: i + 1, recorded: "none"}
+		if m := bracketWitnessRe.FindStringSubmatch(l); m != nil {
+			c.recorded = m[1]
+		}
+		digest, header := witnessSpanDigest(lines, i)
+		if header >= 0 && digest == c.recorded {
+			c.why = spanBindingProblem(lines[header:i], l)
+		}
+		switch {
+		case header < 0:
+			c.verdict = "no-table"
+		case digest == c.recorded && c.why == "":
+			c.header, c.witness, c.verdict = header+1, digest, "match"
+		default:
+			c.header, c.witness, c.verdict = header+1, digest, "mismatch"
+		}
+		if header >= 0 {
+			byHeader[header]++
+		}
+		checks = append(checks, c)
+	}
+	for i := range checks {
+		if checks[i].header > 0 && byHeader[checks[i].header-1] > 1 {
+			checks[i].verdict = "shared"
+		}
+	}
+	return checks
+}
+
+// isWitnessHeaderLine reports whether a line, trimmed, is the first line of a
+// verifyrun witness header, plain or fail-first.
+// bracketTreeRe reads an Admission-Bracket line's tree= value.
+var bracketTreeRe = regexp.MustCompile(`(?:^|\s)tree=(\S+)`)
+
+// spanBindingProblem says why a bracket whose digest matches is still not
+// bound to its own span: the Tree-Digest, Container-Image and attestation lines
+// credited with it must be the ones inside that span, one of each, and the
+// bracket's tree= must equal that span's Tree-Digest, never a line from
+// another bracket's span. It is "" when the span binds.
+func spanBindingProblem(span []string, bracket string) string {
+	var trees []string
+	images, attestations := 0, 0
+	for _, l := range span {
+		l = strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(l, strings.TrimSpace(treeDigestPrefix)):
+			trees = append(trees, strings.TrimSpace(strings.TrimPrefix(l, strings.TrimSpace(treeDigestPrefix))))
+		case strings.HasPrefix(l, strings.TrimSpace(containerImagePrefix)):
+			images++
+		case strings.HasPrefix(l, attestationPrefix):
+			attestations++
+		}
+	}
+	if len(trees) != 1 || images != 1 || attestations != 1 {
+		return fmt.Sprintf("the span holds %d %s, %d %s and %d attestation lines, not one of each", len(trees), strings.TrimSpace(treeDigestPrefix), images, strings.TrimSpace(containerImagePrefix), attestations)
+	}
+	m := bracketTreeRe.FindStringSubmatch(bracket)
+	if m == nil || m[1] != trees[0] {
+		got := "none"
+		if m != nil {
+			got = m[1]
+		}
+		return fmt.Sprintf("the bracket's tree=%s is not its own span's %s %s", got, strings.TrimSpace(treeDigestPrefix), trees[0])
+	}
+	return ""
+}
+
+func isWitnessHeaderLine(l string) bool {
+	l = strings.TrimSpace(l)
 	for _, header := range []string{witnessHeader, witnessHeaderFailFirst} {
-		hl := strings.Split(header, "\n")
-		if i+len(hl) <= len(lines) && strings.Join(lines[i:i+len(hl)], "\n") == header {
+		if first, _, _ := strings.Cut(header, "\n"); l == first {
 			return true
 		}
 	}
 	return false
+}
+
+// witnessRunnerColumn is the Runner cell's index in a witness header line.
+func witnessRunnerColumn(header string) int {
+	for i, c := range splitRowEscaped(header) {
+		if strings.TrimSpace(c) == "Runner" {
+			return i
+		}
+	}
+	return -1
+}
+
+// onBehalfOfStampRe is exactly the stamp deskevidence and verifyrun write.
+// Nothing looser matches: `(On-Behalf-Of human:x)`, `(on-behalf-of human: x)`
+// or `(on-behalf-of <desk role>)` stay in the digest.
+var onBehalfOfStampRe = regexp.MustCompile(`\(on-behalf-of human:[^\s()]+\)`)
+
+var cellWhitespaceRe = regexp.MustCompile(`[ \t]+`)
+
+// normaliseRunnerCell rewrites a table row's Runner cell (cell index col,
+// counted as splitRowEscaped counts them: `\|` is cell content): stamp
+// removed, whitespace runs collapsed, trimmed. The rest of the row is kept
+// byte for byte. A row with too few cells is returned unchanged.
+func normaliseRunnerCell(row string, col int) string {
+	if col < 0 {
+		return row
+	}
+	var pipes []int
+	for i := 0; i < len(row); i++ {
+		switch {
+		case row[i] == '\\' && i+1 < len(row) && row[i+1] == '|':
+			i++
+		case row[i] == '|':
+			pipes = append(pipes, i)
+		}
+	}
+	// The row's leading pipe opens cell 0, so cell col sits between pipes
+	// col and col+1.
+	if !strings.HasPrefix(strings.TrimSpace(row), "|") || len(pipes) < col+2 {
+		return row
+	}
+	cell := onBehalfOfStampRe.ReplaceAllString(row[pipes[col]+1:pipes[col+1]], "")
+	cell = strings.TrimSpace(cellWhitespaceRe.ReplaceAllString(cell, " "))
+	return row[:pipes[col]+1] + " " + cell + " " + row[pipes[col+1]:]
 }

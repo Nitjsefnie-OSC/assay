@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -259,11 +258,15 @@ func TestContainerNetnsReceipt(t *testing.T) {
 	planted := filepath.Join(fx.home, "planted-by-row")
 	putFile(t, fx.brief, strings.Replace(before, "touch "+fx.marker, "touch "+planted, 1))
 	fx.writeBracketReceipt(t, validCheck)
-	if res, stderr := captureVerifyrun(t, fx.runArgs()); res.code == verifyrunExitPass || !strings.Contains(stderr, "the rows changed the mounted home") {
-		t.Fatalf("a row that changed the home: exit %d stderr %q", res.code, stderr)
+	moved, movedOut := captureVerifyrunOut(t, fx.runArgs())
+	if moved.code == verifyrunExitPass || !strings.Contains(movedOut, "the rows changed the mounted home") {
+		t.Fatalf("a row that changed the home: exit %d output %q", moved.code, movedOut)
 	}
 	if _, err := os.Stat(fx.witness); err == nil {
 		t.Fatal("a run whose rows changed the home wrote a witness")
+	}
+	if strings.Contains(movedOut, treeDigestPrefix) || strings.Contains(movedOut, attestationPrefix) {
+		t.Fatalf("a run whose rows changed the home still emitted a Tree-Digest or attestation line: %q", movedOut)
 	}
 	if err := os.Remove(planted); err != nil {
 		t.Fatal(err)
@@ -284,8 +287,8 @@ func TestContainerNetnsReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := getFile(t, fx.witness)
-	if !strings.HasSuffix(got, "\n"+want+"\n"+containerImagePrefix+fixtureImage+"\n"+treeDigestPrefix+tree+"\n") {
-		t.Fatalf("the witness does not end with the in-process attestation line %q, the image line and the Tree-Digest line:\n%s", want, got)
+	if !strings.HasSuffix(got, " |\n"+treeDigestPrefix+tree+"\n"+containerImagePrefix+fixtureImage+"\n"+want+"\n") {
+		t.Fatalf("the witness does not end with the table, then the Tree-Digest line, the image line and the in-process attestation line %q:\n%s", want, got)
 	}
 	if !strings.Contains(got, "sandbox="+sandboxContainerNetns) {
 		t.Fatalf("the witness row does not record the container sandbox:\n%s", got)
@@ -347,7 +350,10 @@ func TestCloseBracket(t *testing.T) {
 		{"different run", checkJSON(1, strings.Repeat("d", 64), fixtureSource, "docs/brief.md", "m"), "0", "does not re-admit", witness, false},
 		{"refused host check", validCheck, "1", "host admission check failed", witness, false},
 		{"already bracketed", validCheck, "0", "already carries", witness + admissionBracketPrefix + "run=x\n", false},
-		{"no witness header", validCheck, "0", "no defined start", strings.SplitN(witness, "\n", 3)[2], false},
+		{"no witness header", validCheck, "0", "no witness table header lies above the append position", strings.SplitN(witness, "\n", 3)[2], false},
+		// S11: rows with no header of their own under another bracketed
+		// table would make the span take that table's Tree-Digest lines.
+		{"rows under another table's header", validCheck, "0", "carry no witness table header of their own", witness + "\n" + strings.SplitN(witness, "\n", 3)[2], false},
 	}
 	for _, c := range refusals {
 		putFile(t, fx.check, c.check)
@@ -369,44 +375,156 @@ func TestCloseBracket(t *testing.T) {
 	}
 
 	putFile(t, fx.check, validCheck)
-	// Close on a witness whose Runner cell already carries an on-behalf-of
-	// annotation, the way verifyrun writes it when a principal resolves: the
-	// hash is over the span with the annotation deleted, never the raw bytes.
-	rows := strings.Split(witness, "\n")
-	stamp := func(row string) string { return strings.TrimSuffix(row, " |") + " (on-behalf-of human:someone) |" }
-	annotated := strings.Join(append(append(append([]string{}, rows[:2]...), stamp(rows[2])), rows[3:]...), "\n")
-	if sha256.Sum256([]byte(annotated)) == sha256.Sum256([]byte(docNormalise(annotated))) {
-		t.Fatal("the fixture annotation did not change the raw bytes; the normalisation is untested")
-	}
-	putFile(t, fx.witness, annotated)
+	putFile(t, fx.witness, witness)
 	t.Setenv("FAKE_DD_EXIT", "0")
+	preClose := digestOf(t, witness)
 	res, stderr := captureVerifyrun(t, closeArgs)
 	if res.code != verifyrunExitPass {
 		t.Fatalf("matching close: exit %d stderr %q", res.code, stderr)
 	}
 	got := getFile(t, fx.witness)
 	above, line, _ := strings.Cut(got, admissionBracketPrefix)
-	if above != annotated || strings.Count(got, admissionBracketPrefix) != 1 || !strings.HasSuffix(line, "\n") || strings.Count(line, "\n") != 1 {
+	if above != witness || strings.Count(got, admissionBracketPrefix) != 1 || !strings.HasSuffix(line, "\n") || strings.Count(line, "\n") != 1 {
 		t.Fatalf("the close did not append exactly one line under the unchanged witness:\n%s", got)
 	}
-	want := fmt.Sprintf(`^run=%s source=%s tree=%s witness=sha256:%x opened=%s closed=\S+ before=receipt after=check-verifier\n$`,
-		fixtureRun, fixtureSource, regexp.QuoteMeta(tree[1]), sha256.Sum256([]byte(docNormalise(annotated))), fixtureOpenedOrAny)
+	want := fmt.Sprintf(`^run=%s source=%s tree=%s witness=%s opened=%s closed=\S+ before=receipt after=check-verifier\n$`,
+		fixtureRun, fixtureSource, regexp.QuoteMeta(tree[1]), preClose, fixtureOpenedOrAny)
 	if !regexp.MustCompile(want).MatchString(line) {
 		t.Fatalf("the bracket line %q does not match %s", line, want)
 	}
-	// A landing of an UNannotated witness puts it under Evidence prose and
-	// stamps an on-behalf-of annotation into the App Runner cell. The span
-	// (header line through Tree-Digest) with the annotation deleted, as the
-	// documented sed recipe does, hashes to the same witness= value; the raw
-	// stamped bytes would not.
-	hash := regexp.MustCompile(`witness=(sha256:[0-9a-f]{64})`).FindStringSubmatch(line)[1]
-	landed := "## Evidence\n\nVerifier prose above the block.\n\n" + annotated + admissionBracketPrefix + line
-	span := landed[strings.LastIndex(landed, "| # | Command |"):strings.Index(landed, admissionBracketPrefix)]
-	if got := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(docNormalise(span)))); got != hash {
-		t.Fatalf("the landed, stamped span hashes to %s, not the bracket's %s:\n%s", got, hash, span)
+	// --bracket-digest on the bracketed file: one line, its own bracket and
+	// header line, the recorded value, verdict=match, exit 0.
+	n := strings.Count(witness, "\n") + 1
+	if out := verbLines(t, got, verifyrunExitPass); len(out) != 1 || out[0] != fmt.Sprintf("bracket=L%d header=L1 witness=%s recorded=%s verdict=match", n, preClose, preClose) {
+		t.Fatalf("--bracket-digest of the bracketed file: %q", out)
 	}
-	if fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(span))) == hash {
-		t.Fatal("the fixture stamp did not change the raw bytes; the normalisation is untested")
+
+	// The digest is blind to the on-behalf-of stamp and to the landing's
+	// layout, and sees every other byte of the span.
+	lines := strings.Split(witness, "\n")
+	row := lines[2]
+	if witnessRunnerColumn(lines[0]) != 5 || len(splitRowEscaped(row)) < 6 {
+		t.Fatalf("fixture row is not a witness row: %q", row)
+	}
+	withRow := func(r string) string {
+		out := append([]string{}, lines...)
+		out[2] = r
+		return strings.Join(out, "\n")
+	}
+	stamp := func(r, ann string) string { return strings.TrimSuffix(r, " |") + " " + ann + " |" }
+	blind := map[string]string{
+		"stamp added":       withRow(stamp(row, "(on-behalf-of human:someone)")),
+		"stamp replaced":    withRow(stamp(row, "(on-behalf-of human:other)")),
+		"landed in prose":   "## Evidence\n\nVerifier prose above the block.\n\n" + strings.ReplaceAll(withRow(stamp(row, "(on-behalf-of human:someone)")), "\n", "  \n") + admissionBracketPrefix + line,
+		"crlf line endings": strings.ReplaceAll(witness, "\n", "\r\n"),
+	}
+	if blind["stamp added"] == witness {
+		t.Fatal("the fixture stamp did not change the bytes; the normalisation is untested")
+	}
+	for name, text := range blind {
+		if d := digestOf(t, text); d != preClose {
+			t.Fatalf("%s: digest %s, want the bracket's %s", name, d, preClose)
+		}
+	}
+	// The stamp lands before a trailing source tag, verifyrun's order: the
+	// digest of the tagged row is unchanged by it, with no double space left.
+	tagged := withRow(stamp(row, "(git-config)"))
+	taggedStamped := withRow(stamp(stamp(row, "(on-behalf-of human:someone)"), "(git-config)"))
+	if !strings.Contains(taggedStamped, "(on-behalf-of human:someone) (git-config) |") {
+		t.Fatalf("fixture: the stamp does not sit before the source tag: %q", taggedStamped)
+	}
+	if digestOf(t, tagged) != digestOf(t, taggedStamped) {
+		t.Fatal("a stamp before a trailing source tag changed the digest")
+	}
+	// The double space a stamp can leave before the tag is collapsed.
+	if digestOf(t, tagged) != digestOf(t, withRow(strings.TrimSuffix(row, " |")+"  (on-behalf-of human:someone)(git-config) |")) {
+		t.Fatal("whitespace left around a removed stamp changed the digest")
+	}
+	if digestOf(t, tagged) == preClose {
+		t.Fatal("a source tag is outside the digest; only the exact stamp may be")
+	}
+	// Only the exact stamp form is outside the digest.
+	for _, ann := range []string{"(On-Behalf-Of human:someone)", "(on-behalf-of worker-desk)", "(on-behalf-of human: someone)", "(note: on-behalf-of human:someone)", "(on-behalf-of human:)"} {
+		if digestOf(t, withRow(stamp(row, ann))) == preClose {
+			t.Fatalf("%s is not the exact stamp form but was removed from the digest", ann)
+		}
+	}
+	cells := splitRowEscaped(row)
+	for name, col := range map[string]int{"Command": 1, "Result": 2, "Date": 4} {
+		v := strings.TrimSpace(cells[col])
+		edited := strings.Replace(row, "| "+v+" |", "| "+v+"X |", 1)
+		if edited == row {
+			t.Fatalf("%s: could not edit cell %q in %q", name, v, row)
+		}
+		if d := digestOf(t, withRow(edited)); d == preClose {
+			t.Fatalf("an edited %s cell left the digest unchanged", name)
+		}
+	}
+	if d := digestOf(t, strings.Replace(witness, tree[1], otherTree, 1)); d == preClose {
+		t.Fatal("an edited Tree-Digest line left the digest unchanged")
+	}
+	// Two bracketed witness tables in one file: each bracket covers only the
+	// nearest header above it, and an edit in the first table moves only the
+	// first bracket's digest.
+	two := "## Evidence\n\n" + got + "\nprose between\n\n" + got
+	h2 := 3 + strings.Count(got, "\n") + 3
+	out := verbLines(t, two, verifyrunExitPass)
+	if len(out) != 2 || !strings.HasPrefix(out[0], fmt.Sprintf("bracket=L%d header=L3 ", n+2)) || !strings.HasPrefix(out[1], fmt.Sprintf("bracket=L%d header=L%d ", h2+n-1, h2)) {
+		t.Fatalf("two bracketed tables: %q", out)
+	}
+	cells0 := splitRowEscaped(row)
+	res0 := strings.TrimSpace(cells0[2])
+	editedTwo := strings.Replace(two, "| "+res0+" |", "| "+res0+"X |", 1)
+	out = verbLines(t, editedTwo, verifyrunExitFail)
+	if len(out) != 2 || !strings.HasSuffix(out[0], "verdict=mismatch") || !strings.HasSuffix(out[1], "verdict=match") {
+		t.Fatalf("an edit in the first table must move only the first bracket: %q", out)
+	}
+	// S11: a bracket is bound to its own span. A tree= that is not its own
+	// span's Tree-Digest, here the other table's, is a mismatch even though the
+	// witness digest matches, and so is a span holding a second Tree-Digest
+	// line under a recomputed witness=.
+	otherTD := "tree=" + otherTree
+	swapped := "## Evidence\n\n" + got + "\nprose between\n\n" + strings.Replace(got, "tree="+tree[1], otherTD, 1)
+	if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, swapped)}); res.code != verifyrunExitFail ||
+		!strings.Contains(out, "witness="+preClose+" recorded="+preClose+" verdict=mismatch") || !strings.Contains(out, "is not its own span's Tree-Digest") {
+		t.Fatalf("a bracket whose tree= is not its own span's Tree-Digest: exit %d output %q", res.code, out)
+	}
+	extra := strings.Replace(witness, "Tree-Digest: ", "Tree-Digest: "+otherTree+"\nTree-Digest: ", 1)
+	forged := extra + admissionBracketPrefix + strings.Replace(line, preClose, digestOf(t, extra), 1)
+	if res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, forged)}); res.code != verifyrunExitFail ||
+		!strings.Contains(out, "verdict=mismatch") || !strings.Contains(out, "not one of each") {
+		t.Fatalf("a span with two Tree-Digest lines: exit %d output %q", res.code, out)
+	}
+	// S10: an escaped \| is cell content, never a delimiter, as in the
+	// landing's cellSpans: a Command cell carrying one still leaves the stamp
+	// in the Runner cell outside the digest.
+	cmd := strings.TrimSpace(cells[1])
+	escRow := strings.Replace(row, "| "+cmd+" |", "| "+cmd+` \| cat |`, 1)
+	if escRow == row || len(splitRowEscaped(escRow)) != len(splitRowEscaped(row)) {
+		t.Fatalf("fixture: could not put an escaped pipe in the Command cell: %q", escRow)
+	}
+	if digestOf(t, withRow(escRow)) != digestOf(t, withRow(stamp(escRow, "(on-behalf-of human:someone)"))) {
+		t.Fatal("an escaped pipe in the Command cell moved the Runner column: the stamp changed the digest")
+	}
+	if digestOf(t, withRow(escRow)) == preClose {
+		t.Fatal("the escaped pipe is outside the digest")
+	}
+	// A second bracket under the same table: both are shared, exit non-zero.
+	out = verbLines(t, got+admissionBracketPrefix+line, verifyrunExitFail)
+	if len(out) != 2 || !strings.HasSuffix(out[0], "verdict=shared") || !strings.HasSuffix(out[1], "verdict=shared") {
+		t.Fatalf("two brackets under one table: %q", out)
+	}
+	// A bracket with no witness header above it.
+	out = verbLines(t, admissionBracketPrefix+line+got, verifyrunExitFail)
+	if len(out) != 2 || out[0] != "bracket=L1 header=none witness=none recorded="+preClose+" verdict=no-table" || !strings.HasSuffix(out[1], "verdict=match") {
+		t.Fatalf("a bracket with no table above it: %q", out)
+	}
+	// A file with no bracket is could-not-check; another flag is a usage error.
+	if res, _ := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, witness)}); res.code != verifyrunExitCouldNot {
+		t.Fatalf("--bracket-digest on a file with no bracket: exit %d", res.code)
+	}
+	if res, stderr := captureVerifyrun(t, []string{"--bracket-digest", "--witness", tempWitness(t, got), "--root", fx.home}); res.code != verifyrunExitUsageError || !strings.Contains(stderr, "takes only --witness") {
+		t.Fatalf("--bracket-digest with another flag: exit %d stderr %q", res.code, stderr)
 	}
 	if !strings.Contains(getFile(t, fx.log), "--check-verifier --root "+fx.home+" --brief "+fx.brief) {
 		t.Fatalf("the close step did not run the host check: %q", getFile(t, fx.log))
@@ -423,8 +541,49 @@ func TestCloseBracket(t *testing.T) {
 // wall clock at the open.
 const fixtureOpenedOrAny = `[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z`
 
-// docNormalise is the reviewer's sed recipe from the docs, applied in Go:
-// sed -E 's/ \(on-behalf-of [^()]*\)//g'.
-func docNormalise(s string) string {
-	return regexp.MustCompile(` \(on-behalf-of [^()]*\)`).ReplaceAllString(s, "")
+// verbLines runs `verifyrun --bracket-digest` on text, requires exit code
+// want, and returns its output lines.
+func verbLines(t *testing.T, text string, want int) []string {
+	t.Helper()
+	res, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, text)})
+	if res.code != want {
+		t.Fatalf("--bracket-digest: exit %d, want %d; output %q", res.code, want, out)
+	}
+	return strings.Split(strings.TrimSpace(out), "\n")
+}
+
+// digestOf is the digest --bracket-digest computes for the first bracket in
+// text, a placeholder bracket appended when text has none.
+func digestOf(t *testing.T, text string) string {
+	t.Helper()
+	if !strings.Contains(text, admissionBracketPrefix) {
+		text = strings.TrimRight(text, "\r\n") + "\n" + admissionBracketPrefix + "witness=none\n"
+	}
+	_, out := captureVerifyrunOut(t, []string{"--bracket-digest", "--witness", tempWitness(t, text)})
+	m := regexp.MustCompile(` witness=(sha256:[0-9a-f]{64}) `).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("--bracket-digest printed no digest: %q", out)
+	}
+	return m[1]
+}
+
+func tempWitness(t *testing.T, text string) string {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "witness.md")
+	putFile(t, f, text)
+	return f
+}
+
+// captureVerifyrunOut is captureVerifyrun with stdout and stderr together.
+func captureVerifyrunOut(t *testing.T, args []string) (verifyrunResult, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "out")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	code := runVerifyrun(args, f, f)
+	f.Sync()
+	return verifyrunResult{code}, getFile(t, path)
 }

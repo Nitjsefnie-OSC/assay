@@ -1051,13 +1051,19 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
   `deskpost` under the body schema deskpost enforces (`references/verdict-format.md`).
 - **A container row counts only inside a closed admission bracket.** A `sandbox=container-netns`
   witness row counts as a Linux witness only when the same Evidence block carries, below its
-  table, the `Verification-Attestation:` line, a `Container-Image: sha256:…` digest, a
-  `Tree-Digest: sha256:…` line and an `Admission-Bracket:` line whose `tree=` equals the
-  `Tree-Digest`, whose `opened=` precedes `closed=`, and whose `witness=` matches the block. The
-  `witness=` span is explicit: the witness header line (`| # | Command | …`) through the
-  `Tree-Digest:` line, one newline per line, with every ` (on-behalf-of …)` annotation deleted, so
-  the landing's principal stamp leaves it unchanged. Save that span to `span.txt` and compare
-  `sed -E 's/ \(on-behalf-of [^()]*\)//g' span.txt | sha256sum` with the `witness=` value.
+  table, a `Tree-Digest: sha256:…` line, a `Container-Image: sha256:…` digest, the
+  `Verification-Attestation:` line and an `Admission-Bracket:` line whose `tree=` equals the
+  `Tree-Digest`, whose `opened=` precedes `closed=`, and whose `witness=` equals what
+  `statusgen verifyrun --bracket-digest --witness <file>` reports for it: `verdict=match` on that
+  bracket's own `bracket=` line, run on the landed file. Never compare a raw `sha256sum`: the
+  landing stamps `(on-behalf-of human:<subject>)` into App Runner cells, and the verb removes
+  exactly that form, collapses whitespace runs and trims, nothing else. Each bracket covers the
+  span from the nearest witness header above it to the line before it (an escaped `\|` is never a
+  cell delimiter); the `Tree-Digest`, `Container-Image` and attestation lines are the ones inside
+  that bracket's own span, one of each, and its `tree=` is compared with that span's
+  `Tree-Digest`, never a line from another bracket. `shared` (two brackets on one table),
+  `no-table` and `mismatch` are never credit. Credit a row only when it sits inside
+  exactly one bracket's span.
   Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
   refused in container mode; a linked worktree's git directory is not mounted in the container, so
   rows that need git history must run on the host; and the in-container digest is only as

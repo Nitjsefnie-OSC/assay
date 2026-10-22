@@ -5,5 +5,12 @@
   and `--witness`, never runs admission itself, and refuses unless its mounted root digests to
   the receipt's tree before and after the rows; `--close-bracket` re-checks on the host and
   appends one `Admission-Bracket:` line only when the run and the tree digest still match.
-  Rule 45, verify-desk and pr-review-desk now credit a container row only inside a closed
-  bracket.
+  The line's `witness=` value is the digest of the span from the nearest witness table header
+  above it, which the Evidence landing's `(on-behalf-of human:<subject>)` stamp does not
+  change. The new read-only `verifyrun --bracket-digest --witness <file>` prints one line per
+  bracket with `verdict=match|mismatch|no-table|shared` and exits 0 only when all match; a
+  bracket is a match only when its span holds one `Tree-Digest`, `Container-Image` and
+  attestation line and its `tree=` equals that span's `Tree-Digest`. An escaped `\|` is never a
+  cell delimiter, as in the Evidence landing.
+  Rule 45, verify-desk and pr-review-desk now credit a container row only inside exactly one
+  closed bracket whose verdict is `match`.

@@ -1670,6 +1670,7 @@ Usage:
                       --container-image-digest sha256:<64 hex> --witness <file>
   statusgen verifyrun --close-bracket --root <home> --brief <path> --admission-receipt <receipt>
                       --witness <file>
+  statusgen verifyrun --bracket-digest --witness <file>
 
 Runs each Verify row's Command in a fresh subshell at the repo root and appends
 one witness row per Verify row to the brief's ` + "`## Evidence`" + ` section:
@@ -1718,15 +1719,35 @@ Flags:
   --container-image-digest sha256:<64 hex>  the image the rows run in, named by
                     the host; recorded as Container-Image on the witness.
   --witness <file>  container-netns: a NEW file outside the home the witness
-                    (table, attestation, Container-Image, Tree-Digest) is written
-                    to. --close-bracket: that file.
+                    (table, Tree-Digest, Container-Image, attestation) is written
+                    to. --close-bracket and --bracket-digest: that file.
   --close-bracket   host step after a container run: re-run the check, recompute
                     the home's tree digest, and append one Admission-Bracket line
                     to --witness only when the check re-admits the run the
                     witness names and the digest equals both the receipt's tree
-                    and the witness's Tree-Digest. witness= is the sha256 of the
-                    span from the witness header line through Tree-Digest, with
-                    every " (on-behalf-of ...)" annotation deleted.
+                    and the witness's Tree-Digest. witness= is the digest
+                    --bracket-digest checks: the span from the nearest witness
+                    header above the line to the line before it.
+  --bracket-digest  read-only, with --witness <file> only: print one line per
+                    Admission-Bracket line, in file order:
+                    bracket=L<n> header=L<n> witness=sha256:<64 hex>
+                    recorded=<the bracket's witness=> verdict=<v>. A bracket's
+                    span runs from the nearest witness table header above it to
+                    the line before it; trailing whitespace is stripped, blank
+                    lines dropped, lines joined with LF, and each Runner cell
+                    (an escaped \| is never a cell delimiter) has the landing's
+                    exact principal stamp removed (the parenthesised
+                    on-behalf-of form naming a human subject, case-sensitive),
+                    its whitespace runs collapsed and is trimmed, so the
+                    landing stamp never changes it. A digest match is still a
+                    mismatch unless the span holds exactly one Tree-Digest,
+                    Container-Image and attestation line and the bracket's
+                    tree= equals that span's Tree-Digest (the reason goes to
+                    stderr). verdict is match, mismatch, no-table
+                    (no header above) or shared (another bracket has the same
+                    header; neither credits the rows). Exit 0 only when every
+                    verdict is match; a file with no bracket is could-not-check.
+                    A raw sha256sum of the landed bytes will not match.
   --in-container    run the rows inside the PINNED harness container instead of on
                     the host — the supported execution-witness runner on Windows,
                     where a native pipefail bash is unreliable (#1418). Reads the
@@ -1821,7 +1842,8 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	openBracket := fs.Bool("open-bracket", false, "host open step of a container run: run the admission check, digest the home and write the receipt to --out")
 	openOut := fs.String("out", "", "with --open-bracket: the receipt file to write, outside the home")
 	closeBracket := fs.Bool("close-bracket", false, "host close step of a container run: re-check admission and the tree digest, then append Admission-Bracket to --witness")
-	witnessFile := fs.String("witness", "", "container-netns: the new file outside the home the witness is written to; with --close-bracket: that file")
+	witnessFile := fs.String("witness", "", "container-netns: the new file outside the home the witness is written to; with --close-bracket or --bracket-digest: that file")
+	bracketDigestMode := fs.Bool("bracket-digest", false, "read-only: check every Admission-Bracket line of --witness <file> against the digest of its span, one line per bracket")
 	// --help is handled by ContinueOnError returning flag.ErrHelp; print the
 	// usage and exit 0, because asking for help is not an error.
 	if err := fs.Parse(args); err != nil {
@@ -1831,6 +1853,42 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		}
 		fmt.Fprint(stderr, verifyrunUsage)
 		return verifyrunExitUsageError
+	}
+
+	// --bracket-digest is read-only and stands alone: it checks each bracket of
+	// a witness file or a landed Evidence block (desktools-v2/71), runs nothing.
+	if *bracketDigestMode {
+		var others []string
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name != "bracket-digest" && f.Name != "witness" {
+				others = append(others, "--"+f.Name)
+			}
+		})
+		if len(others) > 0 || fs.NArg() > 0 || *witnessFile == "" {
+			fmt.Fprintf(stderr, "statusgen verifyrun: --bracket-digest takes only --witness <file> (got %s)\n", strings.Join(append(others, fs.Args()...), " "))
+			return verifyrunExitUsageError
+		}
+		raw, err := os.ReadFile(*witnessFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "statusgen verifyrun --bracket-digest:", err)
+			return verifyrunExitCouldNot
+		}
+		checks := bracketChecks(string(raw))
+		if len(checks) == 0 {
+			fmt.Fprintf(stderr, "statusgen verifyrun --bracket-digest: %s carries no %sline, so there is nothing to check\n", *witnessFile, admissionBracketPrefix)
+			return verifyrunExitCouldNot
+		}
+		code := verifyrunExitPass
+		for _, c := range checks {
+			fmt.Fprintln(stdout, c)
+			if c.why != "" {
+				fmt.Fprintf(stderr, "statusgen verifyrun --bracket-digest: bracket=L%d: %s\n", c.bracket, c.why)
+			}
+			if c.verdict != "match" {
+				code = verifyrunExitFail
+			}
+		}
+		return code
 	}
 
 	// The sandbox mode is validated before anything else runs: an unknown value,
@@ -2120,19 +2178,19 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	if transitionDescriptor != "" {
 		table = transitionDescriptor + "\n\n" + table
 	}
-	if attestation != "" {
-		table += "\n" + attestation + "\n"
-	}
 	if containerTree != "" {
 		// The pre-row digest says which tree the rows started on; this one says
 		// they left it as they found it. A row that changed the mounted home
-		// leaves a witness the host could not close, so none is written.
+		// (a copy, which the host close step cannot see) leaves no attestation,
+		// Tree-Digest or witness at all: the run is could-not-run.
 		after, err := homeTreeDigest(root)
 		if err != nil || after != containerTree {
 			fmt.Fprintf(stderr, "statusgen verifyrun: the rows changed the mounted home (tree %s before the rows, %s after, %v); no witness written\n", containerTree, after, err)
 			return verifyrunExitCouldNot
 		}
-		table += containerWitnessLines(*imageDigest, containerTree)
+		table += "\n" + containerWitnessLines(*imageDigest, containerTree, attestation)
+	} else if attestation != "" {
+		table += "\n" + attestation + "\n"
 	}
 
 	worst := verifyrunExitPass

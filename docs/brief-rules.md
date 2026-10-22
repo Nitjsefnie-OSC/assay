@@ -669,9 +669,10 @@ passing run — which is why they are lint rules and not review vigilance.
       --container-image-digest sha256:<64 hex> --witness <file>` never runs
       admission itself, refuses before any row unless its mounted root digests
       to the receipt's `tree` and the receipt admits this brief, refuses after
-      the rows if they changed that tree, and writes the witness table, the
-      `Verification-Attestation:` line, `Container-Image:` and `Tree-Digest:`
-      to a new file outside the home; (3) on the host, `verifyrun
+      the rows if they changed that tree (then no attestation or
+      `Tree-Digest` is written), and writes the witness table, then
+      `Tree-Digest:`, `Container-Image:` and the `Verification-Attestation:`
+      line to a new file outside the home; (3) on the host, `verifyrun
       --close-bracket --root <home> --brief <path> --admission-receipt
       <receipt> --witness <file>` re-runs the check and appends one
       `Admission-Bracket: run=… source=… tree=sha256:… witness=sha256:…
@@ -680,11 +681,27 @@ passing run — which is why they are lint rules and not review vigilance.
       both the receipt's `tree` and the witness's `Tree-Digest`. The tree
       digest is sha256 over the sorted `<path> NUL <mode> NUL <sha256 of
       content or link target> NUL` entries of every regular file and symlink
-      under the root, top-level `.git` excluded. `witness=` hashes an explicit
-      span: the witness header line (`| # | Command | …`) through the
-      `Tree-Digest:` line, one newline per line, with every
-      ` (on-behalf-of …)` annotation deleted first, so the Evidence landing's
-      principal stamp leaves it unchanged. A container-netns run without
+      under the root, top-level `.git` excluded. `witness=` is the witness
+      digest `statusgen verifyrun --bracket-digest --witness <file>` prints:
+      sha256 over the span from the nearest witness header line
+      (`| # | Command | …`) above the bracket to the line before it, with
+      trailing whitespace stripped, blank lines dropped and lines joined with
+      LF, and each row's Runner cell (an escaped `\|` is never a cell
+      delimiter, as in the landing) normalised in three steps (remove the
+      exact `(on-behalf-of human:<subject>)` stamp, collapse whitespace runs,
+      trim), so the Evidence landing's principal stamp leaves it unchanged.
+      The `Tree-Digest`, `Container-Image` and attestation lines credited
+      with a bracket are the ones inside its own span, one of each, and its
+      `tree=` is compared with that span's `Tree-Digest`, never a line from
+      another bracket's span; the verb reports `mismatch` otherwise.
+      The verb prints one line per bracket in the file (`bracket=` and
+      `header=` line numbers, `witness=`, `recorded=`, and
+      `verdict=match|mismatch|no-table|shared`, where `shared` means another
+      bracket covers the same table) and exits 0 only when every verdict is
+      `match`. Check it with that verb on the landed file, never a raw
+      `sha256sum`. A container row is credited only inside exactly one
+      bracket's span, and only when that bracket's verdict is `match`. A
+      container-netns run without
       `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
       Known limits: version 2 (cross-repository) receipts are refused; a
       linked worktree's git directory is not mounted in the container, so rows
