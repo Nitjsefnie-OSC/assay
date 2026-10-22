@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/medici-finance/assay/gitquiet/goquiet"
 	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
@@ -219,7 +220,7 @@ func mutationBinary(t *testing.T, tool, source, before, after string) string {
 	cmd := exec.Command("go", "test", "-overlay", overlayPath, "-c", "-o", filepath.Join(dir, tool+".test"), "./cmd/"+tool)
 	cmd.Dir = moduleRoot(t)
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
-	if log, err := cmd.CombinedOutput(); err != nil {
+	if log, err := goquiet.Cmd(cmd).CombinedOutput(); err != nil {
 		t.Fatalf("mutation build: %v\n%s", err, log)
 	}
 	return dir
@@ -351,7 +352,7 @@ func TestPerfCoverageFlow(t *testing.T) {
 	cmd = exec.Command("go", "test", "-count=1", "-v", "-run", "^TestPerf(ProcessCoverage|AccountTransport)$", "./internal/deskkit")
 	cmd.Dir = moduleRoot(t)
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
-	log, err = cmd.CombinedOutput()
+	log, err = goquiet.Cmd(cmd).CombinedOutput()
 	if err != nil || !strings.Contains(string(log), "--- PASS: TestPerfProcessCoverage ") || !strings.Contains(string(log), "--- PASS: TestPerfAccountTransport ") {
 		t.Fatalf("production process paths: %v\n%s", err, log)
 	}
