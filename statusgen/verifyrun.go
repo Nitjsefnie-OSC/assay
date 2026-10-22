@@ -1670,7 +1670,7 @@ Usage:
                       --container-image-digest sha256:<64 hex> --witness <file>
   statusgen verifyrun --close-bracket --root <home> --brief <path> --admission-receipt <receipt>
                       --witness <file>
-  statusgen verifyrun --bracket-digest --witness <file>
+  statusgen verifyrun --bracket-digest --witness <file> [--credit --source <40 hex>]
 
 Runs each Verify row's Command in a fresh subshell at the repo root and appends
 one witness row per Verify row to the brief's ` + "`## Evidence`" + ` section:
@@ -1768,7 +1768,29 @@ Flags:
                     record for that run (the dispatcher-authored record, all
                     five fields), and that attestation
                     names the brief that contains it and the source under
-                    verification (rule 45). This verb checks none of those.
+                    verification (rule 45). Without --credit this verb checks
+                    none of those; --credit checks them.
+  --credit          with --bracket-digest and --source: end each bracket's line
+                    with credit=credited, credit=not-credited or
+                    credit=could-not-check, the reason on stderr. credited
+                    needs verdict=match and (a) every line from the header
+                    through the bracket blamed, on HEAD, to the roster's bound
+                    verifier by the commit author email's pinned numeric id
+                    (a roster human or an uncommitted line is not-credited; a
+                    login-only verifier entry or a shallow clone is
+                    could-not-check), (b) the span's attestation line equal
+                    to the line rendered from its record, read with deskread
+                    (issue, trust, label-events): a same-repository, closed,
+                    never-edited issue written by the dispatcher, not the
+                    verifier, carrying the dispatcher's model stamp, and
+                    (c) the attestation's brief= equal to the --witness
+                    file's repository path and its source= equal to
+                    --source. A failed read is could-not-check. Exit 0 only
+                    when every bracket is credited, 1 when any is not
+                    (including any verdict other than match), else 2.
+                    Commit authors are author-asserted, not authorization;
+                    the record is the forge-attributed anchor.
+  --source          the 40-hex source commit --credit binds the attestation to.
   --in-container    run the rows inside the PINNED harness container instead of on
                     the host — the supported execution-witness runner on Windows,
                     where a native pipefail bash is unreliable (#1418). Reads the
@@ -1864,6 +1886,8 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	openOut := fs.String("out", "", "with --open-bracket: the receipt file to write, outside the home")
 	closeBracket := fs.Bool("close-bracket", false, "host close step of a container run: re-check admission and the tree digest, then append Admission-Bracket to --witness")
 	witnessFile := fs.String("witness", "", "container-netns: the new file outside the home the witness is written to; with --close-bracket or --bracket-digest: that file")
+	creditMode := fs.Bool("credit", false, "with --bracket-digest and --source: judge each bracket's credit (provenance, record, binding)")
+	creditSource := fs.String("source", "", "with --credit: the 40-hex source commit under verification")
 	bracketDigestMode := fs.Bool("bracket-digest", false, "read-only: check every Admission-Bracket line of --witness <file> against the digest of its span, one line per bracket")
 	// --help is handled by ContinueOnError returning flag.ErrHelp; print the
 	// usage and exit 0, because asking for help is not an error.
@@ -1881,12 +1905,16 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	if *bracketDigestMode {
 		var others []string
 		fs.Visit(func(f *flag.Flag) {
-			if f.Name != "bracket-digest" && f.Name != "witness" {
+			if f.Name != "bracket-digest" && f.Name != "witness" && f.Name != "credit" && f.Name != "source" {
 				others = append(others, "--"+f.Name)
 			}
 		})
 		if len(others) > 0 || fs.NArg() > 0 || *witnessFile == "" {
-			fmt.Fprintf(stderr, "statusgen verifyrun: --bracket-digest takes only --witness <file> (got %s)\n", strings.Join(append(others, fs.Args()...), " "))
+			fmt.Fprintf(stderr, "statusgen verifyrun: --bracket-digest takes only --witness <file> [--credit --source <40 hex>] (got %s)\n", strings.Join(append(others, fs.Args()...), " "))
+			return verifyrunExitUsageError
+		}
+		if *creditMode != (*creditSource != "") || (*creditMode && !creditSourceOK(*creditSource)) {
+			fmt.Fprintln(stderr, "statusgen verifyrun: --credit and --source <40 lowercase hex> go together")
 			return verifyrunExitUsageError
 		}
 		raw, err := os.ReadFile(*witnessFile)
@@ -1900,14 +1928,34 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			return verifyrunExitCouldNot
 		}
 		code := verifyrunExitPass
+		var cc *creditContext
+		if *creditMode {
+			cc = newCreditContext(*witnessFile, *creditSource, string(raw))
+		}
+		anyCouldNot := false
 		for _, c := range checks {
-			fmt.Fprintln(stdout, c)
+			line := c.String()
+			var v creditVerdict
+			if cc != nil {
+				v = cc.credit(c)
+				line += " credit=" + v.verdict
+			}
+			fmt.Fprintln(stdout, line)
 			if c.why != "" {
 				fmt.Fprintf(stderr, "statusgen verifyrun --bracket-digest: bracket=L%d: %s\n", c.bracket, c.why)
 			}
-			if c.verdict != "match" {
-				code = verifyrunExitFail
+			if cc != nil && v.why != "" {
+				fmt.Fprintf(stderr, "statusgen verifyrun --bracket-digest: bracket=L%d: credit=%s: %s\n", c.bracket, v.verdict, v.why)
 			}
+			switch {
+			case c.verdict != "match", v.verdict == creditNotCredited:
+				code = verifyrunExitFail
+			case v.verdict == creditCouldNotCheck:
+				anyCouldNot = true
+			}
+		}
+		if anyCouldNot && code == verifyrunExitPass {
+			code = verifyrunExitCouldNot
 		}
 		if outside := containerRowsOutsideSpans(string(raw), checks); len(outside) > 0 {
 			var at []string
@@ -1918,6 +1966,10 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			code = verifyrunExitFail
 		}
 		return code
+	}
+	if *creditMode || *creditSource != "" {
+		fmt.Fprintln(stderr, "statusgen verifyrun: --credit and --source are read-only options of --bracket-digest")
+		return verifyrunExitUsageError
 	}
 
 	// The sandbox mode is validated before anything else runs: an unknown value,

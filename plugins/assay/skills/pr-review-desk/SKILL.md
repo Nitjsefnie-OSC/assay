@@ -1090,8 +1090,13 @@ house-specific detail a public, generic kit cannot carry.** Edit a clause here, 
 
   A bracket and span written outside the landing step, a bracketed block copied from another
   brief or an earlier source, or an attestation that does not match its record is not credit,
-  even when the digest matches. `verifyrun` does not check these conditions; check them yourself.
-  Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
+  even when the digest matches. Check all three with `statusgen verifyrun --bracket-digest
+  --witness <brief> --credit --source <40 hex>` on the landed brief: each bracket's line ends
+  `credit=credited`, `credit=not-credited` or `credit=could-not-check`, with the reason on
+  standard error. Credit a row only on `credit=credited`, never on `verdict=match` alone. The
+  record must be in the brief's own repository and authored by the dispatcher; a login-only
+  verifier match, a shallow clone, a missing roster or an unreadable record is
+  `credit=could-not-check`, which is not credit. Otherwise reject the row as unattested. Known limits: version 2 (cross-repository) receipts are
   refused in container mode; a linked worktree's git directory is not mounted in the container, so
   rows that need git history must run on the host; the in-container digest is only as
   trustworthy as the pinned image that computes it; and condition 1 reads the commit author git

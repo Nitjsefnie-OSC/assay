@@ -212,7 +212,13 @@ all of these conditions hold:
 
 A bracket and span written outside the landing step, a bracketed block copied from another
 brief or an earlier source, or an attestation that does not match its record is not credit,
-even when the digest matches. `verifyrun` does not check these conditions. Condition 1 reads
+even when the digest matches. Check all three with `statusgen verifyrun --bracket-digest
+--witness <brief> --credit --source <40 hex>` on the landed brief: each bracket's line ends
+`credit=credited`, `credit=not-credited` or `credit=could-not-check`, with the reason on
+standard error. Credit a row only on `credit=credited`, never on `verdict=match` alone. The
+record must be in the brief's own repository and authored by the dispatcher; a login-only
+verifier match, a shallow clone, a missing roster or an unreadable record is
+`credit=could-not-check`, which is not credit. Condition 1 reads
 the commit author git records, which is author-asserted attribution, not authorization: whoever can commit
 to the brief can write the verifier's author address. The forge-attributed record in
 condition 2 is the anchor. Only server-side rules on who may push to the brief's branch

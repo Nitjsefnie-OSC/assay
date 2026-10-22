@@ -732,7 +732,16 @@ passing run — which is why they are lint rules and not review vigilance.
       A bracket and span written outside the landing step, a bracketed block
       copied from another brief or an earlier source, or an attestation that
       does not match its record is not credit, even when the digest matches.
-      `verifyrun` does not check these conditions; the reviewer does. A
+      `statusgen verifyrun --bracket-digest --witness <brief> --credit
+      --source <40 hex>` checks all three, read-only: each bracket's line
+      ends `credit=credited`, `credit=not-credited` or
+      `credit=could-not-check`, with the reason on standard error, and it
+      exits 0 only when every bracket is `credit=credited`. A row is
+      credited only on `credit=credited`, never on `verdict=match` alone.
+      The record must be in the brief's own repository, authored by the
+      dispatcher; a login-only verifier match, a shallow clone, a missing
+      roster or an unreadable record is `credit=could-not-check`, which is
+      not credit. A
       container-netns run without
       `--admission-receipt` is a usage refusal whatever `DESK_LOOP` says.
       Known limits: version 2 (cross-repository) receipts are refused; a

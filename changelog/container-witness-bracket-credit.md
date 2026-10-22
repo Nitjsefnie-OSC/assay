@@ -26,5 +26,15 @@
   (the closed, never-edited `[verification-attestation] <run>` issue authored by the dispatcher
   identity), and that attestation names the brief that contains it and the source under
   verification. Per-line provenance is author-asserted attribution, not authorization; the
-  forge-attributed record is the anchor. No tool checks those conditions yet.
+  forge-attributed record is the anchor.
+- `statusgen verifyrun --bracket-digest --witness <brief> --credit --source <40 hex>` checks
+  those three conditions, read-only. Each bracket's line ends `credit=credited`,
+  `credit=not-credited` or `credit=could-not-check`, with the reason on standard error; it
+  exits 0 only when every bracket is credited, 1 on any not-credited, else 2. It reads the
+  record through `deskread issue`, `trust` and `label-events` and applies
+  `ReadVerifierAttestation`'s rules; a login-only verifier match, a shallow clone, a missing
+  roster or a failed read is could-not-check. Rule 45, verify-desk and pr-review-desk credit a
+  row only on `credit=credited`. Without `--credit` the verb is unchanged.
+- `deskread trust` carries `bodyHistoryKnown`, always rendered, so a reader can tell a body the
+  forge reported as never edited from one whose history it did not report.
 - The driver's ruling of 2026-10-22 that bracketed container runs count as Linux witnesses, for ratification at merge: #4069
