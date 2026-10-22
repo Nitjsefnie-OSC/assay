@@ -56,8 +56,10 @@ const (
 	dispatchedTierPrefix  = "dispatched-tier:"
 )
 
-// creditDeskreadBin is the read verb (de)serialised here; tests put a fake on PATH.
-var creditDeskreadBin = "deskread"
+// creditDeskreadBin names the read verb in messages. It is launched by that
+// literal name, as deskgit and deskdispatch are, so the guard in
+// TestRowEnvSingleSource reads it as a fixed tool; tests put a fake on PATH.
+const creditDeskreadBin = "deskread"
 
 // creditVerdict is one condition's or one bracket's answer.
 type creditVerdict struct {
@@ -583,7 +585,7 @@ func creditDeskread(kind, target string) (*creditEnvelope, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, creditDeskreadBin, kind, "--issue", target)
+	cmd := exec.CommandContext(ctx, "deskread", kind, "--issue", target)
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	var env creditEnvelope
