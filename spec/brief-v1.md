@@ -266,6 +266,35 @@ version negotiation and all consuming readers must land together. Keep `outcome`
 Observation syntax belongs to the continuing-operations impact extension, not a second
 brief lifecycle or a universal observation mandate.
 
+### 3.7 Proposed delivery milestone integration (not shipped)
+
+The draft [`milestone-v1.md`](./milestone-v1.md) defines a separate, versioned outcome
+contract. It does not extend the supported schema table above. A future negotiated
+brief schema (provisionally `brief-v4`, not allocated or implemented by this change)
+would add an optional `requires-milestones: array[string]` containing exact qualified
+milestone-version references. Its presence would mean the capability is required before
+the consuming brief starts; absent/empty means no additional milestone start requirement.
+Unknown, unreadable or unaccepted required capabilities cannot be treated as ready.
+The brief Context must identify the capability it uses and the relevant supported
+environment/profile; an acceptance for a different subject cannot satisfy that need.
+
+`depends` and `unblocks` continue to name briefs; do not insert milestone IDs into their
+existing grammar or into `outcome`/`satisfies`, which name requirements. Existing brief
+waves continue to describe brief dependencies. The additional capability gate is shown
+separately and participates in mixed-graph cycle checks; a wave alone is not readiness.
+The implementation must recheck eligibility at dispatch/pickup using current capability
+observations, without retroactively rewriting completed execution or evidence.
+
+Milestone contribution membership is authored only in the milestone's `contributes`
+list; reverse brief membership is generated. Contributing to a milestone does not
+inherit that milestone's final-acceptance prerequisites as brief start dependencies.
+A brief may serve several milestones. Existing Task/Verify amendment, version, risk,
+design and review obligations still apply to edits prompted by a milestone change.
+
+This proposed field MUST NOT be added to a legacy operational brief merely because its
+parser tolerates extra keys. Schema negotiation, dispatch refusal, all graph readers and
+report consumers must ship together before operational use (milestone §10).
+
 ## 4. Body structure
 
 ### 4.1 Context section
