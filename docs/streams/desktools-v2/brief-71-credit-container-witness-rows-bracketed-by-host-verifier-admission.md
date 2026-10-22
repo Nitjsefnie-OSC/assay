@@ -68,6 +68,8 @@ digest on every credited container row. A run whose digest cannot be read is
 could-not-run, not a pass. Alternative: make the digest advisory. That is easier to adopt,
 but then a reviewer cannot tell two container images apart after the run.
 
+Default if no answer: the recommended shape (host receipt plus host close-step bracket; image digest required on every credited container row) after 2026-10-24.
+
 ## Ground rules
 
 Normal worker admission, one isolated worktree and one draft PR. Tests use fixtures and

@@ -65,6 +65,8 @@ recognised human, because overwriting one human's name with another is never aut
 Alternative: refuse in every mismatch case. That is stricter, but it forces verifiers back
 into hand-editing cells.
 
+Default if no answer: the recommended split (restamp a non-principal annotation, leave a matching one, refuse a different recognised human) after 2026-10-24.
+
 ## Ground rules
 
 Normal worker admission, one isolated worktree and one draft PR. Tests use fixture rosters

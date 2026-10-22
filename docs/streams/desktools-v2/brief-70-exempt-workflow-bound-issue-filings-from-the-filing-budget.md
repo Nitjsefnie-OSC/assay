@@ -70,6 +70,8 @@ Alternative: refuse every bound filing while the cap is off. That keeps the brak
 closed by default, but an adopter with no configuration gets today's behaviour and
 nothing from the ruling.
 
+Default if no answer: the recommended shape (bound-cap knob defaults to 0, cap set per role in deployed config; per-PR write tier and repo-wide ceiling always on) after 2026-10-24.
+
 ## Ground rules
 
 Normal worker admission, one isolated worktree and one draft PR. No workflow triggers,
