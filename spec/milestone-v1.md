@@ -31,10 +31,16 @@ No runtime quality or performance measurements were made for this documentation 
 ## 2. Identity, location and revisions
 
 Each milestone MUST have exactly one canonical record at
-`docs/streams/<stream>/milestones/<M-number>-<slug>.md` in its owning repository.
+`docs/streams/<stream>/milestones/m-<NN>-<slug>.md` in its owning repository.
 The owning stream is accountable for the promise; contributing briefs MAY live elsewhere.
-A stable milestone ID is `<cell>:<repo>:<stream>:M<number>`, where cell/repository
-identity uses the existing graph identity registry. IDs MUST NOT be reused after retirement.
+A stable milestone ID is `<stream>/m-<NN>` (for example, `build/m-03`), distinct
+from a brief ID `<stream>/<NN>` (for example, `build/03`). `NN` is a positive decimal
+number padded to at least two digits; alternative spellings such as `m-3` MUST NOT
+create aliases or duplicate identities. The `m-` prefix identifies a milestone, not its
+execution wave. For cross-root references, qualify that same ID as
+`<cell>:<repo>:<stream>/m-<NN>` using the existing graph identity registry for the
+cell/repository identity. Unqualified references resolve only within the current root;
+an ambiguous reference MUST be rejected. IDs MUST NOT be reused after retirement.
 A rename MUST preserve the ID or provide an unambiguous alias; duplicate identity is an error.
 
 Three different versions MUST remain distinct:
@@ -42,7 +48,7 @@ Three different versions MUST remain distinct:
 - `schema: milestone-v1` identifies the record format.
 - `contract-version: <positive integer>` identifies the externally relied-on promise.
   Dependency references MUST pin an exact version, e.g.
-  `example-cell:tools:build:M3@1`; no implicit latest or version ranges in v1.
+  `example-cell:tools:build/m-03@1`; no implicit latest or version ranges in v1.
 - A source revision (repository commit and path) identifies the exact plan and evidence
   snapshot. Edits to contributing briefs without changing the promise do not require a
   new contract version. Git history preserves those edits; a second manual edit counter
@@ -63,9 +69,9 @@ typed keys MUST be diagnosed, rather than silently ignored.
 | Key | Type | Meaning |
 |---|---|---|
 | `schema` | string | Exactly `milestone-v1`. |
-| `milestone` | string | Fully qualified stable ID from §2. |
+| `milestone` | string | Stable ID `<stream>/m-<NN>` from §2; cross-root references add its cell/repository qualification. |
 | `contract-version` | integer | Positive promise version. |
-| `title` | string | A plain-language useful outcome, not only “M3” or a wave label. |
+| `title` | string | A plain-language useful outcome, not only “m-03” or a wave label. |
 | `owner` | string | Accountable role or team; confers no approval authority. |
 | `sources` | array[string] | Nonempty canonical spec/decision references; pin material revisions in the body. Reuse existing REQ IDs where applicable. |
 | `contributes` | array[string] | Fully qualified brief IDs, unique within this record; required completion work. Empty is permitted for an existing capability, with justification and evidence. |
@@ -107,8 +113,8 @@ A brief MAY contribute to several milestones. Counts deduplicate by canonical br
 
 ### Example: “Build changes are less brittle”
 
-For a hypothetical `build/M3@1`, `contributes` names `build/11` and `build/12`, and
-`requires-milestones` names `stream-y/M1@1` and `stream-z/M2@1` (all qualified in data).
+For a hypothetical `build/m-03@1`, `contributes` names `build/11` and `build/12`, and
+`requires-milestones` names `stream-y/m-01@1` and `stream-z/m-02@1` (cross-root references use the qualification in §2).
 If only brief 12 needs Y's capability to start, only brief 12 declares that requirement.
 Brief 11 can proceed independently. Z may be needed only for joined acceptance.
 Splitting Y's internal brief into three updates Y's contribution list and coverage;
@@ -194,7 +200,7 @@ acceptance state, blockers and evidence links. Membership, completion and revers
 MUST be generated from canonical records, not a second hand-maintained table.
 A report MUST let the reader select an outcome and see its direct contributors, additional
 prerequisites, deduplicated remaining work and uncovered criteria. Broad maintenance
-streams MAY have independent outcome tracks; no default cumulative M1→M2→M3 chain.
+streams MAY have independent outcome tracks; no default cumulative m-01→m-02→m-03 chain.
 
 The prerequisite graph MUST display only unfinished briefs (`status != done`) and
 unsatisfied milestone requirements, with completed prerequisite evidence accessible by link.

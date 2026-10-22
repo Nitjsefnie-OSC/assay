@@ -272,7 +272,8 @@ The draft [`milestone-v1.md`](./milestone-v1.md) defines a separate, versioned o
 contract. It does not extend the supported schema table above. A future negotiated
 brief schema (provisionally `brief-v4`, not allocated or implemented by this change)
 would add an optional `requires-milestones: array[string]` containing exact qualified
-milestone-version references. Its presence would mean the capability is required before
+milestone-version references (`<cell>:<repo>:<stream>/m-<NN>@<version>`,
+distinct from brief IDs `<stream>/<NN>`). Its presence would mean the capability is required before
 the consuming brief starts; absent/empty means no additional milestone start requirement.
 Unknown, unreadable or unaccepted required capabilities cannot be treated as ready.
 The brief Context must identify the capability it uses and the relevant supported
