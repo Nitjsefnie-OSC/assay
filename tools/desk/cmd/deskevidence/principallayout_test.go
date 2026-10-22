@@ -185,6 +185,41 @@ func TestStampAppendAfterAttest(t *testing.T) {
 	})
 }
 
+// regression: #4075
+// TestStampRowsAfterAttest: rows appended directly under an attestation line, with no header
+// of their own, land and are stamped when they are as wide as the table's header and its
+// Runner column is the last: both readings take the row's last cell as its Runner cell. A row
+// of another width, or under a header whose Runner column is not the last, is still refused.
+func TestStampRowsAfterAttest(t *testing.T) {
+	t.Run("same-width-runner-last", func(t *testing.T) {
+		f := setupStamp(t, true)
+		if code := landRendered(t, f, attestedHead, attestedHead+appRow("5", renderApp)); code != deskkit.ExitOK {
+			t.Fatalf("exit = %d, want 0: %q", code, lastAudit(t).Detail)
+		}
+		if !strings.Contains(f.putContent, renderApp+" (on-behalf-of human:") {
+			t.Fatalf("the appended App-run row was not stamped:\n%s", f.putContent)
+		}
+	})
+	runnerFirst := "# Brief\n\n## Evidence\n\n| # | Runner | Date |\n|---|---|---|\n| 4 | " + humanRunner +
+		" | 2026-10-14 |\nVerification-Attestation: example#1 run=abc source=def brief=b.md\n"
+	runnerless := "# Brief\n\n## Evidence\n\n| # | Checked by |\n|---|---|\n| 4 | " + humanRunner +
+		" |\nVerification-Attestation: example#1 run=abc source=def brief=b.md\n"
+	cases := []struct{ name, base, added, line string }{
+		{"narrower-row-runnerless", runnerless, "| " + renderApp + " |\n", "line 9"},
+		{"wider-row-runnerless", runnerless, "| 5 | " + humanRunner + " | " + renderApp + " |\n", "line 9"},
+		{"narrower-row", attestedHead, "| 5 | `e` | 0 | ok | " + renderApp + " |\n", "line 9"},
+		{"wider-row", attestedHead, "| 5 | `e` | 0 | ok | 2026-10-14 | " + humanRunner + " | " + renderApp + " |\n", "line 9"},
+		{"runner-not-last", runnerFirst, "| 5 | " + humanRunner + " | " + renderApp + " |\n", "line 9"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setupStamp(t, true)
+			code := landRendered(t, f, tc.base, tc.base+tc.added)
+			wantRenderRefusal(t, f, code, "cannot read the way the lint does", tc.line, "dropped that header")
+		})
+	}
+}
+
 // mergedEvidence is base with block appended the way a brief-path landing appends it.
 func mergedEvidence(t *testing.T, base, block string) string {
 	t.Helper()

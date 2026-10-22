@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader|TestPrincipalStampRefusesControlInAnyLine|TestMergeEvidenceLocatesBodySection|TestStampRefusesPipelessRow|TestStampRefusesSecondHeading|TestStampRefusesRunnerMarkup|TestStampRefusesRunnerHeader|TestStampAppendAfterAttest|TestStampRefusesLayoutRows|TestStampRefusesShownComment|TestStampRefusesShownHeading|TestStampRefusesOutsideRows|TestStampLayoutShapesAllowed|TestStampHeaderOnBranchRows)$' -count=1 -timeout=300s",
+  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader|TestPrincipalStampRefusesControlInAnyLine|TestMergeEvidenceLocatesBodySection|TestStampRefusesPipelessRow|TestStampRefusesSecondHeading|TestStampRefusesRunnerMarkup|TestStampRefusesRunnerHeader|TestStampAppendAfterAttest|TestStampRefusesLayoutRows|TestStampRefusesShownComment|TestStampRefusesShownHeading|TestStampRefusesOutsideRows|TestStampLayoutShapesAllowed|TestStampHeaderOnBranchRows|TestStampRefusesLinkedRunner|TestStampRefusesLinkedAppCell|TestStampRefusesLinkedLayout|TestStampLinkShapesAllowed|TestStampRowsAfterAttest)$' -count=1 -timeout=300s",
   "control": {
     "name": "unreadable-cell refusal not consulted",
     "file": "cmd/deskevidence/principalstamp.go",
@@ -148,8 +148,8 @@
     {
       "name": "only the exact lint heading text counts as Evidence",
       "file": "cmd/deskevidence/principalstamp.go",
-      "old": "if lettersOf(html.UnescapeString(htmlTagRe.ReplaceAllString(s, \"\"))) == \"evidence\" {",
-      "new": "if lettersOf(s) == \"evidence\" {"
+      "old": "if lettersOf(html.UnescapeString(htmlTagRe.ReplaceAllString(v, \"\"))) == \"evidence\" {",
+      "new": "if lettersOf(v) == \"evidence\" {"
     },
     {
       "name": "the heading line that ends the section is not checked for control characters",
@@ -166,8 +166,8 @@
     {
       "name": "a row after a pipe-less line in the same table is not refused",
       "file": "cmd/deskevidence/principalstamp.go",
-      "old": "if lost && added {",
-      "new": "if false && lost && added {"
+      "old": "if lost && added && !lastCellRunner(header, len(cellSpans(t))) {",
+      "new": "if false && lost && added && !lastCellRunner(header, len(cellSpans(t))) {"
     },
     {
       "name": "a header without a leading pipe does not start a table",
@@ -244,8 +244,8 @@
     {
       "name": "comment markers hide a comment's shown text",
       "file": "cmd/deskevidence/principalstamp.go",
-      "old": "s = htmlTagRe.ReplaceAllString(commentMarkerRe.ReplaceAllString(s, \"\"), \"\")",
-      "new": "s = htmlTagRe.ReplaceAllString(s, \"\")"
+      "old": "return []string{evidenceCommentRe.ReplaceAllString(s, \"\"), commentMarkerRe.ReplaceAllString(s, \"\")}",
+      "new": "return []string{evidenceCommentRe.ReplaceAllString(s, \"\"), s}"
     },
     {
       "name": "a raw HTML heading is not read as a heading",
@@ -426,6 +426,96 @@
       "file": "cmd/deskevidence/principalstamp.go",
       "old": "if lintTableAdds(view, lines[start:end], i, onBranchEvidence) {",
       "new": "if !onBranchEvidence[lines[start+i]] {"
+    },
+    {
+      "name": "a closed comment is not read hidden",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "return []string{evidenceCommentRe.ReplaceAllString(s, \"\"), commentMarkerRe.ReplaceAllString(s, \"\")}",
+      "new": "return []string{commentMarkerRe.ReplaceAllString(s, \"\")}"
+    },
+    {
+      "name": "link syntax is not reduced to its shown text",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "return []string{s, reduceLinks(s, false), reduceLinks(s, true)}",
+      "new": "return []string{s}"
+    },
+    {
+      "name": "an image is not read with its alt text shown",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "return []string{s, reduceLinks(s, false), reduceLinks(s, true)}",
+      "new": "return []string{s, reduceLinks(s, false)}"
+    },
+    {
+      "name": "an image is not read with its alt text dropped",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "return []string{s, reduceLinks(s, false), reduceLinks(s, true)}",
+      "new": "return []string{s, reduceLinks(s, true)}"
+    },
+    {
+      "name": "image syntax is not recognised",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "case c == '[' || (c == '!' && i+1 < len(s) && s[i+1] == '['):",
+      "new": "case c == '[':"
+    },
+    {
+      "name": "an image's alt text is never shown",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if c == '[' || keepAlt {",
+      "new": "if c == '[' {"
+    },
+    {
+      "name": "an autolink is not reduced to its address",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if m := autolinkRe.FindStringSubmatchIndex(s[i:]); m != nil {",
+      "new": "if m := autolinkRe.FindStringSubmatchIndex(s[i:]); false && m != nil {"
+    },
+    {
+      "name": "a reference link is not recognised",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tcase '[':\n\t\tfor j := close + 2;",
+      "new": "\tcase 0:\n\t\tfor j := close + 2;"
+    },
+    {
+      "name": "an inline link is not recognised",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tcase '(':\n\t\tif e := inlineDestinationEnd(s, close+1); e > 0 {",
+      "new": "\tcase 0:\n\t\tif e := inlineDestinationEnd(s, close+1); e > 0 {"
+    },
+    {
+      "name": "an App-run Runner cell holding link syntax is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if linkSyntax(orig) {",
+      "new": "if false && linkSyntax(orig) {"
+    },
+    {
+      "name": "a heading is not read with its link syntax reduced",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "for _, v := range linkReadings(s) {\n\t\t\tif lettersOf",
+      "new": "for _, v := range []string{s} {\n\t\t\tif lettersOf"
+    },
+    {
+      "name": "the layout check blanks comments rune by rune, shifting cell offsets",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "view := strings.Split(blankComments(section), \"\\n\")\n\tadded := func(k int)",
+      "new": "view := strings.Split(evidenceCommentRe.ReplaceAllStringFunc(section, func(m string) string {\n\t\treturn strings.Map(func(r rune) rune {\n\t\t\tif r == '\\n' {\n\t\t\t\treturn r\n\t\t\t}\n\t\t\treturn ' '\n\t\t}, m)\n\t}), \"\\n\")\n\tadded := func(k int)"
+    },
+    {
+      "name": "a same-width row after a note line is refused even with its Runner cell last",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if lost && added && !lastCellRunner(header, len(cellSpans(t))) {",
+      "new": "if lost && added {"
+    },
+    {
+      "name": "a row of another width after a note line is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if n != len(header) || n == 0 {",
+      "new": "if n == 0 {"
+    },
+    {
+      "name": "a row after a note line is not refused when the header's Runner column is not last",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "return j == n-1",
+      "new": "return true"
     }
   ]
 }

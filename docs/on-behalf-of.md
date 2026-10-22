@@ -258,7 +258,9 @@ same roster's human set:
     closes a table renders as a one-cell row: it lands when it shows no `[bot]` or
     on-behalf-of text. After it the lint has dropped the table's header, so a `|`-led row
     added later in that table is refused, unless a repeat of the table's own header (with its
-    separator line) comes first.
+    separator line) comes first, or the row has exactly as many cells as the table's header
+    and that header's Runner column is its last cell (or it has none): both readings then take
+    the row's last cell as its Runner cell.
     A table with a different header needs a blank line above it. The `--brief-path` merge
     puts one there whenever the appended block opens with a header, so a witness table
     appended after an attestation line lands as its own table.
@@ -267,8 +269,13 @@ same roster's human set:
     A Runner cell the lint does not read as App-run is refused when it shows as one once HTML
     tags and comment markers are removed, entities decoded, and emphasis, strikethrough,
     code-span and escape characters (`*`, `_`, `~`, a backtick, `\`) stripped; that covers
-    `<span>…[bot]</span>`, `**…[bot]**`, `_…[bot]_` and a login in a code span. An App Runner
-    cell holding `<`, `>`, `&`, `~` or `\` is refused as unreadable (above).
+    `<span>…[bot]</span>`, `**…[bot]**`, `_…[bot]_` and a login in a code span. Link, image
+    and autolink syntax is read as the text a renderer shows for it (a link's text, an image's
+    alt text both shown and not shown, an autolink's address), and a closed HTML comment both
+    hidden and shown; a cell or line shows App-run text when any of these readings does, and
+    every check of what a cell, line or heading shows uses them. An App Runner cell holding
+    `<`, `>`, `&`, `~` or `\`, or link, image or autolink syntax, is refused as unreadable
+    (above); brackets that open no link, such as a model tag, are left alone.
   - **Headers.** A header the landing adds, or adds rows under, is refused when a reader can
     take it as naming a different Runner column than the lint reads: an invisible format
     character such as a bidi isolate, a non-ASCII letter or mark, a cell whose letters spell
@@ -276,7 +283,8 @@ same roster's human set:
     one `Runner` column (the lint reads the last).
   - **Headings.** The lint reads only the first `## Evidence` section. A heading a renderer
     shows as Evidence anywhere else (ATX, setext or HTML, at any level or case, with entities
-    decoded and tags removed, or put on its own rendered line by a lone carriage return) may
+    decoded, tags removed and link syntax read as its text, or put on its own rendered line by
+    a lone carriage return) may
     not be added, and no line may be added under one that is already on the branch. An added
     heading may not hold a non-ASCII letter or mark. Headings inside fenced or indented code
     are code, not headings, and are not counted.
