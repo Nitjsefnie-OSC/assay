@@ -571,6 +571,7 @@ func main() {
 		Static:  htmlConsole,
 		Session: answerH,
 		Guard:   guard,
+		Origin:  serve.OriginGuard{Hosts: serve.ServedHosts(*addr, oauthCfg.RedirectURL)},
 	})
 	if err != nil {
 		fatal(1, "capability route table is invalid — a data/write route is missing its gate: %v", err)
@@ -584,7 +585,7 @@ func main() {
 	// The attach supervisor (the service contract) starts only once the HTTP
 	// surface is listening, and never in --once mode (that branch returned
 	// above). It stops inside the same 5s shutdown window.
-	configureDrivers(*addr, mode, validator != nil)
+	configureDrivers(cfg, *addr, mode, validator != nil)
 	attach := terminal.NewSupervisor(termRegistry, nil, terminal.SupervisorOptions{
 		Mode: attachMode,
 		Logf: func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },

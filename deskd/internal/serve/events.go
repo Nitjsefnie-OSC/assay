@@ -10,14 +10,18 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/medici-finance/assay/deskd/internal/contract"
 	"github.com/medici-finance/assay/deskd/internal/domain"
+	"github.com/medici-finance/assay/deskd/internal/index"
 )
 
 // ErrRefreshUnknownEscalation is the sentinel a [Refresher] returns when the
@@ -144,7 +148,12 @@ func (b *EventBus) Subscribe(lastEventID string) (replay []contract.Event, ch ch
 // producer wired on this build) is a could-not-check 503, never a stream that
 // hangs open and delivers nothing — a caller can tell "not wired" from "wired
 // but silent" by the status code alone.
-func handleV1Events(bus *EventBus) http.HandlerFunc {
+//
+// The bus is ONE producer for every viewer, so every event — replayed or live —
+// passes through the viewer's [Server.eventFilter] before it is written: a
+// viewer never learns of an escalation, a repository's health or a count it
+// could not read through /v1/inbox.
+func (s *Server) handleV1Events(bus *EventBus) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if bus == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
@@ -160,6 +169,7 @@ func handleV1Events(bus *EventBus) http.HandlerFunc {
 
 		replay, ch, cancel := bus.Subscribe(r.Header.Get("Last-Event-ID"))
 		defer cancel()
+		visible := s.eventFilter(r)
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -168,6 +178,10 @@ func handleV1Events(bus *EventBus) http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 
 		for _, e := range replay {
+			e, ok := visible(e)
+			if !ok {
+				continue
+			}
 			if err := e.EncodeSSE(w); err != nil {
 				return
 			}
@@ -182,6 +196,10 @@ func handleV1Events(bus *EventBus) http.HandlerFunc {
 			case e, ok := <-ch:
 				if !ok {
 					return
+				}
+				e, ok = visible(e)
+				if !ok {
+					continue
 				}
 				if err := e.EncodeSSE(w); err != nil {
 					return
@@ -208,12 +226,27 @@ type Refresher interface {
 // uses the service's own App identity, never a human credential, so this
 // route is outside contract.NamedActions by construction and needs no
 // per-request credential.
-func handleV1Refresh(refresh Refresher) http.HandlerFunc {
+//
+// It is still gated per item: a viewer with no read capability on the item's
+// repository gets the same 404 an unknown id gets (never a permission leak),
+// decided before the Refresher spends a platform read on it.
+func (s *Server) handleV1Refresh(refresh Refresher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := domain.EscalationID(r.PathValue("id"))
 		if id == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "escalation id is required in the path"})
 			return
+		}
+		if s.Authz != nil {
+			row, found, err := s.lookupRow(id)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "item index read failed (BLIND, not empty): " + err.Error()})
+				return
+			}
+			if !found || !s.itemAuthorized(r, row) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": ErrRefreshUnknownEscalation.Error()})
+				return
+			}
 		}
 		if err := refresh.Refresh(r.Context(), id); err != nil {
 			status := http.StatusInternalServerError
@@ -224,5 +257,102 @@ func handleV1Refresh(refresh Refresher) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"id": id, "refreshed": true})
+	}
+}
+
+// lookupRow finds one escalation in the index, open or closed. found is false
+// when the index has no such id or no index is wired.
+func (s *Server) lookupRow(id domain.EscalationID) (row index.Row, found bool, err error) {
+	if s.DB == nil {
+		return index.Row{}, false, nil
+	}
+	rows, err := s.DB.Inbox("", true)
+	if err != nil {
+		return index.Row{}, false, err
+	}
+	for _, r := range rows {
+		if r.ID == id {
+			return r, true, nil
+		}
+	}
+	return index.Row{}, false, nil
+}
+
+// eventFilter is one viewer's view of the shared event bus. With no Authz
+// wired the stream is unfiltered, as every other read on this surface is.
+// Otherwise:
+//
+//   - a transition is delivered only for an escalation the viewer can read;
+//   - a badge is RECOMPUTED over the viewer's readable rows (the producer's
+//     count spans every repository) and sent only when that count changes;
+//   - an index-health set is cut to the repositories the viewer can read and
+//     sent only when that cut changes;
+//   - a resync carries no data and always passes;
+//   - an event type this filter does not know is dropped: a new type must be
+//     given a per-viewer rule here before any viewer sees it.
+func (s *Server) eventFilter(r *http.Request) func(contract.Event) (contract.Event, bool) {
+	if s.Authz == nil {
+		return func(e contract.Event) (contract.Event, bool) { return e, true }
+	}
+	authorized := s.Authz.SurfaceAuthorizer(r)
+	var lastBadge *contract.BadgeData
+	var lastHealth []string
+	sentHealth := false
+	return func(e contract.Event) (contract.Event, bool) {
+		switch e.Type {
+		case contract.EventResync:
+			return e, true
+		case contract.EventTransition:
+			var d contract.TransitionData
+			if json.Unmarshal(e.Data, &d) != nil {
+				return e, false
+			}
+			row, found, err := s.lookupRow(domain.EscalationID(d.ID))
+			if err != nil || !found || !s.itemAuthorized(r, row) {
+				return e, false
+			}
+			return e, true
+		case contract.EventBadge:
+			if s.DB == nil {
+				return e, false
+			}
+			rows, err := s.DB.Inbox("", true)
+			if err != nil {
+				return e, false
+			}
+			b := index.BadgeCounts(s.filterByCapability(r, rows))
+			if lastBadge != nil && *lastBadge == b {
+				return e, false
+			}
+			out, err := contract.NewEvent(e.ID, e.At, e.Type, b)
+			if err != nil {
+				return e, false
+			}
+			lastBadge = &b
+			return out, true
+		case contract.EventIndexHealth:
+			var d contract.IndexHealthData
+			if json.Unmarshal(e.Data, &d) != nil {
+				return e, false
+			}
+			var mine []string
+			for _, repo := range d.CouldNotCheck {
+				owner, name, ok := strings.Cut(repo, "/")
+				if ok && authorized(owner, name) {
+					mine = append(mine, repo)
+				}
+			}
+			if sentHealth && slices.Equal(mine, lastHealth) {
+				return e, false
+			}
+			out, err := contract.NewEvent(e.ID, e.At, e.Type, contract.IndexHealthData{CouldNotCheck: mine})
+			if err != nil {
+				return e, false
+			}
+			lastHealth, sentHealth = mine, true
+			return out, true
+		default:
+			return e, false
+		}
 	}
 }

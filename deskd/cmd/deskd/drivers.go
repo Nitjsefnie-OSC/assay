@@ -21,6 +21,7 @@ package main
 // container CLI path by accident.
 
 import (
+	"github.com/medici-finance/assay/deskd/config/schema"
 	"github.com/medici-finance/assay/deskd/internal/identity"
 	_ "github.com/medici-finance/assay/deskd/internal/terminal/container"
 	"github.com/medici-finance/assay/deskd/internal/terminal/local"
@@ -28,7 +29,26 @@ import (
 
 // configureDrivers hands the local driver deskd's real bind arguments, so its
 // belt-and-braces P3 re-check runs against what deskd is actually bound to.
+// It also registers every configured credential variable name (each cell's
+// chat key_env) with the local driver's environment deny set, so a desk shell
+// never inherits the model subscription key whatever that variable is named.
 // Call it once, before the attach supervisor starts.
-func configureDrivers(addr string, mode identity.AuthMode, validatorConfigured bool) {
+func configureDrivers(cfg *schema.File, addr string, mode identity.AuthMode, validatorConfigured bool) {
 	local.SetBindGate(addr, mode, validatorConfigured)
+	local.DenyEnvNames(configuredSecretEnv(cfg)...)
+}
+
+// configuredSecretEnv lists the variable names the configuration declares as
+// credentials.
+func configuredSecretEnv(cfg *schema.File) []string {
+	if cfg == nil {
+		return nil
+	}
+	var out []string
+	for i := range cfg.Cells {
+		if c := cfg.Cells[i].Chat; c != nil && c.KeyEnv != "" {
+			out = append(out, c.KeyEnv)
+		}
+	}
+	return out
 }

@@ -287,7 +287,11 @@ type CellSummary struct {
 func (s *Server) handleCells(w http.ResponseWriter, r *http.Request) {
 	var out []CellSummary
 	if s.Config != nil {
-		for _, c := range s.Config.Cells {
+		for i := range s.Config.Cells {
+			c := s.Config.Cells[i]
+			if !s.cellAuthorized(r, &c) {
+				continue
+			}
 			cs := CellSummary{Name: c.Name, Repos: c.Repos, SilenceThreshold: c.SilenceThreshold}
 			for _, l := range c.Loops {
 				cs.Loops = append(cs.Loops, fmt.Sprintf("%s→%s", l.Role, l.App))

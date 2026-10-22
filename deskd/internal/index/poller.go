@@ -327,6 +327,11 @@ func escalationStates(rows []Row) map[domain.EscalationID]string {
 
 // badgeCounts is the `badge` event payload: open/urgent/gold counts over the
 // OPEN rows only — a closed escalation is decided and no longer badges.
+// BadgeCounts is the badge payload over a row set. The poller publishes it
+// over every row; the event stream recomputes it over the rows one viewer may
+// read, so both use this one count.
+func BadgeCounts(rows []Row) contract.BadgeData { return badgeCounts(rows) }
+
 func badgeCounts(rows []Row) contract.BadgeData {
 	var b contract.BadgeData
 	for _, r := range rows {

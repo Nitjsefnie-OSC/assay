@@ -32,6 +32,30 @@ var defaultArgv = []string{"bash", "-l"}
 // DESKD_ prefix.
 var deniedEnvNeedles = []string{"TOKEN", "SECRET", "KEY"}
 
+// configuredSecretEnv is the set of EXACT variable names (upper-cased) the
+// running configuration declares as credentials — every cell's chat
+// `key_env`. A configured name need not contain TOKEN, SECRET or KEY (the
+// schema accepts any upper-case identifier), so the needle list alone cannot
+// keep it out of a desk shell; [DenyEnvNames] registers it explicitly.
+var (
+	configuredSecretMu  sync.RWMutex
+	configuredSecretEnv = map[string]bool{}
+)
+
+// DenyEnvNames adds exact variable names to the set every desk shell's
+// environment is stripped of, on top of the DESKD_ prefix and the needle
+// list. cmd/deskd calls it once at startup with every configured credential
+// variable name, before any session is attached. Blank names are ignored.
+func DenyEnvNames(names ...string) {
+	configuredSecretMu.Lock()
+	defer configuredSecretMu.Unlock()
+	for _, n := range names {
+		if n = strings.ToUpper(strings.TrimSpace(n)); n != "" {
+			configuredSecretEnv[n] = true
+		}
+	}
+}
+
 // Driver implements terminal.Target by spawning TargetSpec.Command on a PTY in
 // this process's own tree. It is stateless with respect to any one desk (one
 // Driver value serves every kind: local desk, per the [terminal.Target]
@@ -194,8 +218,8 @@ func (d *Driver) resolveArgv0(name string) (string, error) {
 }
 
 // filteredEnv returns env (as produced by os.Environ()) with every DESKD_*
-// variable and every variable whose name contains TOKEN, SECRET or KEY
-// (case-insensitive) removed. It is the deny-list a test asserts directly
+// variable, every variable whose name contains TOKEN, SECRET or KEY
+// (case-insensitive), and every name registered with [DenyEnvNames] removed. It is the deny-list a test asserts directly
 // (brief 15 Verify row 3): deskd's own GitHub read token
 // (DESKD_GITHUB_TOKEN) must never reach a desk session's shell.
 func filteredEnv(env []string) []string {
@@ -233,6 +257,12 @@ func overrideEnv(env []string, name, value string) []string {
 func isDeniedEnvName(name string) bool {
 	upper := strings.ToUpper(name)
 	if strings.HasPrefix(upper, "DESKD_") {
+		return true
+	}
+	configuredSecretMu.RLock()
+	configured := configuredSecretEnv[upper]
+	configuredSecretMu.RUnlock()
+	if configured {
 		return true
 	}
 	for _, needle := range deniedEnvNeedles {

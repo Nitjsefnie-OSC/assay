@@ -1,18 +1,9 @@
-# Move deskd into Assay
+### Added
+- A standalone Apache-2.0 `deskd` Go module: the command, adapters, index, contract generator, offline schema validator, authorization controls, embedded web view and tests. Existing deployments are unchanged; no runtime activation, release, image or consumer retirement is included.
 
-Add a standalone Apache-2.0 `deskd` module with the existing command, adapters,
-index, contract generator, offline schema validator, authorization controls, embedded web view and tests.
-The source checkout and existing deployments remain unchanged; no runtime
-activation, release, image or consumer retirement is included.
-
-Human operations now require explicit `--human-login` at startup. Missing or
-empty selection disables those operations; invalid selection refuses startup.
-The non-secret identity policy freezes once, while credentials remain scoped to
-individual requests. Existing deployments must explicitly select their prior
-principal. Per-cell, origin, capability, namespace and MCP custody restrictions
-remain in place. The current fixed proving-cell allowlist is exactly `assay` and
-`house`, with near-miss refusals; this does not edit deployed opt-ins. Synthetic fixtures replace adopter identifiers.
-
-Three adopter-configuration guards remain enforced at their original home and
-are excluded from this reusable module; every generic control stays included.
-Consumer migration and the cell-api refactor/qualification remain separate.
+### Changed
+- Human operations require an explicit `--human-login` at startup. A missing or empty value disables them, an invalid one refuses startup, and the login is matched case-insensitively. Existing deployments must select their prior principal explicitly.
+- Every MCP tool call is authorized against the cell it names: the caller must be a configured loop of that cell, and a filing repository must belong to it.
+- State-changing HTTP routes refuse cross-site and foreign-Host requests, and JSON endpoints require a JSON content type.
+- `/v1` reads are filtered to the cells the viewer may see, and the local terminal child no longer inherits configured chat key variables.
+- Three adopter-configuration guards stay at their original home; every generic control is included. Consumer migration and the cell-api refactor remain separate.

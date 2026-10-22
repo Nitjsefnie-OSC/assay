@@ -376,3 +376,29 @@ func writeExecutable(t *testing.T, dir, name, contents string) {
 		t.Fatalf("write %s: %v", p, err)
 	}
 }
+
+// regression: F-security-surface — a cell's chat key_env may be any
+// upper-case name (MODEL_SUBSCRIPTION), so the TOKEN/SECRET/KEY needles let
+// the model subscription key through to every desk shell.
+func TestLocalDriverStripsConfiguredKeyEnv(t *testing.T) {
+	t.Setenv("MODEL_SUBSCRIPTION", "subscription-canary-41c")
+	DenyEnvNames("model_subscription ") // case and whitespace are normalized
+
+	drv := New()
+	spec := &terminal.TargetSpec{Kind: schema.TargetLocal, Command: []string{"env"}}
+	sess, err := drv.Attach(context.Background(), spec, terminal.Size{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	defer sess.Close()
+	out := string(drain(t, sess.Read(), 2*time.Second))
+	if strings.Contains(out, "subscription-canary-41c") || strings.Contains(out, "MODEL_SUBSCRIPTION") {
+		t.Fatalf("child env carried the configured credential variable:\n%s", out)
+	}
+	if !strings.Contains(out, "PATH=") {
+		t.Fatalf("child env lost an ordinary variable (the deny set is too wide):\n%s", out)
+	}
+	if isDeniedEnvName("MODEL_SUBSCRIPTION_REGION") {
+		t.Errorf("an exact configured name must not deny a longer variable that merely starts with it")
+	}
+}

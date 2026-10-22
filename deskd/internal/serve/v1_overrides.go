@@ -30,6 +30,7 @@ package serve
 
 import (
 	"encoding/json"
+	"mime"
 	"net/http"
 
 	"github.com/medici-finance/assay/deskd/config/schema"
@@ -73,12 +74,25 @@ func (o *Overrides) ready() bool { return o != nil && o.Store != nil }
 // registered with an explicit method so the read tree's methodGuard (which
 // 405s non-GET) never sees the POST, exactly as the named-action writes are
 // registered.
-func mountOverrides(mux *http.ServeMux, o *Overrides) {
+//
+// Both run behind gate, the per-cell access decision the rest of the /v1 cell
+// routes use (404 unknown cell, 403 no read capability on its repos): the
+// answerer tier on the POST is a SECOND check, not the only one, and the GET
+// had none before it.
+func mountOverrides(mux *http.ServeMux, o *Overrides, gate func(http.ResponseWriter, *http.Request, string) bool) {
 	if !o.ready() {
 		return
 	}
-	mux.HandleFunc("GET "+contract.Prefix+"/cells/{id}/overrides", o.handleGet)
-	mux.HandleFunc("POST "+contract.Prefix+"/cells/{id}/overrides", o.handlePost)
+	gated := func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if cell := r.PathValue("id"); cell != "" && !gate(w, r, cell) {
+				return
+			}
+			h(w, r)
+		}
+	}
+	mux.HandleFunc("GET "+contract.Prefix+"/cells/{id}/overrides", gated(o.handleGet))
+	mux.HandleFunc("POST "+contract.Prefix+"/cells/{id}/overrides", gated(o.handlePost))
 }
 
 // handleGet serves the cell's current override table plus its as_of.
@@ -105,6 +119,14 @@ func (o *Overrides) handlePost(w http.ResponseWriter, r *http.Request) {
 	cell := r.PathValue("id")
 	if cell == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cell id is required in the path"})
+		return
+	}
+
+	// ── the body must be declared JSON ────────────────────────────────────
+	// A form or text/plain body is a "simple" cross-site request a browser
+	// sends with no preflight; application/json is not.
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "the overrides body must be sent as Content-Type: application/json"})
 		return
 	}
 

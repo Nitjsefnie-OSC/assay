@@ -63,6 +63,7 @@ import (
 	"net/http"
 
 	"github.com/medici-finance/assay/deskd/internal/identity"
+	"github.com/medici-finance/assay/deskd/internal/serve"
 )
 
 // unauthenticatedMounts is the explicit allow-list of patterns the served mux
@@ -120,6 +121,11 @@ type servedDeps struct {
 	Session http.Handler
 	// Guard is the capability middleware every table route is wrapped in.
 	Guard *identity.Guard
+	// Origin is the request-origin floor (serve.OriginGuard) in front of every
+	// table route and /session: a cross-site or rebound browser request is
+	// refused before the capability gate or any handler sees it. Its zero value
+	// admits loopback host names only.
+	Origin serve.OriginGuard
 }
 
 // buildServedMux builds the mux deskd serves. It validates the protected route
@@ -129,7 +135,8 @@ type servedDeps struct {
 // Mount only here. A pattern that is not an [unauthenticatedMounts] entry must
 // go through d.Guard, which the loop at the end does for the whole table.
 func buildServedMux(d servedDeps) (*servedMux, error) {
-	routes := identityRoutes(protectedRoutes(d.Routes))
+	table := protectedRoutes(d.Routes)
+	routes := identityRoutes(table)
 	if err := identity.ValidateRoutes(routes); err != nil {
 		return nil, err
 	}
@@ -144,11 +151,19 @@ func buildServedMux(d servedDeps) (*servedMux, error) {
 	// authentication inside the handler.
 	// /session reports {login, capability, live}; begin/end ride it. Reachable
 	// anonymously so it can report "anonymous"; begin fails closed without auth.
-	top.Handle("/session", d.Session)
-	top.Handle("/session/", d.Session)
-	// Every data/write route through the capability gate.
-	for _, r := range routes {
-		top.Handle(r.Pattern, d.Guard.Handler(r))
+	// Its begin/end are form posts, so the origin floor fronts it too.
+	top.Handle("/session", d.Origin.Wrap(d.Session))
+	top.Handle("/session/", d.Origin.Wrap(d.Session))
+	// Every data/write route through the origin floor, then the capability
+	// gate. The agent surface additionally requires a JSON body: its writes
+	// are App acts, and a text/plain body is the no-preflight cross-site shape.
+	for _, mr := range table {
+		gated := d.Guard.Handler(mr.Route)
+		if mr.Kind == kindAgent {
+			top.Handle(mr.Pattern, d.Origin.WrapJSON(gated))
+			continue
+		}
+		top.Handle(mr.Pattern, d.Origin.Wrap(gated))
 	}
 	return top, nil
 }

@@ -127,18 +127,18 @@ func NewV1(db *index.DB, cfg *schema.File, authz SurfaceAuthorizer, actions *Nam
 	// The event stream (the service contract increment 3, task 2): mounted
 	// unconditionally so a build with no producer wired answers a clear 503
 	// rather than a 404 that reads as "this route was never going to exist".
-	top.HandleFunc("GET "+contract.Prefix+"/events", handleV1Events(events))
+	top.HandleFunc("GET "+contract.Prefix+"/events", s.handleV1Events(events))
 	// The refresh nudge (increment 3, task 2): a KindNudge route, not a
 	// KindNamedAction — it authors nothing, so it is mounted only when wired
 	// and otherwise absent (a 404), never present-but-refusing.
 	if refresh != nil {
-		top.HandleFunc("POST "+contract.Prefix+"/escalations/{id}/refresh", handleV1Refresh(refresh))
+		top.HandleFunc("POST "+contract.Prefix+"/escalations/{id}/refresh", s.handleV1Refresh(refresh))
 	}
 	// The cell-override routes (the service contract): a GET read and a POST that
 	// writes deskd's OWN SQLite (KindLocalState) and files a record PR — NOT a
 	// human-authored platform write, so it is not a named action. Registered on
 	// top with explicit methods so the POST bypasses the read tree's methodGuard.
-	mountOverrides(top, overrides)
+	mountOverrides(top, overrides, s.cellGate)
 	// The terminal named actions (the service contract): send and session — the
 	// other two entries of the closed allow-list {answer, ack, send, session}
 	// — from the same contract walk, mounted only when their own wiring
@@ -365,6 +365,22 @@ func (s *Server) handleV1Desks(w http.ResponseWriter, r *http.Request) {
 	s.writeV1(w, r, contract.DesksResponse{Meta: s.meta(), Cell: cell, Desks: rows})
 }
 
+// cellGate decides a cell-addressed route: 404 for a cell this build does not
+// configure, 403 for one the viewer has no read capability on. It writes the
+// refusal and returns false; true means the handler may run.
+func (s *Server) cellGate(w http.ResponseWriter, r *http.Request, name string) bool {
+	c := s.findCell(name)
+	if c == nil {
+		s.writeV1Err(w, http.StatusNotFound, "no such cell "+name+" is configured")
+		return false
+	}
+	if !s.cellAuthorized(r, c) {
+		s.writeV1Err(w, http.StatusForbidden, "the viewer has no read capability on cell "+name+"'s repos")
+		return false
+	}
+	return true
+}
+
 // findCell resolves a cell by name from the loaded config, or nil if this
 // build has no config or no cell of that name.
 func (s *Server) findCell(name string) *schema.Cell {
@@ -429,10 +445,17 @@ type v1CellsResponse struct {
 	Cells []CellSummary `json:"cells"`
 }
 
+// handleV1Cells lists the cells the viewer may read: a cell whose repositories
+// the viewer cannot all read is omitted, so a private cell's name and
+// repositories are not disclosed to every signed-in viewer.
 func (s *Server) handleV1Cells(w http.ResponseWriter, r *http.Request) {
 	var out []CellSummary
 	if s.Config != nil {
-		for _, c := range s.Config.Cells {
+		for i := range s.Config.Cells {
+			c := s.Config.Cells[i]
+			if !s.cellAuthorized(r, &c) {
+				continue
+			}
 			cs := CellSummary{Name: c.Name, Repos: c.Repos, SilenceThreshold: c.SilenceThreshold}
 			for _, l := range c.Loops {
 				cs.Loops = append(cs.Loops, fmt.Sprintf("%s→%s", l.Role, l.App))
