@@ -364,7 +364,8 @@ Four independent wave-1 briefs record driver rulings of 22 October 2026. /70 bin
 workflow issue filings to their PR (and brief), outside the process-error filing
 budget, with a per-role per-PR cap, its own audit class and the unchanged repo-wide
 ceiling as the compensating bound (proposal 11 brakes). /71 credits Linux container
-witness rows only when host verifier admission brackets the run, and makes
+witness rows only when host verifier admission brackets the run and a tree digest
+binds the bytes the container ran to the admitted home, and makes
 `verifyrun --sandbox=container-netns` fail closed without that bracket. /72 has the
 dispatcher name an outcome-record path outside the verifier home, which `deskevidence`
 lands; admission and the record format are unchanged. /73 makes `deskevidence` restamp

@@ -61,8 +61,9 @@ at implemented.
 ## Task
 
 1. In `deskdispatch`, add an outcome-scratch allocator modeled on `packetPathFor`. It
-   uses the directory beside `--prompt-file` when given, else
-   `<UserCacheDir>/assay/outcomes/<claim key>/`. It creates the directory owner-only and
+   uses `<prompt dir>/outcomes/<claim key>/` (beside `--prompt-file`) when given, else
+   `<UserCacheDir>/assay/outcomes/<claim key>/`, so runs that share a prompt directory
+   never share an outcome directory. It creates the directory owner-only and
    refuses (does not fall back) when the resolved path lies inside the verifier home or
    the dispatcher root. Use the same week-based pruning as packets.
 2. `writeVerifierAssignment` names that directory in the verifier prompt as an absolute
@@ -82,7 +83,7 @@ at implemented.
 
 | # | Command | Expect |
 |---|---|---|
-| 1 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestVerifierOutcomePath$' -count=1 -v` | exit 0 and named PASS; the verifier prompt contains one absolute outcome path outside the home and the `--outcome-record … --root` command; an allocation that resolves inside the home or root is refused; non-verifier prompts carry no such line |
+| 1 | `cd tools/desk && go test ./cmd/deskdispatch/ -run '^TestVerifierOutcomePath$' -count=1 -v` | exit 0 and named PASS; the verifier prompt contains one absolute outcome path outside the home and the `--outcome-record … --root` command; an allocation that resolves inside the home or root is refused; two claims dispatched with prompt files in one directory get different outcome directories; non-verifier prompts carry no such line |
 | 2 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestOutcomeRecordOutsideRoot$' -count=1 -v` | exit 0 and named PASS; with `--root`, a relative path and an in-home absolute path (including through a symlink alias) are refused before any forge read; an outside path proceeds to admission |
 | 3 | `cd tools/desk && go test ./cmd/deskevidence/ ./cmd/deskdispatch/ ./internal/deskkit/ -count=1` | exit 0; existing outcome-record, packet and admission tests unchanged |
 | 4 | `git diff origin/main -- tools/desk/internal/deskkit/verifiersource.go tools/desk/internal/deskkit/verifierattestation.go tools/desk/internal/deskkit/verifyoutcomes.go \| wc -l` | `0` (admission and record format untouched) |

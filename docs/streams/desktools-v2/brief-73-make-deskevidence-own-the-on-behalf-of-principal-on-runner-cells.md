@@ -67,6 +67,10 @@ into hand-editing cells.
 
 Default if no answer: the recommended split (restamp a non-principal annotation, leave a matching one, refuse a different recognised human) after 2026-10-24.
 
+The default above fixes only the design the implementer builds to at dispatch. It never
+substitutes for the `gate: human` acceptance at done, which still decides the
+restamp-or-refuse split.
+
 ## Ground rules
 
 Normal worker admission, one isolated worktree and one draft PR. Tests use fixture rosters
@@ -80,7 +84,10 @@ implemented.
 1. `needsPrincipalStamp` and its caller classify each added App row with the lint's own
    reading: the last `on-behalf-of human:<p>`, matched case-insensitively. Cases: no
    annotation means stamp, as today. Annotation equal to the resolved subject means leave
-   it. Annotation present but not in the `human:` form, or naming no recognised roster
+   it. Annotation naming the same roster human in the other form (the login where the
+   target's form is the neutral name, or the reverse) is the same subject, not a different
+   human: strip and restamp it in the target's form, because a login must never stay on a
+   target the roster states public. Annotation present but not in the `human:` form, or naming no recognised roster
    human, means strip every on-behalf-of fragment from the cell and stamp the resolved one
    (the trailer path's strip-then-append rule). Annotation naming a different recognised
    human means refuse with exit 5, name the row, and write nothing.
@@ -89,10 +96,14 @@ implemented.
    rule.
 3. Add a parity test with a table of Runner-cell fixtures (bare App, App with the same
    subject, App with a desk-role annotation, App with an unknown `human:` name, App with a
-   different known human, human runner, pre-cutover dates). For every fixture where
+   different known human, App with the same human in the other form, human runner,
+   pre-cutover dates). The parity is one-directional: for every fixture where
    `stampEvidencePrincipal` succeeds, `statusgen --lint`, run with a configured fixture
-   roster on the stamped content, reports no attribution PROBLEM for that row. For every
-   fixture where it refuses, the lint would have reported one.
+   roster on the stamped content, reports no attribution PROBLEM for that row. The refusal
+   of a different recognised human is deliberately stricter than the lint, which accepts
+   any recognised human (`statusgen/attribution.go:765`-`:775`, `principal.go:147`); that
+   fixture is asserted as a refusal with nothing written and sits outside the parity claim.
+   The lint stays unchanged (Ground rules).
 4. verify-desk: in the Evidence-landing passage, say to leave Runner cells unannotated,
    never type an on-behalf-of annotation, and pre-check with `deskevidence … --dry-run`,
    not by linting the home, where App rows read as unstamped. Regenerate the Cursor
@@ -103,7 +114,7 @@ implemented.
 | # | Command | Expect |
 |---|---|---|
 | 1 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStamp$' -count=1 -v` | exit 0 and named PASS; the desk-role annotation and the unknown `human:` name are restamped to the resolved subject; the same-subject cell is byte-identical; a different known human refuses with nothing written; rows already on the branch are untouched |
-| 2 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStampLintParity$' -count=1 -v` | exit 0 and named PASS; for every fixture, stamp success holds exactly when the lint reports no attribution PROBLEM on the stamped row |
+| 2 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestPrincipalStampLintParity$' -count=1 -v` | exit 0 and named PASS; for every fixture where the stamp succeeds, the lint reports no attribution PROBLEM on the stamped row; the different-known-human fixture is refused with nothing written and is the one named case stricter than the lint; the other-form fixture is restamped in the target's form |
 | 3 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestDryRunRestampsPlantedPrincipal$' -count=1 -v` | exit 0 and named PASS; a dry-run of a landing with a planted desk-role annotation shows the restamped row and runs the PROBLEM-diff before stopping |
 | 4 | `cd tools/desk && go test ./cmd/deskevidence/ ./internal/deskkit/ -count=1` | exit 0; every package reports `ok` |
 | 5 | `grep -n 'on-behalf-of' plugins/assay/skills/verify-desk/SKILL.md` | at least one match, in the Evidence-landing passage, naming `--dry-run` |

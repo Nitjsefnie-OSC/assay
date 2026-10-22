@@ -53,12 +53,16 @@ stays with the host, which holds the forge view. The ruling moves admission to t
 on both sides of the run. Inside the container, `verifyrun` reads the host's receipt as
 an explicit input and runs no admission of its own. Proposal 29's worker/verifier
 attestations row keeps "a closed authority core … and explicit required-proof
-capabilities". The container bracket is therefore a required-proof capability on the
+capabilities". The bracket binds three things the host can check: the admission
+(receipt before, check-verifier after), the bytes the container ran (a tree digest
+computed on the host at the open, by the container before any row, and on the host
+again at the close) and the witness it closes (a hash of the witness on the bracket
+line). The container bracket is therefore a required-proof capability on the
 attestation: a reader that does not support it refuses to credit the row. It is not an
 optional perf-v4 extension that a reader may skip. The verifier attestation format in
 deskkit is unchanged. No new verb is added.
 
-single-point-of-failure: the host's post-run admission check, which proves the home and the binding did not move while the container ran — backed by the pre-run receipt binding the run, and by the landing-phase check `deskevidence` already repeats at `--root`.
+single-point-of-failure: the host close step's three-way tree-digest match (host at open, container before its rows, host at close), which binds the bytes the container ran to the admitted home — backed by the host's post-run admission check (the home and the binding did not move), the image digest that pins the `verifyrun` binary computing the in-container digest, and the landing-phase check `deskevidence` already repeats at `--root`.
 
 ## Human decision
 
@@ -66,9 +70,16 @@ Recorded: driver ruling, 2026-10-22, as in sources. Still for acceptance at done
 bracket form below and the image-digest requirement. Recommended: require the image
 digest on every credited container row. A run whose digest cannot be read is
 could-not-run, not a pass. Alternative: make the digest advisory. That is easier to adopt,
-but then a reviewer cannot tell two container images apart after the run.
+but then a reviewer cannot tell two container images apart after the run. The image digest
+also matters to the tree binding: the in-container tree digest is computed by the
+`verifyrun` binary in that image, so an unpinned image could report a digest it did not
+compute.
 
 Default if no answer: the recommended shape (host receipt plus host close-step bracket; image digest required on every credited container row) after 2026-10-24.
+
+The default above fixes only the design the implementer builds to at dispatch, including
+the tree binding of Task 4. It never substitutes for the `gate: human` acceptance at done,
+which still decides whether the bracket rule credits container rows.
 
 ## Ground rules
 
@@ -79,32 +90,52 @@ Stop at implemented.
 
 ## Task
 
-1. `verifyrun` gains `--admission-receipt <file>`, valid only with
-   `--sandbox=container-netns`: the host's `deskdispatch --check-verifier` JSON output,
-   placed outside the home and mounted read-only. With container-netns, `verifyrun`
-   never runs `deskdispatch`. It parses the receipt with `verifierAdmissionReceipt`,
-   requires version 1 (version 2 is refused, naming the limit), requires the receipt's
-   brief to equal the brief being run, and emits the attestation line as today.
-2. `--sandbox=container-netns` with no `--admission-receipt` is a usage refusal before
+1. Tree digest. Define one function, used by every step below: sha256 over the sorted
+   list of `<path> NUL <mode> NUL <sha256 of content or link target> NUL` for every regular
+   file and symlink under the root, excluding the top-level `.git` entry. Admission already
+   refuses any untracked or ignored file in the home, so on an admitted home this set is
+   exactly the tracked tree at `source`. Rendered as `sha256:<64 hex>`.
+2. Host open step: `statusgen verifyrun --open-bracket --root <home> --brief <brief> --out
+   <file>`. It runs `deskdispatch --check-verifier` on the host, refuses if `--out` lies
+   inside the home, computes the home's tree digest, and writes the receipt file: the check's
+   JSON verbatim, `tree` (the digest) and `opened` (UTC timestamp). A refused check writes
+   nothing and exits non-zero.
+3. `verifyrun` gains `--admission-receipt <file>`, valid only with
+   `--sandbox=container-netns`: the open step's file, mounted read-only. With container-netns,
+   `verifyrun` never runs `deskdispatch`. It parses the embedded check output with
+   `verifierAdmissionReceipt`, requires version 1 (version 2 is refused, naming the limit),
+   requires the receipt's brief to equal the brief being run, and emits the attestation line
+   as today. Before any row runs it computes the tree digest of its `--root` and refuses
+   unless it equals the receipt's `tree`. It records `Tree-Digest: sha256:<…>` on the
+   witness.
+4. `--sandbox=container-netns` with no `--admission-receipt` is a usage refusal before
    any row runs. This applies whatever `DESK_LOOP` says and whether or not the
    linked-worktree git directory is visible. Unattested container runs end.
-3. `verifyrun` gains `--container-image-digest sha256:<64 hex>`, required with
+5. `verifyrun` gains `--container-image-digest sha256:<64 hex>`, required with
    `--sandbox=container-netns` and supplied by the host. It is emitted on the witness as
    `Container-Image: sha256:<…>`.
-4. Add a host-side close step, `statusgen verifyrun --close-bracket --root <home> --brief
-   <brief> --witness <file>`. It runs `deskdispatch --check-verifier` on the host, compares
-   the result's run, source, brief, model and tier with the witness's attestation line, and
-   on a match appends `Admission-Bracket: run=<run> source=<source> before=receipt
-   after=check-verifier`. On a mismatch or refusal it appends nothing and exits non-zero.
-   A row credited without this line is not a credited container row.
-5. Amend rule 45 and verify-desk §Pre-work admission with the bracket sequence: host
-   check, container run with receipt and digest, host close step, within one dispatch and
-   with no home edits between. Amend pr-review-desk with the credit rule: a
+6. Host close step: `statusgen verifyrun --close-bracket --root <home> --brief <brief>
+   --admission-receipt <file> --witness <file>`. It runs `deskdispatch --check-verifier` on
+   the host and compares the result's run, source, brief, model and tier with the witness's
+   attestation line. It recomputes the home's tree digest and requires it to equal both the
+   receipt's `tree` and the witness's `Tree-Digest`. It refuses a witness that already
+   carries an `Admission-Bracket` line. On a full match it appends one line:
+   `Admission-Bracket: run=<run> source=<source> tree=sha256:<…> witness=sha256:<…>
+   opened=<UTC> closed=<UTC> before=receipt after=check-verifier`, where `witness` is the
+   sha256 of the witness bytes above the line and `opened` comes from the receipt. On any
+   mismatch or refusal it appends nothing and exits non-zero. A row credited without this
+   line is not a credited container row.
+7. Amend rule 45 and verify-desk §Pre-work admission with the bracket sequence: host open
+   step, container run with receipt and image digest, host close step, within one dispatch
+   and with no home edits between. Amend pr-review-desk with the credit rule: a
    `sandbox=container-netns` row counts as a Linux witness only when the same Evidence
-   block carries its Verification-Attestation line, a matching `Admission-Bracket` line
-   and a `Container-Image` digest. Otherwise it is rejected as unattested. State the known
-   limits: version 2 receipts are refused, and a linked worktree's git directory is not
-   mounted in the container, so rows that need `git` history must run on the host.
+   block carries its Verification-Attestation line, a `Tree-Digest`, a `Container-Image`
+   digest and an `Admission-Bracket` line whose `tree` equals the `Tree-Digest`, whose
+   `witness` hash matches the witness bytes above it (`sha256sum` of those lines), and whose
+   `opened` precedes `closed`. Otherwise it is rejected as unattested. State the known
+   limits: version 2 receipts are refused; a linked worktree's git directory is not mounted
+   in the container, so rows that need `git` history must run on the host; and the
+   in-container digest is only as trustworthy as the pinned image that computes it.
    Regenerate the Cursor mirror.
 
 ## Verify
@@ -112,8 +143,8 @@ Stop at implemented.
 | # | Command | Expect |
 |---|---|---|
 | 1 | `cd statusgen && go test -run '^TestContainerNetnsRequiresAdmissionReceipt$' -count=1 -v .` | exit 0 and named PASS; with `DESK_LOOP` unset and no attestation file, container-netns without a receipt is refused before any row runs and no witness row is written |
-| 2 | `cd statusgen && go test -run '^TestContainerNetnsReceipt$' -count=1 -v .` | exit 0 and named PASS; a valid version 1 receipt yields the same attestation line the in-process path renders; a version 2 receipt, a brief mismatch, an incomplete receipt and a missing image digest are each refused; no `deskdispatch` process is started (fake on PATH records zero calls) |
-| 3 | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | exit 0 and named PASS; a matching host check appends `Admission-Bracket:`; a changed source, a different run or a refused host check appends nothing and exits non-zero |
+| 2 | `cd statusgen && go test -run '^TestContainerNetnsReceipt$' -count=1 -v .` | exit 0 and named PASS; a valid version 1 receipt yields the same attestation line the in-process path renders and a `Tree-Digest` line; a version 2 receipt, a brief mismatch, an incomplete receipt, a missing image digest and a mounted tree whose digest differs from the receipt's `tree` (one file's content changed, one file added) are each refused before any row runs; no `deskdispatch` process is started (fake on PATH records zero calls) |
+| 3 | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | exit 0 and named PASS; a matching host check appends one `Admission-Bracket:` line carrying `tree=`, `witness=` (equal to the sha256 of the witness bytes above it), `opened=` and `closed=`; a witness `Tree-Digest` that differs from the home's recomputed digest, a home whose digest changed between open and close, a changed source, a different run, a witness that already carries a bracket line, or a refused host check each appends nothing and exits non-zero |
 | 4 | `cd statusgen && go test -run '^TestSandbox' -count=1 -v .` | exit 0 and all seven existing `TestSandbox*` tests PASS; the existing loopback precheck, CI-lane and `--in-container` refusals are unchanged |
 | 5 | `grep -n 'Admission-Bracket' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | all three files match |
 | 6 | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
@@ -122,8 +153,10 @@ Stop at implemented.
 
 Pre-mortem: a container run that is still unattested when admission is not detected is
 caught by row 1. Re-running admission inside the container, or accepting a receipt for a
-different brief, is caught by row 2. A bracket that closes on a moved home is caught by
-row 3. Loosening the existing sandbox refusals while adding the flags is caught by row 4.
+different brief, or running a mounted tree that is not the admitted one, is caught by
+row 2. A bracket that closes on a moved home, on a witness from a different tree, or on a
+witness that was already bracketed is caught by row 3; a bracket line moved to another
+witness no longer matches its `witness` hash. Loosening the existing sandbox refusals while adding the flags is caught by row 4.
 Mutation check for row 1: restore the conditional `required` path for container-netns and
 confirm row 1 goes red. Whether the receipt and close step together prove "immediately
 before and after" is for review to judge, with the human gate as the backstop.

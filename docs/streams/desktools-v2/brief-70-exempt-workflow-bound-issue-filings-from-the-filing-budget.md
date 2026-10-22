@@ -48,9 +48,9 @@ facts:
 - Contract row `R-new-issue-budget` (`docs/contracts.md:257`) describes the per-session cap and names `TestNewRateUnparseableFallsBackWithNotice` and `TestForceFileDoesNotResetTheRateCount`.
 - Skill wording: the shared comms block says "a spent filing budget never pushes a routine relay onto the tracker" (verify-desk `SKILL.md:1101`, pr-review-desk `:1239`, the-desk `:435`, pr-shepherd `:335`, intake-desk `:611`, worker-desk `:971`); worker-desk `:458` says `deskpr create` and `deskfile new` share one repo-wide ceiling of 20 per hour. Could not find a passage that explicitly tells a desk to defer an Evidence blocker behind the budget. The deferral happens because the tool refuses (exit 4), so the skill change is to name the bound form, not to remove a sentence.
 
-Design-fit: proposal 11 classes new-issue caps as brakes and says relaxing one "is a separate human decision, recorded by the maintainer and naming its compensating bound" (`11-target-architecture.md:296`-`:311`). The driver ruling of 2026-10-22 is that decision. The compensating bound is three layers, and each stands without the others: (1) a per-PR, per-role cap on bound filings, as a knob shaped like the rest of `deskcore/config` (budget class, default 0, per role); (2) bound filings audit as their own class, so the per-session count of unbound filings is unchanged and the bound ones remain visible; (3) the existing repo-wide outward-write ceiling still charges every bound filing. The bound is counted per PR, not per PR head: a head-keyed count would reset on every push, so a push loop could unlock more filings. The brief adds no verb (`new` gains flags), no new tool key (the ceiling keys on `deskfile`) and no perf-v4 schema change. It fits the verifier transaction of proposal 13 (step 5, "Publish through the authorized path"): a blocker the review requires is part of publishing the result, not a process-error report.
+Design-fit: proposal 11 classes new-issue caps as brakes and says relaxing one "is a separate human decision, recorded by the maintainer and naming its compensating bound" (`11-target-architecture.md:296`-`:311`). The driver ruling of 2026-10-22 is that decision. The compensating bound is three layers, and each stands without the others: (1) a per-PR, per-role cap on bound filings, as a knob shaped like the rest of `deskcore/config` (budget class, default 0, per role), where the counted role is the one whose App identity performs the write (`deskkit.SessionTokenRole`, the same custody that mints the write token), never a caller-chosen label; (2) bound filings audit as their own class, so the per-session count of unbound filings is unchanged and the bound ones remain visible; (3) the existing repo-wide outward-write ceiling still charges every bound filing. The bound is counted per PR, not per PR head: a head-keyed count would reset on every push, so a push loop could unlock more filings. The brief adds no verb (`new` gains flags), no new tool key (the ceiling keys on `deskfile`) and no perf-v4 schema change. It fits the verifier transaction of proposal 13 (step 5, "Publish through the authorized path"): a blocker the review requires is part of publishing the result, not a process-error report.
 
-single-point-of-failure: the binding check that the named PR is open and the named brief is that PR's brief — behind it, the per-PR cap (a check that is wrongly passed still cannot flood one PR) and the repo-wide ceiling (which still holds if the cap is off).
+single-point-of-failure: the count limits, not the binding check — the per-role per-PR cap (when set), the per-PR outward-write tier and the repo-wide ceiling; the last two are always on and are the only bound while the cap is off. The binding check only ties a filing to an open PR and its brief; it does not tie the filer to that PR (see Human decision).
 
 ## Human decision
 
@@ -59,18 +59,33 @@ Recorded: driver ruling, 2026-10-22. Workflow-bound filings are not counted agai
 `--for-pr <owner/repo#N>` and `--brief <brief id>`, never one without the other; `--for-pr`
 alone only for a PR that has no brief. The tool verifies the binding and back-links the
 issue on the PR. The compensating bound is a per-PR cap, its own audit class, and the
-repo-wide ceiling.
+repo-wide ceiling. The human merge of this brief is the public record of that decision;
+the done-time acceptance below still binds separately.
+
+What the binding does not do: `--for-pr` does not bind the filer to the PR's author, its
+reviewer or the holder of its dispatch claim. Any role may bind a filing to any open PR in
+the repository, and to any open PR with no brief by `--for-pr` alone. The binding records
+which work item a filing belongs to; it is not an authorization check. The real bound is
+the counting: the per-role per-PR cap, the per-PR write tier and the repo-wide ceiling.
+Requiring the filer to hold the PR's claim was considered and left out: claim custody is
+not on deskfile's write path today, and adding it is a separate change.
 
 Still for acceptance at done: the knob's off state. `deskcore/config` requires a budget
 knob to default to 0 (off). Recommended: the bound cap knob defaults to 0 (off) like every
 other budget knob. While it is off, the per-PR outward-write tier (`write.rate.per_pr_hour`,
 20 per hour shipped) charged against the bound PR and the repo-wide ceiling remain the
-always-on bound, and the driver's deployed configuration sets the cap per role.
+always-on bound, and the driver's deployed configuration sets the cap per role. Weigh the
+daily figure, not only the hourly one: today an unbound filer gets 3 per session per
+repository per 24 hours; with the cap off, bound filings are limited only by the 20-an-hour
+tiers, which allow up to 480 in 24 hours.
 Alternative: refuse every bound filing while the cap is off. That keeps the brake fully
 closed by default, but an adopter with no configuration gets today's behaviour and
 nothing from the ruling.
 
 Default if no answer: the recommended shape (bound-cap knob defaults to 0, cap set per role in deployed config; per-PR write tier and repo-wide ceiling always on) after 2026-10-24.
+
+The default above fixes only the design the implementer builds to at dispatch. It never
+substitutes for the `gate: human` acceptance at done, which still decides the off state.
 
 ## Ground rules
 
@@ -101,7 +116,13 @@ existing refusal. Stop at implemented; an independent verifier records Evidence.
    so does not count it. A new counter charges bound entries per role, per bound PR
    (repository plus number), over `issue.file.window`, using `chargedNewEntry`'s charge
    rules, and refuses (exit 4, with retry-after) at the resolved `issue.file.bound_per_pr`.
-   An unreadable ledger holds (exit 6). `AllowWriteRepoWide("deskfile", repo)` still runs,
+   The counted role is `deskkit.SessionTokenRole("deskfile")`, the role whose App token
+   performs the write; it is recorded in the `Detail` prefix as
+   `for-pr <owner/repo#N> brief <id> role <role> | ` and the counter reads it from there.
+   `--raised-by`, `--to` and any other flag or variable never set the counted role. A role
+   that cannot be resolved holds (exit 6) before any create. Changing the loop identity
+   changes the App that writes, so the filing is charged to that role, and the number of
+   roles is fixed by the roster. An unreadable ledger holds (exit 6). `AllowWriteRepoWide("deskfile", repo)` still runs,
    and `AllowWrite("deskfile", <PR repo>, N)` charges the bound PR's per-PR tier.
 5. After a confirmed create, back-link the new issue on the PR through the existing
    `attach` path, with one comment naming the issue. If the back-link fails, report it
@@ -116,7 +137,7 @@ existing refusal. Stop at implemented; an independent verifier records Evidence.
 | # | Command | Expect |
 |---|---|---|
 | 1 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFiling$' -count=1 -v` | exit 0 and named PASS; cases: bound filing with exhausted `new` budget succeeds; `--brief` alone refused; `--for-pr` alone refused when the PR has a brief and accepted when it has none; closed PR refused; brief not the PR's brief refused; unreadable PR holds exit 6; `--force-file` with `--for-pr` refused |
-| 2 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingCap$' -count=1 -v` | exit 0 and named PASS; with `ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR__WORKER=2` a third bound filing on the same PR by the same role is refused exit 4 with retry-after, a filing on a different PR still succeeds, and a different role is counted separately |
+| 2 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingCap$' -count=1 -v` | exit 0 and named PASS; with `ASSAY_DESK_ISSUE_FILE_BOUND_PER_PR__WORKER=2` a third bound filing on the same PR by the same role is refused exit 4 with retry-after, a filing on a different PR still succeeds, and a different role is counted separately; the `Detail` prefix records the session-token role; passing `--raised-by` with another role, or setting the per-role override for another role, does not change the counted role or reset the count; an unresolvable session role holds exit 6 with nothing created |
 | 3 | `cd tools/desk && go test ./cmd/deskfile/ -run '^TestBoundFilingStillChargesRepoCeiling$' -count=1 -v` | exit 0 and named PASS; with the knob off, a bound filing is refused by the repo-wide ceiling once 20 `deskfile` writes are in the rolling hour |
 | 4 | `cd tools/desk && go test ./cmd/deskfile/ -count=1` | exit 0; the unbound budget's existing regressions (`TestBudget*`, `TestNewRateUnparseableFallsBackWithNotice`, `TestForceFileDoesNotResetTheRateCount`) still pass unchanged |
 | 5 | `cd deskcore && go test ./config/ -count=1` | exit 0; the new knob passes the table validator (default 0, per role) |
@@ -126,8 +147,9 @@ existing refusal. Stop at implemented; an independent verifier records Evidence.
 | 9 | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
 
 Pre-mortem: an exemption that lets any filing through by naming any PR is caught by row 1
-(binding refusals); a cap keyed on head SHA or on session instead of PR and role is caught
-by row 2; dropping the repo-wide ceiling for the bound path is caught by row 3; regressing
+(binding refusals); a cap keyed on head SHA or on session instead of PR and role, or a
+counted role taken from `--raised-by` instead of the session-token role, is caught by
+row 2; dropping the repo-wide ceiling for the bound path is caught by row 3; regressing
 the unbound budget while refactoring the counter is caught by row 4. Mutation check for
 row 1: make the "is the PR's brief" check always return true and confirm the
 brief-mismatch case goes red. Whether the binding check reads enough of the PR (body
