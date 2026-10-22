@@ -66,6 +66,8 @@ func restampCases() []restampCase {
 		{"public/glued-before-login", pub, app + "(on-behalf-of human:example-operator) (forge-identity)", app + "(on-behalf-of human:operator) (forge-identity)"},
 		{"public/tab-led-tag", pub, app + "\t(ci-env)", app + " (on-behalf-of human:operator)\t(ci-env)"},
 		{"public/tab-led-tag-desk-role", pub, app + " (on-behalf-of verify-desk)\t(ci-env)", app + " (on-behalf-of human:operator)\t(ci-env)"},
+		{"public/adjacent-fragments", pub, app + " (on-behalf-of a)(on-behalf-of b) (forge-identity)", app + " (on-behalf-of human:operator) (forge-identity)"},
+		{"public/case-variant-tag", pub, app + " (Forge-Identity)", app + " (on-behalf-of human:operator) (Forge-Identity)"},
 		{"public/different-human", pub, app + " (on-behalf-of human:colleague) (forge-identity)", ""},
 		{"public/different-human-login", pub, app + " (on-behalf-of human:example-colleague)", ""},
 		{"public/different-human-shadowed", pub, app + " (on-behalf-of human:colleague) (on-behalf-of human:operator)", ""},
@@ -166,6 +168,7 @@ func TestPrincipalStampLintParity(t *testing.T) {
 		"public/unclosed": true, "private/desk-role": true,
 		"public/unclosed-before-tag": true, "public/unclosed-human-before-tag": true,
 		"public/tab-led-tag": true, "public/tab-led-tag-desk-role": true,
+		"public/adjacent-fragments": true, "public/case-variant-tag": true,
 	}
 	anyDateProblem := map[string]bool{"public/unknown-human": true, "public/first-occurrence-spoof": true,
 		"public/unclosed-human-before-tag": true}
@@ -291,7 +294,10 @@ func TestDryRunRestampsPlantedPrincipal(t *testing.T) {
 //     lowercased copy and slices the original at those offsets — Ⱥ grows, the Kelvin sign
 //     shrinks — so it would read a principal the cell does not render);
 //   - an invisible format character in the marker, and a comment inside the cell (the
-//     rendered marker and the one the lint matches are different text).
+//     rendered marker and the one the lint matches are different text);
+//   - any other non-ASCII character (a combining mark, a Cyrillic homoglyph in the marker), and
+//     a control character anywhere in the row (a lone CR renders a second row the lint never
+//     reads).
 //
 // regression: #4070
 func TestPrincipalStampRefusesUnreadable(t *testing.T) {
@@ -306,6 +312,12 @@ func TestPrincipalStampRefusesUnreadable(t *testing.T) {
 		{"zero-width-in-marker", restampRow("2026-10-14", app+" (on-behalf\u200b-of human:colleague)"), "invisible format character U+200B"},
 		{"comment-in-marker", restampRow("2026-10-14", app+" (on-behalf-<!-- -->of human:colleague) (forge-identity)"), inside},
 		{"invalid-utf8", restampRow("2026-10-14", app+" \xff (on-behalf-of human:operator)"), "not valid UTF-8"},
+		{"combining-mark-in-marker", restampRow("2026-10-14", app+" (on-behalf-of́ human:colleague)"), "non-ASCII character U+0301"},
+		{"homoglyph-in-marker", restampRow("2026-10-14", app+" (оn-behalf-of human:colleague)"), "non-ASCII character U+043E"},
+		{"lone-cr-second-app-row", "| 2 | `b` | 0 | ok | 2026-10-14 | " + app + " |\r| 3 | `c` | 0 | ok | 2026-10-14 | " + app +
+			" (on-behalf-of human:colleague) |\n", "control character U+000D"},
+		{"lone-cr-after-human-row", "| 2 | `b` | 0 | ok | 2026-10-14 | human:operator @ abc1234 |\r| 3 | `c` | 0 | ok | 2026-10-14 | " +
+			app + " (on-behalf-of human:colleague) |\n", "control character U+000D"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -195,6 +195,88 @@ func TestStampRefusesNoRoster(t *testing.T) {
 	}
 }
 
+// TestPrincipalStampReadsBodyNotFrontmatter: the stamp, its self-check and the backstop find
+// the Evidence section in the brief BODY, as the lint does. A `## Evidence` line inside the
+// frontmatter (a YAML comment there) does not move them off the real section: a body App row
+// naming a different recognised human is still refused, an unannotated one is still stamped,
+// and a frontmatter block that never closes refuses rather than land rows the lint cannot read.
+//
+// regression: #4070
+func TestPrincipalStampReadsBodyNotFrontmatter(t *testing.T) {
+	head := "---\nschema: brief-v1\n## Evidence\ngate: model\n---\n\n# Brief\n\n## Evidence\n\n" +
+		"| # | Result | Runner |\n|---|---|---|\n"
+	for _, tc := range []struct {
+		name, base, content, want string
+		code                      int
+	}{
+		{name: "different-human", base: head,
+			content: head + "| 1 | ok | example-app[bot] @ abc1234 (on-behalf-of human:colleague) |\n",
+			code:    deskkit.ExitRefused},
+		{name: "different-human-new-file",
+			content: head + "| 1 | ok | example-app[bot] @ abc1234 (on-behalf-of human:colleague) |\n",
+			code:    deskkit.ExitRefused},
+		{name: "unannotated", base: head,
+			content: head + "| 1 | ok | example-app[bot] @ abc1234 (forge-identity) |\n",
+			code:    deskkit.ExitOK,
+			want:    head + "| 1 | ok | example-app[bot] @ abc1234 (on-behalf-of human:operator) (forge-identity) |\n"},
+		{name: "unclosed-frontmatter",
+			content: "---\nschema: brief-v1\n\n# Brief\n\n## Evidence\n\n| # | Result | Runner |\n|---|---|---|\n" +
+				"| 1 | ok | example-app[bot] @ abc1234 (forge-identity) |\n",
+			code: deskkit.ExitRefused},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setupStamp(t, true)
+			if tc.base != "" {
+				f.setFile(stampBrief, tc.base)
+			}
+			root := rootWithFile(t, stampBrief, tc.content)
+			if code := run([]string{stampPublicRepo, "main", "--evidence-file", stampBrief, "--root", root}); code != tc.code {
+				t.Fatalf("exit = %d, want %d", code, tc.code)
+			}
+			if tc.code != deskkit.ExitOK {
+				if f.putCalls != 0 {
+					t.Fatalf("a refused landing still wrote %d time(s):\n%s", f.putCalls, f.putContent)
+				}
+				return
+			}
+			if f.putContent != tc.want {
+				t.Fatalf("landed:\n%s\nwant:\n%s", f.putContent, tc.want)
+			}
+		})
+	}
+}
+
+// TestPrincipalStampRelandedRowUnderNewHeader: a row already on the branch counts as checked
+// only where the lint reads it the same way. The base has the line under a header whose Runner
+// column is a human; re-landed byte-identical under a header with no Runner column, the lint
+// reads its last cell, an App runner naming a different human, so the landing is refused.
+// The same line left under its own header lands as before.
+//
+// regression: #4070
+func TestPrincipalStampRelandedRowUnderNewHeader(t *testing.T) {
+	row := "| 1 | human:operator @ abc1234 | example-app[bot] @ abc1234 (on-behalf-of human:colleague) |\n"
+	base := "# Brief\n\n## Evidence\n\n| # | Runner | Note |\n|---|---|---|\n" + row
+	for _, tc := range []struct {
+		name, content string
+		code          int
+	}{
+		{"moved-runner-column", base + "\n| # | Who | Note |\n|---|---|---|\n" + row, deskkit.ExitRefused},
+		{"same-header", base + "| 2 | human:operator @ abc1234 | ok |\n", deskkit.ExitOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setupStamp(t, true)
+			f.setFile(stampBrief, base)
+			root := rootWithFile(t, stampBrief, tc.content)
+			if code := run([]string{stampPublicRepo, "main", "--evidence-file", stampBrief, "--root", root}); code != tc.code {
+				t.Fatalf("exit = %d, want %d", code, tc.code)
+			}
+			if tc.code != deskkit.ExitOK && f.putCalls != 0 {
+				t.Fatalf("a refused landing still wrote %d time(s):\n%s", f.putCalls, f.putContent)
+			}
+		})
+	}
+}
+
 // TestLandedPrincipalBackstop: the landing's last check reads the landed Evidence section the
 // way the lint does — closed comments REMOVED, so a comment crossing a line break joins the
 // lines around it — and accepts an added App-run Runner cell only when that reading carries

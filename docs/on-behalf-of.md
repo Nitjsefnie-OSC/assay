@@ -216,17 +216,32 @@ same roster's human set:
   naming the row and the reason; nothing is written. That is an HTML comment inside the
   cell, or one crossing a line break on the row's line (the lint removes comments, which
   joins the lines around one into a single row); invalid UTF-8; an invisible format
-  character such as a zero-width space; or a character whose lowercase form has a different
+  character such as a zero-width space; a character whose lowercase form has a different
   byte length (the lint matches in a lowercased copy and slices the original at the same
-  offsets). As a last check, the landed section is read the way the lint reads it, and every
-  added App row must carry exactly one annotation, in the exact written form, naming `<who>`.
+  offsets); or any other non-ASCII character, such as a combining mark or a homoglyph in the
+  marker, which renders an annotation the lint does not read. An App Runner cell is an App
+  login, a commit and ASCII tags, so nothing legitimate is refused. Any added row, App or
+  not, holding a control character other than a tab (a lone carriage return, say) is refused
+  the same way: the lint splits rows on line feeds only, so a renderer could show a second row
+  the lint never reads. As a last check, the landed section is read the way the lint reads it,
+  and every added App row must carry exactly one annotation, in the exact written form,
+  naming `<who>`. A row counts as already on the branch there only when the base has the same
+  line with the same Runner cell, so a base line re-landed under a header that moves the
+  Runner column is checked like an added row.
+
+Like the lint, the tool looks for `## Evidence` only in the brief's body, after the
+frontmatter block: a `## Evidence` line inside the frontmatter is never taken as the section.
+A landing whose frontmatter opens but never closes has no body the lint can read, so if it
+carries an `## Evidence` heading anywhere it is refused (exit 5) and nothing is written.
 
 The stamp is always one `(on-behalf-of human:<who>)` parenthetical in the Runner cell. A
 restamp writes it where the last stripped fragment stood, with the whitespace byte that
 fragment carried (none, if it was glued to the text before it), and a strip removes each
-old fragment with that one byte, so the rest of the row is byte-identical. A fresh stamp
-goes before a trailing source tag, ahead of any spaces or tab between the text and the tag
-(a tag glued to the text gets the stamp glued too), or at the end of the cell. The written stamp is exactly `(on-behalf-of human:<who>)` and nothing
+old fragment with that one byte, so the rest of the row is byte-identical. Fragments sitting
+back to back form one run, and the stamp takes the separator the run's first fragment carried.
+A fresh stamp goes before a trailing source tag (matched in any case), ahead of any spaces or
+tab between the text and the tag (a tag glued to the text gets the stamp glued too), or at
+the end of the cell. The written stamp is exactly `(on-behalf-of human:<who>)` and nothing
 broader, the one form a container witness bracket's digest drops from a Runner cell, so
 landing it or restamping one exact-form annotation to another never moves that digest. A
 non-exact annotation (a desk role, an empty principal) was inside the hash, so restamping it

@@ -116,6 +116,11 @@ func resolveStampSubject(repo string) (string, error) {
 // landing (needsPrincipalStamp, unreadableRunnerCell, landedPrincipalProblem).
 func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)) ([]byte, map[string]string, error) {
 	lines := strings.Split(string(content), "\n")
+	if _, closed := briefBodyStart(lines); !closed && hasEvidenceHeading(lines) {
+		return nil, nil, deskkit.Refused("refused: the landed brief opens a frontmatter block that never closes, so " +
+			"the lint cannot read its Evidence section and this tool cannot check or stamp an on-behalf-of " +
+			"principal in it — nothing was written. Close the frontmatter with a `---` line and land again")
+	}
 	start, end, ok := evidenceSpan(lines)
 	if !ok {
 		return content, nil, nil
@@ -189,6 +194,12 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 		if onBranch[orig] {
 			continue
 		}
+		if r, ok := rowControlCharacter(orig); ok {
+			return nil, nil, deskkit.Refused(fmt.Sprintf("refused: the added Evidence row at line %d is one this tool "+
+				"cannot read the way the lint does (it holds the control character U+%04X, which a renderer can show "+
+				"as a line break, putting a second row the lint never reads on screen) — nothing was written. Land "+
+				"the row without it: %s", start+i+1, r, strings.TrimSpace(orig)))
+		}
 		sp := spans[len(spans)-1]
 		if runnerIdx >= 0 && runnerIdx < len(spans) {
 			sp = spans[runnerIdx]
@@ -260,12 +271,15 @@ func stampEvidencePrincipal(content, base []byte, resolve func() (string, error)
 	if bs, be, ok := evidenceSpan(baseLines); ok {
 		baseSection = strings.Join(baseLines[bs:be], "\n")
 	}
-	onBranchRows := map[string]bool{}
+	// A row counts as already on the branch only when the base has the same line READ THE SAME
+	// WAY — the same Runner cell under its own header — so a base line re-landed under a header
+	// that moves the lint's Runner column is checked like any added row.
+	onBranchRows := map[[2]string]bool{}
 	for _, r := range lintEvidenceRunners(baseSection) {
-		onBranchRows[r.line] = true
+		onBranchRows[[2]string{r.line, r.runner}] = true
 	}
 	for _, r := range lintEvidenceRunners(landed) {
-		if onBranchRows[r.line] || !isAppRunnerCell(r.runner) {
+		if onBranchRows[[2]string{r.line, r.runner}] || !isAppRunnerCell(r.runner) {
 			continue
 		}
 		subject, err := subjectOf()
@@ -296,6 +310,7 @@ func canonicalStamp(subject string) string {
 //   - With fragments stripped, the stamp goes where the LAST of them stood, preceded by the
 //     whitespace byte that fragment carried (none, if it was glued to the text before it). So
 //     a restamp of one exact-form annotation to another changes only the annotation's bytes.
+//     When fragments sit back to back, the separator is the one the first of them carried.
 //   - With none, it goes before a trailing runner-source tag, ahead of any whitespace run
 //     between the text and the tag, separated by one space; a tag glued to the text keeps the
 //     stamp glued too. With no tag, it is appended after one space.
@@ -306,8 +321,19 @@ func stampPosition(cell, stripped string, cuts [][2]int) (int, string) {
 		for _, c := range cuts[1:] {
 			pos -= c[1] - c[0]
 		}
+		// Fragments stripped back to back form one run; the separator is the one the run's
+		// first fragment carried.
+		head := last[0]
+		for moved := true; moved; {
+			moved = false
+			for _, c := range cuts[1:] {
+				if c[1] == head {
+					head, moved = c[0], true
+				}
+			}
+		}
 		sep := ""
-		if b := cell[last[0]]; b == ' ' || b == '\t' {
+		if b := cell[head]; b == ' ' || b == '\t' {
 			sep = string(b)
 		}
 		return pos, sep
@@ -338,6 +364,13 @@ func stampPosition(cell, stripped string, cuts [][2]int) (int, string) {
 //     offsets, so the principal it reads would not be the text in the cell.
 //   - An invisible format character (a zero-width space, a soft hyphen): the rendered marker
 //     and the marker the lint matches are different text.
+//   - Any other non-ASCII character (a combining mark, a homoglyph such as a Cyrillic letter in
+//     the marker): the rendered text can show an annotation, or a name, the lint does not read.
+//     An App-run Runner cell is an App login, a commit and ASCII tags, so nothing legitimate is
+//     lost.
+//
+// A control character anywhere in an added row is refused separately (rowControlCharacter),
+// since it can sit outside the Runner cell.
 func unreadableRunnerCell(view, orig string, joined bool) string {
 	if joined {
 		return "an HTML comment on its line crosses a line break, and the lint reads the lines around it as one"
@@ -359,7 +392,26 @@ func unreadableRunnerCell(view, orig string, joined bool) string {
 				"the lint's case-insensitive reading of the annotation", r)
 		}
 	}
+	for _, r := range orig {
+		if r > unicode.MaxASCII {
+			return fmt.Sprintf("it holds the non-ASCII character U+%04X, so the rendered text can differ from what "+
+				"the lint reads", r)
+		}
+	}
 	return ""
+}
+
+// rowControlCharacter returns the first control character (other than a tab, and a line's
+// trailing CR) in an added Evidence row, any column. The lint splits rows on LF only, so a lone
+// CR or other control character keeps what a renderer may show as two rows in the one row the
+// lint reads; the second row's annotation would be visible and never checked.
+func rowControlCharacter(line string) (rune, bool) {
+	for _, r := range strings.TrimSuffix(line, "\r") {
+		if r == 0x7f || (r < 0x20 && r != '\t') {
+			return r, true
+		}
+	}
+	return 0, false
 }
 
 // landedPrincipalProblem reports how a landed App-run Runner cell, as the lint reads it, fails
@@ -605,11 +657,12 @@ func onBehalfOfFragments(cell string) [][2]int {
 }
 
 // trailingSourceTag reports where the runner-source tag a right-trimmed Runner cell ends with
-// starts, if it ends with one — after a space, a tab or nothing. An added annotation goes
+// starts, if it ends with one — after a space, a tab or nothing, in any letter case. An added annotation goes
 // before it — verifyrun's rendering order — so the tag is never rewritten.
 func trailingSourceTag(runner string) (int, bool) {
+	lower := strings.ToLower(runner)
 	for _, tag := range runnerSourceTags {
-		if strings.HasSuffix(runner, tag) {
+		if len(lower) == len(runner) && strings.HasSuffix(lower, tag) {
 			return len(runner) - len(tag), true
 		}
 	}
@@ -617,11 +670,18 @@ func trailingSourceTag(runner string) (int, bool) {
 }
 
 // evidenceSpan locates the `## Evidence` section's lines: [start,end), end being the next
-// `## ` heading or the end of content (statusgen's evidenceSectionSpan).
+// `## ` heading or the end of content (statusgen's evidenceSectionSpan). Like the lint, it
+// looks only in the BODY: a leading frontmatter block (briefBodyStart) is skipped, so a
+// `## Evidence` line inside the frontmatter (a YAML comment there) is never taken as the
+// section. A frontmatter block that never closes has no body the lint can read: ok is false.
 func evidenceSpan(lines []string) (start, end int, ok bool) {
+	from, closed := briefBodyStart(lines)
+	if !closed {
+		return 0, 0, false
+	}
 	start = -1
-	for i, l := range lines {
-		if strings.TrimSpace(l) == "## Evidence" {
+	for i := from; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "## Evidence" {
 			start = i + 1
 			break
 		}
@@ -637,6 +697,32 @@ func evidenceSpan(lines []string) (start, end int, ok bool) {
 		}
 	}
 	return start, end, true
+}
+
+// briefBodyStart returns the index of the first body line: the line after the closing `---`
+// of a frontmatter block that opens on the first line (statusgen's splitFrontmatter), or 0
+// for content with no frontmatter. closed is false when the first line opens a frontmatter
+// block that never closes.
+func briefBodyStart(lines []string) (from int, closed bool) {
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return 0, true
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
+// hasEvidenceHeading reports whether any line is the `## Evidence` heading, wherever it sits.
+func hasEvidenceHeading(lines []string) bool {
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "## Evidence" {
+			return true
+		}
+	}
+	return false
 }
 
 // cellSpans returns each table cell's [start,end) byte offsets in line, splitting on `|` but

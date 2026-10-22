@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop)$' -count=1 -timeout=300s",
+  "test": "go test ./cmd/deskevidence/ -run '^(TestPrincipalStampRefusesUnreadable|TestLandedPrincipalBackstop|TestPrincipalStampReadsBodyNotFrontmatter|TestPrincipalStampRelandedRowUnderNewHeader)$' -count=1 -timeout=300s",
   "control": {
     "name": "unreadable-cell refusal not consulted",
     "file": "cmd/deskevidence/principalstamp.go",
@@ -54,6 +54,36 @@
       "file": "cmd/deskevidence/principalstamp.go",
       "old": "lines := strings.Split(evidenceCommentRe.ReplaceAllString(section, \"\"), \"\\n\")",
       "new": "lines := strings.Split(section, \"\\n\")"
+    },
+    {
+      "name": "a non-ASCII character in the Runner cell is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if r > unicode.MaxASCII {",
+      "new": "if false && r > unicode.MaxASCII {"
+    },
+    {
+      "name": "a control character in an added row is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "if r, ok := rowControlCharacter(orig); ok {",
+      "new": "if r, ok := rowControlCharacter(orig); false && ok {"
+    },
+    {
+      "name": "the Evidence section is located in the whole file, frontmatter included",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tfrom, closed := briefBodyStart(lines)\n\tif !closed {\n",
+      "new": "\tfrom, closed := 0, true\n\tif !closed {\n"
+    },
+    {
+      "name": "a frontmatter block that never closes is not refused",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "!closed && hasEvidenceHeading(lines) {",
+      "new": "false && !closed && hasEvidenceHeading(lines) {"
+    },
+    {
+      "name": "a base line re-landed under another header is matched by its text alone",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\t\tonBranchRows[[2]string{r.line, r.runner}] = true\n\t}\n\tfor _, r := range lintEvidenceRunners(landed) {\n\t\tif onBranchRows[[2]string{r.line, r.runner}]",
+      "new": "\t\tonBranchRows[[2]string{r.line, \"\"}] = true\n\t}\n\tfor _, r := range lintEvidenceRunners(landed) {\n\t\tif onBranchRows[[2]string{r.line, \"\"}]"
     }
   ]
 }

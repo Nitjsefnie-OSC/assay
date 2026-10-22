@@ -40,14 +40,26 @@
     {
       "name": "a restamp no longer keeps the separator the old annotation carried",
       "file": "cmd/deskevidence/principalstamp.go",
-      "old": "\t\tsep := \"\"\n\t\tif b := cell[last[0]];",
-      "new": "\t\tsep := \" \"\n\t\tif b := cell[last[0]];"
+      "old": "\t\tsep := \"\"\n\t\tif b := cell[head];",
+      "new": "\t\tsep := \" \"\n\t\tif b := cell[head];"
     },
     {
       "name": "a tab before a trailing source tag is not treated as whitespace",
       "file": "cmd/deskevidence/principalstamp.go",
       "old": "for pos > 0 && (text[pos-1] == ' ' || text[pos-1] == '\\t') {",
       "new": "for pos > 0 && text[pos-1] == ' ' {"
+    },
+    {
+      "name": "a case-variant runner-source tag is not recognised",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\tlower := strings.ToLower(runner)\n",
+      "new": "\tlower := runner\n"
+    },
+    {
+      "name": "back-to-back fragments take the separator of the last, not the first",
+      "file": "cmd/deskevidence/principalstamp.go",
+      "old": "\t\t\t\t\thead, moved = c[0], true\n",
+      "new": "\t\t\t\t\tmoved = false\n"
     }
   ]
 }

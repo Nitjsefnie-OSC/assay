@@ -40,8 +40,8 @@
     {
       "name": "a restamp no longer keeps the separator the old annotation carried",
       "file": "cmd/deskevidence/principalstamp.go",
-      "old": "\t\tsep := \"\"\n\t\tif b := cell[last[0]];",
-      "new": "\t\tsep := \" \"\n\t\tif b := cell[last[0]];"
+      "old": "\t\tsep := \"\"\n\t\tif b := cell[head];",
+      "new": "\t\tsep := \" \"\n\t\tif b := cell[head];"
     },
     {
       "name": "a tab before a trailing source tag is not treated as whitespace",
