@@ -172,3 +172,91 @@ func TestMaintenanceScanBound(t *testing.T) {
 	}
 
 }
+
+// regression: #3353
+func TestCacheMaintenanceRecovery(t *testing.T) {
+	p := fixture(t)
+	if _, err := Prepare(p); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := Acquire(p.Env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	material(t, p, "build/consumer-result", 1)
+	if err := lease.Finish(true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Acquire(p.Env()); err == nil || !strings.Contains(err.Error(), "changed after the recorded measurement") {
+		t.Fatalf("dirty accounting did not explicitly refuse: %v", err)
+	}
+	time.Sleep(AdmitMtimeSlack)
+	rep, err := Check(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err = Acquire(p.Env())
+	if err != nil {
+		t.Fatalf("explicit maintenance did not recover admission: %v", err)
+	}
+	if err := lease.Finish(true); err != nil {
+		t.Fatal(err)
+	}
+	// Cross the actual age boundary through the persisted production report,
+	// rather than sleeping five minutes or introducing a cached success seam.
+	rep.After.At = time.Now().Add(-AdmitMaxAge - time.Second)
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Root, "report.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Acquire(p.Env()); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("aged accounting did not explicitly refuse: %v", err)
+	}
+	if _, err := Check(p, false); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = Acquire(p.Env())
+	if err != nil {
+		t.Fatalf("aged-report explicit maintenance did not recover: %v", err)
+	}
+	if err := lease.Finish(true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// regression: #3353
+func TestCacheMaintenanceRealWidth(t *testing.T) {
+	t.Setenv("ASSAY_MAINTENANCE_ENTRY_LIMIT", "")
+	p := fixture(t)
+	if _, err := Prepare(p); err != nil {
+		t.Fatal(err)
+	}
+	// Fixed representative widths from review evidence, not a host-cache probe.
+	// Empty regular files isolate directory-width accounting without allocating
+	// a compiler cache's payload bytes; existing budget tests own byte pressure.
+	for _, row := range []struct {
+		tree string
+		n    int
+	}{{"build", 150000}, {"mod", 75000}} {
+		for i := 0; i < row.n; i++ {
+			if err := os.WriteFile(filepath.Join(p.Root, row.tree, fmt.Sprintf("entry-%06d", i)), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	time.Sleep(AdmitMtimeSlack)
+	rep, err := Check(p, false)
+	if err != nil || rep.Outcome != "checked-clean" || rep.Before.LogicalBytes == nil || rep.Reclaimed != 0 {
+		t.Fatalf("representative width exceeded default: %+v %v", rep, err)
+	}
+	lease, err := Acquire(p.Env())
+	if err != nil {
+		t.Fatalf("representative width did not admit after maintenance: %v", err)
+	}
+	if err := lease.Finish(true); err != nil {
+		t.Fatal(err)
+	}
+}

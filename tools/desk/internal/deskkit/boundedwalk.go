@@ -12,7 +12,7 @@ import (
 
 // MaintenanceEntries bounds retained accounting/candidate state. Exceeding it
 // makes accounting incomplete; it must never authorize admission or reclamation.
-const MaintenanceEntries = 65536
+const MaintenanceEntries = 262144
 const maintenanceDepth = 64
 
 var ErrScanLimit = errors.New("maintenance inventory limit exceeded; accounting incomplete")

@@ -307,3 +307,5 @@ child start through the existing local performance writer. `up` records first/al
 starts separately; scheduled, refused and unknown starts cannot count as confirmed.
 These step intervals overlap and must not be summed as invocation time. No timing SLO
 or permission for live enrollment is introduced.
+
+Cache-enabled cadence is not an unattended maintenance service. Normal cache writes or the five-minute accounting age bound can defer a later turn. The operator must run explicit `cellctl cache <cell> clean` after writes settle (including the filesystem timestamp safety margin), then retry the same item. No background maintenance is scheduled here, and finish never performs a recursive refresh. This operational limitation preserves the startup amendment’s explicit-maintenance and fail-closed accounting contract.

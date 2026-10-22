@@ -169,8 +169,10 @@ surviving children, pending/resumable/foreign/Git paths, path escapes, competing
 sweeps, partial deletion and retry, snapshot completeness and bounds, and repeated
 worker/reviewer/verifier passes across the supported host harnesses.
 
-Maintenance streams directory entries and retains at most 65,536 inventory entries per walk/list and 64 directory levels. Exceeding either limit reports partial accounting and performs no reclamation from that incomplete sweep. A wider legacy inventory returns an error rather than presenting a prefix as complete. These are reversible local safety defaults, not latency objectives.
+Maintenance streams directory entries and retains at most 262,144 inventory entries per walk/list and 64 directory levels. Exceeding either limit reports partial accounting and performs no reclamation from that incomplete sweep. A wider legacy inventory returns an error rather than presenting a prefix as complete. These are reversible local safety defaults, not latency objectives.
 
 For an inventory wider than the default, explicitly raise the maintenance-only budget, for example `ASSAY_MAINTENANCE_ENTRY_LIMIT=262144 cellctl cache house clean` (or the existing scratch sweep command). Values must be 1 through 1,048,576. Invalid values and exhausted budgets fail closed; there is no unlimited fallback. This setting does not change retained-data protections, per-role authority or launch pressure policy. Trees beyond the finite ceiling or depth limit remain incomplete and require owner-assisted layout correction.
 
 No background job schedules this maintenance. Retention max-age and diagnostic reclamation take effect only when the operator runs the explicit sweep/clean command; retained diagnostics otherwise remain on disk.
+
+The default entry budget covers the representative fixture with 150,000 compiler-cache entries and 75,000 module-cache entries. The override remains finite; it is a maintenance resource budget, not a launch-policy or retention override.
