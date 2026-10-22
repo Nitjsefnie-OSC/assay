@@ -701,6 +701,34 @@ VERIFY rows: 2 of 13 pass under the witness; 11 are could-not-run under the witn
 
 **VERIFY: BLOCKED** — no product failure observed. Every desklabel-specific obligation holds by hand on merged main 05dc9fbc88f2, but only rows 9 and 12 have a witness pass. Rows 1-8 and 10-11 need a Linux network-off witness (medici-finance/assay#1800, open). Row 11 cannot pass on merged main as written (medici-finance/assay#1281, open). Row 13 has no cmd: span, and rows 6-7 have an Expect-versus-command wording mismatch (medici-finance/assay#1927, open). All four RISK-VALUE lines are DERIVED.
 
+### Evidence addendum — 2026-10-22 claude-opus-5-5-verifier (supersedes the tally and verdict of the 2026-10-22 re-run above)
+
+This addendum answers review of the Evidence PR for this brief. The rule is that a prose hand run credits no row, so this addendum credits rows only from the tool-written witness table above. It supersedes the "Which rows rest on what" list, the "VERIFY rows" tally and the verdict of the 2026-10-22 re-run. Nothing above is edited.
+
+Admission: `deskdispatch --check-verifier` exited 0 from the admitted home before this work and again after this edit, with the same binding: run=4c80fdcd481d29079a75eec8ca012bd0ac100213aabec0b089a042302942c8c2, source=05dc9fbc88f2b1b23cd78bebc8634c564327eca4, model claude-opus-5-5, tier strong (medici-finance/assay#4034).
+
+Network-off witness attempt: one run of `statusgen verifyrun --sandbox container-netns` from the admitted home, inside a container started with `--network none` (loopback up; the only other interface, tunl0, down), using the pinned statusgen v1.0.54 linux-amd64 release binary, checksum-matched to the release checksums. It exited 2 with "pre-work verifier admission failed; no Verify rows executed", because the admission reader is not reachable inside the network-off container. No row ran, and the brief was not written. The check:ci rows therefore stay could-not-run exactly as the witness wrote them. The container route needs an admitted Linux runner, tracked in medici-finance/assay#2665 (open; its 2026-10-12 comment records that container-netns still needs admission for the exact source worktree) and medici-finance/assay#3216 (open, the same Linux network-off prerequisite).
+
+Rows, credited only from the witness table:
+- Rows 9 and 12: pass under the witness (sha256:4eff2db4bada and sha256:53c234e5e847).
+- Rows 1-8 and 10: BLOCKED, could-not-run under the witness, because check:ci needs a Linux network-off sandbox (medici-finance/assay#1800, open; route: medici-finance/assay#2665, medici-finance/assay#3216, both open). Rows 6 and 7 also carry an Expect cell (exit 5) that a passing `go test` command cannot meet (medici-finance/assay#1927, open; its 2026-10-04 comment names forge-neutral/15 rows 6 and 7).
+- Row 11: BLOCKED, could-not-run under the witness (medici-finance/assay#1800), and structurally unable to pass on merged main as written (medici-finance/assay#1281, open; its title names forge-neutral/15).
+- Row 13: BLOCKED, could-not-run as a prose-led command with no cmd: span (medici-finance/assay#1927, open; its 2026-10-04 comment names forge-neutral/15 row 13).
+- No row is FAIL.
+
+Hand observations (supplemental, no credit). The hand notes in the 2026-10-22 re-run above were observed by hand outside an admitted witness. They are uncredited, they discharge no row, and the word "pass" in them is not a witness result. This addendum adds no hand runs.
+
+Risk values, re-read at 05dc9fbc88f2 against the cited lines; each still matches:
+RISK-VALUE: DERIVED — human-decided Owner = ownerNone ("no role") @ tools/desk/cmd/desklabel/vocabulary.go:128 — decisionLabels = {"needs-decision", "human-decided"} @ tools/desk/cmd/deskclose/github.go:36 makes it the record of a human ruling; permits() case ownerNone returns false for every role (vocabulary.go:151-152).
+RISK-VALUE: DERIVED — superseded? and the disposition rows Owner = roleWorker ("worker") @ vocabulary.go:112-118 — labelProposed = "superseded?" @ tools/desk/cmd/deskclose/superseded.go:57 is the worker's proposal.
+RISK-VALUE: DERIVED — authorization-needed / approval-needed Owner = roleReviewer ("reviewer") @ vocabulary.go:122,124 — labelBeforeFlip / labelAfterFlip @ tools/desk/cmd/deskflip/flip.go:115-116, the reviewer-run ready-flip pair.
+RISK-VALUE: DERIVED — helpWantedLabel = "help wanted" @ vocabulary.go:57 and labels.decision_owed (topology.yaml:330, 332, 336) Owner = ownerShared ("shared") — the escalation vocabulary every role must be able to raise.
+No risk value is NAMED, NOT DERIVED, so no question issue is owed.
+
+VERIFY rows: 2 of 13 pass under the witness (rows 9 and 12); 11 are BLOCKED as could-not-run (rows 1-8, 10, 11 and 13); 0 FAIL; 0 rows credited from hand runs.
+
+**VERIFY: BLOCKED** — no product failure observed; only rows 9 and 12 have a witness pass. Rows 1-8, 10 and 11 need an admitted Linux network-off witness (medici-finance/assay#1800, medici-finance/assay#2665, medici-finance/assay#3216, all open). Row 11 cannot pass on merged main as written (medici-finance/assay#1281, open). Row 13 has no cmd: span, and rows 6-7 have an Expect-versus-command mismatch (medici-finance/assay#1927, open). All four RISK-VALUE lines are DERIVED.
+
 
 ## Review
 Gate: **model** (from frontmatter — all four risk answers are `no`; see the note in
