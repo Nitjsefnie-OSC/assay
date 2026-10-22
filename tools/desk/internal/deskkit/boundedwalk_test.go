@@ -2,6 +2,7 @@ package deskkit
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 func TestMaintenanceScanBound(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < 80; i++ {
-		if err := os.WriteFile(filepath.Join(root, string(rune('a'+i))), []byte("retain"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("entry-%03d", i)), []byte("retain"), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
