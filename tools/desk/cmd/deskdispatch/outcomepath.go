@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -96,16 +97,35 @@ func outcomeClaimDir(base, claimKey string) (string, error) {
 	return dir, nil
 }
 
-// allocateOutcomeDir resolves the directory (outcomeDirFor), prunes week-old cache
-// directories as packets are pruned, and creates it owner-only. A path that already exists
-// as anything but a real directory (a symlink, a file) is refused rather than followed.
+// allocateOutcomeDir resolves the directory (outcomeDirFor), verifies the directories it
+// will be created in, prunes week-old per-claim directories in the cache form, and creates it
+// owner-only.
+//
+// Nothing is pruned or created until the outcomes base ("<prompt dir>/outcomes" or
+// "<cache>/assay/outcomes") — and, in the cache form, its parent "<cache>/assay" — is
+// verified to be absent or a real directory: a symlink there is REFUSED, never followed,
+// because the prune removes directory trees and must only ever see this tool's own base.
+// On a Unix-like host a base that other users can write to is refused too, so another local
+// user cannot swap the per-claim leaf. A leaf that already exists as anything but a real
+// directory (a symlink, a file) is refused rather than followed.
 func allocateOutcomeDir(o dispatchOpts, plan dispatchPlan, home string) (string, error) {
 	dir, err := outcomeDirFor(o, plan, home)
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(o.promptFile) == "" {
-		pruneOutcomeDirs(filepath.Dir(dir), packetNow().Add(-packetMaxAge))
+	base := filepath.Dir(dir)
+	cacheForm := strings.TrimSpace(o.promptFile) == ""
+	if cacheForm {
+		if _, err := realOutcomeDir(filepath.Dir(base), false); err != nil {
+			return "", err
+		}
+	}
+	baseExists, err := realOutcomeDir(base, true)
+	if err != nil {
+		return "", err
+	}
+	if cacheForm && baseExists {
+		pruneOutcomeDirs(base, packetNow().Add(-packetMaxAge))
 	}
 	if fi, lerr := os.Lstat(dir); lerr == nil && !fi.IsDir() {
 		return "", deskkit.Refused("refused: the outcome-record path " + dir + " exists and is not a directory")
@@ -115,16 +135,48 @@ func allocateOutcomeDir(o dispatchOpts, plan dispatchPlan, home string) (string,
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
+	if _, err := realOutcomeDir(base, true); err != nil {
+		return "", err
+	}
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil
 }
 
+// realOutcomeDir reports whether path exists, refusing when it exists as a symlink or as
+// anything but a directory, or — with private set, on a Unix-like host — when its mode lets
+// the group or other users write to it.
+func realOutcomeDir(path string, private bool) (bool, error) {
+	fi, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case fi.Mode()&os.ModeSymlink != 0:
+		return false, deskkit.Refused("refused: the outcome-record directory " + path +
+			" is a symlink; it must be a real directory (it is never followed, and never pruned through)")
+	case !fi.IsDir():
+		return false, deskkit.Refused("refused: the outcome-record directory " + path + " exists and is not a directory")
+	case private && runtime.GOOS != "windows" && fi.Mode().Perm()&0o022 != 0:
+		return false, deskkit.Refused(fmt.Sprintf("refused: the outcome-record directory %s is writable by other users "+
+			"(mode %v); keep --prompt-file in a directory only you can write to", path, fi.Mode().Perm()))
+	}
+	return true, nil
+}
+
 // pruneOutcomeDirs removes this tool's own per-claim outcome directories in dir last
-// modified before cutoff. Best effort and narrow: only real directories (never a symlink,
-// never a file) directly under the outcomes cache directory.
+// modified before cutoff. Best effort and narrow: dir itself must be a real directory (a
+// symlinked dir is never read, so the prune can never reach another tree), and only real
+// directories directly under it (never a symlink, never a file) are removed. The caller has
+// already verified dir; the Lstat here keeps this function safe on its own.
 func pruneOutcomeDirs(dir string, cutoff time.Time) {
+	if fi, err := os.Lstat(dir); err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return

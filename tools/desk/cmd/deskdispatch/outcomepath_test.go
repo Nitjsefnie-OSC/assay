@@ -239,6 +239,144 @@ func TestVerifierOutcomePath(t *testing.T) {
 		}
 	})
 
+	t.Run("a symlinked outcomes base or parent is refused and never pruned through", func(t *testing.T) {
+		now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+		oldNow := packetNow
+		packetNow = func() time.Time { return now }
+		t.Cleanup(func() { packetNow = oldNow })
+		// plant returns a victim tree holding a month-old directory with a file in it.
+		plant := func(t *testing.T) (victim, precious string) {
+			t.Helper()
+			victim = t.TempDir()
+			precious = filepath.Join(victim, "outcomes", "precious-old-dir")
+			if err := os.MkdirAll(precious, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(precious, "data"), []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			old := now.Add(-30 * 24 * time.Hour)
+			if err := os.Chtimes(precious, old, old); err != nil {
+				t.Fatal(err)
+			}
+			return victim, precious
+		}
+		symlink := func(t *testing.T, target, link string) {
+			t.Helper()
+			if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, link); err != nil {
+				if runtime.GOOS == "windows" {
+					t.Skip("symlinks unavailable")
+				}
+				t.Fatal(err)
+			}
+		}
+		cases := []struct {
+			name string
+			// link plants the symlink for cache (or, for the prompt-file form, side) and
+			// returns the --prompt-file to use ("" for the cache form).
+			link func(t *testing.T, cache, side, victim string) string
+		}{
+			{"cache base <cache>/assay/outcomes", func(t *testing.T, cache, _, victim string) string {
+				symlink(t, filepath.Join(victim, "outcomes"), filepath.Join(cache, "assay", "outcomes"))
+				return ""
+			}},
+			{"cache parent <cache>/assay", func(t *testing.T, cache, _, victim string) string {
+				symlink(t, victim, filepath.Join(cache, "assay"))
+				return ""
+			}},
+			{"prompt-file base <prompt dir>/outcomes", func(t *testing.T, _, side, victim string) string {
+				symlink(t, filepath.Join(victim, "outcomes"), filepath.Join(side, outcomeDirName))
+				return filepath.Join(side, "prompt.md")
+			}},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				cache, side, home, root := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+				old := packetCacheDir
+				packetCacheDir = func() (string, error) { return cache, nil }
+				t.Cleanup(func() { packetCacheDir = old })
+				victim, precious := plant(t)
+				pf := c.link(t, cache, side, victim)
+				o := dispatchOpts{kit: "verifier", item: "example-stream/07", root: root, promptFile: pf}
+				dir, err := allocateOutcomeDir(o, dispatchPlan{claimKey: "repo--example-stream--07"}, home)
+				if err == nil || !deskkit.IsRefused(err) {
+					t.Errorf("allocation through a symlinked %s = %q, %v; want a refusal", c.name, dir, err)
+				}
+				if _, serr := os.Stat(filepath.Join(precious, "data")); serr != nil {
+					t.Errorf("the prune deleted a directory outside this tool's own base through the symlink: %v", serr)
+				}
+				if _, serr := os.Lstat(filepath.Join(victim, "outcomes", "repo--example-stream--07")); !os.IsNotExist(serr) {
+					t.Errorf("a refused allocation created the leaf in the symlink's target (stat err %v)", serr)
+				}
+			})
+		}
+	})
+
+	t.Run("an existing leaf that is a symlink or a file is refused", func(t *testing.T) {
+		home, root, side, elsewhere := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+		base := filepath.Join(side, outcomeDirName)
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		leaf := filepath.Join(base, "repo--example-stream--07")
+		o := dispatchOpts{kit: "verifier", item: "example-stream/07", root: root, promptFile: filepath.Join(side, "p.md")}
+		plants := map[string]func() error{
+			"symlink to elsewhere":  func() error { return os.Symlink(elsewhere, leaf) },
+			"symlink into the home": func() error { return os.Symlink(home, leaf) },
+			"regular file":          func() error { return os.WriteFile(leaf, []byte("x"), 0o600) },
+		}
+		for name, plant := range plants {
+			t.Run(name, func(t *testing.T) {
+				_ = os.Remove(leaf)
+				if err := plant(); err != nil {
+					if runtime.GOOS == "windows" {
+						t.Skip("symlinks unavailable")
+					}
+					t.Fatal(err)
+				}
+				dir, err := allocateOutcomeDir(o, dispatchPlan{claimKey: "repo--example-stream--07"}, home)
+				// A symlink into the home is caught earlier, by the symlink-resolving containment
+				// check; the other plants reach the leaf's own Lstat guard.
+				want := "is not a directory"
+				if name == "symlink into the home" {
+					want = "OUTSIDE"
+				}
+				if err == nil || !deskkit.IsRefused(err) || !strings.Contains(err.Error(), want) {
+					t.Fatalf("leaf planted as %s: allocateOutcomeDir = %q, %v; want a refusal naming %q", name, dir, err, want)
+				}
+			})
+		}
+	})
+
+	t.Run("an outcomes base other users can write to is refused", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("POSIX permission bits do not apply")
+		}
+		home, root, side := t.TempDir(), t.TempDir(), t.TempDir()
+		base := filepath.Join(side, outcomeDirName)
+		for _, mode := range []os.FileMode{0o777, 0o770, os.ModeSticky | 0o777} {
+			t.Run(mode.String(), func(t *testing.T) {
+				if err := os.MkdirAll(base, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(base, mode); err != nil {
+					t.Fatal(err)
+				}
+				o := dispatchOpts{kit: "verifier", item: "example-stream/07", root: root, promptFile: filepath.Join(side, "p.md")}
+				dir, err := allocateOutcomeDir(o, dispatchPlan{claimKey: "repo--example-stream--07"}, home)
+				if err == nil || !deskkit.IsRefused(err) || !strings.Contains(err.Error(), "writable by other users") {
+					t.Fatalf("base mode %v: allocateOutcomeDir = %q, %v; want the writable-by-others refusal", mode, dir, err)
+				}
+				if _, serr := os.Lstat(filepath.Join(base, "repo--example-stream--07")); !os.IsNotExist(serr) {
+					t.Errorf("a refused allocation created the leaf (stat err %v)", serr)
+				}
+			})
+		}
+	})
+
 	t.Run("non-verifier prompts carry no outcome line", func(t *testing.T) {
 		for _, p := range []struct{ kit, item string }{{"worker", "example-stream--07"}, {"review", "review-item-9"}} {
 			prompt := dispatchPrompt(t, p.kit, p.item)
