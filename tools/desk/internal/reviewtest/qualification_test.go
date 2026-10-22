@@ -460,6 +460,7 @@ func gitFixture(t *testing.T, root string) (string, string, string) {
 	return dir, git("rev-parse", "HEAD^"), git("rev-parse", "HEAD")
 }
 
+// regression: #3768
 func TestCostCohort(t *testing.T) {
 	bin := build(t)
 	var cohorts []cohort
@@ -645,8 +646,24 @@ func TestCostCohort(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if !strings.Contains(string(b), `"descendantCpuMs": null`) || !strings.Contains(string(b), `"points": null`) {
-		t.Fatal("unknown cost became absent or zero")
+	if err := checkCostUnknowns(b); err != nil {
+		t.Fatal(err)
+	}
+	// Exercise the same report check with missing and fabricated values at both
+	// ends of the real output. An unrelated null must never mask either one.
+	for _, key := range []string{"descendantCpuMs", "inclusiveCpuMs", "points", "retry"} {
+		needle := `"` + key + `": null`
+		for _, at := range []int{strings.Index(string(b), needle), strings.LastIndex(string(b), needle)} {
+			if at < 0 {
+				t.Fatalf("missing unknown-cost control field %s", key)
+			}
+			for _, replacement := range []string{`"` + key + `": 0`, `"removed-` + key + `": null`} {
+				changed := string(b[:at]) + replacement + string(b[at+len(needle):])
+				if err := checkCostUnknowns([]byte(changed)); err == nil || !strings.Contains(err.Error(), key) {
+					t.Fatalf("unknown-cost control %s escaped its assertion: %v", key, err)
+				}
+			}
+		}
 	}
 	if path := os.Getenv("ASSAY_REVIEW_REPORT"); path != "" {
 		if e := os.WriteFile(path, append(b, '\n'), 0600); e != nil {
@@ -680,4 +697,50 @@ func TestCostCohort(t *testing.T) {
 			}
 		}
 	})
+}
+
+// checkCostUnknowns checks the serialized boundary, where a missing field must
+// remain distinguishable from explicit null. Typed pointer decoding loses that
+// distinction. Every invocation and attempt is checked, including failed cohorts
+// and cohorts without a Git agent; a null elsewhere cannot cover an invented cost.
+func checkCostUnknowns(raw []byte) error {
+	var reports []struct {
+		Cohort      cohort                       `json:"cohort"`
+		Invocations []map[string]json.RawMessage `json:"invocations"`
+	}
+	if err := json.Unmarshal(raw, &reports); err != nil {
+		return err
+	}
+	if len(reports) == 0 {
+		return fmt.Errorf("missing cost reports")
+	}
+	for _, report := range reports {
+		if len(report.Invocations) == 0 {
+			return fmt.Errorf("%s: missing cost invocations", report.Cohort.Name)
+		}
+		for i, invocation := range report.Invocations {
+			where := fmt.Sprintf("%s invocation %d (%s)", report.Cohort.Name, i, invocation["tool"])
+			for _, key := range []string{"descendantCpuMs", "inclusiveCpuMs"} {
+				if strings.TrimSpace(string(invocation[key])) != "null" {
+					return fmt.Errorf("%s: %s must be explicit null, got %q", where, key, invocation[key])
+				}
+			}
+			if observation, ok := invocation["observation"]; ok {
+				var response struct {
+					Attempts []map[string]json.RawMessage `json:"attempts"`
+				}
+				if err := json.Unmarshal(observation, &response); err != nil {
+					return err
+				}
+				for j, attempt := range response.Attempts {
+					for _, key := range []string{"points", "retry"} {
+						if strings.TrimSpace(string(attempt[key])) != "null" {
+							return fmt.Errorf("%s attempt %d: %s must be explicit null, got %q", where, j, key, attempt[key])
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
 }

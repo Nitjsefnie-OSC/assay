@@ -123,7 +123,7 @@ is the one contract; /15–/17 own its foundation, rollout and completion.
 | 66 | [Extract shared write policy and make writeguard a hook adapter](brief-66-extract-shared-write-policy-and-make-writeguard-a-hook-adapter.md) | 1 | L | todo | — | — |
 | 67 | [Define an extensible perf-v4 envelope and compatible readers](brief-67-define-an-extensible-perf-v4-envelope-and-compatible-readers.md) | 3 | M | todo | — | — |
 | 68 | [Select perf-v4 in shared producers and qualify the direct migration](brief-68-select-perf-v4-in-shared-producers-and-qualify-the-direct-migration.md) | 4 | M | todo | — | — |
-| 69 | [Specify extensible JSON contracts and migration targets](brief-69-specify-extensible-json-contracts-and-migration-targets.md) | 1 | M | todo | — | — |
+| 69 | [Specify extensible JSON contracts and migration targets](brief-69-specify-extensible-json-contracts-and-migration-targets.md) | 1 | M | implemented | — | — |
 <!-- statusgen:briefs:end -->
 
 ## Critical path
@@ -327,7 +327,7 @@ Combined desk qualification has both that path and `58 → 59 → 62`; /60 remai
 The next unblocking move for attribution is /63's schema/profile/resolver, verified absent
 at 2e02111ed. /64 and /65 consume its fixtures independently. Final CLI qualification /17
 includes /64; existing CLI migrations adopt shared bindings without duplicating them.
-Collection/02 follows /01 and /63–65 in wave 4; it remains parked and never blocks local v3.
+Collection/02 follows /01 and /63–65 in wave 4; it never blocks local v3.
 The earlier 16 October schedule is historical; these amended dependencies control pickup.
 
 ## Write-policy delivery — 18 October 2026
