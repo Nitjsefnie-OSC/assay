@@ -1,0 +1,2 @@
+### Changed
+- The three private closed-brief aggregates in the Verify-row audit (`gotest-run-vacuous`, `prose-led-command`, row strength) are gone: each finding on a closed brief is now one ordinary per-record line that the shared report counts, so text and JSON totals agree. `docs/archive` is excluded from live lifecycle classification only; link checks still cover it. `difflint` and the lint audit share the same line normalizer and run the inner lint with `--all`.
