@@ -36,6 +36,8 @@ sources:
   - "freshness-checked 2026-10-06 @ 1fbf1153f (origin/main): no `deskusage` command under tools/desk/cmd/; no usage/token record is written at or after claim release by deskclaim-ref (claim.go:261 cmdRelease deletes the ref only), deskdispatch (dispatch.go:1120 releaseClaim) or the worker prompt's release line (prompt.go:453 writeReleaseClaim); the only token field anywhere is desk-supervision/13's per-session beacon `resource.tokens` (vitals.go:67-73), which is a live session vital, not a per-dispatch record"
   - "re-checked 2026-10-13 @ bcc02252e (origin/main): still no `deskusage` command; `loopadmin/runner/usage.go` exists (graph-execution/20) and is its own Go module (`loopadmin/go.mod`), so this brief matches its JSON keys and never imports it"
 consumers:
+  - ".cursor/skills/worker-desk/SKILL.md: fixed-here (canonical Cursor writer refreshes the generated completion guidance)"
+  - ".cursor/assay-managed.json: fixed-here (canonical Cursor writer refreshes the ownership digest)"
   - "docs/streams/desktools-v2/cli-migration.json: fixed-here (production command route; the offline mutation replay lives under the scanner's existing testdata exclusion)"
   - "docs/streams/desktools-v2/brief-56-migrate-deskperf-to-cobra-and-viper.md: fixed-here (remaining shared CLI qualification routed to the existing owner; both-command Verify selectors)"
   - "tools/desk/internal/deskkit/audittoolkey.go: fixed-here (register the local command in the existing audit tool catalogue)"
@@ -56,6 +58,7 @@ consumers:
 
 ## Context
 files:
+- **regenerate** `.cursor/skills/worker-desk/SKILL.md` and `.cursor/assay-managed.json` with `deskinstall --harness cursor --forge github --repo . --bundle plugins/assay`; never hand-edit the generated copy or its digest.
 - **add** `tools/desk/cmd/deskusage/testdata/mutations.py` — production-overlay mutation replay, run with `python3 tools/desk/cmd/deskusage/testdata/mutations.py`.
 - **add** `tools/desk/internal/deskkit/usage.go` (planned) — `UsageRecord` type (schema `usage-v1`), store-directory resolution, append writer, strict reader.
 - **add** `tools/desk/internal/deskkit/usage_test.go` (planned).
