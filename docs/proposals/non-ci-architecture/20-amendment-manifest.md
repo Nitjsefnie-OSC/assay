@@ -265,7 +265,7 @@ schema/readers, desk/agent/CLI propagation and own-request timing/points. Unfini
 statusgen/26 and performance-collection/01–09 are amended; completed /61 stays intact.
 The target, future-state bindings, storage/recovery and runtime handoff carry the same
 context/consent/coverage contract. This supersedes earlier v2-only future measurement intent,
-not historical v1/v2 facts, Evidence or the collection stream's parked state.
+not historical v1/v2 facts, Evidence or the collection stream's admission state.
 
 ## Write-policy and pickup amendment — 18 October 2026
 

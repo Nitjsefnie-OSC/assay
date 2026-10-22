@@ -1524,6 +1524,14 @@ func main() {
 		exitProcess(runBriefInfo(os.Args[2:], os.Stdout, os.Stderr))
 	}
 
+	// `statusgen context discover|recheck|check` — the offline future-state
+	// resolver (statusgen/20, context.go). READ-ONLY and offline: it reads only
+	// the --snapshot root and the files it names, so it is a subcommand with its
+	// own Cobra parser rather than a --lint leg.
+	if len(os.Args) > 1 && os.Args[1] == "context" {
+		exitProcess(runContext(os.Args[2:], os.Stdout, os.Stderr))
+	}
+
 	// `statusgen init` — positional subcommand (like `git init`) that scaffolds the
 	// streams structure into a repo. Intercepted before flag parsing so first-run
 	// users get the natural `statusgen init` UX; `--root DIR` targets DIR.
@@ -1620,7 +1628,7 @@ func main() {
 		first := os.Args[1]
 		if first != "" && !strings.HasPrefix(first, "-") {
 			fmt.Fprintf(os.Stderr, "statusgen: unknown subcommand %q\n", first)
-			fmt.Fprintln(os.Stderr, "known subcommands: init, newbrief, verifyrun, verifyclosure, verifyflip, mergecheck, shardcheck, conform, brief, backfill, reconcile, regen, migrate, lint, verify-gate-close, enforcement-status, phantoms, version")
+			fmt.Fprintln(os.Stderr, "known subcommands: init, newbrief, verifyrun, verifyclosure, verifyflip, mergecheck, shardcheck, conform, brief, context, backfill, reconcile, regen, migrate, lint, verify-gate-close, enforcement-status, phantoms, version")
 			fmt.Fprintln(os.Stderr, "(for the default regenerate, pass flags only — e.g. --root DIR, --check, --lint)")
 			exitProcess(2)
 		}

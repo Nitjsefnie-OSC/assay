@@ -1,0 +1,1 @@
+- Reuse one repository-scoped authenticated reader per issueboard collection, preserving all projected populations, original history reads and fail-closed outcomes.
