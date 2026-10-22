@@ -90,6 +90,8 @@ var v1Table = []Knob{
 		Doc: "issues one role may file per issue.file.window; 0 = off"},
 	{Name: "issue.file.window", Class: ClassBudgetWindow, Kind: Duration, Default: dur(24 * time.Hour), Min: dur(time.Hour), Max: dur(30 * day), PerRole: true, V1: 24,
 		Doc: "the window issue.file.rate is counted over"},
+	{Name: "issue.file.bound_per_pr", Class: ClassBudget, Kind: Count, Unit: "issues", Default: 0, Min: 0, Max: 10000, PerRole: true, V1: 0,
+		Doc: "workflow-bound issues one role may file against one change request per issue.file.window; 0 = off"},
 	{Name: "write.rate.per_pr_hour", Class: ClassRate, Kind: Count, Unit: "writes", Default: 0, Min: 0, Max: 10000, PerRole: true, V1: 20,
 		Doc: "writes one role may make to one change request per hour; 0 = off"},
 	{Name: "write.rate.per_repo_hour", Class: ClassRate, Kind: Count, Unit: "writes", Default: 0, Min: 0, Max: 10000, PerRole: true, V1: 100,
