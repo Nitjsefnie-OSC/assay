@@ -81,6 +81,7 @@ func TestMCPIgnoresForgedCallerHeader(t *testing.T) {
 	s.register(append(s.Tools(), Tool{
 		Name:        "probe__caller",
 		Description: "test probe",
+		Scope:       ScopeNone, // probes the transport, not a cell
 		Handler: func(ctx context.Context, srv *Server, call Call) (any, error) {
 			seen = call.CallerLogin
 			return map[string]any{"ok": true}, nil

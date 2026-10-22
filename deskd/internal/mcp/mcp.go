@@ -73,6 +73,9 @@ type Tool struct {
 	// InputSchema is a JSON Schema object describing arguments, surfaced by
 	// tools/list. Optional; a nil schema advertises no constraints.
 	InputSchema map[string]any
+	// Scope is how Dispatch authorizes a call before Handler runs. The zero
+	// value is [ScopeCell]: a tool must opt OUT of cell authorization, never in.
+	Scope Scope
 	// Handler runs the tool. Read handlers ignore call.Filer entirely.
 	Handler func(ctx context.Context, s *Server, call Call) (any, error)
 }
@@ -209,10 +212,18 @@ func (e *ErrUnknownTool) Error() string {
 
 // Dispatch runs one tool by name. An unknown tool is an error, not an empty
 // result: the two deliberate absences must be visibly absent.
+//
+// Every call is AUTHORIZED here, before its handler runs ([Server.authorize]):
+// a cell-scoped tool serves or writes only the cell its caller is a configured
+// loop of, and only that cell's repositories. Authentication alone admits no
+// cell.
 func (s *Server) Dispatch(ctx context.Context, name string, call Call) (any, error) {
 	t, ok := s.tools[name]
 	if !ok {
 		return nil, &ErrUnknownTool{Name: name}
+	}
+	if err := s.authorize(t, call); err != nil {
+		return nil, err
 	}
 	return t.Handler(ctx, s, call)
 }
@@ -324,7 +335,10 @@ func (s *Server) Handler() http.Handler {
 		if caller == "" {
 			// Machine-boundary authentication: the header is the per-pod
 			// identity the cluster set. It is read ONLY here, after the request
-			// has been authenticated.
+			// has been authenticated, and it is a CLAIM, not a grant: Dispatch
+			// still requires it to name a configured loop of the cell each call
+			// acts on, and the request-origin guard in front of /mcp keeps a
+			// browser page from making the claim on a loopback deployment.
 			caller = r.Header.Get("X-Desk-Caller")
 		}
 		resp := s.handleRPC(r.Context(), req, caller)

@@ -74,18 +74,21 @@ func registry() []Tool {
 			Name:        "desk__roadmap",
 			Description: "Epics, in-flight work, blocked counts, Next-up. Delegated to statusgen; not ingested in this build.",
 			Mutates:     false,
+			Scope:       ScopeNone,
 			Handler:     delegatedRead("desk__roadmap", "statusgen --json over each cell's streams_root"),
 		},
 		{
 			Name:        "desk__portfolio",
 			Description: "Every program: flow counts, waiting-on-human, last-record age, model routing. Delegated to statusgen; not ingested in this build.",
 			Mutates:     false,
+			Scope:       ScopeNone,
 			Handler:     delegatedRead("desk__portfolio", "statusgen --json / --dora across programs"),
 		},
 		{
 			Name:        "desk__team_view",
 			Description: "The Teams pane as data (§3.1): per-team queue/WIP, gates by owning team, handoff waits. The owning-team dimension is not ingested in this build.",
 			Mutates:     false,
+			Scope:       ScopeNone,
 			Handler:     delegatedRead("desk__team_view", "per-gate owning-team (not ingested — no team dimension on the escalation index yet)"),
 		},
 		{
@@ -99,6 +102,7 @@ func registry() []Tool {
 			Name:        "desk__improve_list",
 			Description: "Read reports, clusters, open proposals, and RetroActions with their before/after — the sharpen-the-saw read surface (§5.3).",
 			Mutates:     false,
+			Scope:       ScopeNone,
 			Handler:     delegatedRead("desk__improve_list", "the §5.3 report/cluster/proposal store (arrives with the Improve pane)"),
 		},
 	}
@@ -251,7 +255,15 @@ func handleStatus(_ context.Context, s *Server, call Call) (any, error) {
 			res.IndexAgeSeconds = &secs
 		}
 		if h, herr := s.DB.Health(); herr == nil {
-			res.RepoHealth = h
+			// Only the authorized cell's repositories: the health table is
+			// index-wide, and another cell's repo list is not this caller's.
+			own := cellRepos(s.findCell(a.Cell))
+			res.RepoHealth = []adapter.RepoHealth{}
+			for _, rh := range h {
+				if own[strings.ToLower(rh.Repo)] {
+					res.RepoHealth = append(res.RepoHealth, rh)
+				}
+			}
 		}
 	}
 	return res, nil

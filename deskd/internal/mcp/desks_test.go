@@ -66,7 +66,7 @@ func TestDesksTool_UnknownCell(t *testing.T) {
 func TestDesksTool_ReturnsRowPerConfiguredLoop(t *testing.T) {
 	s := desksTestServer(t)
 	args, _ := json.Marshal(map[string]string{"cell": "assay"})
-	res, err := s.Dispatch(context.Background(), "desk__desks", Call{Args: args})
+	res, err := s.Dispatch(context.Background(), "desk__desks", Call{Args: args, CallerLogin: reviewCaller})
 	if err != nil {
 		t.Fatalf("desk__desks: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDesksTool_NilTerminalStillProducesRows(t *testing.T) {
 	}
 	s := NewServer(Options{Config: cfg, Dir: index.NewDirectory(cfg)}) // no Terminal
 	args, _ := json.Marshal(map[string]string{"cell": "assay"})
-	res, err := s.Dispatch(context.Background(), "desk__desks", Call{Args: args})
+	res, err := s.Dispatch(context.Background(), "desk__desks", Call{Args: args, CallerLogin: reviewCaller})
 	if err != nil {
 		t.Fatalf("desk__desks: %v", err)
 	}
