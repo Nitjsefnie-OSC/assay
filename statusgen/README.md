@@ -895,7 +895,9 @@ would establish before it merges. It reads the authoritative PR body and complet
 changed-file list, then evaluates only its `Brief:` delivery edges using the same
 authoring/Evidence classifier, structured `delivery:` partial declarations and
 in-memory lint hold as reconciliation. `Authors:` and `Issue:` carriers create no
-implementation edge. Partial deliveries stay partial. An unresolved partial claim,
+implementation edge. Partial deliveries keep `to` equal to `from`: the check proposes no implementation
+transition for them. Every declared brief, including a partial delivery, requires a
+readable complete file list. An unresolved partial claim,
 unreadable input, missing brief/board row, or changed head cannot pass.
 
 A full delivery is evaluated prospectively at `implemented`, even if the board

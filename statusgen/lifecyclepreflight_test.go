@@ -126,7 +126,7 @@ func TestLifecyclePreflightPartial(t *testing.T) {
 		t.Run(ref, func(t *testing.T) {
 			root := copyDesignGateFixture(t)
 			declareDelivery(t, root, "05", `{in: "`+ref+`", covers: partial, note: "slice"}`)
-			res, code := pfRun(t, root, "Brief: dg/05", nil, 500)
+			res, code := pfRun(t, root, "Brief: dg/05", pfCodeFiles, 200)
 			want := 0
 			if strings.HasPrefix(ref, "unknown") {
 				want = 3
@@ -215,5 +215,83 @@ func TestLifecyclePreflightHumanRuling(t *testing.T) {
 				t.Fatalf("invalid/unreadable human approval passed %d %+v", code, res)
 			}
 		})
+	}
+}
+
+func TestLifecyclePreflightMalformedDeclarations(t *testing.T) {
+	for _, body := range []string{"Brief:", "Brief:   ", "Brief: dg/03\nBrief: dg/05", "Brief: dg/03\nBrief: dg/03", "Brief: nonsense", "Brief: dg/03 trailing"} {
+		t.Run(body, func(t *testing.T) {
+			res, code := pfRun(t, copyDesignGateFixture(t), body, pfCodeFiles, 200)
+			if code != 3 || res.Passed {
+				t.Fatalf("%d %+v", code, res)
+			}
+		})
+	}
+}
+func TestLifecyclePreflightPartialRequiresReadableFiles(t *testing.T) {
+	root := copyDesignGateFixture(t)
+	declareDelivery(t, root, "05", `{in: "fx#30", covers: partial, note: "slice"}`)
+	res, code := pfRun(t, root, "Brief: dg/05", nil, 500)
+	if code != 3 || res.Passed {
+		t.Fatalf("unreadable partial %d %+v", code, res)
+	}
+	res, code = pfRun(t, root, "Brief: dg/05", pfCodeFiles, 200)
+	if code != 0 || len(res.Briefs) != 1 || res.Briefs[0].To != res.Briefs[0].From {
+		t.Fatalf("partial must propose no status change %d %+v", code, res)
+	}
+}
+func TestLifecyclePreflightExistingDesignViolation(t *testing.T) {
+	root := copyDesignGateFixture(t)
+	res, code := pfRun(t, root, "Brief: dg/02", pfCodeFiles, 200)
+	if code != 1 || len(res.Briefs) != 1 || !strings.Contains(strings.Join(res.Briefs[0].Problems, "\n"), "no design: record") {
+		t.Fatalf("existing in-progress design violation must fail %d %+v", code, res)
+	}
+}
+func TestLifecyclePreflightPreservesAdvancedStatus(t *testing.T) {
+	root := copyDesignGateFixture(t)
+	p := filepath.Join(root, "docs/streams/dg/README.md")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// dg/03 is model-scoped; an additional delivery cannot demote its done row.
+	lines := strings.Split(string(raw), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(l, "| 03 |") {
+			lines[i] = strings.Replace(l, "| in-progress |", "| done |", 1)
+		}
+	}
+	if err = os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		t.Fatal(err)
+	}
+	res, code := pfRun(t, root, "Brief: dg/03", pfCodeFiles, 200)
+	if code != 0 || len(res.Briefs) != 1 || res.Briefs[0].From != "done" || res.Briefs[0].To != "done" {
+		t.Fatalf("advanced status demoted %d %+v", code, res)
+	}
+}
+
+// Admission must preserve every status-sensitive rule in reconcile's registry,
+// including future gates; checking only today's design fields is insufficient.
+func TestLifecyclePreflightHoldRegistry(t *testing.T) {
+	old := statusKeyedLintRules
+	statusKeyedLintRules = append(append([]statusKeyedLintRule{}, old...), statusKeyedLintRule{name: "preflight-registry-control", problems: func(e *lintEnv) []string {
+		if row := e.findRow("dg", "03"); row != nil && row.Status == "implemented" {
+			return []string{"registry admission control"}
+		}
+		return nil
+	}})
+	t.Cleanup(func() { statusKeyedLintRules = old })
+	res, code := pfRun(t, copyDesignGateFixture(t), "Brief: dg/03", pfCodeFiles, 200)
+	if code != 1 || len(res.Briefs) != 1 || !strings.Contains(strings.Join(res.Briefs[0].Problems, "\n"), "registry admission control") {
+		t.Fatalf("reconcile hold bypassed %d %+v", code, res)
+	}
+}
+func TestLifecyclePreflightExistingDanglingDesign(t *testing.T) {
+	root := copyDesignGateFixture(t)
+	// This problem's text is independent of Status, so reconcile's added-problem
+	// diff cannot detect it. The direct affected-brief gate must still refuse it.
+	res, code := pfRun(t, root, "Brief: dg/06", pfCodeFiles, 200)
+	if code != 1 || len(res.Briefs) != 1 || !strings.Contains(strings.Join(res.Briefs[0].Problems, "\n"), "dereferences to no record") {
+		t.Fatalf("baseline dangling design passed %d %+v", code, res)
 	}
 }

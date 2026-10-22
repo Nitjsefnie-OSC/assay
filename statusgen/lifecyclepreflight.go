@@ -2,7 +2,7 @@ package main
 
 // Prospective delivery admission uses reconcile's classifiers and lint hold. It
 // never updates a board: CI checks the state a delivery would establish before
-// the merge becomes the reconciler's witness.
+// the merge becomes a reconciliation witness.
 import (
 	"encoding/json"
 	"flag"
@@ -115,7 +115,10 @@ func checkLifecyclePreflight(root, repo string, n int, head string, c *ghClient,
 	if pull.Head.SHA != head {
 		return fail(fmt.Errorf("PR head changed: expected %s, observed %s", head, pull.Head.SHA))
 	}
-	_, refs := parseBriefLikeTrailers(pull.Body)
+	refs, err := preflightDeliveryRefs(pull.Body)
+	if err != nil {
+		return fail(err)
+	}
 	// Authors:/Issue: carriers have no delivery edge, exactly as reconciliation.
 	if len(refs) == 0 {
 		latest, err := c.preflightPull(repo, n)
@@ -181,17 +184,20 @@ func checkLifecyclePreflight(root, repo string, n int, head string, c *ghClient,
 				return fail(fmt.Errorf("%s", why))
 			}
 		}
+		files := cl.files(n)
+		if files.err != nil {
+			return fail(files.err)
+		}
+		if len(files.files) == 0 {
+			return fail(fmt.Errorf("PR #%d file list is empty", n))
+		}
+		if b.From != "todo" && b.From != "in-progress" {
+			b.To = b.From
+		}
 		if cl.partials.partial(n, id) {
 			b.Classification = "partial"
-			b.To = "in-progress"
+			b.To = b.From
 		} else {
-			files := cl.files(n)
-			if files.err != nil {
-				return fail(files.err)
-			}
-			if len(files.files) == 0 {
-				return fail(fmt.Errorf("PR #%d file list is empty", n))
-			}
 			only, err := cl.notImplementation(n, id)
 			if err != nil {
 				return fail(err)
@@ -217,6 +223,35 @@ func checkLifecyclePreflight(root, repo string, n int, head string, c *ghClient,
 		}
 	}
 
+	// The reconcile hold reports only *added* problems. A delivering brief
+	// already in-progress may already violate its design gate; judge that brief's
+	// projected state directly with the production gate, without dragging unrelated
+	// rows into this PR's result or changing immutable advanced statuses.
+	_, known, registerOK := designGateRegister(root)
+	if !registerOK {
+		return fail(fmt.Errorf("design register could not be read"))
+	}
+	for i := range res.Briefs {
+		b := &res.Briefs[i]
+		if b.Classification != "delivery" {
+			continue
+		}
+		stream, num, _ := briefStreamNum(b.ID)
+		si, row := env.findRowAt(stream, num)
+		projected := *row
+		projected.Status = b.To
+		scoped := *env.streams[si]
+		scoped.Briefs = []Brief{projected}
+		for _, problem := range designGateStreamProblems(&scoped, known) {
+			exists := false
+			for _, old := range b.Problems {
+				exists = exists || old == problem
+			}
+			if !exists {
+				b.Problems = append(b.Problems, problem)
+			}
+		}
+	}
 	// Apply only this PR's proposed deliveries to two independent board models,
 	// then run the same two-layer human decision evaluator used by --decision-gate.
 	// This also works for archive exports; absence of .git cannot suppress it.
@@ -224,7 +259,7 @@ func checkLifecyclePreflight(root, repo string, n int, head string, c *ghClient,
 	gateHead := gateSnapshotOnDisk(root)
 	for _, cell := range cells {
 		for _, b := range gateHead {
-			if canonicalBriefKey(b.Board) == canonicalBriefKey(cell.ID) {
+			if canonicalBriefKey(b.Board) == canonicalBriefKey(cell.ID) && (b.Status == "todo" || b.Status == "in-progress") {
 				b.Status = "implemented"
 			}
 		}
@@ -309,4 +344,41 @@ func pathRelative(root, path string) string {
 		return ""
 	}
 	return strings.TrimSpace(rel)
+}
+
+// The shared parser supplies canonical references and fence handling. Its
+// permissive unlinked classification intentionally ignores an empty trailer;
+// admission must distinguish that malformed declaration from a genuine exemption.
+func preflightDeliveryRefs(body string) ([]string, error) {
+	inFence := false
+	declarations := 0
+	for _, raw := range strings.Split(body, "\n") {
+		if rePRLinkFence.MatchString(raw) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "Brief:") {
+			declarations++
+			if strings.TrimSpace(strings.TrimPrefix(line, "Brief:")) == "" {
+				return nil, fmt.Errorf("empty Brief: declaration")
+			}
+		}
+	}
+	if declarations > 1 {
+		return nil, fmt.Errorf("ambiguous delivery: more than one unfenced Brief: declaration")
+	}
+	_, refs := parseBriefLikeTrailers(body)
+	if declarations != len(refs) {
+		return nil, fmt.Errorf("malformed Brief: declaration")
+	}
+	for _, ref := range refs {
+		if _, _, ok := briefStreamNum(ref); !ok {
+			return nil, fmt.Errorf("invalid Brief: reference %q", ref)
+		}
+	}
+	return refs, nil
 }
