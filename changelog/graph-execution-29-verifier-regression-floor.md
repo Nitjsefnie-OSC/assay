@@ -1,0 +1,1 @@
+- Add a source-pinned verifier regression inventory and frozen old/domain adapter comparisons that reject missing cases and unreviewed or stale differences.
