@@ -66,7 +66,12 @@ import (
 //     container (a blockquote or list-item marker, or any leading
 //     whitespace) holds a tag start or a fence (heldContainerDoubt): where
 //     such a block ends on the page is more than the scan models, so this
-//     over-refuses by design. Any carriage return left after the brief
+//     over-refuses by design. Every element an entry opens outside fenced
+//     code (void elements aside) is closed later in that entry, in nesting
+//     order, by a close tag the page surely applies to it, and the last
+//     entry holds none open across a line end (heldElementDoubt): an element
+//     left open nests the later entries inside it, which may drop, collapse
+//     or flatten them on the page; this too over-refuses. Any carriage return left after the brief
 //     reader's single CRLF-to-LF rewrite ends a line on the page but not in
 //     the scan's split, so from such a line on nothing is live (heldRender)
 //     and no entry is superseded whole. Then the earlier entries are
@@ -338,6 +343,212 @@ func heldContainerStrip(line string) string {
 		}
 		return t
 	}
+}
+
+// heldVoidTags are the elements the page never holds open: a start tag with
+// one of these names has no content and no end tag.
+var heldVoidTags = map[string]bool{}
+
+// heldRawTags are the elements whose content the page does not read as
+// ordinary HTML (raw text, escapable raw text, plaintext) or reads in a
+// foreign namespace: a close tag inside them is not one, so any opener of
+// one of these names refuses whole supersession, closed or not.
+var heldRawTags = map[string]bool{}
+
+func init() {
+	for _, t := range strings.Fields(`area base br col embed hr img input link meta
+		source track wbr`) {
+		heldVoidTags[t] = true
+	}
+	for _, t := range strings.Fields(`script style textarea title xmp iframe noembed
+		noframes noscript plaintext svg math`) {
+		heldRawTags[t] = true
+	}
+}
+
+// heldElement is an element an entry has opened and not yet closed: its
+// name and the run (the lines between blank lines) its opener sits in.
+type heldElement struct {
+	name string
+	run  int
+	raw  bool
+}
+
+// heldElementDoubt reports whether an entry leaves an element open on the
+// page (#3841). An earlier entry's element that is not closed in that entry
+// nests the entries after it, the last one and its PASS included, inside
+// that element, which may drop, collapse or flatten them while the scan
+// reads them live; so whole supersession is off unless, in every entry,
+// every element opened outside top-level fenced code is closed by a matching
+// close tag later in the same entry, in nesting order, and the last entry
+// holds no element open across a line end. Void elements are exempt. An
+// opener is counted wherever it appears (in a code span, a comment or an
+// attribute value too). A close tag counts only where the page surely reads
+// it as one: complete on its line, not backslash-escaped, outside a tag and a
+// comment (heldTagScan), in a run with no code span, link or image syntax,
+// math or table, and either in the opener's own run or, when both runs are
+// HTML blocks that run to a blank line (heldRawRun), in any later run; a
+// close tag in a paragraph cannot end an element opened outside it. Any
+// opener of heldRawTags, any close tag that does not match the innermost
+// open element, and any other doubt refuses. This over-refuses by design.
+func heldElementDoubt(lines []string, inFence []bool, starts []int) bool {
+	st := 0
+	for e, lo := range starts {
+		hi := len(lines)
+		if e+1 < len(starts) {
+			hi = starts[e+1]
+		}
+		lastEntry := e == len(starts)-1
+		var stack []heldElement
+		run, raw, noClose := -1, false, false
+		for i := lo; i < hi; i++ {
+			l := lines[i]
+			if isBlankLine(l) {
+				run = -1
+				continue
+			}
+			if run < 0 || i == lo {
+				run = i
+				raw = !inFence[i] && heldRawRun(l)
+				noClose = heldNoCloseRun(lines[i:hi])
+			}
+			if inFence[i] {
+				continue
+			}
+			p0, s0 := 0, st
+			for p := 0; p+1 < len(l); p++ {
+				if l[p] != '<' {
+					continue
+				}
+				if isASCIILetter(l[p+1]) {
+					n := heldElementName(l[p+1:])
+					switch {
+					case heldVoidTags[n]:
+					case heldRawTags[n]:
+						return true
+					default:
+						stack = append(stack, heldElement{n, run, raw})
+					}
+					continue
+				}
+				n, ok := heldCloseTag(l[p:])
+				if !ok || heldVoidTags[n] || noClose || p > 0 && l[p-1] == '\\' {
+					continue
+				}
+				s0, p0 = heldTagScan(s0, l[p0:p]), p
+				if s0 != 0 {
+					continue
+				}
+				if len(stack) == 0 {
+					return true // a stray close tag
+				}
+				top := stack[len(stack)-1]
+				if top.run != run && !(top.raw && raw) {
+					continue // a close the page may not apply to that element
+				}
+				if top.name != n {
+					return true
+				}
+				stack = stack[:len(stack)-1]
+			}
+			st = heldTagScan(st, l)
+			if lastEntry && len(stack) > 0 {
+				return true
+			}
+		}
+		if len(stack) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// heldElementName returns the tag name the page's HTML tokenizer reads at
+// the start of s (after "<"), ASCII-lowercased: up to whitespace, "/" or ">".
+func heldElementName(s string) string {
+	b := []byte{}
+	for i := 0; i < len(s) && strings.IndexByte(" \t\n\f\r/>", s[i]) < 0; i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
+
+// heldCloseTag reports whether s opens with a close tag CommonMark reads as
+// one, complete on the line: "</", a tag name (an ASCII letter, then letters,
+// digits and hyphens), optional spaces or tabs, then ">". It returns the
+// name, ASCII-lowercased.
+func heldCloseTag(s string) (string, bool) {
+	if len(s) < 4 || s[1] != '/' || !isASCIILetter(s[2]) {
+		return "", false
+	}
+	n := 3
+	for n < len(s) && (isASCIILetter(s[n]) || s[n] >= '0' && s[n] <= '9' || s[n] == '-') {
+		n++
+	}
+	r := strings.TrimLeft(s[n:], " \t")
+	if !strings.HasPrefix(r, ">") {
+		return "", false
+	}
+	return heldElementName(s[2:n]), true
+}
+
+// heldRawRun reports whether line, the first of a run, opens an HTML block
+// that runs to the next blank line, so the page emits the whole run as raw
+// HTML at the top level: a type 6 block (heldHTMLKind6), or a type 7 block
+// read strictly — one open tag with plain attributes, or one close tag,
+// alone on the line at column 0, its name not one that opens a type 1 block.
+func heldRawRun(line string) bool {
+	if heldHTMLKind6(line) {
+		return true
+	}
+	t := strings.TrimRight(line, " \t")
+	if n, ok := heldCloseTag(t); ok {
+		return len(t) == strings.IndexByte(t, '>')+1 && !heldType1Name(n)
+	}
+	if len(t) < 3 || t[0] != '<' || !isASCIILetter(t[1]) || t[len(t)-1] != '>' {
+		return false
+	}
+	n := 2
+	for n < len(t) && (isASCIILetter(t[n]) || t[n] >= '0' && t[n] <= '9' || t[n] == '-') {
+		n++
+	}
+	if heldType1Name(heldElementName(t[1:n])) {
+		return false
+	}
+	return heldPlainAttrsRe.MatchString(t[n : len(t)-1])
+}
+
+// heldPlainAttrsRe is a run of attributes in the narrow shape heldRawRun
+// accepts (a name, then optionally "=" and a value that is double-quoted
+// without a double quote, or a plain word), then an optional "/".
+var heldPlainAttrsRe = regexp.MustCompile(`^(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:="[^"<>]*"|=[A-Za-z0-9_.:/-]+)?)*[ \t]*/?$`)
+
+// heldType1Name reports whether name opens a type 1 HTML block, one that
+// runs to its own end marker rather than to a blank line.
+func heldType1Name(name string) bool {
+	return name == "pre" || name == "script" || name == "style" || name == "textarea"
+}
+
+// heldNoCloseRun reports whether the run that starts at lines[0] (up to the
+// next blank line) holds syntax that may carry a close tag the page does not
+// apply as one: a code span or fence, link or image syntax, a link
+// reference or footnote, math, or a table.
+func heldNoCloseRun(lines []string) bool {
+	for _, l := range lines {
+		if isBlankLine(l) {
+			return false
+		}
+		for _, m := range []string{"`", "](", "]:", "][", "![", "[^", "$", "|", "~"} {
+			if strings.Contains(l, m) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // heldTagScan advances the page's HTML tokenizer over line from state st:
@@ -960,7 +1171,8 @@ func heldScanScope(evidence string) heldScope {
 			if covered := heldCovered(lines, live, out, tables, last); len(covered) > 0 {
 				scope.from, scope.covered = last, covered
 				scope.whole = heldWholeCovered(keys[:len(starts)-1], aligned[:len(starts)-1], covered) &&
-					!heldHTMLUnclosed(lines, inFence) && !heldContainerDoubt(lines, inFence)
+					!heldHTMLUnclosed(lines, inFence) && !heldContainerDoubt(lines, inFence) &&
+					!heldElementDoubt(lines, inFence, starts)
 			}
 		}
 	}

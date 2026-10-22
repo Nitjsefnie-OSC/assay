@@ -564,6 +564,156 @@
       "file": "awaiting_bucket.go",
       "old": "if _, bd, ferr := splitFrontmatter(string(raw)); ferr == nil {",
       "new": "if _, bd, ferr := splitFrontmatter(content); ferr == nil {"
+    },
+    {
+      "name": "#3841 element: whole supersession ignores an element an entry leaves open",
+      "file": "heldscope.go",
+      "old": " &&\n\t\t\t\t\t!heldElementDoubt(lines, inFence, starts)\n",
+      "new": "\n"
+    },
+    {
+      "name": "#3841 element: a void element is held open",
+      "file": "heldscope.go",
+      "old": "\t\t\t\t\tcase heldVoidTags[n]:\n\t\t\t\t\tcase heldRawTags[n]:",
+      "new": "\t\t\t\t\tcase false:\n\t\t\t\t\tcase heldRawTags[n]:"
+    },
+    {
+      "name": "#3841 element: a raw-text or foreign element counts as closed",
+      "file": "heldscope.go",
+      "old": "\t\t\t\t\tcase heldRawTags[n]:\n\t\t\t\t\t\treturn true",
+      "new": "\t\t\t\t\tcase heldRawTags[n]:\n\t\t\t\t\t\tstack = append(stack, heldElement{n, run, raw})"
+    },
+    {
+      "name": "#3841 element: an opener in fenced code is counted",
+      "file": "heldscope.go",
+      "old": "\t\t\tif inFence[i] {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tp0, s0 := 0, st",
+      "new": "\t\t\tp0, s0 := 0, st"
+    },
+    {
+      "name": "#3841 element: a close tag in code, link or math syntax counts",
+      "file": "heldscope.go",
+      "old": "heldVoidTags[n] || noClose || p > 0",
+      "new": "heldVoidTags[n] || p > 0"
+    },
+    {
+      "name": "#3841 element: a backslash-escaped close tag counts",
+      "file": "heldscope.go",
+      "old": " || p > 0 && l[p-1] == '\\\\' {",
+      "new": " {"
+    },
+    {
+      "name": "#3841 element: a close tag in a tag or comment counts",
+      "file": "heldscope.go",
+      "old": "\t\t\t\tif s0 != 0 {\n\t\t\t\t\tcontinue\n\t\t\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "#3841 element: a stray close tag is ignored",
+      "file": "heldscope.go",
+      "old": "return true // a stray close tag",
+      "new": "continue // a stray close tag"
+    },
+    {
+      "name": "#3841 element: a close tag in a later paragraph counts",
+      "file": "heldscope.go",
+      "old": "if top.run != run && !(top.raw && raw) {",
+      "new": "if false {"
+    },
+    {
+      "name": "#3841 element: a paragraph opener closes in a later HTML block",
+      "file": "heldscope.go",
+      "old": "if top.run != run && !(top.raw && raw) {",
+      "new": "if top.run != run && !raw {"
+    },
+    {
+      "name": "#3841 element: every run is an HTML block",
+      "file": "heldscope.go",
+      "old": "raw = !inFence[i] && heldRawRun(l)",
+      "new": "raw = true"
+    },
+    {
+      "name": "#3841 element: no run is an HTML block",
+      "file": "heldscope.go",
+      "old": "raw = !inFence[i] && heldRawRun(l)",
+      "new": "raw = false"
+    },
+    {
+      "name": "#3841 element: a crossed close tag counts",
+      "file": "heldscope.go",
+      "old": "\t\t\t\tif top.name != n {\n\t\t\t\t\treturn true\n\t\t\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "#3841 element: the last entry may hold an element across a line end",
+      "file": "heldscope.go",
+      "old": "if lastEntry && len(stack) > 0 {",
+      "new": "if false {"
+    },
+    {
+      "name": "#3841 element: an entry may end with an element open",
+      "file": "heldscope.go",
+      "old": "\t\tif len(stack) > 0 {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\n// heldElementName",
+      "new": "\t}\n\treturn false\n}\n\n// heldElementName"
+    },
+    {
+      "name": "#3841 element: tag names are not case-folded",
+      "file": "heldscope.go",
+      "old": "\t\t\tc += 'a' - 'A'\n",
+      "new": "\n"
+    },
+    {
+      "name": "#3841 element: a close tag need not end in \">\"",
+      "file": "heldscope.go",
+      "old": "\tif !strings.HasPrefix(r, \">\") {\n\t\treturn \"\", false\n\t}\n\treturn heldElementName(s[2:n]), true",
+      "new": "\treturn heldElementName(s[2:n]), true"
+    },
+    {
+      "name": "#3841 element: a hyphen ends a close tag's name",
+      "file": "heldscope.go",
+      "old": "for n < len(s) && (isASCIILetter(s[n]) || s[n] >= '0' && s[n] <= '9' || s[n] == '-') {",
+      "new": "for n < len(s) && (isASCIILetter(s[n]) || s[n] >= '0' && s[n] <= '9') {"
+    },
+    {
+      "name": "#3841 element: any line opening with a tag opens a run-long HTML block",
+      "file": "heldscope.go",
+      "old": "\treturn heldPlainAttrsRe.MatchString(t[n : len(t)-1])\n",
+      "new": "\treturn true\n"
+    },
+    {
+      "name": "#3841 element: a type 1 opener runs to the blank line",
+      "file": "heldscope.go",
+      "old": "\treturn name == \"pre\" || name == \"script\" || name == \"style\" || name == \"textarea\"\n",
+      "new": "\treturn false\n"
+    },
+    {
+      "name": "#3841 element: a code span does not stop close tags",
+      "file": "heldscope.go",
+      "old": "[]string{\"`\", \"](\",",
+      "new": "[]string{\"](\","
+    },
+    {
+      "name": "#3841 element: a link destination does not stop close tags",
+      "file": "heldscope.go",
+      "old": "[]string{\"`\", \"](\", \"]:\",",
+      "new": "[]string{\"`\", \"]:\","
+    },
+    {
+      "name": "#3841 element: a reference link label does not stop close tags",
+      "file": "heldscope.go",
+      "old": "\"]:\", \"][\", \"![\",",
+      "new": "\"]:\", \"![\","
+    },
+    {
+      "name": "#3841 element: an image does not stop close tags",
+      "file": "heldscope.go",
+      "old": "\"][\", \"![\", \"[^\",",
+      "new": "\"][\", \"[^\","
+    },
+    {
+      "name": "#3841 element: math does not stop close tags",
+      "file": "heldscope.go",
+      "old": "\"[^\", \"$\", \"|\",",
+      "new": "\"[^\", \"|\","
     }
   ]
 }

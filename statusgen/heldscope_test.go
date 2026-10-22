@@ -373,9 +373,9 @@ func TestHeldScopeWholeSuperseded(t *testing.T) {
 		{"closed HTML block after a prose hold",
 			two("- row 3 could-not-check.\n\n<div title=\"a\">note</div>") + rerun2, false},
 		{"attribute closed in its own block",
-			two("- row 3 could-not-check.\n\n<div title=\"\nx\" y>") + rerun2, false},
+			two("- row 3 could-not-check.\n\n<div title=\"\nx\" y>\n</div>") + rerun2, false},
 		{"div block runs past a closed tag",
-			two("- row 3 could-not-check.\n\n<div>a</div> <b title=\"\nx\" y>") + rerun2, false},
+			two("- row 3 could-not-check.\n\n<div>a</div> <b title=\"\nx\" y>\n</b>") + rerun2, false},
 		{"fenced table, row in prose",
 			eight("```\n| # | Result |\n|---|---|\n| 9 | exit 2 |\n```\n\n- row 9 could-not-check.") + final, false},
 		{"pipe in a code span, prose hold", two("- `a | b` could-not-check: runner offline.") + rerun2, false},
@@ -559,16 +559,19 @@ func TestHeldScopeContainerDoubt(t *testing.T) {
 	runHeldScanCases(t, []heldScanCase{
 		// Admitted controls: a top-level HTML block or fence the page reads
 		// the way the scan does.
-		{"C1: attribute closed in block", two("<div title=\"\nx\" y>"), false},
-		{"C2: paragraph, div block", two("<3\n<div title=\"\nx\" y>"), false},
+		{"C1: attribute closed in block", two("<div title=\"\nx\" y>\n</div>"), false},
+		{"C2: paragraph, div block", two("<3\n<div title=\"\nx\" y>\n</div>"), false},
 		{"top-level fence holds a tag", two("```\n<div title=\"\n```"), false},
 		{"top-level fence holds a table",
 			two("```\n<table><tr><td>3</td><td>exit 2</td></tr></table>\n```"), false},
 		{"top-level fence, indented tag", two("```\n  <div title=\"\n```"), false},
 		// A comment or declaration that ends on its own line leaves the next
-		// line a paragraph, where an unfinished tag is plain text.
-		{"comment closed, paragraph tag", two("<!-- a -->\na <b title=\""), false},
-		{"declaration, paragraph tag", two("<!DOCTYPE html>\na <b title=\""), false},
+		// line a paragraph, where an unfinished tag is plain text. The
+		// element rule still counts its opener and refuses: over-refusal by
+		// design. TestHeldUnclosedParagraphTag pins that the block rule alone
+		// admits both.
+		{"comment closed, paragraph tag", two("<!-- a -->\na <b title=\""), true},
+		{"declaration, paragraph tag", two("<!DOCTYPE html>\na <b title=\""), true},
 		// Refused: an opener after a paragraph, in a container, or sharing
 		// its line with a closed construct.
 		{"paragraph, quoted div", two("<3\n> <div title=\"\nx\" y>"), true},
@@ -598,6 +601,18 @@ func TestHeldScopeContainerDoubt(t *testing.T) {
 	})
 }
 
+// TestHeldUnclosedParagraphTag: a comment or declaration that ends on its own
+// line leaves the next line a paragraph, where an unfinished tag is plain
+// text, so the block rule (heldHTMLUnclosed) finds no doubt there.
+func TestHeldUnclosedParagraphTag(t *testing.T) {
+	for _, x := range []string{"<!-- a -->\na <b title=\"", "<!DOCTYPE html>\na <b title=\""} {
+		lines := strings.Split(x, "\n")
+		if heldHTMLUnclosed(lines, make([]bool, len(lines))) {
+			t.Errorf("%q: heldHTMLUnclosed = true, want false", x)
+		}
+	}
+}
+
 // TestHeldScopeReaderPath runs the held scan on Evidence read the way the
 // production consumers read it: a whole brief file through
 // parseBriefFileBytes (and briefSectionsOf, which must agree), which rewrite
@@ -616,7 +631,7 @@ func TestHeldScopeReaderPath(t *testing.T) {
 		{"stray CR 4", crlf + cr}, {"stray CR 5", cr + cr + crlf}, {"stray CR 6", lf + cr},
 	}
 	shapes := []struct{ name, a, b string }{
-		{"attribute", "<div title=\"", "x\" y>"},
+		{"attribute", "<div title=\"", "x\" y>\n</div>"},
 		{"prose", "Runner notes follow.", "Nothing else."},
 	}
 	for _, eol := range []struct{ name, s string }{{"LF file", lf}, {"CRLF file", crlf}} {
@@ -674,6 +689,9 @@ func TestHeldScopeOpenElement(t *testing.T) {
 		{"inline element in prose", two("see <b>x</b> here"), false},
 		{"case-folded close", two("<SECTION>x</section>"), false},
 		{"void elements", two("<br>\n<img src=\"u\">\n<hr/>\n<wbr>"), false},
+		{"custom element closed", two("<x-panel>x</x-panel>"), false},
+		{"opener in fenced code", two("```\n<span>\n```"), false},
+		{"nested across blocks", two("<section>\n<span>\n\nx\n\n</span>\n</section>"), false},
 		// Refused: an element left open, by opener shape.
 		{"open block element", two("<section>"), true},
 		{"open inline element", two("<span>"), true},
@@ -685,26 +703,35 @@ func TestHeldScopeOpenElement(t *testing.T) {
 		{"open element with attribute", two("<section class=\"a\">"), true},
 		{"self-closing non-void", two("<span/>"), true},
 		{"opener shares a line", two("see <span> here"), true},
+		{"open with a closed child", two("Log: <section><b>log</b>"), true},
 		{"opener after the verdict",
 			proseRun("Run 1", 2, allOK, "- row 3 could-not-check.", blocked) + "<section>\n\n" + rerun2, true},
 		{"one of two closed", two("<section>\n<section>\n\n</section>"), true},
 		{"crossed closes", two("<span><b>x</span></b>"), true},
 		// Refused: a close tag the page does not read as one.
-		{"close in a code span", two("<span>\n\n`</span>`"), true},
-		{"close in a comment", two("<span>\n\n<!-- </span> -->"), true},
-		{"close escaped", two("<span>\n\n\\</span>"), true},
-		{"close in a link target", two("<span>\n\n[a](</span>)"), true},
-		{"close in an image text", two("<span>\n\n![</span>][r]\n\n[r]: u"), true},
-		{"close in an attribute", two("<span>\n\n<b title=\"</span>\">x</b>"), true},
-		{"close after a math span", two("<span>\n\n$a$ </span>"), true},
+		{"close in a code span", two("<span> `</span>`"), true},
+		{"close in a comment", two("<span> <!-- </span> -->"), true},
+		{"close escaped", two("<span> \\</span>"), true},
+		{"close in a link target", two("<span> [a](</span>)"), true},
+		{"close in an image text", two("<span> ![</span>][r]\n\n[r]: u"), true},
+		{"close in an attribute", two("<span><img alt=\"</span>\">"), true},
+		{"close after a math span", two("<span> $a$ </span>"), true},
 		{"close on a later line", two("<span>\n\n</span\n>"), true},
+		{"close with an attribute", two("<span>x</span x>"), true},
+		{"stray close tag", two("</span>"), true},
+		{"close in a later paragraph", two("<span>\n\nx </span>"), true},
+		{"paragraph opener, block close", two("x <span>\n\n</span>"), true},
+		{"opener in a paragraph", two("<span> x <b>\n\n</b>\n</span>"), true},
+		{"close after a pre block", two("<span>\n\n<pre>\n</pre>\nx </span>"), true},
+		{"close in a link label", two("<span> [a][</span>]"), true},
+		{"close in a table row", two("<span> x | </span>"), true},
 		// Refused: the last entry holds an element across a line end.
 		{"element wraps the last PASS",
 			proseRun("Run 1", 2, allOK, "- row 3 could-not-check.", blocked) +
 				proseRun("Run 2", 2, allOK, "<section>", "**VERIFY: PASS**") + "</section>\n", true},
 		// Refused by design: text the page reads raw, and foreign content.
 		{"raw-text element closed", two("<xmp>x</xmp>"), true},
-		{"foreign element closed", two("<svg></svg>"), true},
+		{"escapable raw text closed", two("<title>x</title>"), true},
 	}
 	cases := append([]heldScanCase(nil), base...)
 	for _, eol := range []struct{ name, s string }{{"LF file", "\n"}, {"CRLF file", "\r\n"}} {
