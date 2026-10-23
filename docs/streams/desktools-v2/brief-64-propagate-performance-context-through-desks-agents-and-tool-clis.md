@@ -4,7 +4,7 @@ title: "Propagate performance context through desks, agents and tool CLIs"
 why: "Inheriting the desk role cannot identify a reviewer subagent, and reusing session work labels misattributes later tasks. Launchers and shared CLI adapters must pass explicit immutable context so every instrumented child reports its own invocation under the correct agent and work."
 wave: 3
 depends: ["desktools-v2/63"]
-unblocks: ["desktools-v2/17", "desktools-v2/62", "statusgen/26", "performance-collection/02"]
+unblocks: ["desktools-v2/17", "desktools-v2/62", "statusgen/26", "performance-collection/02", "desktools-v2/68"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}

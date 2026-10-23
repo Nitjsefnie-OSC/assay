@@ -1,2 +1,0 @@
-### Fixed
-- apps-installer/02's `## Context` `files:` block now parses. Its first entry put a `(new)` annotation before a `:` file list and wrapped that list onto two indented lines, so the declared-input-scope parser refused the brief and no verification receipt could be derived for it. Each declaration is now one bullet on one line, and the file inventory moved to a prose paragraph below the block. The declared paths are unchanged, and no `## Verify` or `## Evidence` section changed.

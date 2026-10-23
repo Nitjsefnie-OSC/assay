@@ -13,7 +13,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 1
+version: 3
 authored: 2026-10-20 by assay-worker-app
 sources:
   - https://github.com/medici-finance/assay/issues/2703#issuecomment-6302222772
@@ -23,18 +23,19 @@ sources:
   - https://github.com/medici-finance/assay/pull/3745
   - https://github.com/medici-finance/assay/commit/44829891e8f74b1520b64f4180910d96e17be96a
   - docs/contracts.md#semantic-owners
-  - freshness-checked 2026-10-20 @ 8b7eec32f (main; original audit c8c4020d1 retained)
+  - freshness-checked 2026-10-20 @ cfe5c927e (main; original audit c8c4020d1 retained)
 regression-of: medici-finance/assay#3787
 exec-tier: strong
 exec-tier-why: Cross-consumer delivery meaning and the recurring error-class design require strong execution (questions b and d).
 domain: complicated
 outcome: none
 consumers:
-  - "docs/streams/statusgen/brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md: follow-up derived-board/11 (add the supported partial declaration only; preserve owed tasks and verification)"
-  - "statusgen/witnessadmission_test.go: follow-up derived-board/11 (production-owner regression against independent cohort evidence)"
-  - "statusgen/boardcohort_test.go: follow-up derived-board/11 (bounded test-only membership/disposition join)"
-  - "statusgen/testdata/witness-admission/: follow-up derived-board/11 (public primary evidence and recorded matcher fields)"
-  - "docs/streams/derived-board/README.md: fixed-here (authoring navigation and native registration only)"
+  - "tools/desk/internal/deskkit/citrigger_test.go: fixed-here (register the actual source-reading test; existing ci.yml already runs unfiltered on both events)"
+  - "docs/streams/statusgen/brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md: fixed-here (supported partial declaration and version increment; owed tasks and verification preserved)"
+  - "statusgen/witnessadmission_test.go: out-of-scope (existing hermetic owner controls reused unchanged)"
+  - "statusgen/boardcohort_test.go: fixed-here (bounded test-only membership/disposition join and existing owner flow)"
+  - "statusgen/testdata/witness-admission/: fixed-here (bounded public primary evidence, recorded matcher fields and mutation script)"
+  - "docs/streams/derived-board/README.md: out-of-scope (existing narrative and producer-owned cells remain unchanged)"
   - "statusgen/briefdelivery.go: out-of-scope (reuse existing reader and malformed/unresolved metadata floors unchanged)"
   - "statusgen/briefauthoring.go: out-of-scope (reuse shared admission and Evidence classification unchanged)"
   - "statusgen/lifecycle.go: out-of-scope (existing partial fold and legitimate full-witness meaning preserved)"
@@ -54,11 +55,12 @@ consumers:
 
 files:
 - `docs/streams/statusgen/brief-26-extend-statusgen-phase-measurements-through-the-shared-performance-recorder.md`
-- `statusgen/witnessadmission_test.go`
-- `statusgen/boardcohort_test.go` (planned)
-- `statusgen/testdata/witness-admission/board-cohort.json` (planned)
-- `statusgen/testdata/witness-admission/board-cohort-provenance.md` (planned)
-- `changelog/audited-board-partial-delivery.md` (planned)
+- `statusgen/witnessadmission_test.go` (read-only existing controls)
+- `statusgen/boardcohort_test.go` (delivered)
+- `tools/desk/internal/deskkit/citrigger_test.go` (source-reader registration)
+- `statusgen/testdata/witness-admission/board-cohort.json` (delivered)
+- `statusgen/testdata/witness-admission/board-cohort-provenance.md` (delivered)
+- `changelog/audited-board-partial-delivery.md` (delivered)
 
 facts:
 - source: At c8c4020d1, statusgen/26 has no delivery declaration for #3759. Its Tasks 3/4 and Verify 2 remain owed: snapshot reuse inventory/parity and synthetic workloads. The workload script/directory and the named parity test are absent. PR #3759 merged as 44829891e8f74b1520b64f4180910d96e17be96a on 2026-10-20T20:13:29Z; its actual body explicitly delivers sub-split (a), retains in-progress, and disclaims the remaining work. The forge and local merge object agree on its eleven changed files.
@@ -114,9 +116,9 @@ single-point-of-failure: Metadata alone cannot establish completeness. The indep
 
 | Consumer | Existing seam and future proof |
 |---|---|
-| Brief declaration and alias registry | readDeclaredPartials/resolveDeliveryRef read the real statusgen/26 source; no alternate parser (rows 1, 4) |
-| Trailer and historical candidates | prRecordsFromPulls/backfillCandidates feed newAuthoringClassifier, nonDelivery and markDeclaredPartials under backfillBase eligibility; actual in-progress #3759 case does not enter fallback (rows 1–3, 6) |
-| Lifecycle and verification | deriveOne/classifyPRs retain in-progress for partial-only and a genuine full winner under later partial plus VERIFY FAIL (rows 2, 5) |
+| Brief declaration and alias registry | readDeclaredPartials and resolveDeliveryRef read the real statusgen/26 source; no alternate parser (rows 1, 4) |
+| Trailer and historical candidates | prRecordsFromPulls and backfillCandidates feed newAuthoringClassifier, nonDelivery and markDeclaredPartials under backfillBase eligibility; actual in-progress #3759 case does not enter fallback (rows 1–3, 6) |
+| Lifecycle and verification | deriveOne and classifyPRs retain in-progress for partial-only and a genuine full winner under later partial plus VERIFY FAIL (rows 2, 5) |
 | Drift and writer | regenDriftNotices and runReconcileCaptured exercise the real flow and existing apply/no-write boundary in isolated fixture roots (rows 2, 4, 6) |
 | Generated board | Normal producer after source merge; fresh trust/reviews/human merge remain separate receipts, never an agent-triggered test |
 
@@ -135,18 +137,18 @@ The supported #3759 declaration and production-owner regression stop the false p
 
 ## Verify
 
-Run from the repository root. Named tests are future deliverables and use hermetic fixtures; no planned tests are claimed executed here. Each command asserts a real PASS. The existing exact-class runner skips +qualified rows: a nonimplementer must explicitly execute every applicable command and record its output; parser enumeration is not execution. Unavailable Git objects/evidence are could-not-check. Semantic evidence adequacy requires independent review.
+Run from the repository root. Named tests use hermetic fixtures. Worker receipts are recorded below; independent post-merge verification remains owed. Each command asserts a real PASS. The existing exact-class runner skips +qualified rows: a nonimplementer must explicitly execute every applicable command and record its output; parser enumeration is not execution. Unavailable Git objects/evidence are could-not-check. Semantic evidence adequacy requires independent review.
 
 | # | Command | Expect | Class |
 |---|---|---|---|
 | 1 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortSource$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortSource' "$o")` | exit 0; exactly ten pairs from the independently pinned board diff and review manifest, not declaration enumeration; source-bound #3759 test is red before metadata and green after; missing/extra pair fails with identity | check:ci +dereference +mutation |
 | 2 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFlow$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFlow' "$o")` | exit 0; actual trailer → admission → lifecycle → drift → isolated apply keeps statusgen/26 in-progress without completion witness or fallback; separate legitimate historical controls exercise backfill; omission mutation catches false implemented; protected cells unchanged | check:ci +flow |
 | 3 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortPlant$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortPlant' "$o")` | exit 0; committed older second-site candidate omitted from both expected/source records fails coverage naming its brief/PR; disabling the join makes the control fail; bypassed guard still leaves the real lower reader enforcing a declared partial | check:ci +mutation |
-| 4 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFloors$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFloors' "$o")` | exit 0; malformed/unresolved declaration, missing file evidence or mismatched provenance cannot produce a clean witness or apply; unknown/refusal and zero writes; source Task/Verify/Evidence bytes and existing delivery declarations unchanged | check:ci +mutation |
+| 4 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFloors$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFloors' "$o")` | exit 0; malformed/unresolved declaration, missing file evidence or mismatched provenance cannot produce a clean witness or apply; unknown/refusal and zero writes; pinned delivery snapshots preserve Task/Verify/Evidence bytes outside the entry/version; current reader accepts later comment/version/Evidence/additional-partial maintenance while retaining #3759 partial | check:ci +mutation |
 | 5 | `(cd statusgen && o=$(mktemp); go test . -run '^TestBoardCohortFull$' -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- '--- PASS: TestBoardCohortFull' "$o")` | exit 0; actual evidenced #1196 full remains implemented despite later partial and VERIFY FAIL; Evidence-only #2295 cannot replace it; all nine bounded full dispositions retain their reviewed meaning and cache behavior | check:ci +neighbour |
 | 6 | `(cd statusgen && for t in TestRolloutSourceAdmission TestCISliceSourceAdmission TestOwedTaskSourceAdmission TestEvidenceAdmission TestAdmissionCacheAndDelivery TestPartialBackfillSkips TestPartialRegenDriftAgrees TestApplyReconcileWrites; do o=$(mktemp); go test . -run "^$t" -count=1 -timeout 60s -v > "$o" 2>&1 && grep -F -- "--- PASS: $t" "$o"; r=$?; if test "$r" -ne 0; then exit "$r"; fi; done)` | exit 0; existing neighbors pass, including all five apply-prefix tests; no existing partial declaration or protected-cell floor weakened | check:ci +neighbour |
 | 7 | `o=$(mktemp); git diff --name-only 44829891e8f74b1520b64f4180910d96e17be96a^1 44829891e8f74b1520b64f4180910d96e17be96a > "$o" && python3 -c 'import pathlib,sys; actual=set(pathlib.Path(sys.argv[1]).read_text().splitlines()); expected={"changelog/statusgen-26-v3.md","docs/streams/statusgen/README.md","docs/telemetry.md","statusgen/brieffile.go","statusgen/dispatchqueue.go","statusgen/forgeread.go","statusgen/load.go","statusgen/main.go","statusgen/parse.go","statusgen/perfrecord.go","statusgen/perfrecord_test.go"}; assert actual==expected, actual; print("PR 3759: exact eleven delivery paths confirmed")' "$o"` | exit 0; exact confirmation; real Git merge independently corroborates the fixture's delivery paths; semantic completeness still reviewed against the actual brief | check +dereference |
-| 8 | `statusgen --root . --consumers --brief derived-board/11 --base 8b7eec32fd5b9c959b4d0eb00ceb616236679a45` | authoring check only; exit 0, 5 corroborated, 0 disproved, 11 unchecked; at implementation pickup increment version and pin actual delivery/base and measured routing counts; unchecked scope remains review | check |
+| 8 | `statusgen --root . --consumers --brief derived-board/11 --delivery "$DELIVERY" --base 5dcdff9fb1ec67c0bf80aa60f778da5aef4687b7` | Set DELIVERY to the immutable implementation delivery commit recorded below; exit 0; 4 corroborated, 0 disproved, 13 unchecked. Unchecked scope remains review. For the pre-merge authoring check omit --delivery and compare the complete working branch against refreshed main cfe5c927ec7049728f4b97306beaedf43a444b9f. | check |
 | 9 | `statusgen --root . --lint` | exit 0; LINT PASS; no new PROBLEM or generated-cell write | check |
 
 ## Pre-mortem
@@ -157,14 +159,48 @@ Run from the repository root. Named tests are future deliverables and use hermet
 | Only trailer admission is fixed while backfill/drift/apply promotes the slice | 2 and 6 |
 | A full witness or verification failure is confused with incomplete delivery | 5 and 6 |
 | Missing data or malformed metadata silently defaults to full | 4; lower reader tested with coverage bypassed in 3 |
-| Metadata repair rewrites owed tasks or other protections | 4 byte checks and 6 neighbor controls |
+| Metadata repair rewrites owed tasks or other protections | 4 pinned delivery-time byte checks and 6 neighbor controls; current declaration omission still fails 1/2 |
+| A historical byte proof freezes the living brief | 4 permits later comment/version/Evidence/additional-partial maintenance through current readers |
 | A fixture's semantic disposition is wrong despite valid formatting | review-only: dereference primary scope, obligations and actual files; row 7 independently binds #3759 paths |
 | Ten reviewed rows are mistaken for all history, or source merge for approved board/runtime | review-only: enforce fixed membership and separate producer/trust/review/merge/verifier receipts |
 | Empty selector or skipped qualified row is presented as execution | PASS assertions and explicit nonimplementer command receipts |
 
 ## Evidence
 
-Not executed at authoring. Implementation records source-bound red/green; a nonimplementer reruns every applicable row on merged main before verification.
+Not executed at authoring. Worker source checks on 2026-10-20 use delivery
+`92315c7fa0f0b1e9a5e66a3c6dfdabc8a1d0cde7` against base
+`5dcdff9fb1ec67c0bf80aa60f778da5aef4687b7`. Set `DELIVERY` to that immutable
+source commit for row 8's original delivery check. Review repair
+`85fe816784cb1b75198615824d71de3101d8fa12` follows a normal merge of main
+`cfe5c927ec7049728f4b97306beaedf43a444b9f`; it changes the test proof and fixture
+provenance, not the source declaration or routing. The repaired standing proof
+uses the pinned before/after blobs for delivery-time byte identity, while live
+source readers tolerate subsequent maintenance.
+
+| Rows | Worker observation |
+|---|---|
+| 1–5 | All five named tests print PASS. Initial source test without the declaration fails naming statusgen/26#3759; rerunnable omission also exposes the actual false implemented witness `PR #3759 (merged 4482989)`. Restored declaration gives in-progress and no implementation witness. |
+| 1–5 mutations | Baseline, full-suite live-source comment/version/Evidence/additional-partial maintenance, and restored runs PASS. Source omission, flow omission, disabled coverage join, disabled write refusal and disabled Evidence exclusion are all CAUGHT. Exact source restoration and production Go byte identity PASS. |
+| 6 | All eight selectors PASS, including all five TestApplyReconcileWrites prefix cases. |
+| 7 | Actual merge independently confirms the exact eleven delivery paths. Named workload files and TestInvocationSnapshotReuseParity remain absent. |
+| 8 | Original pinned delivery/base and complete current branch against refreshed main: 4 corroborated, 0 disproved, 13 unchecked, 0 claimless briefs. Repair commit 85fe81678 alone against first parent 83e882001 gives 2 corroborated, 2 disproved, 13 unchecked: that delta does not redeliver the existing declaration or registry row. It is not the whole delivery check. A non-first-parent range was could-not-check and is not a pass. Unchecked entries remain review judgments. |
+| 9 | Source-built statusgen reports LINT: PASS. |
+| Supplement | TestCLIInventory PASS; test-departure ledger clean. The two legacy cross-module registry tests SKIP because tools.yml is absent in this published tree: could-not-check, not passes. Direct inspection confirms ci.yml has unfiltered push/pull_request events and runs the full statusgen suite. |
+
+Review C2's harmless-comment reproduction failed before the repair. The full
+standing suite now passes after temporary live-source maintenance, and changed
+pinned delivery evidence is rejected. The omission helper removes the exact entry
+regardless of later-entry order. A1 corrects #3745's original line mapping; A2
+names the other members' omitted trailers; A3 marks the reused test file read-only.
+The mutation launcher now forwards only named build/runtime environment variables;
+Go environment-file loading and downloads are disabled. This does not claim that
+fake-server tests open no sockets.
+
+The mutation entry is `statusgen/testdata/witness-admission/mutate-board-cohort.test.py`.
+A nonimplementer must rerun every applicable row on merged main; these are worker
+checks, not independent verification. Production Go is byte-identical to refreshed main;
+statusgen/26 permits only its declaration and version increment. No generated
+board, Kubernetes deployment, Linux runtime or Windows qualification is claimed.
 
 ## Review
 

@@ -502,7 +502,9 @@ var bareWordRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 // whatever surrounds it, including as the cell's only span and as the command a
 // `cmd:` marker names: a marker names the command to run, and a comment runs
 // nothing, so a marked comment is refused exactly as the tools/desk executors
-// (verifyloop, deskrebaseline) refuse it (#2684 review F2).
+// (verifyloop, deskrebaseline) refuse it (#2684 review F2). A lift that is a
+// shell no-op (`:`, or a cmd.exe `REM` / `::` remark) is refused the same way and
+// at the same point, marked or not (#3147 A2; see shellNoOp).
 //
 // Otherwise a single-token first span is flagged when it is: a dotted extension
 // or dotfile (`.exe`); a file with a source/doc/data extension (`repovis.go`); a
@@ -524,10 +526,20 @@ func proseLedCommandWhy(cell string) (span, why string) {
 		if shellCommentOnly(m[0]) {
 			return m[0], shellCommentMarkedWhy
 		}
+		if shellNoOp(m[0]) {
+			return m[0], shellNoOpMarkedWhy
+		}
 		return "", "" // a marked real command: the author named it
 	}
-	if lifted := verifyCommand(cell); shellCommentOnly(lifted) {
+	lifted := verifyCommand(cell)
+	if shellCommentOnly(lifted) {
 		return lifted, shellCommentWhy
+	}
+	// A lift that is a shell no-op runs nothing for the same reason (#3147 A2):
+	// `:` exits 0 whatever its arguments, and a cmd.exe `REM` / `::` remark is
+	// that shell's comment. Judged like the comment arm, ahead of the exemptions.
+	if shellNoOp(lifted) {
+		return lifted, shellNoOpWhy
 	}
 	spans := codeSpans(cell)
 	if len(spans) == 0 {
@@ -555,12 +567,43 @@ const (
 	shellCommentMarkedWhy = "a `cmd:`-marked shell comment " + shellCommentDetail
 )
 
+// shellNoOpWhy is the reason proseLedCommandWhy gives a lift that is a shell
+// no-op (#3147 A2); shellNoOpMarkedWhy is the same reason for a `cmd:`-marked one.
+const (
+	shellNoOpDetail    = "(`:` exits 0 whatever its arguments, and a cmd.exe `REM` / `::` remark is that shell's comment: it runs nothing and measures nothing)"
+	shellNoOpWhy       = "a shell no-op " + shellNoOpDetail
+	shellNoOpMarkedWhy = "a `cmd:`-marked shell no-op " + shellNoOpDetail
+)
+
+// shellNoOp reports whether a lifted command is a shell no-op: a cmd.exe `::`
+// remark, a `REM` / `@rem` remark (any case), or `:` as the first word with no
+// `;`, `&`, `|` or newline after it (`: ; test -d .` still runs its test). Bare
+// `true` and `exit 0` are deliberately left to the cmd-marker-vacuous notice: a
+// fixture command of `true` is a common, intended pass. Kept identical to
+// tools/desk's verifycmd.NoOp; the shared cells vectors hold both to it.
+func shellNoOp(cmd string) bool {
+	c := strings.TrimSpace(cmd)
+	if strings.HasPrefix(c, "::") {
+		return true
+	}
+	f := strings.Fields(c)
+	if len(f) == 0 {
+		return false
+	}
+	if strings.ToLower(strings.TrimPrefix(f[0], "@")) == "rem" {
+		return true
+	}
+	return f[0] == ":" && !strings.ContainsAny(c, ";&|\n")
+}
+
 // proseLedRemedy is the fix a prose-led NOTICE, could-not-run note or check:ci
 // refusal names for its reason: a comment-led cell needs the real command marked
 // (or stays a manual procedure); a marked comment needs the comment REPLACED, since
 // the row is already marked; any other mention needs the marker.
 func proseLedRemedy(why string) string {
 	switch {
+	case strings.HasSuffix(why, shellNoOpDetail):
+		return "Replace the no-op with the command that performs the check"
 	case strings.HasSuffix(why, shellCommentMarkedWhy):
 		return "Replace the cmd:-marked comment with the command that performs the check"
 	case strings.HasSuffix(why, shellCommentWhy):
@@ -1893,7 +1936,7 @@ func unfailableRowAudit(streams []*Stream, grandfathered map[string]bool, baseOK
 		notices = append(notices, fmt.Sprintf("[%s] %d Verify row(s) in %d closed brief(s) carry an unasserted go test -run selector — closed records are not rewritten; the per-row notice covers open briefs only", ruleGoTestRunVacuous, closedRows, len(closedBriefs)))
 	}
 	if closedProseRows > 0 {
-		notices = append(notices, fmt.Sprintf("[%s] %d Verify row(s) in %d closed brief(s) have a prose mention as their first code span — closed records are not rewritten, and verifyrun records such a row could-not-run; the per-row notice covers open briefs only", ruleProseLedCommand, closedProseRows, len(closedProseBriefs)))
+		notices = append(notices, fmt.Sprintf("[%s] %d Verify row(s) in %d closed brief(s) lift something that is not a command (a prose mention as the first code span, or a shell comment or no-op, marked or not) — closed records are not rewritten, and verifyrun records such a row could-not-run; the per-row notice covers open briefs only", ruleProseLedCommand, closedProseRows, len(closedProseBriefs)))
 	}
 	sort.Strings(problems)
 	sort.Strings(notices)
@@ -1998,7 +2041,7 @@ func rowFindings(cmdCell, expect string) []rowFinding {
 	// Judged on the CELL, before the lift, because the defect is in which span
 	// gets lifted — every rule below judges whatever the lift returned.
 	if first, why := proseLedCommandWhy(cmdCell); why != "" {
-		if why == shellCommentWhy || why == shellCommentMarkedWhy {
+		if why == shellCommentWhy || why == shellCommentMarkedWhy || why == shellNoOpWhy || why == shellNoOpMarkedWhy {
 			add(ruleProseLedCommand, "lifts `%s` as its command, which is %s, not a command — `statusgen verifyrun`, the check:ci lane, `verifyloop` and `deskrebaseline` all record the row could-not-run without executing it, so the check this row describes is never witnessed. %s", first, why, proseLedRemedy(why))
 		} else {
 			add(ruleProseLedCommand, "is a prose cell whose FIRST code span `%s` is %s, not a command — `statusgen verifyrun` executes the first code span of a Command cell, so verifyrun records the row could-not-run without executing `%s`, and the check this row describes is never witnessed. Mark the real command with the explicit marker: write it as a code span starting `cmd:` (e.g. `cmd: cd tools/desk && go test ./pkg/ -count=1`), which verifyrun prefers over the first span — or make the Command cell exactly one code span and move the prose to Expect. A row that names no command at all (a cold read, a human judgment) cannot be fixed with the marker; it stays could-not-run until it is re-authored with a command", first, why, first)

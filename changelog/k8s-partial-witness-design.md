@@ -1,1 +1,0 @@
-- Plan independent candidate-cohort coverage with measured decoded-response budgets, explicit forge rechecks and hermetic omission controls, preserving production inputs.

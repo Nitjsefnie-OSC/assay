@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // InputKeyScopePrefix binds declaration membership, including planned absence.
@@ -259,7 +260,7 @@ func declarationLine(line string) ([]string, error) {
 			if i < 0 {
 				return nil, Refused("refused: unclosed Context files: path quote")
 			}
-			p, line = line[1:i+1], line[i+2:]
+			p, line = TrimScopeAnnotation(line[1:i+1]), line[i+2:]
 		} else {
 			i, braces := 0, 0
 			for i < len(line) {
@@ -317,6 +318,37 @@ func declarationLine(line string) ([]string, error) {
 		return nil, Refused("refused: unsupported Context files: declaration tail " + line)
 	}
 	return result, nil
+}
+
+// TrimScopeAnnotation drops the trailing " (…)" annotations an author wrote
+// INSIDE a path's code span, so `a.go (planned)` declares a.go exactly as
+// `a.go` (planned) does. Only a non-empty, unnested parenthetical that follows
+// whitespace and ends the span is an annotation. Anything else is returned
+// unchanged for the path checks to accept or refuse, so a path with real
+// whitespace is still refused.
+func TrimScopeAnnotation(p string) string {
+	for strings.HasSuffix(p, ")") {
+		open := strings.LastIndexByte(p, '(')
+		if open <= 0 {
+			return p
+		}
+		// Decode the whole character before the paren: a lone UTF-8
+		// continuation byte (0x85, 0xA0) would read as a space, so a glued
+		// "à(x)" would be cut to "à".
+		if r, _ := utf8.DecodeLastRuneInString(p[:open]); !unicode.IsSpace(r) {
+			return p
+		}
+		inner := p[open+1 : len(p)-1]
+		if strings.TrimSpace(inner) == "" || strings.ContainsRune(inner, ')') {
+			return p
+		}
+		head := strings.TrimRightFunc(p[:open], unicode.IsSpace)
+		if head == "" {
+			return p
+		}
+		p = head
+	}
+	return p
 }
 
 func expandDeclaration(decl string) ([]string, error) {

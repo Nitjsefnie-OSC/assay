@@ -277,6 +277,15 @@ func dispatch(o dispatchOpts) error {
 		} else {
 			fmt.Println("  " + line)
 		}
+		if o.kit == "verifier" {
+			// Resolved and checked, never created: a dry run touches nothing. A refusal here is
+			// the same refusal the real dispatch would give.
+			dir, oerr := outcomeDirFor(o, plan, plan.home)
+			if oerr != nil {
+				return oerr
+			}
+			plan.outcomePath = dir
+		}
 		prompt, perr := assemblePrompt(o, plan, plan.home)
 		if perr != nil {
 			return perr
@@ -553,7 +562,7 @@ func dispatch(o dispatchOpts) error {
 	// pre-claim and is carried on the plan.
 	// The script child runs under the credential the claim step resolved (auth.scriptEnv), never
 	// the ambient login — issue 1146.
-	gate, gerr := stepDecision(o, plan.gateHuman, repo, plan.decisionScript, auth)
+	gate, gerr := stepDecision(o, plan.gateHuman, repo, plan.decisionScript, plan.ruling, auth)
 	if gerr != nil {
 		return held.settle(gerr)
 	}
@@ -620,6 +629,13 @@ func dispatch(o dispatchOpts) error {
 				return held.settle(err)
 			}
 		}
+		// The outcome-record directory: outside the home and the dispatcher root, or no
+		// prompt at all. A refusal never falls back to another location.
+		dir, oerr := allocateOutcomeDir(o, plan, home)
+		if oerr != nil {
+			return held.settle(oerr)
+		}
+		plan.outcomePath = dir
 		// The verifier's read-ahead packet is built only after provenance is established.
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
 		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
@@ -697,6 +713,10 @@ type dispatchPlan struct {
 	// given, else --root), derived once here so the presence check and the invocation cannot
 	// drift onto two different files.
 	decisionScript string
+	// ruling is the brief's RECORDED ruling (#2079, recordedruling.go) — a `**Ruling (<date>):
+	// option <N>.**` line transcribed as a decision record — parsed offline before the claim;
+	// nil when the brief records none, and the decision gate then runs the script as before.
+	ruling *recordedRuling
 	// home is the operator-supplied, VALIDATED home worktree to render the dry-run prompt
 	// against (from --worktree). It is "" on every path but a --dry-run that passed
 	// validateOperatorWorktree — an empty value renders the not-yet-known placeholder, so a
@@ -745,6 +765,10 @@ type dispatchPlan struct {
 	packetPath string
 	// Optional attribution stays in an owner-only local sidecar, never prompt logs.
 	performancePath string
+	// outcomePath is the absolute directory a VERIFIER writes its outcome record into before
+	// landing it with `deskevidence --outcome-record` (outcomepath.go): outside the home and the
+	// dispatcher root, per run. "" for every other kit; the prompt names it iff it is set.
+	outcomePath string
 	// workerAttestation is the read-back pre-work worker attestation (--attest-worker), set at
 	// step 5 before the prompt is emitted; nil otherwise, and on a dry run.
 	workerAttestation *deskkit.WorkerReceipt
@@ -1129,6 +1153,21 @@ func validateCallerPreconditions(o dispatchOpts) (dispatchPlan, error) {
 					"gate exists to close, so this refuses rather than skip the gate%s.",
 				stepDecisionGate, helperLocationsTried(o, decisionScriptRel, scriptsRoot), claimRootHint(o)), err)
 		}
+		// A recorded ruling is parsed and its corroborating tool probed HERE, before the claim, so a
+		// line this gate cannot accept costs nothing durable (#2079).
+		ruling, rerr := readRecordedRuling(o.root, o.brief, briefArg(o))
+		if rerr != nil {
+			return plan, rerr
+		}
+		if ruling != nil {
+			if _, lerr := lookPath(statusgenBinary); lerr != nil {
+				return plan, deskkit.Unverifiable(fmt.Sprintf(
+					"step %s: %s records a ruling, but %s is not on PATH, so the ruling cannot be corroborated — "+
+						"this refuses rather than take the ruling on the brief's word. Nothing was claimed.",
+					stepDecisionGate, ruling.where(briefArg(o)), statusgenBinary), lerr)
+			}
+		}
+		plan.ruling = ruling
 	}
 
 	// --prompt-file's directory. The prompt is written LAST, so an unwritable destination
@@ -1725,7 +1764,12 @@ func stepRoster(o dispatchOpts, repo string) string {
 // explicit GH_TOKEN export, this REFUSES rather than start the script: an unresolved credential
 // reaching here is a wiring defect, and running the script anyway would file the decision issue
 // under whatever login the calling shell holds — the gap this step exists not to have.
-func stepDecision(o dispatchOpts, gateHuman bool, repo, script string, auth claimAuth) (string, error) {
+//
+// A RECORDED RULING (#2079) is the one other way through: when the brief transcribes its human's
+// ruling as a decision record (recordedruling.go), the record's ruling is corroborated through
+// statusgen under the SAME handed-over credential, and on a pass no decision issue is ensured —
+// the decision it would ask for is already made. A ruling that does not corroborate REFUSES.
+func stepDecision(o dispatchOpts, gateHuman bool, repo, script string, ruling *recordedRuling, auth claimAuth) (string, error) {
 	if !gateHuman {
 		return "SKIPPED: item is not human-gated", nil
 	}
@@ -1735,6 +1779,9 @@ func stepDecision(o dispatchOpts, gateHuman bool, repo, script string, auth clai
 				"would be filed under the AMBIENT forge login. NOT run: this verb never starts a forge-writing "+
 				"script on ambient auth. Export GH_TOKEN to choose the identity deliberately.",
 			stepDecisionGate, script, o.brief), nil)
+	}
+	if ruling != nil {
+		return checkRecordedRuling(o, ruling, auth.scriptEnv)
 	}
 	// The script runs from --root, so a brief under --root keeps the caller's own relative spelling
 	// (briefArg); a brief found only under --claim-root is handed over by its resolved absolute path,
