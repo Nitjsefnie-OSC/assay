@@ -65,6 +65,23 @@ func (c *Cell) cacheAdmission() error {
 	fmt.Fprintf(os.Stderr, "storage-admission %s\n", b)
 	return err
 }
+
+// cadenceCacheMaintenance belongs to the existing supervisor between completed
+// passes. Interactive launches, startup and Finish never call this lifecycle.
+func (c *Cell) cadenceCacheMaintenance(ctx context.Context) error {
+	p, err := c.cachePolicy()
+	if err != nil || p == nil {
+		return err
+	}
+	r, err := cellcache.Maintain(ctx, *p)
+	if err != nil && r.Outcome == "" {
+		r.Policy, r.Outcome, r.Reason = *p, "could-not-check", "cache maintenance did not complete"
+	}
+	b, _ := json.Marshal(r)
+	fmt.Fprintf(os.Stderr, "cadence-cache-maintenance %s\n", b)
+	return err
+}
+
 func cmdCache(cell string, args []string) {
 	c := loadCell(cell)
 	p, err := c.cachePolicy()

@@ -39,6 +39,10 @@ func startupWalkSites(name string, src []byte) ([]string, error) {
 				pkg, isPackage := sel.X.(*ast.Ident)
 				if isPackage && cacheNames[pkg.Name] {
 					switch sel.Sel.Name {
+					case "Maintain":
+						if fn.Name.Name != "cadenceCacheMaintenance" {
+							bad = append(bad, name+":"+fn.Name.Name)
+						}
 					case "Check", "CheckRecorded", "Admit", "AdmitRecorded", "Wipe":
 						if fn.Name.Name != "cmdCache" && fn.Name.Name != "resetCell" {
 							bad = append(bad, name+":"+fn.Name.Name)
@@ -52,9 +56,9 @@ func startupWalkSites(name string, src []byte) ([]string, error) {
 	return bad, nil
 }
 func startupWalkGuard(t *testing.T) {
-	planted, err := startupWalkSites("second.go", []byte("package main;import cache \"github.com/medici-finance/assay/tools/desk/internal/cellcache\";func secondStartup(){s.Sweep(p,true)};func secondCacheStartup(){cache.Check(p,true)}"))
+	planted, err := startupWalkSites("second.go", []byte("package main;import cache \"github.com/medici-finance/assay/tools/desk/internal/cellcache\";func secondStartup(){s.Sweep(p,true)};func secondCacheStartup(){cache.Check(p,true)};func secondMaintainStartup(){cache.Maintain(ctx,p)}"))
 	must(t, err)
-	if len(planted) != 2 || planted[0] != "second.go:secondStartup" || planted[1] != "second.go:secondCacheStartup" {
+	if len(planted) != 3 || planted[0] != "second.go:secondStartup" || planted[1] != "second.go:secondCacheStartup" || planted[2] != "second.go:secondMaintainStartup" {
 		t.Fatal("planted second walking caller escaped", planted)
 	}
 	entries, err := os.ReadDir(".")
