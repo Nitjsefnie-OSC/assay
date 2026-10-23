@@ -2,7 +2,7 @@
 stream: verification-handoff
 repo: medici-finance/assay
 serves: assay
-status: parked
+status: active
 priority: P2
 track: platform
 issues: []
@@ -12,11 +12,16 @@ spec: docs/streams/verification-handoff/README.md
 
 # Verification blockers reach accountable repair and recheck
 
-**Version:** v1.0-draft
-**Status:** draft — authored planning only, not approved or routed.
+**Version:** v1.0
+**Status:** approved — approval of this implementation scope and stream activation take effect on the maintainer's merge of [PR #4206](https://github.com/medici-finance/assay/pull/4206), the ruling record under lifecycle §8.4.
+
+**Routes-to:** `docs/streams/verification-handoff/`
 
 This stream closes the verifier -> intake -> worker -> independent verification handoff.
-It remains parked; new briefs start todo. Existing work and evidence remain authoritative.
+With v1.0.57 published, this change proposes scope approval and stream activation together
+on the maintainer's merge of PR #4206. Brief completion and individual decision/verification
+gates remain separate; no earlier forge-recorded approval is asserted.
+Existing work and evidence remain authoritative.
 
 ## Briefs
 
@@ -130,8 +135,8 @@ at pickup; private evidence stays in its own trust boundary. The work does not c
 The new implementation head is /01: existing public deskcore and internal issueflow are present;
 the shared disposition extension and statusgen import do not exist. This slice needs no release,
 cluster or new service. The other actual head is existing desk-tools/49, currently todo in the
-inspected board: it blocks /02 and must deliver the canonical identity seam. Neither a parked
-stream nor a source-only fixture makes that prerequisite available.
+inspected board: it blocks /02 and must deliver the canonical identity seam. Stream activation
+and source-only fixtures do not make that implementation prerequisite available.
 
 ```text
 01 shared contract -> 03 intake disposition ----+
@@ -139,8 +144,10 @@ stream nor a source-only fixture makes that prerequisite available.
 ```
 
 The new critical chain has four dependency transitions; the wave span also preserves the existing external prerequisite wave. Neither is a time estimate.
-The stream is parked and its source draft: admission, risk decisions, independent verification,
-release/pins, operator installation and human-authorized live cutover remain external holds.
+Scope approval and stream activation take effect together on the maintainer's merge of
+PR #4206. Risk decisions and independent verification remain separate gates. The v1.0.57 baseline release is published; future artifact
+publication, consumer pins, operator installation and human-authorized live cutover remain
+requirements only where the implementation needs them.
 Do not activate an existing reference sink merely because its adapter passes fixture tests.
 
 ### Dependency waves
@@ -154,12 +161,14 @@ Do not activate an existing reference sink merely because its adapter passes fix
 
 ### Admission and authoring validation
 
-This is draft scoping and brief authoring only. All proposed implementation tests and mutation
-maps are future deliverables; Evidence is intentionally empty. Source approval, adopted contract
-version, activation owner and actual consumer qualification remain unresolved gates. The driver
-may accept, amend or hold this plan; no approval is inferred from requesting briefs.
+This change proposes scope approval and stream activation for ratification by the maintainer's
+merge of PR #4206, following the existing measured-status approval-at-merge pattern.
+All implementation tests and mutation maps remain future deliverables; Evidence is intentionally
+empty. Adopted contract versions, individual human decisions, actual consumer qualification and
+autonomous sink activation remain separate obligations. The source approval here does not approve
+the inherited draft root contracts or authorize release, installation, acceptance or live cutover.
 
-Authoring validation passed: source-built read-only lint, dependency/inverse
+Authoring validation passed: source-built diff-scoped read-only lint (`--changed`), dependency/inverse
 and wave checks, link/metadata checks and whitespace validation. Independent authoring review
 checked owner reuse, activation holds and separate FAIL/BLOCKED producer coverage. Those checks are not runtime
 verification or evidence that any handoff has been fixed.
