@@ -6,16 +6,19 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestCacheMaintenanceCancellation(t *testing.T) {
-	p := fixture(t)
+	p := Policy{Root: filepath.Join(t.TempDir(), "cache"), Domain: strings.Repeat("a", 64), Budget: 4096}
 	if _, err := Prepare(p); err != nil {
 		t.Fatal(err)
 	}
-	material(t, p, "build/completed-result", 1)
+	if err := os.WriteFile(filepath.Join(p.Root, "build", "completed-result"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	reportPath := filepath.Join(p.Root, "report.json")
 	before, err := os.ReadFile(reportPath)
 	if err != nil {
@@ -41,7 +44,7 @@ func TestCacheMaintenanceCancellation(t *testing.T) {
 }
 
 func TestCacheMaintenanceFresh(t *testing.T) {
-	p := fixture(t)
+	p := Policy{Root: filepath.Join(t.TempDir(), "cache"), Domain: strings.Repeat("a", 64), Budget: 4096}
 	if _, err := Prepare(p); err != nil {
 		t.Fatal(err)
 	}

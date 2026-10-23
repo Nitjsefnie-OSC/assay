@@ -1,5 +1,5 @@
 {
-  "test": "go test ./cmd/cellctl ./internal/cellcadence ./internal/cellcache -run '^TestCacheMaintenanceCancellation$|^TestCacheMaintenanceFresh$|^TestCadenceCacheMaintenance$|^TestBetweenPassMaintenanceCustody$|^TestUncertainPassDoesNotMaintain$|^TestCellPrepBounded$/walking_callers' -count=1 -timeout=90s",
+  "test": "go test ./cmd/cellctl ./internal/cellcadence ./internal/cellcache -run '^TestCacheMaintenanceCancellation$|^TestCacheMaintenanceFresh$|^TestCadenceCacheMaintenance$|^TestBetweenPassMaintenanceCustody$|^TestUncertainPassDoesNotMaintain$|^TestCellPrepBounded$' -count=1 -timeout=90s",
   "control": {
     "name": "CONTROL new cache cannot prepare",
     "file": "internal/cellcache/launch.go",
