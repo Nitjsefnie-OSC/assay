@@ -275,8 +275,20 @@ func TestVerifyRunnerImageRunsGitFloor(t *testing.T) {
 		"        echo \"source-built git is missing a shared library\" >&2; \\\n        exit 1; \\\n    fi; \\\n"
 	floorCmd := "    " + runnerFloorCmd + "\n"
 	aptAnchor := "      python3-jsonschema=4.10.3-1 \\\n"
+	// The runner's base reference lives in one pre-FROM ARG; the mutants below
+	// derive from the committed line, so a legitimate bump keeps them valid.
+	baseArgLines := regexp.MustCompile(`(?m)^ARG RUNNER_BASE=\S+\n`).FindAllString(text, -1)
+	if len(baseArgLines) != 1 {
+		t.Fatalf("the mutants below need exactly one `ARG RUNNER_BASE=` line in the Dockerfile, found %d", len(baseArgLines))
+	}
+	baseArg := baseArgLines[0]
+	digestless := regexp.MustCompile(`@sha256:[0-9a-f]{64}`).ReplaceAllString(baseArg, "")
+	ownerGate := "    " + runnerOwnerGate + "; then \\\n" +
+		"        echo \"the source-built git install tree holds files not owned by root:root\" >&2; \\\n        exit 1; \\\n    fi; \\\n"
+	execDirTest := "    test ! -e /usr/lib/git-core; \\\n"
+	floorRun := "RUN set -eux; \\\n" + testX
 	for _, anchor := range []string{shaArg, verArg, shaLine, tarLine, curlLine, gitbuildFrom, finalFrom, purgeLine, gitCopy,
-		checkCopy, statusgenCopy, testX, testRemote, lddGate, floorCmd, aptAnchor} {
+		checkCopy, statusgenCopy, testX, testRemote, lddGate, floorCmd, aptAnchor, baseArg, ownerGate, execDirTest, floorRun} {
 		if strings.Count(text, anchor) != 1 {
 			t.Fatalf("the mutants below need %q exactly once in the Dockerfile", anchor)
 		}
@@ -319,15 +331,45 @@ func TestVerifyRunnerImageRunsGitFloor(t *testing.T) {
 		"test -x git dropped":            strings.Replace(text, testX, "", 1),
 		"test -x remote-http dropped":    strings.Replace(text, testRemote, "", 1),
 		"ldd gate dropped":               strings.Replace(text, lddGate, "", 1),
+		// The runner base (F-runner-base-digest-unproven): each of these keeps the
+		// two FROM tokens equal, so only runnerBaseProblem can catch it.
+		"runner base digest dropped": strings.Replace(text, baseArg, digestless, 1),
+		"runner base tag changed":    strings.Replace(text, baseArg, strings.Replace(baseArg, "golang:"+fleetGoToolchain+"-", "golang:1.26.0-", 1), 1),
+		"runner base ARG dropped":    strings.Replace(text, baseArg, "", 1),
+		"both FROMs literal, no digest": strings.Replace(strings.Replace(text, gitbuildFrom, "FROM golang:"+fleetGoToolchain+"-bookworm AS gitbuild\n", 1),
+			finalFrom, "FROM golang:"+fleetGoToolchain+"-bookworm\n", 1),
+		"runner base other image": strings.Replace(text, baseArg, "ARG RUNNER_BASE=debian:bookworm-slim@sha256:"+strings.Repeat("b", 64)+"\n", 1),
+		// The last-layer gates (T-new-guards-never-red).
+		"owner gate dropped":            strings.Replace(text, ownerGate, "", 1),
+		"owner gate masked":             strings.Replace(text, ownerGate, strings.Replace(ownerGate, "exit 1; \\\n    fi;", "true; \\\n    fi;", 1), 1),
+		"distro exec dir check dropped": strings.Replace(text, execDirTest, "", 1),
+		"floor RUN removed whole":       text[:strings.Index(text, floorRun)],
+	}
+	// The rule each of the newer mutants must trip, so a mutant caught for some
+	// other reason (an earlier check) cannot stand in for its own guard.
+	wantRule := map[string]string{
+		"runner base digest dropped":    "not golang:" + fleetGoToolchain,
+		"runner base tag changed":       "not golang:" + fleetGoToolchain,
+		"runner base ARG dropped":       "not golang:" + fleetGoToolchain,
+		"both FROMs literal, no digest": "not golang:" + fleetGoToolchain,
+		"runner base other image":       "not golang:" + fleetGoToolchain,
+		"owner gate dropped":            "root-ownership",
+		"owner gate masked":             "root-ownership",
+		"distro exec dir check dropped": "test ! -e /usr/lib/git-core",
+		"floor RUN removed whole":       "never runs git-floor-check",
 	}
 	for name, m := range mutants {
 		if m == text {
 			t.Fatalf("mutant %q did not change the Dockerfile", name)
 		}
-		if p := verifyRunnerFloorProblem(m, base); p == "" {
+		p := verifyRunnerFloorProblem(m, base)
+		if p == "" {
 			t.Errorf("mutant %q: the broken floor was not caught", name)
-		} else {
-			t.Logf("mutant %q caught: %s", name, p)
+			continue
+		}
+		t.Logf("mutant %q caught: %s", name, p)
+		if want, ok := wantRule[name]; ok && !strings.Contains(p, want) {
+			t.Errorf("mutant %q: caught, but not by its own rule (want %q in %q)", name, want, p)
 		}
 	}
 
