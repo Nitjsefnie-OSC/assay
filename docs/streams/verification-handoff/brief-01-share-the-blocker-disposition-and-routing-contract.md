@@ -112,6 +112,24 @@ These named tests and mutation manifests are FUTURE DELIVERABLES, not authoring-
 ## Evidence
 
 <!-- Empty by design. A non-implementer records actual command/exit/output, Date and Runner, admitted source, evidence links and remaining coverage. No current test or acceptance result is claimed. -->
+**VERIFY: BLOCKED** — both required rows could-not-run; base proof unproven.
+
+| # | Command | Result | Output | Date | Runner | Base |
+|---|---------|--------|--------|------|--------|------|
+| 1 | `(cd deskcore && handoff_out=$(mktemp "${TMPDIR:-/tmp}/handoff-verify.XXXXXX") && trap 'rm -f "$handoff_out"' 0 && GOWORK=off go test -count=1 -v -run '^TestHandoffPolicyParity$' ./issueflow/... > "$handoff_out" && grep -q -- '--- PASS: TestHandoffPolicyParity ' "$handoff_out")` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-23 | assay-verifier-app[bot] @ 4a4b8e4f3248 (on-behalf-of human:ian) (forge-identity) | base=254a8fb3d5b1 unproven · head=4a4b8e4f3248 |
+| 2 | `(cd deskcore && handoff_out=$(mktemp "${TMPDIR:-/tmp}/handoff-verify.XXXXXX") && trap 'rm -f "$handoff_out"' 0 && GOWORK=off go test -count=1 -v -run '^TestHandoffModuleImports$' ./issueflow/... > "$handoff_out" && grep -q -- '--- PASS: TestHandoffModuleImports ' "$handoff_out")` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-23 | assay-verifier-app[bot] @ 4a4b8e4f3248 (on-behalf-of human:ian) (forge-identity) | base=254a8fb3d5b1 unproven · head=4a4b8e4f3248 |
+Verification-Attestation: medici-finance/assay#4231 run=ca6c0ea6b39dff629c3ce40ed424debeeaa6824ebfdc8d3136b3a8e373713acf source=4a4b8e4f324834ba75aa2f211c14655dda4d4bfd brief=docs/streams/verification-handoff/brief-01-share-the-blocker-disposition-and-routing-contract.md model=gpt-6-astra tier=strong
+
+
+Independent runner: gpt-6-astra, strong, admitted by #4231. Observed source `4a4b8e4f324834ba75aa2f211c14655dda4d4bfd`; delivery #4225 merged as `9d9f603ef2d23e0eec09c9800a8603f46579b7a9`; fail-first base is its first parent `254a8fb3d5b13187f1fa35bfb3ed158c16fcd899`.
+
+Required rows: 2; executed: 0; passed: 0; failed: 0; could-not-run: 2. No acceptance obligation was observed failing. No closed container witness or base-red/head-green proof exists.
+
+The supported network-off container attempt used released statusgen v1.0.57 and `ghcr.io/medici-finance/verify-runner:v1.0.57@sha256:1b0f3a9a32a452b618fcf6761571af35f33239416482b7f748210f7b772566f3`. It refused before any row with exit 2: `could-not-attribute — no executing identity is available`. This reproduces existing blocker #4208. Host admission and bracket opening succeeded; the receipt did not carry the runner fields needed by the container. No identity was injected and no sandbox was disabled.
+
+Disposition: waiting for release/installation/qualification of the existing runner repair, not another implementation of the handoff policy. Source repair #4214 is merged; source presence is not installed-runner qualification. The companion image Git-floor repair #4210 is also merged and belongs to the existing #4207 release work; the observed container refusal in this run is attribution, not a claimed Git-floor failure.
+
+Next owner/action: the existing runner release and qualification owners carry #4208 through a containing published release, aligned consumer pins, actual installed host/image identity checks, and fresh independent qualification. Then the verify desk reruns both unchanged rows and the delivering-parent fail-first proof through a supported isolated execution path. Wake on that qualified installation, not merely on an issue closing or a source merge. The brief's existing human gate remains unchanged.
 
 ## Review
 
