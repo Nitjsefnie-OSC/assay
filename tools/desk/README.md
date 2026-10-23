@@ -89,6 +89,7 @@ changed or discarded.
 | `deskclaim` | `acquire`, `release`, `list`, `stale` — the flock-backed claimable-action lock | local-only (claims dir) | no |
 | `desksupervise` | `tick` (one classification sweep of every `state=dispatched` dispatch claim against `internal/loopengine`'s liveness taxonomy; `--claims-fixture`/`--observations-fixture` run it fully offline), `run --interval` (loop `tick` forever) — turns a wedged worker into a logged, minutes-scale reclaim (`RECLAIM-ELIGIBLE` / `BLOCKED-TIMEOUT`) instead of a silent hold on the 120-minute stale-claim backstop; fires the `after_run` [lifecycle hook](../../docs/desk-tools/hooks.md) (logged, non-fatal) when it releases or lands a claim | read-mostly (probes read the audit trail, a branch's SHA, and a PR's `updated_at`) / outward write on a non-dry-run reclaim or blocked-timeout filing | no |
 | `opmetrics` | (no verbs) — operator-layer collector: reads transcripts/beacons/claims, writes one **aggregates-only** day-file | local-only (strictly read-only against every input) | no |
+| `deskusage` | `record` reported counts at worker completion; `summary --by item\|tier [--json]` aggregates only; never reads transcripts, prompts, stdin or tool output | local-only counts write, outside Git worktrees; no network | no |
 | `deskperf` | `report` (per-tool p50 / p90 / max / total wall, share of total wall, refusal ratio, top-N slowest; forge calls per tool and per release against the App rate-limit budget), `boot` (deskboot's per-step cost, per role) — reads the opt-in local perf history; see [Local performance history](#local-performance-history--deskperf) | read-only (local perf files; no network; the shared kill-switch guard still writes its audit row) | no |
 | `deskwt` | `add`, `remove`, `prune` under sanctioned prefixes; `maintain objects` inventories and compacts the common Git directory offline; `add` runs the `after_create` [lifecycle hook](../../docs/desk-tools/hooks.md) (fatal — a failure rolls the new worktree back), `remove`/`prune` run `before_remove` (logged, deletion proceeds); inspection takes `--dry-run` | local-only | no |
 | `deskgit` | `fetch` (bare / `--prune` / `--pr <N>` / `--branch <B>`) — the only git verb | local-only (inbound refs) | no |
@@ -383,7 +384,7 @@ no tool reinvents it with holes:
 | `AllowWrite(tool) error` / `AllowWriteAt(tool, now)` | **Two meters** (C-5/TM-4, #209). Budget: ≤20/tool/rolling hour (`RateLimitPerPRPerHour`, raised 10→20 by PR #1053, 2026-08-14), charged only by attempts that may have reached the remote (`ok`, `unverifiable`). Breaker: 5 consecutive non-progress attempts (`refused`, `noop`) → open for 15m. Neither meter counts `ratelimited`/`disabled` — its own output — which is what made the old single counter non-recovering; nor `dryrun` (#214), which wrote nothing. Exit-4 errors carry a **retry-after** (`RetryAfterOf(err)`). The cap is a **chosen throughput ceiling**, not a figure derived from an incident — `ratelimit.go` states what each value is chosen against. |
 | `AlreadyDone(repo, pr, head, verb) bool` / `AlreadyDoneIn(entries, …)` | Idempotency: only prior `ok`/`noop` entries count as done (C-5). `dryrun` never counts — a rehearsal must not suppress the real write. |
 | audit `result` | `ok` · `noop` (attempted, idempotency short-circuited it) · `dryrun` (`--dry-run`: stopped **before** the write, invisible to both meters, #214) · `refused` · `disabled` · `ratelimited` · `unverifiable`. |
-| `BodyCheck([]byte) error` | Shared secret scan (C-3); refuses token/PEM/JWT/AKIA/sops shapes + high-entropy runs. Exempts 40/64-char lowercase-hex git SHAs and **paths** — absolute or repo-relative — whose slash-separated segments are *word-shaped* (#1052, #209). Bare CamelCase identifiers are word-shaped too: a 2-4 letter acronym (optionally plural, `PRs`/`IDs`), a `V` version segment of 1-2 digits between words or closing the name (`V1`, `V10`; one per name, sharing the acronym budget), and the numeronyms `K8s`/`I18n`/`L10n`/`A11y` count as words, and one acronym that closes the name spends no acronym budget unless the name carries a version segment (a version and an acronym never share one name); a 40/64-hex git SHA assigned to an ALL-CAPS env var whose name ends in a closed digest key (`SHA`, `SHA1`, `SHA256`, `DIGEST`, `CHECKSUM`, `COMMIT`, or `HEX` directly behind one, as in a Dockerfile `ARG BASE_DIGEST_HEX=<sha256>`) is exempt, unless the name contains a credential stem (`SECRET`, `TOKEN`, `KEY`, `PASS`, …); any other value, and any other key, refuses as on main (#1642). `${NAME}`/`$NAME` substitutions never form a run (`$`, `{`, `}`, `_` are outside the run class). Refuses `glpat-` GitLab tokens (#1642). Opaque material between slashes still refuses, including an AWS **secret access key**, whose `/` characters defeat a length-only segment gate. **Also refuses impersonated human rulings (#45)**: a body claiming a configured human's decision BY NAME — `"Decision (Alex, ...)"`, `"Ruling: ... — Alex"`, `"I (Alex) have decided"` — is refused categorically, since no desk write path ever posts as a human; see `ImpersonatedRulingClaim` (`impersonation.go`). |
+| `BodyCheck([]byte) error` | Shared secret scan (C-3); refuses token/PEM/JWT/AKIA/sops shapes + high-entropy runs. Exempts 40/64-char lowercase-hex git SHAs and **paths** — absolute or repo-relative — whose slash-separated segments are *word-shaped* (#1052, #209). Bare CamelCase identifiers are word-shaped too: a 2-4 letter acronym (optionally plural, `PRs`/`IDs`), a `V` version segment of 1-2 digits between words or closing the name (`V1`, `V10`; one per name, sharing the acronym budget), and the numeronyms `K8s`/`I18n`/`L10n`/`A11y` and the term `OAuth` count as words, and one acronym that closes the name spends no acronym budget unless the name carries a version segment (a version and an acronym never share one name); a 40/64-hex git SHA assigned to an ALL-CAPS env var whose name ends in a closed digest key (`SHA`, `SHA1`, `SHA256`, `DIGEST`, `CHECKSUM`, `COMMIT`, or `HEX` directly behind one, as in a Dockerfile `ARG BASE_DIGEST_HEX=<sha256>`) is exempt, unless the name contains a credential stem (`SECRET`, `TOKEN`, `KEY`, `PASS`, …); any other value, and any other key, refuses as on main (#1642). A Go test name with a subtest path (`TestX/sub`) is exempt when its head is such an identifier and its subtest path is at most 16 characters (half the run threshold) of word-shaped segments carrying at most 4 short lowercase characters in total; a run made only of `+` (a `git diff --stat` change bar) is exempt like an all-`=` banner. `${NAME}`/`$NAME` substitutions never form a run (`$`, `{`, `}`, `_` are outside the run class). Refuses `glpat-` GitLab tokens (#1642). Opaque material between slashes still refuses, including an AWS **secret access key**, whose `/` characters defeat a length-only segment gate. **Also refuses impersonated human rulings (#45)**: a body claiming a configured human's decision BY NAME — `"Decision (Alex, ...)"`, `"Ruling: ... — Alex"`, `"I (Alex) have decided"` — is refused categorically, since no desk write path ever posts as a human; see `ImpersonatedRulingClaim` (`impersonation.go`). |
 | `Version()` / `WarnIfUnpinned(w)` | Reports the embedded `sourceSHA`/`builtAt`; warns loudly when unpinned (C-1). |
 | exit codes | `ExitOK 0`, `ExitDisabled 3`, `ExitRateLimited 4`, `ExitRefused 5`, `ExitUnverifiable 6`. `ExitCodeOf(err)` maps a typed error, failing **closed** to 6 for any unexpected error. |
 
@@ -459,6 +460,26 @@ assertions. A verb opts into the whole contract by routing its terminal error th
 
 Retrofitted so far: `deskdispatch`, `deskwt`, `desktoken`, `deskfile`. Other verbs are
 unaffected and keep their current behaviour until they are moved over.
+
+### Local worker usage — `deskusage`
+
+`deskusage record (<dispatch_ref> | --claim-key KEY) --repo owner/name --item stream/NN
+--tier any|strong` accepts only reported nonnegative integer counts (or `could-not-check`)
+through `--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-micros` and
+`--wall-seconds`. Omitted counts stay null. It never reads stdin, transcripts, prompts or tool
+output. The claim-key form resolves the latest dispatched run and requires the matching repo.
+The schema is `usage-v1`; records append under an exclusive lock with mode 0600. `ASSAY_USAGE_DIR`
+selects one absolute directory, otherwise `<state dir>/usage`; Git worktrees and symlinks into
+one are refused. `deskusage summary --by item|tier [--json]` prints only group counts, sums,
+medians and measured/null/could-not-check tallies; unknown fields or polluted lines refuse
+with a line number. These figures are not for ranking agents or people.
+
+This record is interim: the shared execution journal replaces it for an enrolled worker role.
+No enrollment behavior is activated by this command.
+
+A Git-managed HOME also makes its default usage directory ineligible. Set `ASSAY_USAGE_DIR`
+to a private directory outside every Git working tree. Claim-key resolution tolerates
+historical torn dispatch lines, but refuses a damaged tail that could hide a newer run.
 
 ### Local performance history — `deskperf`
 
@@ -7039,6 +7060,7 @@ The roster keys (`~/.config/assay/roster.env`; strictly parsed):
 | Key | Value |
 |---|---|
 | `ASSAY_CLAIM_STORE` | `file` or `service` — one value for the cell, or `owner/name=<store>` entries for a cell whose repos genuinely differ (a repo the per-repo form does not name is refused, not defaulted) |
+| `ASSAY_USAGE_DIR` | optional one absolute local usage directory; defaults to `<state dir>/usage`; refuses Git worktrees including symlink targets |
 | `ASSAY_CLAIM_DIR` | the `file` store's directory, one absolute path; default `<config home>/dispatch-claims` |
 | `ASSAY_CLAIM_SINGLE_HOST` | `yes` — the declaration that this cell's repos are dispatched from this host only; any other value is refused |
 
