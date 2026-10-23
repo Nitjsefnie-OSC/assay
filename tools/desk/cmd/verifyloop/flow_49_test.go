@@ -59,10 +59,15 @@ func (f flowRepoForge) SearchIssues(r deskkit.ForgeRepo, in deskkit.SearchIssues
 		return nil, deskkit.Unverifiable("filing-key search is incomplete", nil)
 	}
 	var out []deskkit.IssueSearchResult
-	for _, is := range f.world.issues[r.Slug()] {
-		if is.state == "open" && strings.Contains(is.body, deskkit.FilingKeyMarkerText(in.FilingKey)) {
-			out = append(out, deskkit.IssueSearchResult{Number: is.number, Title: is.title, State: is.state,
-				Labels: is.labels, Body: is.body, URL: fmt.Sprintf("https://example.test/%s/issues/%d", r.Slug(), is.number)})
+	// A deliberately sloppy index: it ignores both the repository and the open-state scope the
+	// real query asks for, so the key's own repository component and the local confirmation are
+	// what keep a lookup exact.
+	for slug, issues := range f.world.issues {
+		for _, is := range issues {
+			if strings.Contains(is.body, deskkit.FilingKeyMarkerText(in.FilingKey)) {
+				out = append(out, deskkit.IssueSearchResult{Number: is.number, Title: is.title, State: is.state,
+					Labels: is.labels, Body: is.body, URL: fmt.Sprintf("https://example.test/%s/issues/%d", slug, is.number)})
+			}
 		}
 	}
 	return out, nil
