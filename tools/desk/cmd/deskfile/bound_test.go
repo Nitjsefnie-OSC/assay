@@ -331,12 +331,12 @@ func TestBoundFilingCap(t *testing.T) {
 	}
 }
 
-// TestBoundFilingStillChargesRepoCeiling: a bound filing is no longer held by the fixed
+// TestBoundFilingOffFixedCeiling: a bound filing is no longer held by the fixed
 // 20-an-hour repo-wide ceiling (writes that fill it do not refuse it), but it is still held: by
 // the PR-bound backstop (write.bound.repo_hour), which counts the bound class apart and refuses
 // at its limit. The backstop's value and source are on the audit line.
-// regression: #4161
-func TestBoundFilingStillChargesRepoCeiling(t *testing.T) {
+// regression: #4072, #4161
+func TestBoundFilingOffFixedCeiling(t *testing.T) {
 	boundEnv(t)
 	bind := []string{"--for-pr", allowedRepo + "#42", "--brief", "demo/07"}
 
@@ -635,8 +635,8 @@ func TestBoundCapUnreadableLedger(t *testing.T) {
 // deskfile writes on (repo, PR) — the new-bound line and the back-link attach-pr line — so with
 // the cap off that tier (RateLimitPerPRPerHour writes per hour) admits RateLimitPerPRPerHour/2
 // bound filings per hour on one change request. The fixed repo-wide ceiling does not count them
-// (#4161; the PR-bound backstop does, see TestBoundFilingStillChargesRepoCeiling).
-// regression: #4161
+// (#4161; the PR-bound backstop does, see TestBoundFilingOffFixedCeiling).
+// regression: #4072, #4161
 func TestBoundFilingWriteCharges(t *testing.T) {
 	boundEnv(t)
 	want := deskkit.RateLimitPerPRPerHour / 2
