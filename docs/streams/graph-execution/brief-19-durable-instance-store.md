@@ -175,6 +175,10 @@ transactional and fail closed as already specified. Qualify against target doc 1
 §Operation-count qualification cases; row 13 below carries that obligation and is red until
 the named test exists. Existing Task/Verify rows and Evidence are preserved.
 
+## Consumer integration amendment — 2026-10-23
+
+Version 8 strengthens Tasks 3–4 and Verify rows 1–2 with actual shared-domain record persistence and assessment, exact restored bindings, positive baselines and independent mutation controls. Verify rows 3–13, dependencies and historical Evidence remain unchanged. These prospective implementation obligations are mapped in [the acceptance and consumer integration manifest](../../proposals/non-ci-architecture/20-amendment-manifest.md#contract-acceptance-and-consumer-integration--23-october-2026); no passing result is claimed.
+
 ## Task
 
 1. Create the workflow Go module and a single-controller SQLite store (engine superseded 2026-10-13: PostgreSQL per the R2 amendment above) with transactions, versioned migrations and content-addressed artifact references. Select and pin a maintained driver; document supported filesystem/durability assumptions. Persist canonical instance/node/attempt IDs, revisions, wait/stop state and artifact manifests. No second work identity or claim authority.

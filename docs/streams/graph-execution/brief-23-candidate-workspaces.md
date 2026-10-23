@@ -73,6 +73,10 @@ candidate and acceptance-binding types, so a literal reader of Task 1 does not m
 candidate record (review advisory A3 on medici-finance/assay#2739). No other Task or Verify text
 changed.
 
+## Consumer integration amendment — 2026-10-23
+
+The 2026-10-13 unchanged-section statements above describe that earlier amendment only. Version 2 now strengthens Tasks 1 and 3 and the Expect cells of Verify rows 1–3 with actual shared candidate and acceptance-binding flows, exact frozen subjects, restored generation checks, positive baselines and independent mutation controls. Dependencies and historical Evidence remain unchanged. See [the acceptance and consumer integration manifest](../../proposals/non-ci-architecture/20-amendment-manifest.md#contract-acceptance-and-consumer-integration--23-october-2026). These are prospective obligations, not passing results.
+
 ## Task
 
 1. Define candidate references binding repository, base/candidate commit and tree, acceptance version and artifact manifest by importing graph-execution/28's candidate and acceptance-binding types (`verification-domain-v1`), never a second candidate record. Construct and validate those actual shared types at freeze, reviewer-input and restore boundaries; a serialized lookalike or owning-brief corroboration is not contract use. Consume an injected workspace/effect port; the profile supplies the existing git library/role executor implementation. Do not vendor a second git/claim implementation.

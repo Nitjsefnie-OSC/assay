@@ -75,6 +75,10 @@ remove the original assertions.
   `differences.yaml` with its reason and reviewed.
 - Do not delete or weaken any baseline test. Stop at implemented.
 
+## Consumer integration clarification — 2026-10-23
+
+Version 2 clarifies Task 3's existing production-adapter use of shared domain records and assessment. Existing Verify row 2 already requires that old/new flow; the entire delivered Verify section, historical Evidence and dependencies remain unchanged. See [the acceptance and consumer integration manifest](../../proposals/non-ci-architecture/20-amendment-manifest.md#contract-acceptance-and-consumer-integration--23-october-2026). This clarification adds no acceptance result or store/workspace integration claim.
+
 ## Task
 
 1. Write `inventory.yaml`: for each selected baseline test record its file, test name, owning
