@@ -200,6 +200,9 @@ func TestReviewPriorityJoin(t *testing.T) {
 			{"duplicate", rf.SchemaError, func(o *rf.Observation, f *rf.ObservationPolicy, p *rf.SelectionPolicy, n *int) {
 				p.Priorities = append(p.Priorities, p.Priorities[0])
 			}},
+			{"invalid-number", rf.SchemaError, func(o *rf.Observation, f *rf.ObservationPolicy, p *rf.SelectionPolicy, n *int) {
+				p.Priorities[0].Subject.Number = 0
+			}},
 			{"alias", rf.SchemaError, func(o *rf.Observation, f *rf.ObservationPolicy, p *rf.SelectionPolicy, n *int) {
 				p.Priorities[0].Subject.Repository.Host = "GITHUB.COM"
 			}},
@@ -275,6 +278,61 @@ func TestReviewPriorityJoin(t *testing.T) {
 		p.Priorities = []rf.PriorityEntry{}
 		if selection(t, observation(t, in, fresh), fresh, p, 0).Idle.State != rf.IdleYes {
 			t.Fatal("measured empty lists cannot be idle")
+		}
+	})
+	t.Run("equal-priority-qualified-tie", func(t *testing.T) {
+		in, fresh := observationFixture()
+		// Source scores put github.com first, opposite the selection tie-break.
+		// The input order and source order therefore cannot accidentally prove the tie.
+		in.Changes[0].Score = 1000
+		other := in.Admitted[0]
+		other.Host = "a.example"
+		c := in.Changes[0]
+		c.Identity.Repository = other
+		c.Score = 1
+		in.Changes = append(in.Changes, c)
+		in.Requested = append(in.Requested, other)
+		in.Admitted = append(in.Admitted, other)
+		in.Population = append(in.Population, rf.PopulationCoverage{Repository: other, Input: in.Population[0].Input, Count: 1})
+		p := rf.SelectionPolicy{Owner: "fixture-owner", Revision: "ties-r1", Evaluator: rf.SelectionEvaluator, Unmapped: rf.UseObservedScore,
+			Priorities: []rf.PriorityEntry{
+				{Subject: rf.PrioritySubject{Repository: in.Admitted[0], Number: 1}, Score: 50},
+				{Subject: rf.PrioritySubject{Repository: other, Number: 1}, Score: 50}}}
+		for pass := 0; pass < 2; pass++ {
+			got := selection(t, observation(t, in, fresh), fresh, p, 1)
+			hosts := []string{}
+			for _, d := range got.Candidates {
+				hosts = append(hosts, d.Row.Identity.Repository.Host)
+			}
+			if !reflect.DeepEqual(hosts, []string{"a.example", "github.com"}) || got.Candidates[0].Disposition != rf.SelectionSelected || got.Candidates[1].Disposition != rf.SelectionDeferred {
+				t.Fatalf("tie selection: hosts=%v decisions=%+v", hosts, got.Candidates)
+			}
+			in.Changes[0], in.Changes[1] = in.Changes[1], in.Changes[0]
+			p.Priorities[0], p.Priorities[1] = p.Priorities[1], p.Priorities[0]
+		}
+	})
+	t.Run("tie-break-mutations", func(t *testing.T) {
+		for _, replacement := range []string{"return false", "return observationRowID(a.Row) > observationRowID(b.Row)"} {
+			contractMutation(t, "internal/reviewflow/selection.go", "return observationRowID(a.Row) < observationRowID(b.Row)", replacement, "^TestReviewPriorityJoin$/^equal-priority-qualified-tie$", "tie selection")
+		}
+	})
+	t.Run("out-of-scope-priority-gap", func(t *testing.T) {
+		o, f, p := selectionFixture(t)
+		outside := p.Priorities[0]
+		outside.Subject.Repository.Host = "outside.example"
+		p.Priorities = append(p.Priorities, outside)
+		got := selection(t, o, f, p, 2)
+		found := false
+		for _, gap := range got.NotObserved {
+			if gap.Subject == outside.Subject {
+				found = true
+				if !strings.Contains(gap.Reason, "outside the admitted") {
+					t.Fatal("out-of-scope gap mislabeled", gap)
+				}
+			}
+		}
+		if !found || len(got.Candidates) != 5 {
+			t.Fatal("outside priority disappeared or invented candidate")
 		}
 	})
 	t.Run("production-mutation", func(t *testing.T) {

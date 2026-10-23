@@ -149,7 +149,10 @@ func PlanCandidates(o Observation, freshness ObservationPolicy, policy Selection
 		if !mapped {
 			if policy.Unmapped == HoldUnmapped {
 				d.Disposition = SelectionHeld
-				d.Reason = row.Note + "; priority unmapped; explicit policy holds selection"
+				if d.Proposal == nil || !d.Proposal.Suppressed {
+					d.Reason = row.Note
+				}
+				d.Reason += "; priority unmapped; explicit policy holds selection"
 			} else {
 				d.Reason += "; priority unmapped; existing observed-score default retained"
 			}
@@ -176,9 +179,17 @@ func PlanCandidates(o Observation, freshness ObservationPolicy, policy Selection
 			}
 		}
 	}
+	admitted := map[Repository]bool{}
+	for _, repo := range o.Inputs.Admitted {
+		admitted[repo] = true
+	}
 	for subject := range priorities {
 		if !observed[subject] {
-			plan.NotObserved = append(plan.NotObserved, PriorityGap{Subject: subject, Reason: "priority subject not observed in the admitted candidate population"})
+			reason := "priority subject not observed in the admitted candidate population"
+			if !admitted[subject.Repository] {
+				reason = "priority subject outside the admitted candidate scope; not observed"
+			}
+			plan.NotObserved = append(plan.NotObserved, PriorityGap{Subject: subject, Reason: reason})
 		}
 	}
 	sort.Slice(plan.NotObserved, func(i, j int) bool {
