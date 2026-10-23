@@ -27,15 +27,18 @@ sources:
   - docs/library-first.md
   - "freshness-checked 2026-10-22 @ a631d47ea71b3270ab33ba08af47d3dde8c9e7d5"
 consumers:
-  - "statusgen/workref/: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "statusgen/contexthandoff/ids.go: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "statusgen/contexthandoff/ids_test.go: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "tools/desk/internal/deskkit/trailer.go: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "tools/desk/internal/deskkit/trailer_test.go: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "tools/desk/go.mod: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "tools/desk/go.sum: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "docs/contracts.md: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
-  - "docs/library-first.md: follow-up milestone-support/01 (this delivery; replace with fixed-here in implementation)"
+  - "statusgen/workref/: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "statusgen/contexthandoff/ids.go: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "statusgen/contexthandoff/ids_test.go: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "tools/desk/internal/deskkit/trailer.go: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "tools/desk/internal/deskkit/trailer_test.go: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "tools/desk/go.mod: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "tools/desk/go.sum: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "statusgen/domain/mutate.py: fixed-here milestone-support/01 (snapshot includes the extracted workref dependency)"
+  - "statusgen/briefv2.go: follow-up milestone-support/04 (strict legacy grammar retained)"
+  - "statusgen/domain/: follow-up milestone-support/09 (strict compatibility fullIds retained)"
+  - "docs/contracts.md: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
+  - "docs/library-first.md: fixed-here milestone-support/01 (shared parser, actual adapters and bounded qualification)"
   - "docs/streams/milestone-support/brief-02-negotiate-reader-capabilities-through-one-shared-contract.md: follow-up milestone-support/02 (consumes this delivery; exact runtime readers enumerated at pickup)"
   - "docs/streams/milestone-support/brief-03-load-and-validate-versioned-milestone-records.md: follow-up milestone-support/03 (consumes this delivery; exact runtime readers enumerated at pickup)"
   - "docs/streams/milestone-support/brief-04-add-negotiated-brief-schema-and-prefixed-authoring.md: follow-up milestone-support/04 (consumes this delivery; exact runtime readers enumerated at pickup)"
@@ -76,6 +79,46 @@ single-point-of-failure: incorrect shared identity or capability interpretation;
 - [Existing semantic owners](../../contracts.md).
 - [Dependency waves and adoption holds](README.md).
 
+## Architecture pickup — implementation assessment
+
+Disposition: **continue** within the user's explicitly requested bounded implementation.
+The gate remains human; issue #4219 has no recorded ruling at pickup. This delivery supplies
+a reviewable implementation, not human design sign-off, acceptance or reader activation.
+The controlling brief includes the parseable Human decision repair from source commit
+`01b032dc`; its pre-implementation source SHA-256 is `c7276db0aec9d74b629ec49b8aa4c3e9e108775a4322be36cac25552cb9d3a27`.
+Implementation/packet baseline is `0221bf5c15bde20fa69a4b7e47fd492fd596736d`.
+
+Read current project rules, implementation-pickup, Go engineering/catalogue, brief §3.8,
+milestone §2, stream integration, library-first and existing semantic-owner rows. The public
+workref API was absent at pickup; the two Go modules and their actual legacy entrypoints
+were inspected. No third-party parser fits this project-specific grammar; the brief requires
+a stdlib-only owner, reusing the existing statusgen module and Go text/number primitives.
+No new dependency version, process, credential or online forge authority is introduced.
+
+Consumer coverage: QID decoding/checking and domain consumers retain the existing fullId;
+trailer authors/representation/claim readers retain their existing reductions. Those actual
+entrypoints call the new core. The domain mutation snapshot is updated to include the
+extracted pure dependency. Separate brief-v2 grammar, schema/generator, milestone loaders,
+capability assessment, claims/rulings and history are routed to the named follow-ups above.
+The concurrent verification-handoff/01 work touches separate deskcore/module and semantic-owner
+lines; it does not provide or change workref behavior. No active claim is overwritten.
+Coverage is bounded to these source readers and the observed open PR set, not a claim that
+all future/private readers or published module versions have been qualified.
+
+Source records (SHA-256 at pickup):
+
+| Source | Digest |
+|---|---|
+| `spec/brief-v1.md` | `2ded10f427b07489a9b2701566ee0f0b08d5a8ad8ce94f16738597a3b4ad9842` |
+| `spec/milestone-v1.md` | `372430ec71ac115935ae33bdd19b44c44460c607be296faa505e540f521dd3cb` |
+| `spec/stream-v1.md` | `8ddceacbb239bdc2ee537d576827387914293d74adbf9cd844fdc786f9cfdca9` |
+| `docs/contracts.md` | `71c68c56b1c13da48feb00596b0e07e590814273255cfd94824568fcb48f4c0d` |
+| `docs/go-engineering.md` | `dbb0f6bf68f6f0ccad88da47531c14c993d4cd2c07776df24e385ce35480f957` |
+| `docs/library-first.md` | `a844301545abea0d3708894b44c151665a43f1a94063e8b95b1d1ab2d642b9b2` |
+
+The named test/mutation commands below are implementation qualification. Independent
+post-merge Evidence remains empty until a non-implementer verifies the merged delivery.
+
 ## Ground rules
 
 - Own isolated branch and draft implementation PR. Do not merge, flip status/spec/stream/PR readiness, dispatch work, cut a tag, change installed pins or contact a cluster.
@@ -86,7 +129,14 @@ single-point-of-failure: incorrect shared identity or capability interpretation;
 
 ## Human decision
 
-Review the concrete identity/capability boundary and preserved existing authority checks through the existing decision process before implementation. Options: approve the bounded design, request correction, or hold. No answer supplies no approval. The authoring request does not grant implementation sign-off.
+Review the concrete identity/capability boundary and preserved existing authority checks through the existing decision process before implementation. The authoring request does not grant implementation sign-off.
+
+Options:
+1. Approve the bounded design while preserving independent authority checks and legacy parser acceptance sets.
+2. Request corrections while retaining the existing holds.
+3. Hold the proposed change.
+
+Default if no answer: none — blocks until answered
 
 ## Task
 
@@ -105,10 +155,10 @@ The following named tests, fixtures and executable mutation maps are FUTURE DELI
 
 | # | Class | Shell | Command | Expect |
 |---|---|---|---|---|
-| 1 | check:ci +flow +mutation | sh | `(cd statusgen && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -v -run '^TestWorkrefGrammarAndAliases$' ./workref/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestWorkrefGrammarAndAliases ' "$milestone_verify_out")` | exit 0 and named PASS; mixed colon/slash aliases yield one identity, exact revision survives, wrong kind/whitespace/unknown root/overflow fail; remove alias context or classify a prefix-shaped stream as the kind and the test fails. |
-| 2 | check:ci +flow +mutation | sh | `(cd statusgen && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -v -run '^TestLegacyQIDParity$' ./contexthandoff/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestLegacyQIDParity ' "$milestone_verify_out")` | exit 0 and named PASS; actual legacy API still refuses prefixes/slashes/revision selectors while valid old QIDs preserve meaning; broadening the legacy profile fails. |
-| 3 | check:ci +flow +mutation | sh | `(cd tools/desk && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -v -run '^TestSharedWorkrefTrailerParity$' ./internal/deskkit/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestSharedWorkrefTrailerParity ' "$milestone_verify_out")` | exit 0 and named PASS; actual trailer parser delegates and preserves existing outputs; a divergent alias interpretation or dropped revision in the new explicit adapter fails. |
-| 4 | check:ci +flow +mutation | sh | `(cd statusgen && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -v -run '^TestWorkrefPublicImportBoundary$' ./workref/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestWorkrefPublicImportBoundary ' "$milestone_verify_out")` | exit 0 and named PASS; both module-consumer fixtures import the public package with GOWORK=off; planted tools/desk/internal, net/http, os/exec or credential dependency fails. |
+| 1 | check:ci +flow +mutation | sh | `(cd statusgen && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -timeout=160s -v -run '^TestWorkrefGrammarAndAliases$' ./workref/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestWorkrefGrammarAndAliases ' "$milestone_verify_out")` | exit 0 and named PASS; mixed colon/slash aliases yield one identity, exact revision survives, wrong kind/whitespace/unknown root/overflow fail; remove alias context or classify a prefix-shaped stream as the kind and the test fails. |
+| 2 | check:ci +flow +mutation | sh | `(cd statusgen && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -timeout=160s -v -run '^TestLegacyQIDParity$' ./contexthandoff/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestLegacyQIDParity ' "$milestone_verify_out")` | exit 0 and named PASS; actual legacy API still refuses prefixes/slashes/revision selectors while valid old QIDs preserve meaning; broadening the legacy profile fails. |
+| 3 | check:ci +flow +mutation | sh | `(cd tools/desk && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -timeout=160s -v -run '^TestSharedWorkrefTrailerParity$' ./internal/deskkit/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestSharedWorkrefTrailerParity ' "$milestone_verify_out")` | exit 0 and named PASS; actual trailer parser delegates and preserves existing outputs; a divergent alias interpretation or dropped revision in the new explicit adapter fails. |
+| 4 | check:ci +flow +mutation | sh | `(cd statusgen && milestone_verify_out=$(mktemp "${TMPDIR:-/tmp}/milestone-verify.XXXXXX") && trap 'rm -f "$milestone_verify_out"' 0 && GOWORK=off go test -count=1 -timeout=160s -v -run '^TestWorkrefPublicImportBoundary$' ./workref/... > "$milestone_verify_out" && grep -q -- '--- PASS: TestWorkrefPublicImportBoundary ' "$milestone_verify_out")` | exit 0 and named PASS; both module-consumer fixtures import the public package with GOWORK=off; planted tools/desk/internal, net/http, os/exec or credential dependency fails. |
 
 ## Pre-mortem and dispatch check
 

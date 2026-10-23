@@ -1,0 +1,92 @@
+{
+  "runner": "python3 statusgen/testdata/milestone-support/01-mutate.py",
+  "mutations": [
+    {
+      "name": "declaring-root",
+      "file": "statusgen/workref/workref.go",
+      "old": "parsed.Repo = declaring.Repo",
+      "new": "parsed.Repo = \"other\"",
+      "test": "TestWorkrefGrammarAndAliases",
+      "module": "statusgen",
+      "package": "./workref"
+    },
+    {
+      "name": "final-segment-kind",
+      "file": "statusgen/workref/workref.go",
+      "old": "if strings.HasPrefix(last, \"m-\") {",
+      "new": "if strings.Contains(text, \"m-\") {",
+      "test": "TestWorkrefGrammarAndAliases",
+      "module": "statusgen",
+      "package": "./workref"
+    },
+    {
+      "name": "exact-overflow",
+      "file": "statusgen/workref/workref.go",
+      "old": "if err != nil || revision == 0 {",
+      "new": "if err != nil && revision == 0 {",
+      "test": "TestWorkrefGrammarAndAliases",
+      "module": "statusgen",
+      "package": "./workref"
+    },
+    {
+      "name": "alias-collision",
+      "file": "statusgen/workref/workref.go",
+      "old": "if prior, ok := r.bindings[id]; ok && (prior.Key != binding.Key || prior.Identity != canonical) {",
+      "new": "if prior, ok := r.bindings[id]; false && ok && (prior.Key != binding.Key || prior.Identity != canonical) {",
+      "test": "TestWorkrefGrammarAndAliases",
+      "module": "statusgen",
+      "package": "./workref"
+    },
+    {
+      "name": "legacy-qid-broadens",
+      "file": "statusgen/workref/workref.go",
+      "old": "return parseQualified(ref)",
+      "new": "if strings.Contains(ref, \"b-\") { return Parse(ref, Typed) }; return parseQualified(ref)",
+      "test": "TestLegacyQIDParity",
+      "module": "statusgen",
+      "package": "./contexthandoff"
+    },
+    {
+      "name": "trailer-projection",
+      "file": "tools/desk/internal/deskkit/trailer.go",
+      "old": "return parsed.Stream, parsed.Number, true",
+      "new": "return strings.ToLower(parsed.Stream), parsed.Number, true",
+      "test": "TestSharedWorkrefTrailerParity",
+      "module": "tools/desk",
+      "package": "./internal/deskkit"
+    },
+    {
+      "name": "trailer-exact-revision",
+      "file": "tools/desk/internal/deskkit/trailer.go",
+      "old": "return workref.Resolve(v, declaring, registry, workref.TypedBrief)",
+      "new": "result, err := workref.Resolve(v, declaring, registry, workref.TypedBrief); result.Revision = 0; return result, err",
+      "test": "TestSharedWorkrefTrailerParity",
+      "module": "tools/desk",
+      "package": "./internal/deskkit"
+    },
+    {
+      "name": "second-process-import",
+      "file": "statusgen/workref/planted.go",
+      "plant": "package workref\nimport _ \"os/exec\"\n",
+      "test": "TestWorkrefPublicImportBoundary",
+      "module": "statusgen",
+      "package": "./workref"
+    },
+    {
+      "name": "second-network-import",
+      "file": "statusgen/workref/planted.go",
+      "plant": "package workref\nimport _ \"net/http\"\n",
+      "test": "TestWorkrefPublicImportBoundary",
+      "module": "statusgen",
+      "package": "./workref"
+    },
+    {
+      "name": "second-environment-import",
+      "file": "statusgen/workref/planted.go",
+      "plant": "package workref\nimport _ \"os\"\n",
+      "test": "TestWorkrefPublicImportBoundary",
+      "module": "statusgen",
+      "package": "./workref"
+    }
+  ]
+}
