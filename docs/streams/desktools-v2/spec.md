@@ -476,7 +476,7 @@ prerequisite for local v3. Required audit, quota enforcement and custody are una
 Deliver through new /63 (schema/resolver/readers), /64 (launch and CLI/env context), /65
 (provider timing/cost), then unfinished /62 and statusgen/26. CLI migrations/new tools adopt
 this shared seam through cli-contract.md rather than duplicating parsers or stopping at v2
-collection. Preserve completed /61's implementation/Evidence; collection stays parked. The
+collection. Preserve completed /61's implementation/Evidence; collection's admission state is unchanged. The
 new implementation briefs carry their own disclosure gates; this authoring revision does
 not claim those gates passed or activate deployment.
 

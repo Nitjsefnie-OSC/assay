@@ -65,6 +65,7 @@ func TestDecisionSweepFailureCategories(t *testing.T) {
 		{&ForgeAPIError{Status: 403, Body: "not-for-display"}, "authentication or authorization failed"},
 		{&ForgeAPIError{Status: 429, RateLimited: true, Body: "not-for-display"}, "provider rate limit"},
 		{errors.New("not-for-display"), "transport or response unavailable"},
+		{Refused("not-for-display"), "decision query refused locally"},
 	} {
 		f := newDecisionSweepFixture()
 		f.failed = "search"

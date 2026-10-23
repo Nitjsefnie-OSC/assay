@@ -44,6 +44,9 @@ func (s *DecisionSweep) Wait(b BriefAdmission) DecisionWait {
 		if id == "" {
 			return DecisionWait{}
 		}
+		if err := validateDecisionSearch(SearchIssuesInput{DecisionGateMarkers: true, DecisionGateBrief: id}); err != nil {
+			return DecisionWait{Unknown: decisionSearchUnknown(s.repo, id, err)}
+		}
 		s.discover.Do(func() {
 			hits, err := s.forge.SearchIssues(s.repo, SearchIssuesInput{DecisionGateMarkers: true})
 			s.discoveryErr = err

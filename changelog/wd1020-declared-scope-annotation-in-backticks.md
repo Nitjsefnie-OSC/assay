@@ -1,2 +1,0 @@
-### Fixed
-- The declared-scope parser behind `deskevidence --outcome-record` now reads an annotation written inside a path's backticks (`` `perfrec/context.go (planned)` ``) the way it already read one outside them, so 22 briefs that were refused for this shape now parse and can get a verify-outcome receipt. A path with any other space inside it is still refused. The advisory write-scope overlap hint uses the same rule.

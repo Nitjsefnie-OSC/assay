@@ -28,7 +28,7 @@ brief; a package estimate is a brief count, not elapsed time.
 | R4: role-bound publication and reconciliation | graph-execution: amend `graph-execution/04` (effect identity, lost acknowledgment) and `graph-execution/25` (evidence-PR bridge) | `drainloop/`, `workflow/publication/` (as planned by 25) | follow-up names it | R1–R3 | Stale-capability refusal at the effect boundary; ambiguous-effect reconciliation (doc 15 new obligations) | Legacy publication briefs desk-supervision/23, /26, /27 and desk-tools/30 stay on the supported legacy path with applicability noted by the follow-up; urgent fixes continue there. | 2 briefs, each ≤ L |
 | R5: complete verifier use case | graph-execution: amend `graph-execution/21` (controller host, verifier use case), `graph-execution/14` (admission), `graph-execution/18` (integrated proof) | `workflow/controller/` (as planned by 21) | consumes R1–R4 contracts | R1–R4 | Complete disposable journey with crashes at durable transitions (doc 15 layer 3) | 21, 14, 18 are todo, unclaimed. | 2–3 briefs, each ≤ L |
 | R6: forge mirror and shared observations | forge-neutral: new brief(s) by the follow-up, building on implemented `forge-neutral/33` and `forge-neutral/36` and verified `desktools-v2/09` | `forgeread/`, mirror store paths per follow-up | follow-up names it | R1–R2; beside R3–R5 | `cd forgeread && GOWORK=off go test -count=1 ./...` plus pagination, lost/reordered event and permission-loss cases | forge-neutral/18 is in progress; the follow-up must not rebind it silently. | 2 briefs, each ≤ L |
-| R7: public API and thin cockpit | No existing owner. Proposed: a new stream `cell-api`, `status: parked` (see the cell operator surface rows below; ratified when medici-finance/assay#2890 is merged by the maintainer). The manifest's original options were extending derived-board (projection semantics) or a new stream; a new stream ships `status: parked` and its PR names the swap. | follow-up | follow-up | R5–R6 (interface work may begin earlier) | Mounted-route authorization and cross-cell isolation cases | None active. | 2–3 briefs, each ≤ L |
+| R7: public API and thin cockpit | The `cell-api` stream owns R7, ratified by the maintainer merge of medici-finance/assay#2890. Created parked; active for implementation from 20 October 2026 on the maintainer's own unpark request (https://github.com/medici-finance/assay/issues/3669#issuecomment-6302690781). The stream retains its existing qualification and human gates. | follow-up | follow-up | R5–R6 (interface work may begin earlier) | Mounted-route authorization and cross-cell isolation cases | cell-api/01–07; declared gates apply. | Seven briefs, each M |
 | R8: shadow, migration and retirement | composability: amend `composability/03` (desired-state reconcile, migration notices); build-less-brittle/11 testledger consumed as the departure report | `tools/desk/cmd/deskmigrate/` (per composability/03), `migrations/` (adopter migration notices), `tools/desk/internal/testledger/` (consumed) | follow-up | R5–R7 | Old-capability refusal, repository-wide handover and rollback in a disposable environment; classified old/new differences | composability/03 is todo, unclaimed. | 2 briefs, each ≤ L |
 | Workspace lifecycle completion (continuing-operations slice) | continuing-operations (parked, no authored briefs) for the slice; desk-tools deskwt briefs for current-tool flags | `tools/desk/cmd/deskwt/`, sweep and maintenance owner paths per follow-up | retirement and maintenance contracts (R1/R2) | R1 retirement identities; R2 retirement progress | Sustained-work workload retiring disposable resources with held reasons explainable | medici-finance/assay#2525 (offline repository maintenance) is open; the follow-up reconciles against it, never in parallel. | 2 briefs, each ≤ M |
 
@@ -102,7 +102,7 @@ Owner rows for the [cell operator surface amendment](21-cell-operator-surface.md
 | Approval-based apply (deferred) | R7 (served route) and R3 (isolation from the desk account); evidence-and-decisions shapes the record | Gated on amendment 21's five approval properties; no brief | Deferred; the driver's stated preference (relayed, pending ratification via the medici-finance/assay#2890 merge) |
 | Interim verbs: up, status, doctor, logs, gc, upgrade | desk-containers (interim bridges) | `desk-containers/17`, `/20`, `/21`, `/22`, `/24`, `/23` | Authored; each names its target owner |
 | Lifecycle transitions (pause, resume, drain, stop, start; restart as a sequence) and handoff record | graph-execution: **R2 records the requested transition and the handoff record; R3 executes it on processes** | Interim adapters `desk-containers/16`, `/18`, `/19`; R2/R3 owner amendments follow ratification | Split is the driver's stated preference (relayed, pending ratification via the medici-finance/assay#2890 merge) |
-| Cell API status queries and scoped operator requests (from `send`) | R7: new stream `cell-api` (`status: parked` at creation; scaffolding is a follow-up PR) | No brief; requirements recorded in amendment 21 | Owner is the driver's stated preference (relayed, pending ratification via the medici-finance/assay#2890 merge) |
+| Cell API status queries and scoped operator requests (from `send`) | R7: `cell-api` (created parked; active for implementation from 20 October 2026) | cell-api/01–07; requirements in amendment 21 | Ownership ratified by the maintainer merge of medici-finance/assay#2890; stream scheduling follows the maintainer's own unpark request (https://github.com/medici-finance/assay/issues/3669#issuecomment-6302690781), a post-ratification scheduling act |
 | Workspace retirement behind `gc` | continuing-operations workspace-lifecycle slice (row above) | gc is a trigger only | Reconciled with that slice's follow-up |
 | Upgrade / release-pin migration behind `upgrade` | cell operation; R8 (composability/03) | upgrade is a trigger only | Reconciled with the R8 follow-up |
 
@@ -265,7 +265,7 @@ schema/readers, desk/agent/CLI propagation and own-request timing/points. Unfini
 statusgen/26 and performance-collection/01–09 are amended; completed /61 stays intact.
 The target, future-state bindings, storage/recovery and runtime handoff carry the same
 context/consent/coverage contract. This supersedes earlier v2-only future measurement intent,
-not historical v1/v2 facts, Evidence or the collection stream's parked state.
+not historical v1/v2 facts, Evidence or the collection stream's admission state.
 
 ## Write-policy and pickup amendment — 18 October 2026
 
@@ -304,3 +304,13 @@ and no competing proposal is treated as approved. Dispatch refs were not read.
 New tests are future implementation obligations. Existing completed Evidence is unchanged.
 Active PostgreSQL/image-scan/performance PRs are recorded in amendment 28 and reconciled at
 pickup. The parked execution stream is not silently admitted by this routing note.
+
+## Extensible JSON amendment — 21 October 2026
+
+[The census](29-extensible-json-contracts.md) is the owner/transition manifest for this
+requested change. Desktools-v2/69 delivers the architecture and performance contract;
+/67 implements compatible readers and /68 selects producers. Existing owners retain
+all other families; their next contract-changing briefs must carry the reader-first
+compatibility matrix and consumer dispositions before implementation. This amendment
+changes no existing Verify/Evidence section or active owner's implementation. The
+earlier whole-target ratification does not certify these later codec changes.

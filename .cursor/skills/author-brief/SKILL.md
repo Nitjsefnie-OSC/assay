@@ -211,6 +211,8 @@ design-fit:                  # REQUIRED on every NEW brief; its two rules: brief
   weight: <signed delta per dimension: verbs, flags, refusals, rule-text lines>
   why-add: <required when any delta > 0: why it cannot live in the owner, and what
            removal was considered instead; n/a otherwise>
+oracle: docs/investigations/<file>  # ONLY on a design brief a brittle `redesign` raised: its refactor
+                                    # oracle, whose five §5 rows Verify copies. Such a brief without it is not authored
 
 ## Human decision
 <!-- gate: human only — omit the section entirely otherwise. Lifted VERBATIM into the
@@ -394,12 +396,10 @@ questions is `yes`, `gate` must be `human`; only when all four are `no` may `gat
        end-to-end flows, sweeping a pattern across sites)?
    (c) Is it code where a subtle implementation error survives the brief's own tests (auth,
        funds, concurrency, safety plumbing)?
-   (d) Is this a design brief raised by an error-class trigger? (A recurring defect class, not
-       one symptom, has accrued enough counted instances or merged fixes to be owed a design.)
-   `strong` SHOULD carry a one-line `exec-tier-why` naming which question(s). `statusgen --lint`
-   PROBLEMs an unrecognized value, NOTICEs a missing `exec-tier-why`. **Honest limitation:**
-   statusgen never verifies which model actually ran — pickup-side compliance is honor-system
-   self-report; the enforced surface is desk dispatch + the review gate.
+   (d) Is this a design brief raised by an error-class trigger? (A recurring defect class, not one symptom, has accrued enough counted instances or merged fixes to be owed a design.)
+   `strong` SHOULD carry a one-line `exec-tier-why` naming the question(s) (lint: PROBLEM if unknown, NOTICE if missing).
+   **Honest limitation:** statusgen never verifies which model actually ran — pickup-side
+   compliance is honor-system self-report; the enforced surface is desk dispatch + the review gate.
 10. **Defense in depth is the DEFAULT design posture.** When a brief's Task has design
     alternatives, prefer the LAYERED one: no single control standing between a fault and the
     damage. **Mandatory for core-system briefs** — each project layer defines what "core system"
@@ -582,7 +582,7 @@ it is an authoring convention only.
 | `pattern-review-same-role` | a pattern node whose evidence includes a review claim but shares its role with the node that produced its input — the implementer<->reviewer separation is not machine-checked | fatal |
 | `pattern-risk-input-missing-verdict` | a pattern's `risk-input` omits one of the four risk-class verdicts (low/standard/elevated/human) — an instance of that risk class has no declared mandatory gates | fatal |
 | `pipeline-exit-sunk` | a shell pipeline whose real exit status is sunk by a later stage, so the row cannot fail — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
-| `prose-led-command` | a prose Command cell whose first code span — the text the lift returns — is a mention (a file, a path, an `owner/repo`, a code identifier, a word ahead of the real command), not a command; verifyrun records the row could-not-run until the command is marked with a `cmd:` code span | advisory |
+| `prose-led-command` | a Command cell whose lift — the `cmd:`-marked command, else the first code span — is not a command: a prose mention (a file, a path, an `owner/repo`, a code identifier, a word ahead of the real command), a shell comment, or a shell no-op (`:`, a cmd.exe `REM` / `::` remark); verifyrun and the desk executors record the row could-not-run. Fix a mention by marking the real command with a `cmd:` code span; fix a comment or no-op, marked or not, by replacing it with the command that performs the check | advisory |
 | `rE2-literal-pipe` | a `\|` inside a `go test -run`/`-bench` selector is a literal pipe in RE2, not alternation — fatal for a closure this branch makes (verified/done, and not so at the merge-base); a NOTICE on every other brief | fatal |
 | `runtime-resource-claim-without-principal` | a runtime resource claim (or a release of a claimed resource) not authorized by a human or organization principal, or ownership no succeeded claim backs | fatal |
 | `runtime-resource-credential-not-rotated` | a runtime resource claim with no recorded rotation of the agent credential, or a release with no recorded revocation | fatal |

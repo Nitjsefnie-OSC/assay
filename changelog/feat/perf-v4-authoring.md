@@ -1,0 +1,1 @@
+- Define perf-v4 as the future performance format with independently versioned extensions and historical v1/v2/v3 readers. Add the future JSON compatibility architecture, a pinned census of contract families and reader-first migration briefs; runtime behavior and collection consent are unchanged by this specification.

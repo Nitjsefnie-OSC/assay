@@ -32,6 +32,10 @@ func decisionSearchUnknown(repo ForgeRepo, id string, err error) string {
 		cause = "decision-marker result limit reached"
 	case errors.Is(err, errDecisionSearchIncomplete):
 		cause = "decision-marker response or pagination incomplete"
+	case ExitCodeOf(err) == ExitRefused:
+		cause = "decision query refused locally"
+	case errors.Is(err, errForgeTokenMissing):
+		cause = "minted provider token unavailable"
 	case IsForgeRateLimited(err):
 		cause = "provider rate limit"
 	case errors.As(err, &api) && (api.Status == http.StatusUnauthorized || api.Status == http.StatusForbidden):
@@ -83,7 +87,7 @@ func (g *GitHubForge) searchDecisionMarkers(repo ForgeRepo, brief string) ([]Iss
 			return nil, Unverifiable("decision-marker search changed or ended before its total", errDecisionSearchIncomplete)
 		}
 	}
-	return nil, Unverifiable("decision-marker search exceeded its page bound", errDecisionSearchCap)
+	return nil, Unverifiable("decision-marker search exceeded its page bound", errDecisionSearchIncomplete)
 }
 
 func (g *GitLabForge) searchDecisionMarkers(repo ForgeRepo, brief string) ([]IssueSearchResult, error) {
