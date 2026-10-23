@@ -2,7 +2,7 @@
 stream: verification-handoff
 repo: medici-finance/assay
 serves: assay
-status: parked
+status: active
 priority: P2
 track: platform
 issues: []
@@ -16,7 +16,9 @@ spec: docs/streams/verification-handoff/README.md
 **Status:** draft — authored planning only, not approved or routed.
 
 This stream closes the verifier -> intake -> worker -> independent verification handoff.
-It remains parked; new briefs start todo. Existing work and evidence remain authoritative.
+The driver authorized this stream to be active on 23 October 2026, with v1.0.57 published.
+Brief completion, source approval and individual decision/verification gates remain separate.
+Existing work and evidence remain authoritative.
 
 ## Briefs
 
@@ -139,8 +141,10 @@ stream nor a source-only fixture makes that prerequisite available.
 ```
 
 The new critical chain has four dependency transitions; the wave span also preserves the existing external prerequisite wave. Neither is a time estimate.
-The stream is parked and its source draft: admission, risk decisions, independent verification,
-release/pins, operator installation and human-authorized live cutover remain external holds.
+The stream is active by driver instruction. Its draft scope, risk decisions and independent
+verification remain separate gates. The v1.0.57 baseline release is published; future artifact
+publication, consumer pins, operator installation and human-authorized live cutover remain
+requirements only where the implementation needs them.
 Do not activate an existing reference sink merely because its adapter passes fixture tests.
 
 ### Dependency waves

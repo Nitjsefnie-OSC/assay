@@ -43,7 +43,7 @@ consumers:
 files: deskcore/issueflow/ (planned), tools/desk/internal/issueflow/, statusgen/go.mod, statusgen/go.sum, statusgen/scanissues.go, tools/desk/go.mod, spec/intake-exit-v1.md, spec/verification-handoff-v1.md (planned), docs/contracts.md, statusgen/testdata/verification-handoff/01-mutations.json (planned), changelog/verification-handoff-01.md (planned)
 
 facts:
-- Baseline main fbe0331e2fc9f5c822c4edeafb8a18865c916828, inspected 23 October 2026; source is draft and stream is parked.
+- Baseline main fbe0331e2fc9f5c822c4edeafb8a18865c916828, inspected 23 October 2026; source was draft and stream was parked at authoring. The driver authorized stream activation on 23 October 2026; the source and per-brief gates remain separate.
 - Intake discovery sees ordinary verifier bugs; 14 of a bounded 28 recent verifier-filed issues carried explicit intake triage, not proof of claims or repairs.
 - The default loop filing/repair sinks print dry-run results. The live skill uses sanctioned deskfile/deskevidence paths; a printed URL is not durable work.
 - Existing intake-exit-v1 has two writers and exact-key conformance tests. Its local log is not a fleet-wide source of assignment authority.
