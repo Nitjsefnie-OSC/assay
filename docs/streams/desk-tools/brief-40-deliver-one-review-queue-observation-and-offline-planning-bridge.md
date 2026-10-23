@@ -10,9 +10,10 @@ gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-10-17 by statusgen newbrief
 sources:
+  - "Planning amendment 2026-10-23; source checked on App-fetched main 9c4307a19a190964db084104ecc1f7bd62cba433; candidate-plus-priority parity and GH-call audit"
   - docs/desk-workflow-efficiency-spec.md
   - docs/desk-workflow-efficiency-change-map.md
   - freshness-checked 2026-10-17 @ fb85924c039c27e7d2aa80e055bfce118e46125d (App-authenticated main fetch)
@@ -68,6 +69,16 @@ design-fit:
 - Use fake providers and disposable local Git for acceptance; live activation and collection are separate gates.
 - Stop at implemented; independent verification supplies Evidence. Do not rewrite completed brief Evidence.
 
+## Candidate and priority amendment — 2026-10-23
+
+Implement the spec §2.1 inputs through the already-planned ReviewQueue/PlanReview bridge.
+One frozen validated observation supplies actions, exact heads, rank inputs, all dispositions
+and stage depths. Policy/time/capacity are explicit and revision-bound; the direct-reader
+collector is separate from local reselection. Deliver no new daemon, global TTL or policy file.
+The shared planner is called by prose and discrete adapters, not copied into their commands.
+Register the new test in the existing internal/reviewtest scope. Producer compatibility and
+consequential refresh remain as authored; this amendment grants no live consumer cutover.
+
 ## Task
 
 1. Deliver ReviewQueue as deskboard review-queue --out FILE using existing typed ReviewQueueSnapshot
@@ -100,6 +111,7 @@ is asserted. Each test covers production flow plus the stated wrong-but-plausibl
 | 1 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestQueuePlanBridge$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestQueuePlanBridge ' "$o")` | exit 0; named PASS. Fake provider -> real review-queue command -> saved observation -> offline plan produces exact oracle once; deleting any required head/scope/action input fails rather than yielding idle. |
 | 2 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestQueuePartialAndDepth$' ./internal/reviewtest/... > "$o" && grep -F -- '--- PASS: TestQueuePartialAndDepth ' "$o")` | exit 0; named PASS. Partial/denied/overflow/stale/schema faults refuse complete or idle claims; report depth equals same uncapped population. Legacy actions/prs/plan stdout and exit contracts remain qualified. |
 | 3 | check:ci +dereference | `statusgen --root . --consumers --brief desk-tools/40` | exit 0; implementation consumer routing is corroborated against the actual diff. Out-of-scope judgments remain review obligations. |
+| 4 | check:ci +flow +mutation | `(cd tools/desk && o=$(mktemp) && trap 'rm -f "$o"' 0 && GOWORK=off go test -count=1 -v -run '^TestReviewPlanNoFetch$' ./... > "$o" && grep -F -- '--- PASS: TestReviewPlanNoFetch ' "$o")` | exit 0; named PASS. after one real fake-provider collection, repeat pure selection for slot completion and a policy-only reorder with zero additional GH attempts. Source/access/expiry invalidation requests bounded refresh or holds; a hidden actions/prs reread and stale-as-idle mutation each fail. |
 
 ## Pre-mortem and detection
 
