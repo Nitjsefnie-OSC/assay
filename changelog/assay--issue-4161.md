@@ -1,0 +1,2 @@
+### Changed
+- `deskfile`: change-bound filings (`new --for-pr`), their back-links and `attach --kind mr` replies no longer count toward the fixed 20-an-hour repo-wide write ceiling. They are held by their own larger runaway backstop, knob `write.bound.repo_hour` (default 60 per repository per hour, never off), and the value in force and its source are recorded on each audit line. Unbound filings and every other tool keep the fixed ceiling.
