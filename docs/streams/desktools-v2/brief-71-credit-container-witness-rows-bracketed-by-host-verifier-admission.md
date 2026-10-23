@@ -454,6 +454,84 @@ Risk-bearing values (the brief's risk fields are all "no" and it is not irrevers
 Blocker: environment. The container-netns lane cannot attribute a runner for a linked-worktree home. Needed capability: verifyrun deriving the runner from the admission receipt or another sanctioned host-supplied input. Next actor: a desk-tools worker (blocker: #4208); the desk re-dispatches once it ships. Row 8 needs a post-merge-dischargeable definition (pinned --delivery/--base) (blocker: #4209). The verifier did not flip status (gate: human).
 
 
+### Independent verification — 2026-10-23 (source 3e24567bbc4e1c53c508e4f74d8ad04d3364d494)
+
+Non-implementer verifier `assay-verifier-app[bot]` (on-behalf-of human:ian), model claude-opus-5-5, tier strong, run `b51e4bc1200e08008ab5fb5a7509f34926bbe7d55cecd5731ac5080595e6fea7` (attestation medici-finance/assay#4245). Merged main `3e24567bbc4e1c53c508e4f74d8ad04d3364d494`, clean detached checkout, git 2.56.0, `core.autocrlf=input`, `eol=native`. Host tools: `statusgen v1.0.58`; `deskdispatch sourceSHA=832f9c8f releaseTag=v1.0.58`; go1.27.2 darwin/arm64. Runner image `ghcr.io/medici-finance/verify-runner:v1.0.58@sha256:be2d252957e0a5f152b42cd21860c13ed02c63d4bb98ad4234ca3e1d5e800204`, local image Id `sha256:767f6a3545748b57a85f85dc80216e97203a39aa07e2ef137483d197dd60b175` (linux/amd64), pulled by digest, run with `--network none`, the checkout mounted read-only, no gitdir mount, no injected identity, no locally built binary. `deskdispatch --check-verifier` exited 0 before the work and again before this hand-off (same binding: run, source, model, tier, issue 4245).
+
+This is a re-verification after the approved row-8 command amendment (amendment `4c63244c4665af3bc1ec2319379f1bafd5dd4c8d`, PR #4213; approval medici-finance/assay#4227 comment 6373814726 by the ratifying human (human:ian), unedited). The earlier Evidence attempts in PR #4114 (sources 8f103c4712 and fbe0331e2f, both BLOCKED; the second on the v1.0.57 could-not-attribute refusal, #4208) are context only and are not credited here.
+
+#### Container-netns lane (rule 45): bracketed witness
+
+Open: `statusgen verifyrun --open-bracket` exit 0 — `opened 2026-10-23T23:44:48Z tree=sha256:f1b1e71a00b5fcb41274cb1805f8159ab6b1549239c329dca97b0694552fa9c4 runner=assay-verifier-app[bot] (forge-identity)`. One container run (23:45:05Z–23:46:35Z), no discarded attempt, exit 1 (rows 8 and 9, below), empty stderr. Close: `--close-bracket` exit 0. `--bracket-digest`: `bracket=L17 header=L1 witness=sha256:b651b412d83ff82125fca8329ddcb57798a3533af0ce1cf069ad74027e1a0612 recorded=sha256:b651b412d83ff82125fca8329ddcb57798a3533af0ce1cf069ad74027e1a0612 verdict=match span-lines=tree-digest:1,container-image:1,attestation:1`. The closed witness follows byte for byte:
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd statusgen && go test -run '^TestContainerNetnsRequiresAdmissionReceipt$' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:043f118b7ec2 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd statusgen && go test -run '^TestContainerNetnsReceipt$' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:34850e7d2ac8 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:5399fa48563a | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestBracketedWitnessSurvivesLanding$' -count=1 -v` | pass exit=0 sandbox=container-netns | sha256:9b5e80a4b207 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd statusgen && go test -run '^TestSandbox' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:34a7a0cccb8e | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 6 | `grep -n -e 'Admission-Bracket' -e 'credit=credited' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | pass exit=0 sandbox=container-netns | sha256:39bfd148f696 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | pass exit=0 sandbox=container-netns | sha256:54208d57d196 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 8 | `statusgen --root . --consumers --brief desktools-v2/71 --delivery f7ad98d584842aef0001ddf22ee83b9e56e4f91f --base 0191789433dcb3d43618ac0b43e35bdede3e8c84` | fail exit=2 sandbox=container-netns | sha256:97ec05843a44 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --lint` | fail exit=5 sandbox=container-netns | sha256:ebb49aa52600 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 10 | `(cd statusgen && credit_out=$(mktemp) && trap 'rm -f "$credit_out"' 0 && go test -run '^TestBracketCredit$' -count=1 -v . > "$credit_out" 2>&1 && grep -q -- '--- PASS: TestBracketCredit ' "$credit_out")` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+| 11 | `(cd tools/desk && parity_out=$(mktemp) && trap 'rm -f "$parity_out"' 0 && go test ./internal/deskkit/ -run '^TestVerifierAttestationCreditParity$' -count=1 -v > "$parity_out" 2>&1 && grep -q -- '--- PASS: TestVerifierAttestationCreditParity ' "$parity_out")` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e (on-behalf-of human:ian) (forge-identity) |
+Tree-Digest: sha256:f1b1e71a00b5fcb41274cb1805f8159ab6b1549239c329dca97b0694552fa9c4
+Container-Image: sha256:be2d252957e0a5f152b42cd21860c13ed02c63d4bb98ad4234ca3e1d5e800204
+Verification-Attestation: medici-finance/assay#4245 run=b51e4bc1200e08008ab5fb5a7509f34926bbe7d55cecd5731ac5080595e6fea7 source=3e24567bbc4e1c53c508e4f74d8ad04d3364d494 brief=docs/streams/desktools-v2/brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md model=claude-opus-5-5 tier=strong
+Admission-Bracket: run=b51e4bc1200e08008ab5fb5a7509f34926bbe7d55cecd5731ac5080595e6fea7 source=3e24567bbc4e1c53c508e4f74d8ad04d3364d494 tree=sha256:f1b1e71a00b5fcb41274cb1805f8159ab6b1549239c329dca97b0694552fa9c4 witness=sha256:b651b412d83ff82125fca8329ddcb57798a3533af0ce1cf069ad74027e1a0612 opened=2026-10-23T23:44:48Z closed=2026-10-23T23:46:51Z before=receipt after=check-verifier
+
+Rows 8 and 9 fail in the container only because they are `check` rows that read git history (`--consumers --delivery/--base` and `--lint`), and the gitdir is deliberately not mounted (a documented limit of this lane). They are not credited from the container. They were run on the host under the approved transition (next block). `verdict=match` is not credit: per rule 45, the nine container rows (1–7, 10, 11) are credited only when `statusgen verifyrun --bracket-digest --witness <brief> --credit --source 3e24567bbc4e1c53c508e4f74d8ad04d3364d494` returns `credit=credited` on the landed brief. That check reads the landing commit, so it cannot run before landing, and it was not run.
+
+#### Host run under the approved acceptance transition (rows 8 and 9)
+
+Descriptor (kept outside the checkout):
+
+```text
+Verification-Table: delivery=f7ad98d584842aef0001ddf22ee83b9e56e4f91f base=d8b64df87c1d94a61ca398fb5371acfe81569f78 original=deee32957a70aa7e7a6bbae14f004284ab1b5fa4
+Acceptance-Transition: amendment=4c63244c4665af3bc1ec2319379f1bafd5dd4c8d approval=https://github.com/medici-finance/assay/issues/4227#issuecomment-6373814726
+```
+
+The verifier checked the coordinates independently. Delivery f7ad98d5 is on HEAD's first-parent chain; its two parents' unique merge-base is d8b64df8 (= base); deee3295 is an ancestor of base; amendment 4c63244c is on the first-parent chain after delivery. The approval body names exactly this repo, brief, delivery, base, original, amendment and `rows=8`.
+
+Disclosed attempt (uncredited): the first host invocation passed `--brief` as a repository-relative path and was refused before any row executed: `protected table: acceptance transition: cannot resolve brief path` (exit 2). The cause is `statusgen/acceptancetransition.go:191`: `filepath.Rel(root, canonicalPath)` fails when the brief path is relative and the toplevel is absolute. The documented example `--brief docs/streams/example/...` hits the same failure. The verifier re-issued the identical command with the absolute brief path. The checker then read the approval, accepted it as the exact transition payload (no hold, no refusal) and executed the canonical plan (`--dry-run`: nothing was written to the checkout).
+
+Host result: rows 1–7, 10, 11 could-not-run (check:ci requires `unshare --net`, which is unavailable on darwin; they are covered by the container lane above). Rows 8 and 9:
+
+```text
+| 8 | `statusgen --root . --consumers --brief desktools-v2/71 --delivery f7ad98d584842aef0001ddf22ee83b9e56e4f91f --base 0191789433dcb3d43618ac0b43e35bdede3e8c84` | pass exit=0 | sha256:2243e380259d | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e1c53c508e4f74d8ad04d3364d494 (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --lint` | pass exit=0 | sha256:cc4ab06a7fb2 | 2026-10-23 | assay-verifier-app[bot] @ 3e24567bbc4e1c53c508e4f74d8ad04d3364d494 (on-behalf-of human:ian) (forge-identity) |
+```
+
+Primary output was inspected by re-running each command directly (same output hash). Row 8: 4 CORROBORATED, 0 disproved, 2 UNCHECKED (version-2 receipts and adopter-owned image/runtime, both out-of-scope and reviewer-owned), `completeness is not proved`. This matches Expect. Row 9: `LINT: PASS`, zero PROBLEM lines, none naming this brief. Notices name this brief only for the `risk-files-crossread` advisory (deskkit path versus all-"no" risk answers; the gate is already `human`) and for `gotest-run-vacuous` on rows 1–5. Rows 10 and 11 already assert `--- PASS:`.
+
+#### Other checks
+
+`deskpathguard rederive --root <checkout> --brief <brief>`: exit 6, `could-not-check: cannot rederive Verify table: base: Verify section line 7: row width differs from header (escape cell pipes as \|)`. The protected-table transition above is the sanctioned re-derivation path for this brief. This line is recorded and not relied on.
+
+Row 6 content was read in full, not only as an exit code. docs/brief-rules.md, the verify-desk skill and the pr-review-desk skill each name `Admission-Bracket` and state "Credit a row only on `credit=credited`, never on `verdict=match` alone".
+
+Runner-cell gate: every Runner cell in both tables reads `assay-verifier-app[bot] @ <sha> (on-behalf-of human:…) (forge-identity)`. No cell was hand-edited.
+
+#### Risk-bearing values (enumerated, ranked, derived)
+
+RISK-VALUE: onBehalfOfStampRe `\(on-behalf-of human:[^\s()]+\)` @ statusgen/containerbracket.go:948 — DERIVED from Task 1's case-sensitive exact stamp form; looser spellings stay inside the hashed cell (whitespace collapse `[ \t]+` @ :950 per Task 1).
+RISK-VALUE: sha256DigestRe `^sha256:[0-9a-f]{64}$` @ statusgen/containerbracket.go:61 — DERIVED: a 32-byte sha256 is 64 lowercase hex characters.
+RISK-VALUE: hex40Re `^[0-9a-f]{40}$` @ statusgen/containerbracket.go:63 and creditHexCommitRe `^([0-9a-f]{40}|[0-9a-f]{64})$` @ statusgen/containercredit.go:286 — DERIVED: SHA-1 and SHA-256 git object id lengths.
+RISK-VALUE: tree modes "100644"/"100755"/"120000" @ statusgen/containerbracket.go:333/346/340 — DERIVED: git's canonical blob, executable and symlink tree modes (Task 1 tree digest).
+RISK-VALUE: receipt version gate (2 refused naming the limit; anything but 1 refused) @ statusgen/containerbracket.go:205/208 and statusgen/containercredit.go:419/421 — DERIVED from Task 3.
+RISK-VALUE: `closed.Truncate(time.Second).After(opened)` @ statusgen/containerbracket.go:640 — DERIVED: "opened strictly before closed" at RFC 3339 second precision (Tasks 1 and 6).
+RISK-VALUE: deskread record timeout `90*time.Second` @ statusgen/containercredit.go:603 — NAMED, NOT DERIVED (reversible knob, ranked last).
+
+#### Accounting
+
+11 rows. All 11 obligations were observed meeting their Expect under a sanctioned lane in this run. Rows 1–7, 10 and 11 pass in the bracketed container witness (`verdict=match`); their credit is deferred to `--credit` on the landed brief. For the go-test rows, the mutation obligations were exercised only as far as the named tests encode them. Rows 8 and 9 pass on the host under the approved transition. No obligation was observed failing.
+
+Two items keep this from closing as a PASS now. (1) Rule 45 forbids crediting the nine container rows on `verdict=match` alone, and `--credit` needs the landed brief. (2) This run's witnesses span two tables: the container table records rows 8 and 9 as fail, and the host table records rows 1–7, 10 and 11 as could-not-run. The closure audit reads the latest witness per row, so whichever table comes last masks the other. How these combine into one closure record is a lane question for the desk, not something a verifier should settle by editing either table.
+
+**VERIFY: BLOCKED** — credit-timing and evidence-assembly block, not an obligation failure. All 11 rows were observed passing; credit for the nine container rows waits on `--credit` against the landed brief. Status is not flipped (`gate: human`).
+
 ## Review
 
 Gate: human (gate-why above). Independent correctness and security review of the exact head.
