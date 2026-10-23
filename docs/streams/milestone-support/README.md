@@ -2,7 +2,7 @@
 stream: milestone-support
 repo: medici-finance/assay
 serves: assay
-status: parked
+status: active
 priority: P2
 track: platform
 issues: []
@@ -16,10 +16,10 @@ spec: docs/streams/milestone-support/README.md
 **Status:** draft — authoring scope only; no source admission or lifecycle transition.
 
 Implement the merged delivery-milestone and prefixed-reference contracts through shared
-libraries and existing readers. This stream is newly authored and parked: the controlling
-scope/spec remains draft, no operational reader capability is activated and no existing
-status or decision is flipped. Every brief is initially todo. Existing independent human,
-review, verification and release gates remain in force.
+libraries and existing readers. The driver authorized this stream to be active on
+23 October 2026 with v1.0.57 published. Its controlling scope/spec remains draft;
+stream activation supplies neither reader capability nor brief completion evidence.
+Existing independent human, review, verification and adoption gates remain in force.
 
 ## Briefs
 
@@ -45,8 +45,9 @@ review, verification and release gates remain in force.
 ## Scope and source admission
 
 The [controlling implementation scope](#implementation-scope) remains draft; the merged root contracts are its authoritative inputs.
-No spec is marked approved/routed by this authoring PR. Parked is an admission hold,
-not an implementation claim. New IDs are not used operationally: these briefs use
+No spec is marked approved/routed by this authoring PR. Stream activation is authorized
+by the driver; it is not an implementation or acceptance claim. New IDs are not used
+operationally: these briefs use
 supported brief-v2 fullIds and existing board/dependency forms until the readers ship.
 
 ## Critical path and verified head
