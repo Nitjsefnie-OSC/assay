@@ -373,3 +373,12 @@ lands; admission and the record format are unchanged. /73 makes `deskevidence` r
 or refuse an on-behalf-of annotation that is not the roster principal, with a lint
 parity test. /71, /72 and /73 each edit the verify-desk skill, so whichever lands later
 merges the others' text. Authoring these briefs does not claim their implementation.
+
+## Shared planner consumers — requested 23 October 2026
+
+[The efficiency amendment](../../desk-workflow-efficiency-spec.md#21-candidate-plus-priority-planner--requested-amendment-23-october-2026)
+uses v2's existing typed/custody/query boundary. Reuse /09's completed snapshot and batches;
+coordinate /20–21 CLI surfaces with desk-tools/39–43. graph-execution/27 owns the five-role
+planner binding and existing runtime owners handle claims/refill. Neither parser migration
+nor transport optimization creates a new priority engine. Ranked GH savings and parity
+qualification stay with desk-tools/44 and R6; completed Evidence is preserved.

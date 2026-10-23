@@ -19,7 +19,7 @@ exec-tier: strong
 exec-tier-why: "Cross-module shared policy, partial writes and independent actor/source binding require coordinated design and negative controls."
 domain: complicated
 sources:
-  - "docs/streams/verification-handoff/README.md — controlling draft scope"
+  - "docs/streams/verification-handoff/README.md — controlling implementation scope"
   - "spec/intake-exit-v1.md; docs/streams/desk-supervision/repair-obligation-v1.md; docs/verify-wake.md"
   - "freshness-checked 2026-10-23 @ fbe0331e2fc9f5c822c4edeafb8a18865c916828"
 consumers:
@@ -39,7 +39,7 @@ consumers:
 files: tools/desk/cmd/fanoutloop/, tools/desk/cmd/deskdispatch/, tools/desk/cmd/issueboard/, tools/desk/internal/issueflow/, plugins/assay/skills/worker-desk/SKILL.md, statusgen/testdata/verification-handoff/04-mutations.json (planned), changelog/verification-handoff-04.md (planned)
 
 facts:
-- Baseline main fbe0331e2fc9f5c822c4edeafb8a18865c916828, inspected 23 October 2026; source is draft and stream is parked.
+- Baseline main fbe0331e2fc9f5c822c4edeafb8a18865c916828, inspected 23 October 2026; source was draft and stream was parked at authoring. Scope approval and stream activation take effect on the maintainer's merge of PR #4206; per-brief gates remain separate.
 - Intake discovery sees ordinary verifier bugs; 14 of a bounded 28 recent verifier-filed issues carried explicit intake triage, not proof of claims or repairs.
 - The default loop filing/repair sinks print dry-run results. The live skill uses sanctioned deskfile/deskevidence paths; a printed URL is not durable work.
 - Existing intake-exit-v1 has two writers and exact-key conformance tests. Its local log is not a fleet-wide source of assignment authority.
