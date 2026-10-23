@@ -330,8 +330,9 @@ second task, claim or workflow. Conflicting revision requirements must be surfac
 
 ### Compatibility and canonical writes
 
-Existing `<stream>/<NN>`, `<stream>:<NN>`, `<repo>:<stream>:<NN>` and
-`<cell>:<repo>:<stream>:<NN>` references remain compatibility inputs under their
+Existing `<stream>/<NN>`, `<stream>:<NN>`, `<repo>:<stream>:<NN>`,
+`<cell>:<repo>:<stream>:<NN>`, `<repo>:<stream>/<NN>` and
+`<cell>:<repo>:<stream>/<NN>` references remain compatibility inputs under their
 existing resolution rules. Earlier prefixed draft slash labels (`<stream>/b-<NN>`
 and `<cell>:<repo>:<stream>/b-<NN>`, optionally versioned) may also be read by the
 new negotiated adapter. New writes emit colon-only prefixed IDs/references; legacy
@@ -355,8 +356,10 @@ reminting or historical Evidence rewrite is required.
 
 The new references require a future negotiated brief schema (provisionally `brief-v4`,
 subject to allocation alongside §3.7). Update generator/scaffolding, graph/dependency
-readers, board/eligibility, PR trailers/claims, workflow/handoff adapters and
-history/export/import consumers together. Advertise support and refuse required
+readers, board/eligibility, PR trailers/claims, workflow/handoff adapters, the
+human-gate ruling-link/board-ID check (lifecycle §4.5), and history/export/import
+consumers together. Old/new aliases must bind the same brief in human rulings;
+normalization must not bypass or weaken a human gate. Advertise support and refuse required
 unsupported semantics. This draft adds no supporting release or operational YAML.
 
 Authoring skills MUST write the new colon-only form once the pinned generator and all

@@ -135,7 +135,7 @@ legacy consumers. Existing canonical fullIds and filenames remain unchanged (bri
 
 ```markdown
 ---
-brief: <stream>/<NN>                # typed ID, matches stream README table row
+brief: <cell>:<repo>:<stream>:<NN>   # current brief-v2 fullId; board label is <stream>/<NN>
 title: <one line>
 why: <prose>                        # REQUIRED for every NEW brief — one to three lines a non-engineer
                                     # could read and justify the work from. Not the WHAT (that's title
