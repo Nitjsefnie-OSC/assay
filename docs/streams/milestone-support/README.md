@@ -12,13 +12,15 @@ spec: docs/streams/milestone-support/README.md
 
 # Milestone support across statusgen and desk-tools
 
-**Version:** v1.0-draft
-**Status:** draft — authoring scope only; no source admission or lifecycle transition.
+**Version:** v1.0
+**Status:** approved — approval of this implementation scope and stream activation take effect on the maintainer's merge of [PR #4182](https://github.com/medici-finance/assay/pull/4182), the ruling record under lifecycle §8.4.
+
+**Routes-to:** `docs/streams/milestone-support/`
 
 Implement the merged delivery-milestone and prefixed-reference contracts through shared
-libraries and existing readers. The driver authorized this stream to be active on
-23 October 2026 with v1.0.57 published. Its controlling scope/spec remains draft;
-stream activation supplies neither reader capability nor brief completion evidence.
+libraries and existing readers. With v1.0.57 published, this change proposes approval
+of the implementation scope and activation together on the maintainer's merge of PR #4182.
+That merge supplies neither reader capability nor brief completion evidence.
 Existing independent human, review, verification and adoption gates remain in force.
 
 ## Briefs
@@ -44,10 +46,10 @@ Existing independent human, review, verification and adoption gates remain in fo
 
 ## Scope and source admission
 
-The [controlling implementation scope](#implementation-scope) remains draft; the merged root contracts are its authoritative inputs.
-No spec is marked approved/routed by this authoring PR. Stream activation is authorized
-by the driver; it is not an implementation or acceptance claim. New IDs are not used
-operationally: these briefs use
+The [controlling implementation scope](#implementation-scope) and stream activation
+are ratified together by the maintainer's merge of PR #4182. The existing root contracts
+remain authoritative inputs; this change does not approve or alter them. Scope approval
+is not implementation or acceptance. New IDs are not used operationally: these briefs use
 supported brief-v2 fullIds and existing board/dependency forms until the readers ship.
 
 ## Critical path and verified head
@@ -128,10 +130,11 @@ found no milestone/resolver/brief-v4 implementation proposal; this is bounded ov
 coverage, not proof no other worker owns adjacent code. Recheck active claims and
 file-level PR overlap at pickup.
 
-Unresolved release/adoption acts: source approval/admission, risk-gated design decisions,
+Scope approval and stream admission take effect on the maintainer's merge of PR #4182.
+Remaining release/adoption acts: risk-gated design decisions,
 independent verification, complete operation-specific reader qualification, actual
 module/tool publication and adopter pin/activation decisions. No planning or fixture
-run supplies these acts. Existing statuses and ready labels remain untouched.
+run supplies these acts. Brief completion states and ready labels remain untouched.
 
 ## Implementation scope
 
@@ -228,5 +231,6 @@ consumer/library versions and unavailable checks. A module import or green fixtu
 alone cannot prove the live supported outcome. Recheck current source, claims and
 consumer overlap before pickup and preserve completed/in-flight work history.
 
-No active-stream admission, spec approved/routed transition, brief lifecycle advance,
-PR-ready label, tag, installed pin or release publication is authorized by this scope.
+The maintainer's merge of PR #4182 ratifies this scope and activates the stream.
+It does not advance any brief lifecycle state or grant a PR-ready label, tag, installed
+pin, release publication, root-contract approval or live runtime activation.
