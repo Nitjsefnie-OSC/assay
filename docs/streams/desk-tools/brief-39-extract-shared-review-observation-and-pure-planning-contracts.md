@@ -25,6 +25,10 @@ domain: complicated
 gate-why: Review/issue observations can expose scoped operational facts; implemented coverage and authority boundaries require the existing human acceptance.
 decision-trigger: spec
 consumers:
+  - "tools/desk/internal/reviewflow/selection.go: fixed-here (remaining candidate-plus-priority amendment)"
+  - "tools/desk/internal/reviewtest/selection_test.go: fixed-here (priority/capacity/coverage and mutation proof)"
+  - "spec/review-observation-v1.md: fixed-here (Go selection API and compatibility contract)"
+  - "docs/contracts.md: fixed-here (existing semantic-owner index)"
   - "tools/desk/internal/deskclient/: follow-up graph-execution/27"
   - "tools/desk/cmd/deskboard/: fixed-here (shared classification facts; observation collection follows in desk-tools/40)"
   - "tools/desk/cmd/reviewloop/: fixed-here (shared plan assembly; observation CLI handoff follows in desk-tools/40)"
@@ -146,3 +150,21 @@ tools/desk-local binding. It does not import cmd/main across modules, duplicate 
 classifier, change this brief's acceptance or add a process supervisor here. Preserve
 the current oracle, authority boundary and planned library home. This is a forward
 consumer, not a dependency on future workflow/controller delivery.
+
+## Implementation pickup — remaining amendment, 23 October 2026
+
+Continue at public main `4a4b8e4f3`. The original extraction and observation contract already
+shipped in PR #3593; reuse reviewflow/PlanObservation and the existing command adapters.
+The remaining merged amendment is the explicit candidate-plus-priority/capacity join and
+TestReviewPriorityJoin, not another classifier or a second queue. The source is the merged
+planner amendment in PR #4218, with docs/library-first.md, docs/contracts.md and
+spec/review-observation-v1.md at this source revision. Claim inspection found no active
+owner or open delivery PR for this brief. The driver explicitly requested this implementation
+and draft PR; no approval stamp, new ruling or lifecycle advancement is inferred.
+
+The additive internal Go API is PlanCandidates; collection and command/prose adoption remain
+/40, /43 and graph-execution/27, with their existing gates. Legacy board/reviewloop ordering
+is preserved and checked by the existing regression suite. The original fixed-here entries
+for those adapters describe the inherited extraction, not new edits in this follow-up.
+No status cell, historical Evidence or human gate is changed. Existing lifecycle reconciliation
+holds for the earlier delivery are disclosed rather than bypassed or repaired by a new stamp.

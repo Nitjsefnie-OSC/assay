@@ -443,7 +443,10 @@ See [projection and compatibility contracts](issue-projections.md).
 `tools/desk/internal/reviewflow` owns the pure advisory classifier, action table,
 coalescing, plan assembly and [review-observation-v1](../spec/review-observation-v1.md)
 contract. `BuildObservation`, `DecodeObservation` and `PlanObservation` operate on
-values. `ClassificationFacts.ClassifyInput` and `PlanBoard` also serve the existing
+values. `PlanCandidates` adds the same pure review-role candidate/priority/capacity join,
+with explicit owner/revision/evaluator and visible unmapped/not-observed entries. Its
+`SelectionPlan` is advisory; the observation wire remains v1.
+`ClassificationFacts.ClassifyInput` and `PlanBoard` also serve the existing
 `deskboard` and `reviewloop plan` adapters; neither command imports another command.
 `statusgen/evaluation` retains eligibility and coverage semantics.
 
