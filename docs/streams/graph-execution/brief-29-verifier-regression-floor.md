@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: []
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-10-13 by worker-desk (author-brief), non-CI architecture reconciliation
 sources:
   - docs/proposals/non-ci-architecture/15-regression-from-day-one.md — "Establishing the implementation baseline" and "How to establish the suite without preserving accidents"
@@ -83,7 +83,11 @@ remove the original assertions.
 2. Extract each reusable case's frozen facts into `cases/` (planned) with independent expected results
    written by hand from the test's assertion, not produced by either implementation.
 3. Implement old and new adapters inside `statusgen/regressionfloor_test.go` (planned) and compare results
-   per case. A difference not listed in `differences.yaml` fails; a listed difference that no
+   per case. Actual consumption means the existing package-main observation adapter and
+   the new adapter's shared domain.Record and domain.Assess execute on the same frozen
+   facts; fixture serialization or owning-brief corroboration alone is insufficient.
+   This is the production adapter flow already required by Verify 2, not a new acceptance
+   row or a claim that /19 or /23 integration ran. A difference not listed in `differences.yaml` fails; a listed difference that no
    longer occurs also fails (stale entries cannot accumulate).
 4. Fail when zero cases are selected or an inventory entry names a test or file that does not
    exist. Each result line names which implementation and evaluator identity ran.
