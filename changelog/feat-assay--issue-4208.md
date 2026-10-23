@@ -1,0 +1,2 @@
+### Fixed
+- `statusgen verifyrun --sandbox=container-netns` no longer refuses `could-not-attribute` on a home cut as a linked worktree. `--open-bracket` derives the runner on the host and records it in the receipt (`runner`, `runner_source`). The container run writes that runner into every row and derives none of its own; a receipt with no runner still refuses `could-not-attribute`. `--close-bracket` re-derives the runner on the host and refuses unless the receipt and every row's Runner cell name it.
