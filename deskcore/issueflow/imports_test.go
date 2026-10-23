@@ -49,9 +49,10 @@ func checkConsumers(t *testing.T) {
 		dir, pkg, pattern string
 		names             []string
 	}{
-		{"statusgen", ".", "TestHandoffScanner", []string{"TestHandoffScanner"}},
+		{"statusgen", ".", "TestHandoffScanner|TestIntakeExitSchema_MatchesDoc", []string{"TestHandoffScanner", "TestIntakeExitSchema_MatchesDoc"}},
 		{"tools/desk", "./cmd/issueboard", "TestProjectionJourney|TestProjectionFailures|TestBoardLabelHistoryHold|TestTrustGate_BlessThenEdit", []string{"TestProjectionJourney", "TestProjectionFailures", "TestBoardLabelHistoryHold", "TestTrustGate_BlessThenEdit"}},
 		{"tools/desk", "./cmd/fanoutloop", "TestPlanLeadsWithAddressed|TestUnaddressedRowsUnaffected", []string{"TestPlanLeadsWithAddressed", "TestUnaddressedRowsUnaffected"}},
+		{"tools/desk", "./cmd/scanloop", "TestIntakeExitSchema_MatchesDoc", []string{"TestIntakeExitSchema_MatchesDoc"}},
 		{"tools/desk", "./cmd/deskinbox", "TestDiscoveryJourney", []string{"TestDiscoveryJourney"}},
 	} {
 		goCheck(t, filepath.Join(root, c.dir), nil, c.names, "test", "-count=1", "-v", "-timeout=45s", "-run", "^("+c.pattern+")$", c.pkg)

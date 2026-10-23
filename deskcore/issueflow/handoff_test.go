@@ -2,6 +2,9 @@ package issueflow
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +17,32 @@ func sampleHandoff() (Handoff, HandoffFacts) {
 
 // regression: class verification-handoff
 func TestHandoffPolicyParity(t *testing.T) {
+	// Adopt the existing contract's closed vocabulary, not an untested third list.
+	rawRoles, err := os.ReadFile(filepath.Join(repoRoot(t), "spec/intake-exit-v1.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roleSection := strings.SplitN(string(rawRoles), "## Closed role set", 2)
+	if len(roleSection) != 2 {
+		t.Fatal("missing role contract")
+	}
+	roleTable := strings.SplitN(roleSection[1], "## Typed refs", 2)[0]
+	roles := 0
+	for _, line := range strings.Split(roleTable, "\n") {
+		if strings.HasPrefix(line, "| `") {
+			parts := strings.Split(line, "`")
+			if len(parts) > 1 {
+				roles++
+				if !knownRole(parts[1]) {
+					t.Fatalf("inherited role rejected: %s", parts[1])
+				}
+			}
+		}
+	}
+	if roles != 6 {
+		t.Fatalf("closed role contract changed: got %d; reconcile the companion", roles)
+	}
+
 	if Valid(Scanner) {
 		t.Fatal("library-only scanner became a CLI projection")
 	}
