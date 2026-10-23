@@ -425,9 +425,15 @@ go-live.
 
 ## Issue projection selection
 
-`tools/desk/internal/issueflow` owns pure candidate population selection and the
-human inbox's escalation-label rank. It consumes observed facts and caller-owned
-policy booleans. Issueboard retains classification, trust, escalation and closure;
+`deskcore/issueflow` owns pure candidate population selection, historical addressee
+parsing, the human inbox's escalation-label rank and advisory handoff assessment.
+`tools/desk/internal/issueflow` is a compatibility facade over that public owner.
+Statusgen calls the public owner for ordinary scanning; issueboard (including intake
+and worker projections), deskinbox and the worker addressed-inbox adapter share it.
+The companion [verification-handoff-v1](../spec/verification-handoff-v1.md) retains
+legacy observations as unknown and grants no scheduling or acceptance authority.
+It consumes observed facts and caller-owned policy booleans. Issueboard retains
+classification, trust, escalation and closure;
 deskkit retains provider reads, custody and identity. Deskinbox and the shell
 adapter consume the same human-inbox ordering without moving the ruling screen.
 See [projection and compatibility contracts](issue-projections.md).
