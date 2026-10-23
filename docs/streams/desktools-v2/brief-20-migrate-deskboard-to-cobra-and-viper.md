@@ -251,6 +251,8 @@ RISK-VALUE: DERIVED — min-age-hours Default "48", merge-now-threshold Default 
 
 **VERIFY: FAIL** — row 10: TestCLIHelpDoesNotDiscoverManifests is still absent from ./cmd/deskboard at c82a8c5f807b (exit=1, no PASS line); rows 1-9 pass (row 8 on host; its container red is the fixture's environment assumption). (blocker: #2111)
 
+Outcome record: no verify-fail outcome record has landed for this pass yet; it lands on this Evidence branch through #4181 (a fresh admitted re-dispatch writes it with `deskevidence --outcome-record`; records are never hand-written).
+
 
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.
