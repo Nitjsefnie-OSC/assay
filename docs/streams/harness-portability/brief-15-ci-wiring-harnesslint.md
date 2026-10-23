@@ -676,6 +676,8 @@ Blocker: medici-finance/assay#1927 is open, and its checklist items for this bri
 
 **VERIFY: FAIL** — check-definition, not deliverable (medici-finance/assay#1927). 11 of 12 rows pass as authored (1, 2, 2a, 3, 4, 4a, 5, 5a, 6, 7, and 8 under plain bash), and deliverables (a), (b) and (c) are on main and behave as the brief says. Row 9 prints 22 where its Expect says 0, and row 8 prints 141 under pipefail. Status stays implemented until rows 4a, 8 and 9 are re-authored.
 
+Outcome record: no verify-fail outcome record has landed for this pass yet; it lands on this Evidence branch through #4181 (a fresh admitted re-dispatch writes it with `deskevidence --outcome-record`; records are never hand-written).
+
 ## Review
 
 Gate: **model** (from frontmatter; no `irreversible`/`sensitive-data`). The reviewer records the
