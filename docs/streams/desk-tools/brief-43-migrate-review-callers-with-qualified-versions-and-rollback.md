@@ -4,13 +4,13 @@ title: Migrate review callers with qualified versions and rollback
 why: "Shipping new verbs alone leaves duplicate enumeration in skills, monitors and reporting, and unsupported pins can reintroduce it."
 wave: 4
 depends: ["desk-tools/40", "desk-tools/41"]
-unblocks: ["desk-tools/44", "forge-neutral/45"]
+unblocks: ["desk-tools/44", "forge-neutral/45", "graph-execution/27"]
 effort: M
 gate: human
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 issues: []
 schema: brief-v2
-version: 2
+version: 3
 authored: 2026-10-17 by statusgen newbrief
 sources:
   - "Planning amendment 2026-10-23; source checked on App-fetched main 9c4307a19a190964db084104ecc1f7bd62cba433; candidate-plus-priority parity and GH-call audit"

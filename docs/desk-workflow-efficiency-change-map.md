@@ -174,7 +174,9 @@ extend existing delivery. No new stream/brief identity, second policy register o
 
 The first independently useful head remains /37's oracle plus /39's shared pure contract,
 then /40 and /43, qualified by /44. /27 composes the existing review/issue and verification
-APIs; /45 is a real prerequisite for its all-five-role queue parity, not an invented queue
-classifier. Add that edge reciprocally. R6 service dependencies remain on their own path;
+APIs. /45 supplies the canonical verification queue; /43 and /51 supply the actual review
+and verifier prose adapters required by all-five-role parity. All three are reciprocal
+prerequisites of /27: composition consumes their implementations instead of duplicating them.
+This includes /51’s existing human gate; no earlier pure-contract acceptance waits on /27. R6 service dependencies remain on their own path;
 read-only improvement does not wait on a credential/writer cutover. Active /42 work retains
 its assigned revision until its owner acknowledges the bounded input/acceptance amendment.

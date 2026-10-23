@@ -226,5 +226,7 @@ A completion or local policy change can rerun selection without GH requests; ref
 invalidated/due observations through the current collector or later R6. Keep idle coverage,
 STOP, current claims and final consequential rechecks. /27's five-role parity and no-refetch
 fixtures plus /44's matched provider-cost qualification establish this; a shorter prompt or
-successful process exit is insufficient. /45 is a reciprocal dependency of /27. Existing
+successful process exit is insufficient. /45, /43 and /51 are reciprocal dependencies of /27: base verification queue and the actual
+review/verifier prose adapters must qualify before all-five-role parity. This retains /51’s
+existing human decision and does not make the early review bridge depend on /27. Existing
 adoption/rollback and private adopter role cutovers remain separately controlled.

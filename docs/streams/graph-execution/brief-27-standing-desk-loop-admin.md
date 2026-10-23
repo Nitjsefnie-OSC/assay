@@ -11,6 +11,8 @@ depends:
 - desk-tools/39
 - desk-tools/42
 - desk-tools/45
+- desk-tools/43
+- desk-tools/51
 unblocks:
 - agent-execution/05
 - "agent-execution/09"
@@ -43,7 +45,7 @@ consumers:
 - 'workflow/controller: out-of-scope (separate caller delivered by graph-execution/21)'
 - 'plugins/assay/skills/worker-desk/SKILL.md desk-supervision/34 usage-record step: follow-up graph-execution/27 (this brief; for an enrolled worker role the step is skipped because the /26 journal records that run''s usage; flips to fixed-here when the implementation edits the path)'
 - 'tools/desk/cmd/deskusage/ record path (desk-supervision/34''s verb; the enrolled-worker skip): follow-up graph-execution/27 (this brief; `deskusage record` writes nothing for an enrolled worker role, Verify row 5; flips to fixed-here when the implementation edits the path)'
-version: 8
+version: 9
 id: af7e88a8-b411-40f9-b205-6b93f04ebed8
 ---
 

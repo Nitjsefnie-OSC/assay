@@ -8,6 +8,7 @@ authorized brief authoring on 17 October 2026. Approved source head:
 `7504e6dbbaaba3faab6bf64b1c987fb756b4a980`; merge:
 `067c7f02bd39997d719d0f64d8576efbc6f55bcc`. Approval authorizes the design and its
 decomposition; caller switches, retirement and collection retain their delivery gates.
+**Requested amendments:** §2.1 and A11–A12 are outside that earlier approval.
 **Approved delivery routing:** existing desk-tools, desktools-v2, forge-neutral and
 performance-collection owners, with adopter cutover and retirement owners. The
 [change map](desk-workflow-efficiency-change-map.md) distinguishes reuse, amendments and gaps.
