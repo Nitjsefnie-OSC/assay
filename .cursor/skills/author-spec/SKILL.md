@@ -61,8 +61,10 @@ Judge safer delivery and reduced recurring complexity, not a lower score in isol
 For stream scoping, staged delivery or a requested milestone revision, read the
 [shared milestone authoring procedure](../../references/milestone-authoring.md),
 including its support check and **Author-spec** section. Capture useful outcomes as
-`<stream>/m-<NN>`; identify proposed brief labels as `<stream>/b-<NN>` per brief
-§3.8, preserving existing IDs and reader compatibility. Capture supported scope, acceptance criteria/evidence and authority,
+`<cell>:<repo>:<stream>:m-<NN>`; identify proposed briefs as
+`<cell>:<repo>:<stream>:b-<NN>` per brief
+§3.8, allowing `:b-<NN>@<version>` references and preserving legacy aliases
+and reader compatibility. Full record IDs include cell/repo; colon elisions use context. Capture supported scope, acceptance criteria/evidence and authority,
 versioned prerequisite capabilities and open decisions. Preserve existing promises;
 do not infer milestone order from wave numbers or decompose the execution work here.
 Carry these records into the brief-authoring handoff. While readers lack support,

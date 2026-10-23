@@ -272,10 +272,12 @@ The draft [`milestone-v1.md`](./milestone-v1.md) defines a separate, versioned o
 contract. It does not extend the supported schema table above. A future negotiated
 brief schema (provisionally `brief-v4`, not allocated or implemented by this change)
 would add an optional `requires-milestones: array[string]` containing exact versioned
-milestone references per milestone §2: `<stream>/m-<NN>@<version>` for the current
-root, or `<cell>:<repo>:<stream>/m-<NN>@<version>` for explicit qualification.
-These use the new milestone-reference grammar, not the existing brief-only
-`qualifiedRef` parser; brief `fullId` remains `<cell>:<repo>:<stream>:<NN>`. Its presence would mean the capability is required before
+milestone references per milestone §2: `<stream>:m-<NN>@<version>` for the current
+root, `<repo>:<stream>:m-<NN>@<version>` within the declaring cell, or
+`<cell>:<repo>:<stream>:m-<NN>@<version>` for explicit qualification.
+These use the new typed milestone-reference grammar, not the existing brief-only
+`qualifiedRef` parser; brief §3.8 defines `:b-<NN>[@<version>]` and compatibility
+with the existing internal brief `fullId` `<cell>:<repo>:<stream>:<NN>`. Its presence would mean the capability is required before
 the consuming brief starts; absent/empty means no additional milestone start requirement.
 Unknown, unreadable or unaccepted required capabilities cannot be treated as ready.
 The brief Context must identify the capability it uses and the relevant supported
@@ -298,57 +300,71 @@ This proposed field MUST NOT be added to a legacy operational brief merely becau
 parser tolerates extra keys. Schema negotiation, dispatch refusal, all graph readers and
 report consumers must ship together before operational use (milestone §10).
 
-### 3.8 Proposed prefixed brief labels and deprecation (not shipped)
+### 3.8 Proposed colon-only brief references and deprecation (not shipped)
 
-For new authoring with negotiated reader support, the preferred brief label is
-`<stream>/b-<NN>` (for example, `build/b-11`); milestone labels remain
-`<stream>/m-<NN>`. The unprefixed `<stream>/<NN>` brief label is **deprecated for
-new authoring after that support is adopted**. Deprecated does not mean invalid,
-withdrawn or complete. Existing supported schemas and records retain their current
-requirements; this proposal does not make a `brief-v2` reader understand `b-`.
+For new authoring with negotiated reader support, the canonical brief ID is
+`<cell>:<repo>:<stream>:b-<NN>`, for example `example-cell:tools:build:b-11`.
+A brief definition's `brief` field uses that full, unversioned ID; its existing
+positive integer `version` field records the Task/Verify revision separately.
+References may optionally pin that revision as `:b-<NN>@<version>`.
+Milestone references use `:m-<NN>@<contract-version>` instead. The prefixes name
+different work types, and the two version counters have different meanings.
 
-This changes the authored label/reference grammar, not the work's identity. Preserve
-any existing permanent UUID, brief version, lifecycle, Evidence and historical aliases.
-The canonical internal brief `fullId` remains `<cell>:<repo>:<stream>:<NN>` per
-context-handoff §2; it is not deprecated by this proposal. In particular, milestone
-`contributes` continues to use that fullId, not a display label.
+The future typed brief adapter accepts these colon-only forms:
 
-The future prefixed-brief adapter accepts these forms only when support is negotiated:
-
-| Written brief reference | Normalized canonical identity |
+| Written reference | Expanded identity |
 |---|---|
-| `<stream>/b-<NN>` | `<declaring cell>:<declaring repo>:<stream>:<NN>` |
-| `<cell>:<repo>:<stream>/b-<NN>` | `<cell>:<repo>:<stream>:<NN>` |
+| `<cell>:<repo>:<stream>:b-<NN>[@<version>]` | Explicit owning cell, repo and stream. |
+| `<repo>:<stream>:b-<NN>[@<version>]` | Declaring cell; explicit repo and stream. |
+| `<stream>:b-<NN>[@<version>]` | Declaring cell/repo; explicit stream. |
 
-Cell/repository/stream name and brief-number grammar are inherited from context-handoff
-§2; prefixing does not allocate a new number space. The repo is a graph alias registry
-alias. The adapter MUST resolve the declaration's actual root; unknown/ambiguous roots
-are unknown, not a fuzzy match. `b-` and `m-` references are different types and MUST NOT
-be substituted for each other. Existing `qualifiedRef` and verification-domain parsers
-continue to refuse slash forms; normalize through the new negotiated adapter before
-calling those APIs. This defines no `:b-` canonical form or implicit colon elisions.
+Brackets above indicate an optional suffix; they are not literal syntax. Names,
+repo-alias lookup and brief-number grammar follow context-handoff §2. Expansion uses
+the declaration's actual cell/root, never a fuzzy search. A present version is a
+positive integer and MUST resolve to that exact authored brief revision. A missing
+or unreadable requested revision is unknown; a newer revision cannot silently replace
+it. With no suffix, resolve the brief at the selected source snapshot and record its
+observed version/commit before execution or assessment. No implicit global latest.
+The revision selector is not part of logical work identity and MUST NOT allocate a
+second task, claim or workflow. Conflicting revision requirements must be surfaced.
 
-During migration, old and prefixed labels for the same brief MUST resolve to the same
-canonical identity/UUID, not duplicate graph nodes, claims, workflow work or history.
-An alias collision with different identities MUST refuse. Label conversion alone does
-not bump the work's Task/Verify version or establish completion/acceptance. Preserve
-source locators and old references; no bulk rename or historical Evidence rewrite.
-The existing `brief-<NN>-<slug>.md` filename convention is unchanged.
+### Compatibility and canonical writes
 
-The new label requires a future negotiated brief schema (provisionally `brief-v4`,
-subject to allocation alongside §3.7). Update generator/scaffolding, brief and graph
-readers, dependency inversion/waves, board/eligibility, PR trailers/claim keys, workflow
-and handoff adapters, history/export/import and all authoring/report consumers together.
-Readers must advertise support and refuse required unsupported semantics. Do not
-advertise a supporting release or add operational `b-` YAML through this draft.
+Existing `<stream>/<NN>`, `<stream>:<NN>`, `<repo>:<stream>:<NN>` and
+`<cell>:<repo>:<stream>:<NN>` references remain compatibility inputs under their
+existing resolution rules. Earlier prefixed draft slash labels (`<stream>/b-<NN>`
+and `<cell>:<repo>:<stream>/b-<NN>`, optionally versioned) may also be read by the
+new negotiated adapter. New writes emit colon-only prefixed IDs/references; legacy
+unprefixed and slash forms are **deprecated for new authoring after adoption**, not
+invalid historical records. No compatibility read may reinterpret a milestone as a brief.
 
-Authoring skills MUST prefer `b-` for new briefs once the pinned generator and every
-required consumer support it. Until then, capture proposed IDs in authored scoping
-prose; executable briefs use the pinned reader's supported legacy form, with the
-migration limitation disclosed. Existing briefs need no automatic rewrite. The pilot
-must show mixed old/new references deduplicate, deprecated aliases remain readable,
-unsupported readers refuse, cross-root qualification resolves, and `m-` never resolves
-as brief work. Approval and coordinated implementation precede operational adoption.
+All aliases normalize to the same existing permanent UUID/work identity. The current
+internal brief `fullId` `<cell>:<repo>:<stream>:<NN>` used by context-handoff and
+verification-domain remains an internal compatibility representation, not a second
+work item. Existing `qualifiedRef` and verification-domain APIs are not changed by
+this draft: they still reject `b-`, `m-`, slash and revision suffixes. The future
+adapter resolves type, identity and revision, then supplies the existing normalized
+ID plus separately bound version/subject to those APIs. Never feed new syntax to an
+old parser and assume it understood it. Unknown/ambiguous aliases refuse or remain
+unknown; aliases resolving to different UUIDs are a collision, not duplicates to merge.
+
+Preserve brief versions, lifecycle, Evidence, source locators and historical aliases.
+Label conversion alone does not bump Task/Verify version or establish completion.
+The `brief-<NN>-<slug>.md` filename convention is unchanged. No bulk rename, UUID
+reminting or historical Evidence rewrite is required.
+
+The new references require a future negotiated brief schema (provisionally `brief-v4`,
+subject to allocation alongside §3.7). Update generator/scaffolding, graph/dependency
+readers, board/eligibility, PR trailers/claims, workflow/handoff adapters and
+history/export/import consumers together. Advertise support and refuse required
+unsupported semantics. This draft adds no supporting release or operational YAML.
+
+Authoring skills MUST write the new colon-only form once the pinned generator and all
+required consumers support it. Until then capture proposed IDs in scoping prose;
+executable briefs retain the pinned reader's supported legacy form with the limitation
+disclosed. The pilot must show old/new aliases deduplicate, optional revision pins bind
+exactly, unversioned reads bind a source snapshot, unknown versions stay unknown,
+unsupported readers refuse, cross-root elisions resolve, and `m-` never becomes brief work.
 
 ## 4. Body structure
 

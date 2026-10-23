@@ -36,50 +36,52 @@ Each `(milestone ID, contract-version)` MUST have exactly one canonical record u
 version come from the record's keys, never by parsing a slug or filename suffix.
 The owning stream is accountable for the promise; contributing briefs MAY live elsewhere.
 
-The record's `milestone` key is `<stream>/m-<NN>`, for example `build/m-03`.
-`NN` is a positive decimal number padded to at least two digits; noncanonical spellings
-such as `m-3` MUST be rejected. The `m-` prefix identifies a milestone, not its execution
-wave. The containing stream MUST match the key. Global identity includes the owning
-cell and repository, so two roots with the same local label are distinct.
+The record's `milestone` key is the full colon-only ID
+`<cell>:<repo>:<stream>:m-<NN>`, for example `example-cell:tools:build:m-03`.
+The containing cell/repository/stream MUST agree with that key. `NN` is a positive
+decimal number padded to at least two digits; `m-3` is rejected. The `m-` prefix
+identifies a milestone, not its execution wave. IDs MUST NOT be reused after retirement.
 
 A milestone dependency pins an exact positive contract version. Its accepted forms are:
 
 | Written milestone reference | Resolution |
 |---|---|
-| `<stream>/m-<NN>@<version>` | Current declaring cell and repository only. |
-| `<cell>:<repo>:<stream>/m-<NN>@<version>` | Explicit cell and repository; also permitted for same-root references. |
+| `<cell>:<repo>:<stream>:m-<NN>@<version>` | Explicit owning cell/repository/stream. |
+| `<repo>:<stream>:m-<NN>@<version>` | Declaring cell; explicit repository/stream. |
+| `<stream>:m-<NN>@<version>` | Declaring cell/repository; explicit stream. |
 
-`<cell>`, `<repo>` and `<stream>` use the lower-case name grammar from
+Names and repo-alias lookup follow
 [`context-handoff-v1.md` §2](./context-handoff-v1.md#2-qualified-brief-ids).
 `<repo>` is an alias from the existing **graph alias registry**, never an owner/name pair.
-Expansion uses the declaration's owning root and the same cell/repository identities
-already used for briefs. No repository-only or stream-only colon elision is defined for
-milestones. Unknown aliases, ambiguous roots, whitespace or unrecognized forms MUST be
-rejected or reported unknown as appropriate; never search other roots by matching a slug.
+Expansion uses the declaration's owning cell/root; unknown or ambiguous identities
+are unknown, never a search across roots by slug. New writes use colon-only forms.
+Earlier draft slash references (`<stream>/m-<NN>@<version>` or
+`<cell>:<repo>:<stream>/m-<NN>@<version>`) remain compatibility inputs to the future
+negotiated adapter and MUST normalize to the same identity/version. They do not create
+another milestone or imply current parser support. Record-key migration likewise
+preserves the original owning root and identity.
 
-This is a new typed **milestone-reference** grammar, intentionally retaining `/m-` to
-distinguish it from the proposed brief label `<stream>/b-<NN>`. The legacy
-`<stream>/<NN>` label is deprecated for new authoring after negotiated `b-` support
-is adopted (brief §3.8); existing records remain readable. It MUST NOT be passed to
-`qualifiedRef`, `ResolveQualifiedID` or the verification-domain work-identity parser.
-Those existing contracts continue to reject slash references. Reusing their repository
-registry does not extend their brief-only syntax or advertise milestone reader support.
+`contributes` writes full colon-only brief references
+`<cell>:<repo>:<stream>:b-<NN>[@<version>]`, with the optional exact authored-brief
+revision selector defined in brief §3.8. That is distinct from this milestone's
+contract version. Unversioned contributions bind the brief revision in the assessed
+source snapshot; an unavailable explicitly requested revision is unknown, never
+substituted with another revision. Existing unprefixed fullIds
+and other legacy aliases remain readable through that compatibility adapter, not new writes.
 
-`contributes` uses only canonical brief `fullId` values:
-`<cell>:<repo>:<stream>:<NN>`, per context-handoff §2. Neither `<stream>/<NN>` labels
-nor proposed `<stream>/b-<NN>` labels or two/three-segment brief elisions are
-accepted in that field. The internal fullId is not deprecated by the new label. Thus milestone
-reference resolution and brief contribution resolution have distinct input grammars,
-with the same registry owning repository aliases. IDs MUST NOT be reused after retirement.
-A rename MUST preserve identity or retain an unambiguous alias through the existing
-identity mechanism; duplicate `(owning cell, repository, ID, version)` is an error.
+Both typed adapters reuse the existing graph alias registry. Neither the `b-` nor
+`m-` grammar is already accepted by the brief-only `qualifiedRef` or verification-domain
+parser: those contracts and their internal fullIds remain unchanged. Resolve the new
+reference through the negotiated adapter before invoking existing APIs. A rename MUST
+preserve identity or retain an unambiguous alias through the existing identity mechanism;
+duplicate `(owning cell, repository, ID, version)` records are an error.
 
 Three different versions MUST remain distinct:
 
 - `schema: milestone-v1` identifies the record format.
 - `contract-version: <positive integer>` identifies the externally relied-on promise.
   Dependency references MUST pin an exact version, e.g.
-  `example-cell:tools:build/m-03@1`; no implicit latest or version ranges in v1.
+  `example-cell:tools:build:m-03@1`; no implicit latest or version ranges in v1.
 - A source revision (repository commit and path) identifies the exact plan and evidence
   snapshot. Edits to contributing briefs without changing the promise do not require a
   new contract version. Git history preserves those edits; a second manual edit counter
@@ -99,13 +101,13 @@ typed keys MUST be diagnosed, rather than silently ignored.
 | Key | Type | Meaning |
 |---|---|---|
 | `schema` | string | Exactly `milestone-v1`. |
-| `milestone` | string | Local stable ID `<stream>/m-<NN>` from §2; containing root supplies its owning cell/repository. |
+| `milestone` | string | Full colon-only ID `<cell>:<repo>:<stream>:m-<NN>` from §2; owning root must agree. |
 | `contract-version` | integer | Positive promise version. |
 | `title` | string | A plain-language useful outcome, not only “m-03” or a wave label. |
 | `owner` | string | Accountable role or team; confers no approval authority. |
 | `sources` | array[string] | Nonempty canonical spec/decision references; pin material revisions in the body. Reuse existing REQ IDs where applicable. |
-| `contributes` | array[string] | Canonical four-segment brief `fullId` values from §2, unique within this record; required completion work. Empty is permitted for an existing capability, with justification and evidence. |
-| `requires-milestones` | array[string] | Exact milestone-version references in either form defined in §2, needed to accept this outcome. Empty explicitly means none. |
+| `contributes` | array[string] | Full colon-only `:b-<NN>[@<version>]` references from §2, unique by logical brief identity within this record; required completion work. Empty is permitted for an existing capability, with justification and evidence. |
+| `requires-milestones` | array[string] | Exact milestone-version references in one of the three forms defined in §2, needed to accept this outcome. Empty explicitly means none. |
 
 The body MUST contain:
 
@@ -144,13 +146,15 @@ A brief MAY contribute to several milestones. Counts deduplicate by canonical br
 ### Example: “Build changes are less brittle”
 
 In a hypothetical record owned by cell `example-cell`, repository alias `tools`,
-`milestone: build/m-03` and `contract-version: 1` identify `build/m-03@1` locally.
-Its `contributes` list is `["example-cell:tools:build:11", "example-cell:tools:build:12"]`.
-Its `requires-milestones` list may be `["stream-y/m-01@1", "stream-z/m-02@1"]` when both
-are in that same root. A cross-root dependency uses, for example,
-`example-cell:other-tools:stream-y/m-01@1`, with `other-tools` registered there.
-The labels `build/b-11` and `build/b-12` are preferred future authoring labels,
-not contribution values; existing `build/11` and `build/12` remain migration aliases.
+`milestone: example-cell:tools:build:m-03` and `contract-version: 1` identify
+`example-cell:tools:build:m-03@1`.
+Its `contributes` list is `["example-cell:tools:build:b-11", "example-cell:tools:build:b-12@2"]`.
+The latter pins brief 12's authored revision 2; it does not refer to milestone contract 2.
+Its `requires-milestones` list may be `["stream-y:m-01@1", "stream-z:m-02@1"]` in
+that same root. A cross-root dependency uses, for example,
+`example-cell:other-tools:stream-y:m-01@1`, with `other-tools` registered there.
+Legacy brief aliases `build/11`, `build:11` and `example-cell:tools:build:11`
+continue to identify the same logical brief as `example-cell:tools:build:b-11`.
 If only brief 12 needs Y's capability to start, only brief 12 declares that requirement.
 Brief 11 can proceed independently. Z may be needed only for joined acceptance.
 Splitting Y's internal brief into three updates Y's contribution list and coverage;

@@ -27,8 +27,10 @@ graph alias registry and existing root/cell identity facilities. The scoping sou
 proposal does not approve its source or authorize a parked stream to run.
 
 For an opted-in future stream, canonical milestone records live beneath `milestones/`
-per [`milestone-v1.md`](./milestone-v1.md), with stable IDs `<stream>/m-<NN>`
-distinct from the proposed brief labels `<stream>/b-<NN>` (brief §3.8). Legacy
+per [`milestone-v1.md`](./milestone-v1.md), with full IDs `<cell>:<repo>:<stream>:m-<NN>`
+distinct from brief references `<cell>:<repo>:<stream>:b-<NN>[@<version>]`
+(brief §3.8). Colon-only elisions resolve against the declaration; legacy aliases
+remain compatibility inputs, not canonical writes. Legacy
 `<stream>/<NN>` labels remain readable and are deprecated only for new authoring
 after coordinated reader support; canonical internal brief fullIds are unchanged. Discover records there rather than hand-maintain
 an additional membership list in README frontmatter. Each milestone has one owning
