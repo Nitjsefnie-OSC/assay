@@ -57,5 +57,11 @@ or a statusgen release have been published. A release/pin update remains separat
 
 Run the four named Verify tests in the brief. After committing, run
 `python3 statusgen/testdata/milestone-support/01-mutate.py` from the repository root.
-Every manifest entry compiles and must fail its named test; three entries plant a
-second production source with an effect import. The runner restores each plant.
+The manifest uses the explicit `workref-mutations-v1` schema: `cases` hold
+repo-root-relative `target` paths. It is a Python runner input, separate from
+the native muhar spec format, whose edits are relative to a Go module and cannot
+create these planted source files. The runner first requires each pristine
+named test to pass, then requires every case to fail its named test; build or
+setup failures do not count. All ten cases remain covered, including three
+that plant a second production source with an effect import. The runner restores
+each plant. The repository's native muhar anchor check remains unchanged.
