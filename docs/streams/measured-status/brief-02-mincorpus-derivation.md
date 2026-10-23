@@ -322,31 +322,6 @@ Verification-Attestation: medici-finance/assay#3962 run=601383e826e9a6a1d84e10d9
 
 **VERIFY: BLOCKED** — rows 1 to 4 pass network-off; row 5 is could-not-check (exit 2): no committed Verification-Table marker at this sha (class medici-finance/assay#1915). 4 of 5 rows passed.
 
-### Non-implementer verifier re-run — 2026-10-22 claude-opus-5-5
-
-| # | Command | Result | Output | Date | Runner |
-|---|---------|--------|--------|------|--------|
-| 1 | `cd qualgen && go test ./riskscore/ -run '^TestMinCorpusDerivedFromFeatureCount$' -count=1 -v 2>&1 \| grep -c '^--- PASS: TestMinCorpusDerivedFromFeatureCount'` | pass exit=0 | sha256:4355a46b19d3 | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
-| 2 | `cd qualgen && go test ./riskscore/ -run '^TestMinCorpusGovernsLearnedSwitch$' -count=1 -v 2>&1 \| grep -c '^--- PASS: TestMinCorpusGovernsLearnedSwitch'` | pass exit=0 | sha256:4355a46b19d3 | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
-| 3 | `cd qualgen && go build ./riskscore/` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
-| 4 | `grep -q 'Derivation:' qualgen/riskscore/learned.go` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
-| 5 | `statusgen --root . --consumers --brief assay:assay:measured-status:02` | pass exit=0 | sha256:f32c3af8eb1f | 2026-10-22 | assay-verifier-app[bot] @ 05dc9fbc88f2 (on-behalf-of human:ian) (forge-identity) |
-Verification-Attestation: medici-finance/assay#4058 run=e8e096769de6795bf70c4564433661be34759b10a292071bacfc15179eb8dfde source=05dc9fbc88f2b1b23cd78bebc8634c564327eca4 brief=docs/streams/measured-status/brief-02-mincorpus-derivation.md model=claude-opus-5-5 tier=strong
-
-The table above is the execution witness for this re-run: `statusgen verifyrun` (v1.0.54), write mode, run in the admitted home detached at merged main 05dc9fbc88f2b1b23cd78bebc8634c564327eca4 on a clean tree, with `KUBECONFIG=/dev/null`. None of the five rows is classed check:ci, so no row needs the network-off sandbox. Dispatcher admission passed before the witness and again after this section was written, with the same binding (medici-finance/assay#4058). The runner is not the implementer.
-
-Row 5: the `Verification-Table:` marker committed by the previous pass now names the delivery (a11ac41674c0, base a7b4bed48f30), so the consumers instrument looks at the delivering diff. The witness output hash sha256:f32c3af8eb1f is the hash of the clean-tree output `CORROBORATED  qualgen/riskscore/learned.go (Train under-corpus gate, len(examples) < cfg.MinCorpus): fixed-here` with `summary: 1 corroborated, 0 disproved, 0 unchecked`. That was reproduced in a throwaway clone at the same sha, and the output has no DISPROVED.
-
-Supplemental probes, with no acceptance credit, run by hand in a throwaway clone at the same sha: with EventsPerVariable changed from 10 to 9, row 1's command prints 0 and exits 1. With the Train gate changed from `<` to `<=`, row 2's command prints 0 and exits 1. So both rows discriminate. Each mutation was restored afterwards. qualgen/riskscore has not changed since the delivering squash a11ac41674c0.
-
-Risk-bearing value. The frontmatter risk answers are all present and all `no`, and the item is not irreversible. The enumeration was done anyway over the a11ac4167 riskscore diff: `EventsPerVariable = 10` @ qualgen/riskscore/learned.go:46; the floor `EventsPerVariable * len(FeatureNames())` @ qualgen/riskscore/learned.go:60 (15 names, so 150); `MinCorpus: DerivedMinCorpus()` @ qualgen/riskscore/learned.go:81; the gate `len(examples) < cfg.MinCorpus` @ qualgen/riskscore/learned.go:185; and `documentedEPV = 10` @ qualgen/riskscore/learned_test.go:328. The training knobs in DefaultConfig (Epochs 400, LearningRate 0.1, L2 1e-3) were not changed by this diff, and they are reversible tuning.
-
-RISK-VALUE: DERIVED — EventsPerVariable = 10 @ qualgen/riskscore/learned.go:46 — the learned layer is a logistic regression. 10 per predictor is the conventional logistic EPV floor (Peduzzi et al. 1996) and the value the brief's own fact names, and 10 x 15 features gives 150 total labeled rows. The value counts total rows, not rarer-outcome events. The code documents that this is a weaker condition (medici-finance/assay#1171).
-
-RISK-VALUE: DERIVED — documentedEPV = 10 @ qualgen/riskscore/learned_test.go:328 — this is an independent restatement of the documented multiplier. The test takes the feature count from Vector() rather than FeatureNames(), so a drift in the constant or in the vector fails the test.
-
-**VERIFY: PASS** — 5 of 5 rows passed in the write-mode witness on merged main 05dc9fbc88f2. Row 5 corroborates the fixed-here consumer claim, with 0 disproved.
-
 ### Non-implementer verifier re-run — 2026-10-23 claude-opus-5-5
 
 Witness (installed `statusgen verifyrun` v1.0.56, host, admitted home detached at 4b7568de01248b514f48493efea7734ce0149823; throwaway HOME carrying a roster copy, real Go caches). Runner is not the implementer.
@@ -390,6 +365,7 @@ Ranked: EventsPerVariable is first, because it sets when the learned model is tr
 RISK-VALUE: DERIVED — EventsPerVariable = 10 @ qualgen/riskscore/learned.go:46 — the learned layer is a logistic regression, and 10 per predictor is the conventional logistic EPV floor (Peduzzi et al. 1996). It is also the value the brief's own fact names. 10 x 15 features = 150 total labeled rows. It counts total rows, not rarer-outcome events, which the code documents as a weaker condition (medici-finance/assay#1171).
 
 **VERIFY: BLOCKED** — (blocker: medici-finance/assay#1915) all 5 current-table commands exit 0 in the witness, and row 5 corroborates. Acceptance accounting: rows 3 and 4 pass. Rows 1 and 2 are could-not-run as protected original obligations, because the original command has no witness. Row 5 is held: it is uncreditable for a closure, since it trips `[consumer-delivery-range]` on a closing tree. 2 of 5 acceptance obligations are credited.
+
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
