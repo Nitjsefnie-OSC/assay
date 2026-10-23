@@ -122,12 +122,16 @@ func (fx containerFixture) writeBracketReceipt(t *testing.T, check string) {
 }
 
 // writeReceiptRunner is writeBracketReceipt with the receipt's runner fields
-// given as a JSON fragment ("" for none).
+// given as a JSON fragment ("" for none). A fragment that names no
+// runner_tree gets the home's host tree token, as the open step records it.
 func (fx containerFixture) writeReceiptRunner(t *testing.T, check, runner string) {
 	t.Helper()
 	tree, err := homeTreeDigest(fx.home)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runner != "" && !strings.Contains(runner, `"runner_tree"`) {
+		runner += `,"runner_tree":"` + treeSHA(fx.home) + `"`
 	}
 	if runner != "" {
 		runner = "," + runner

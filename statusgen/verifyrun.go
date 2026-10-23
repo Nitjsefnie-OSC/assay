@@ -175,6 +175,11 @@ type witness struct {
 	// `repo:` frontmatter (witnessTargetRepo). It decides which form of the human the
 	// on-behalf-of annotation names; "" (not stated) takes the public form, fail-closed.
 	Repo string
+	// HostOnBehalfOf, when set, makes OnBehalfOf the row's on-behalf-of annotation
+	// verbatim ("" for none) instead of resolving it from Runner and Repo: a container
+	// row records the annotation the host derived at the open step (#4208).
+	HostOnBehalfOf bool
+	OnBehalfOf     string
 	// Sandbox names WHICH network-off sandbox stood behind the row (issue #2350):
 	// sandboxUnshare (namespace-wrapped) or sandboxContainerNetns
 	// (container-sandboxed), or "" for a row that ran under no sandbox. Rendered
@@ -227,18 +232,19 @@ func (w witness) row() string {
 	// qualifier, so a source appended here does not change the runner-comparison key,
 	// and a witness with no source (RunnerSource == "") renders byte-identical to the
 	// pre-forge-neutral/07 format.
-	runnerCell := fmt.Sprintf("%s @ %s", w.Runner, w.Tree)
+	//
 	// On-behalf-of annotation (multi-principal/01): rendered inside a parenthetical, same
-	// as RunnerSource just below, and for the same reason — runnerKey (verifiedrunneragree.go)
+	// as RunnerSource, and for the same reason — runnerKey (verifiedrunneragree.go)
 	// drops everything from the FIRST "(" onward, so this never changes the runner-
 	// comparison key. "" (a human runner, or no resolvable principal) adds nothing. The
-	// row's target repo decides the form of the human it names (principal.go).
-	if obo := onBehalfOfSuffix(w.Runner, w.Repo); obo != "" {
-		runnerCell += " (" + obo + ")"
+	// row's target repo decides the form of the human it names (principal.go). A
+	// container row takes the annotation the host rendered at the open step instead
+	// (HostOnBehalfOf, #4208): the container's own roster and remote are not the host's.
+	obo := w.OnBehalfOf
+	if !w.HostOnBehalfOf {
+		obo = onBehalfOfSuffix(w.Runner, w.Repo)
 	}
-	if w.RunnerSource != "" {
-		runnerCell += " (" + w.RunnerSource + ")"
-	}
+	runnerCell := runnerCellText(w.Runner, w.Tree, obo, w.RunnerSource)
 	row := fmt.Sprintf("| %s | %s | %s | sha256:%s | %s | %s |",
 		w.ID, codeSpanOf(w.Command), result, w.OutHash, w.Date, runnerCell)
 	// The fail-first Base cell (verify-integrity/03) is a trailing 7th cell, so
@@ -248,6 +254,21 @@ func (w witness) row() string {
 		row += " " + w.Base + " |"
 	}
 	return row
+}
+
+// runnerCellText is a witness row's Runner cell: `<runner> @ <tree>`, then the
+// on-behalf-of annotation and the source tag, each as a parenthetical when
+// non-empty. witness.row() and the container bracket's close-step check both
+// render it here, so the cell the close step requires is the cell a row writes.
+func runnerCellText(runner, tree, obo, source string) string {
+	cell := fmt.Sprintf("%s @ %s", runner, tree)
+	if obo != "" {
+		cell += " (" + obo + ")"
+	}
+	if source != "" {
+		cell += " (" + source + ")"
+	}
+	return cell
 }
 
 // codeSpanOf writes cmd as ONE inline code span that witnessCommandOf lifts back
@@ -1708,17 +1729,19 @@ Flags:
                     container-netns needs --admission-receipt and
                     --container-image-digest (whatever DESK_LOOP says), never
                     runs admission itself, and writes its witness to --witness.
-  --open-bracket    host step before a container run: derive the executing
-                    runner on the host (could-not-attribute when there is none),
-                    run deskdispatch --check-verifier, digest the home's tree,
-                    and write the receipt (check JSON, tree, opened, runner,
-                    runner_source) to --out, outside the home.
+  --open-bracket    host step before a container run: derive the Runner cell
+                    on the host (runner, source, tree token, on-behalf-of;
+                    could-not-attribute when there is no runner), run
+                    deskdispatch --check-verifier, digest the home's tree, and
+                    write the receipt (check JSON, tree, opened, runner,
+                    runner_source, runner_tree, on_behalf_of) to --out, outside
+                    the home.
   --admission-receipt <file>  the --open-bracket receipt, read-only and outside the
                     home. The container run refuses before any row unless its
                     --root digests to the receipt's tree, the receipt admits
                     this brief (version 1 only) and it names a runner, and
                     refuses after the rows if they changed that tree. Its rows'
-                    Runner is the receipt's, never derived in the container.
+                    Runner cell is the receipt's, never derived in the container.
   --container-image-digest sha256:<64 hex>  the image the rows run in, named by
                     the host; recorded as Container-Image on the witness.
   --witness <file>  container-netns: a NEW file outside the home the witness
@@ -1728,9 +1751,9 @@ Flags:
                     the home's tree digest, and append one Admission-Bracket line
                     to --witness only when the check re-admits the run the
                     witness names, the digest equals both the receipt's tree
-                    and the witness's Tree-Digest, and the runner it re-derives
-                    on the host equals the receipt's and every row's Runner
-                    cell. It reads the run and tree
+                    and the witness's Tree-Digest, and the Runner cell it
+                    re-derives on the host equals the receipt's and every row's
+                    Runner cell exactly. It reads the run and tree
                     only from the span that ends at the append position and
                     refuses a span with more than one Tree-Digest,
                     Container-Image or attestation line. witness= is the digest
@@ -2161,14 +2184,18 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "statusgen verifyrun:", why)
 		return verifyrunExitUsageError
 	}
-	// Container mode never derives an identity of its own: a linked worktree's
-	// git directory is not mounted (#4208), and anything the container could
-	// read (its env, a config file in the image) is not the host's. The runner
-	// is the one the host derived at the open step, which containerAdmission
-	// has already required and validated; the close step re-derives it on the
-	// host and checks every row against it.
-	runner, runnerSource, ok := container.runner, container.runnerSource, true
-	if containerTree == "" {
+	// Container mode never derives any part of a Runner cell of its own: a
+	// linked worktree's git directory is not mounted (#4208), and anything the
+	// container could read (its env, its roster, a config file in the image) is
+	// not the host's. Runner, source, tree token and on-behalf-of are the ones
+	// the host derived at the open step, which containerAdmission has already
+	// required and validated; the close step re-derives them on the host and
+	// checks every row's cell against them. Keyed on the mode, never on a
+	// value admission happens to set, so no container path falls back to a
+	// local derivation. (Check mode has returned above.)
+	netnsContainer := *sandbox == sandboxContainerNetns
+	runner, runnerSource, ok := container.cell.Runner, container.cell.RunnerSource, true
+	if !netnsContainer {
 		runner, runnerSource, ok = executingRunner(root)
 	}
 	if !ok {
@@ -2245,6 +2272,9 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		}
 	}
 	executionTree := treeSHA(root)
+	if netnsContainer {
+		executionTree = container.cell.RunnerTree
+	}
 	if transitionDescriptor != "" {
 		full, err := historyGit(root, "rev-parse", "--verify", "HEAD^{commit}").Output()
 		if err != nil || strings.Contains(executionTree, "+") {
@@ -2263,6 +2293,9 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	target := witnessAnnotationRepo(witnessTargetRepo(path), witnessOriginRepo(root))
 	for i := range ws {
 		ws[i].Repo = target
+		if netnsContainer {
+			ws[i].HostOnBehalfOf, ws[i].OnBehalfOf = true, container.cell.OnBehalfOf
+		}
 	}
 	if transitionDescriptor != "" {
 		for i := range ws {

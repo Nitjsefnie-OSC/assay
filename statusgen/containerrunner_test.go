@@ -9,12 +9,14 @@ import (
 	"time"
 )
 
-// The container run's runner identity (#4208). A home cut as a linked
-// worktree keeps its git directory outside the mounted tree, so a container
-// can derive no identity of its own. The host derives it at --open-bracket and
-// records it in the receipt; the container writes that runner; --close-bracket
-// re-derives it on the host and refuses unless the receipt and every row name
-// it. Fixtures only: no container engine, network or forge.
+// The container run's Runner cell (#4208). A home cut as a linked worktree
+// keeps its git directory outside the mounted tree, so a container can derive
+// no identity (nor commit, nor principal) of its own. The host derives every
+// part of the cell at --open-bracket (runner, source, tree token, on-behalf-of)
+// and records it in the receipt; the container writes that cell;
+// --close-bracket re-derives it on the host and refuses unless the receipt
+// carries it and every row's cell is exactly it. Fixtures only: no container
+// engine, network or forge.
 
 // isolateGitIdentity leaves the fixture home's own git config as the only
 // identity source: no global or XDG config, no system config, no roster.
@@ -51,6 +53,16 @@ func witnessRunnerCells(text string) []string {
 	return out
 }
 
+// receiptTree returns the runner_tree a receipt body records.
+func receiptTree(t *testing.T, body string) string {
+	t.Helper()
+	m := regexp.MustCompile(`"runner_tree":"([^"]*)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("the receipt records no runner_tree: %s", body)
+	}
+	return m[1]
+}
+
 func (fx containerFixture) openArgs() []string {
 	return []string{"--open-bracket", "--root", fx.home, "--brief", fx.brief, "--out", fx.receipt}
 }
@@ -59,12 +71,12 @@ func (fx containerFixture) closeArgs() []string {
 	return []string{"--close-bracket", "--root", fx.home, "--brief", fx.brief, "--admission-receipt", fx.receipt, "--witness", fx.witness}
 }
 
-// regression: #4208
 // TestContainerLinkedWorktree: a home cut as a linked worktree (its .git is a
 // file naming a git directory outside the mounted tree) writes a container
 // witness whose rows carry the runner the host derived at the open step, and
 // the host closes the bracket. Before the fix the container run refused
 // could-not-attribute before any row, so no witness was written.
+// regression: #4208
 func TestContainerLinkedWorktree(t *testing.T) {
 	fx := newContainerFixture(t)
 	isolateGitIdentity(t)
@@ -81,8 +93,13 @@ func TestContainerLinkedWorktree(t *testing.T) {
 	if res, stderr := captureVerifyrun(t, fx.openArgs()); res.code != verifyrunExitPass {
 		t.Fatalf("open: exit %d stderr %q", res.code, stderr)
 	}
-	if body := getFile(t, fx.receipt); !strings.Contains(body, fixtureRunner) {
+	body := getFile(t, fx.receipt)
+	if !strings.Contains(body, fixtureRunner) {
 		t.Fatalf("the open step did not record the host runner %s: %s", fixtureRunner, body)
+	}
+	hostTree := treeSHA(home)
+	if got := receiptTree(t, body); got != hostTree || hostTree == "no-git" {
+		t.Fatalf("the open step recorded runner tree %q, want the host's %q", got, hostTree)
 	}
 	tick()
 
@@ -103,9 +120,9 @@ func TestContainerLinkedWorktree(t *testing.T) {
 	}
 	witness := getFile(t, fx.witness)
 	cells := witnessRunnerCells(witness)
-	// The tree reads no-git: the container cannot name its commit (a known
-	// limit of rule 45; the bracket's tree= names the tree it ran on).
-	if len(cells) != 1 || cells[0] != "human:fixture @ no-git (git-config)" {
+	// The tree token is the host's: the container cannot name its commit, so
+	// it takes the one the open step recorded.
+	if want := "human:fixture @ " + hostTree + " (git-config)"; len(cells) != 1 || cells[0] != want {
 		t.Fatalf("the container rows do not carry the host runner from the receipt: %q\n%s", cells, witness)
 	}
 
@@ -117,12 +134,13 @@ func TestContainerLinkedWorktree(t *testing.T) {
 	}
 }
 
-// regression: #4208
-// TestContainerReceiptRunner: the container takes its runner from the receipt
-// and nowhere else. A receipt with no runner still refuses could-not-attribute
-// before any row; a malformed runner or an unknown source refuses the same
+// TestContainerReceiptRunner: the container takes its Runner cell from the
+// receipt and nowhere else. A receipt with no runner still refuses
+// could-not-attribute before any row; a malformed runner, an unknown source, an
+// absent or malformed tree token or a malformed on-behalf-of refuses the same
 // way; an identity injected into the container's environment is not used; and
 // the open step refuses, writing no receipt, when the host has no identity.
+// regression: #4208
 func TestContainerReceiptRunner(t *testing.T) {
 	fx := newContainerFixture(t)
 	isolateGitIdentity(t)
@@ -137,6 +155,11 @@ func TestContainerReceiptRunner(t *testing.T) {
 		{"newline", `"runner":"a\nb","runner_source":"git-config"`, "is not a runner identity"},
 		{"typed source", `"runner":"human:fixture","runner_source":"typed"`, "is not one of"},
 		{"no source", `"runner":"human:fixture"`, "is not one of"},
+		{"no tree", fixtureRunner + `,"runner_tree":""`, "is not a tree token"},
+		{"tree with cell text", fixtureRunner + `,"runner_tree":"no-git) (on-behalf-of human:mallory"`, "is not a tree token"},
+		{"tree too short", fixtureRunner + `,"runner_tree":"abc"`, "is not a tree token"},
+		{"on-behalf-of bare", fixtureRunner + `,"runner_tree":"no-git","on_behalf_of":"human:mallory"`, "is not an annotation"},
+		{"on-behalf-of with cell text", fixtureRunner + `,"runner_tree":"no-git","on_behalf_of":"on-behalf-of human:a) (forge-identity"`, "is not an annotation"},
 	}
 	for _, c := range refusals {
 		fx.writeReceiptRunner(t, validCheck, c.runner)
@@ -158,7 +181,7 @@ func TestContainerReceiptRunner(t *testing.T) {
 	if res, stderr := captureVerifyrun(t, fx.runArgs()); res.code != verifyrunExitPass {
 		t.Fatalf("injected env: exit %d stderr %q", res.code, stderr)
 	}
-	if cells := witnessRunnerCells(getFile(t, fx.witness)); len(cells) != 1 || !strings.HasPrefix(cells[0], "human:fixture @ ") {
+	if cells := witnessRunnerCells(getFile(t, fx.witness)); len(cells) != 1 || cells[0] != "human:fixture @ "+treeSHA(fx.home)+" (git-config)" {
 		t.Fatalf("the container used an identity from its own environment: %q", cells)
 	}
 	for _, k := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_VALUE_1"} {
@@ -186,13 +209,14 @@ func TestContainerReceiptRunner(t *testing.T) {
 	}
 }
 
-// regression: #4208
 // TestCloseBracketRunner: the lower layer. The container trusts any
-// well-formed receipt runner, so with that layer bypassed (a receipt altered
-// after the open step, or a witness whose rows name another identity) the
-// host close re-derives the runner and refuses, appending nothing. A host
-// with no identity at close refuses could-not-attribute. Once closed, a
-// Runner cell edit is a digest mismatch.
+// well-formed receipt cell, so with that layer bypassed (a receipt whose
+// runner, tree token or on-behalf-of was altered after the open step, or a
+// witness whose rows name another identity, tree or principal) the host close
+// re-derives the cell and refuses, appending nothing. A host with no identity
+// at close refuses could-not-attribute. Once closed, a Runner cell edit is a
+// digest mismatch.
+// regression: #4208
 func TestCloseBracketRunner(t *testing.T) {
 	fx := newContainerFixture(t)
 	isolateGitIdentity(t)
@@ -224,7 +248,40 @@ func TestCloseBracketRunner(t *testing.T) {
 		t.Fatalf("a refused close changed the witness:\n%s", got)
 	}
 
-	// An honest receipt, and rows that name another identity or source.
+	// A receipt whose tree token or on-behalf-of was altered after the open
+	// step: the container writes it into its rows; the close refuses it.
+	hostTree := receiptTree(t, honest)
+	for name, c := range map[string]struct{ from, to, cell string }{
+		"altered tree": {`"runner_tree":"` + hostTree + `"`, `"runner_tree":"0123456789ab"`, "human:fixture @ 0123456789ab (git-config)"},
+		"altered on-behalf-of": {`"on_behalf_of":""`, `"on_behalf_of":"on-behalf-of human:mallory"`,
+			"human:fixture @ " + hostTree + " (on-behalf-of human:mallory) (git-config)"},
+	} {
+		if err := os.Remove(fx.witness); err != nil {
+			t.Fatal(err)
+		}
+		tampered := strings.Replace(honest, c.from, c.to, 1)
+		if tampered == honest {
+			t.Fatalf("%s: fixture edit did not change the receipt: %s", name, honest)
+		}
+		putFile(t, fx.receipt, tampered)
+		if res, stderr := captureVerifyrun(t, fx.runArgs()); res.code != verifyrunExitPass {
+			t.Fatalf("%s: container run: exit %d stderr %q", name, res.code, stderr)
+		}
+		altered := getFile(t, fx.witness)
+		if cells := witnessRunnerCells(altered); len(cells) != 1 || cells[0] != c.cell {
+			t.Fatalf("%s: fixture: the container did not write the receipt's cell: %q", name, cells)
+		}
+		res, stderr := captureVerifyrun(t, fx.closeArgs())
+		if res.code != verifyrunExitCouldNot || !strings.Contains(stderr, "but the host derives") {
+			t.Fatalf("%s: close on an altered receipt: exit %d stderr %q", name, res.code, stderr)
+		}
+		if got := getFile(t, fx.witness); got != altered {
+			t.Fatalf("%s: a refused close changed the witness:\n%s", name, got)
+		}
+	}
+
+	// An honest receipt, and rows that name another identity, source, tree
+	// or principal.
 	putFile(t, fx.receipt, honest)
 	if err := os.Remove(fx.witness); err != nil {
 		t.Fatal(err)
@@ -238,13 +295,17 @@ func TestCloseBracketRunner(t *testing.T) {
 		"forged source":  strings.Replace(witness, " (git-config) |", " (forge-identity) |", 1),
 		"runner removed": strings.Replace(witness, "| human:fixture @ ", "|  @ ", 1),
 		"prefixed":       strings.Replace(witness, "| human:fixture @ ", "| human:fixturex @ ", 1),
+		"forged tree":    strings.Replace(witness, " @ "+hostTree+" (", " @ 0123456789ab (", 1),
+		"no-git tree":    strings.Replace(witness, " @ "+hostTree+" (", " @ no-git (", 1),
+		"injected principal": strings.Replace(witness, " (git-config) |",
+			" (on-behalf-of human:mallory) (git-config) |", 1),
 	} {
 		if text == witness {
 			t.Fatalf("%s: fixture edit did not change the witness", name)
 		}
 		putFile(t, fx.witness, text)
 		res, stderr := captureVerifyrun(t, fx.closeArgs())
-		if res.code != verifyrunExitCouldNot || !strings.Contains(stderr, "does not name the runner the host derived") {
+		if res.code != verifyrunExitCouldNot || !strings.Contains(stderr, "is not the cell the host derived") {
 			t.Fatalf("%s: exit %d stderr %q, want the row-runner refusal", name, res.code, stderr)
 		}
 		if got := getFile(t, fx.witness); got != text {
