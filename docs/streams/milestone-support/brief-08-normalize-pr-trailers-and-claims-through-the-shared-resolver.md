@@ -90,7 +90,7 @@ Before changing the governed boundary, present the concrete implementation/desig
 
 1. Route all brief linkage and logical claim-key normalization through workref, preserving cell/repository ownership and UUID. Retire parallel grammar fragments in PR trailers, work-item/claim aliases and issue-bound brief lookups; inventory every caller with an explicit disposition.
 2. Read all specified legacy forms and new b- references with optional revision selectors. Persist the selected subject/revision separately from the logical claim key. Mixed aliases must join the same existing claim; conflicting revision requirements hold, never create a second worker or overwrite a live claim.
-3. Preserve Brief versus Authors semantics, role token custody, ownership/generation checks, existing issue/PR alias behavior and no-ambient-auth rules. Milestones are not executable brief claims or delivery trailers. Migration must not close, steal, release or reassign real claims.
+3. Retain each role's existing custody boundary. Preserve Brief versus Authors semantics, ownership/generation checks and existing issue/PR alias behavior. Keep the no-ambient-auth rule. Milestones are not executable brief claims or delivery trailers. Migration must not close, steal, release or reassign real claims.
 4. Do not reimplement desk-tools/49 repair-obligation deduplication or desk-tools/45 queue classification. Extend the currently available identity adapters only; reconcile simultaneous edits with those owners at pickup and add an explicit dependency if a not-yet-delivered API is truly required.
 
 ## Interface and completion contract

@@ -60,20 +60,26 @@ new record/generator/dispatch semantics. Import visibility and source builds fro
 both actual modules are /01's acceptance, not assumed from a package-main import.
 No external workflow-controller, new service or cluster is a prerequisite for this head.
 
-Longest declared dependency chains (equal M sizing is not a duration forecast):
+Dependency joins (`+` means all named prerequisites; equal M sizing is not a duration forecast):
 
 ```text
-01 shared resolver -> 02 shared capability negotiation
-  -> 03 milestone loader + 04 brief schema/generator
-  -> 05 combined graph -> 06 exact acceptance -> 07 eligibility
-  -> 11 views + 12 history -> 13 report -> 14 candidate release pilot
-04 -> 08 claims/trailers -> 09 subjects/rulings -> 10 dispatch -> 14
+01 -> 02 -> 03 + 04 -> 05 -> 06
+05 + 06 -> 07
+01 + 02 + 04 -> 08
+05 + 08 -> 09
+07 + 08 + 09 -> 10
+07 + 08 -> 11
+07 + 09 -> 12
+11 + 12 -> 13
+10 + 13 -> 14
 ```
 
-The /03 and /04 fork rejoins at /05; /08 is independent of the acceptance/report
-branch after /04. /10 joins current readiness and subject/ruling adapters. Review,
-verification, source admission and actual release publication can dominate elapsed
-lead time even where they are not new implementation edges. No outcome is already accepted.
+The /03 and /04 fork rejoins at /05. The /08 branch rejoins the combined graph at
+/09 through /05, feeds /11 directly, and feeds /12 through /09. /10 joins eligibility,
+claim linkage and subject/ruling adapters. The longest chains pass through /05, /06,
+/07, /11 or /12, /13 and /14. Review, verification, source admission and actual release
+publication can dominate elapsed lead time even where they are not new implementation
+edges. No outcome is already accepted.
 
 ## Dependency waves
 
