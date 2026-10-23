@@ -1,5 +1,7 @@
 # Capture and decompose delivery milestones
 
+<!-- assay:harnesslint non-matrix-reference — harness-neutral milestone authoring procedure shared by author-spec and author-brief, not a per-harness capability binding; it defines no harness capability or per-skill degradation cells -->
+
 Use this procedure for stream scoping, staged delivery and milestone changes. A useful
 milestone is an observable supported outcome, not a wave label or a renamed task group.
 A small standalone fix need not acquire an artificial milestone; preserve adequate
