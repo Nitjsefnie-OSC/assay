@@ -107,7 +107,7 @@ func TestProjectionJourney(t *testing.T) {
 
 // regression: class issue-projection
 func TestProjectionFailures(t *testing.T) {
-	for _, args := range [][]string{{"--projection", "unknown"}, {"--projection", "inbox"}, {"--projection", "work-ready", "--to", "worker"}} {
+	for _, args := range [][]string{{"--projection", "unknown"}, {"--projection", "scanner"}, {"--projection", "inbox"}, {"--projection", "work-ready", "--to", "worker"}} {
 		root, calls := projectionFixture(t)
 		code, _ := projectionRun(t, root, args...)
 		if code != 5 || len(*calls) != 0 {

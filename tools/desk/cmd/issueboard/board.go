@@ -747,7 +747,8 @@ func computeProjection(root string, now time.Time, slaDays int, toFilter string,
 			if projection != issueflow.Full && !issueflow.Select(projection, issueflow.Candidate{
 				HasPlaceholder: hasPh, Excluded: hasExcludedLabel(names),
 				DecisionOwed: decisionOwed, Addressed: addressed, Role: addrRole,
-				HelpWanted: helpWanted,
+				AddressUnknown: addrState == deskkit.RaisedByIndeterminate,
+				HelpWanted:     helpWanted,
 			}, toFilter) {
 				continue
 			}
