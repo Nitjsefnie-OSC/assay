@@ -40,11 +40,11 @@ present that as end-to-end proof.
 merge-base to head (run both:
 `cd tools/desk && go test ./internal/weight/ -run TestPrintWeight -count=1 -v -args -rev=<sha>`),
 the diff adds an `R-` row, or it touches a module under `docs/contracts.md` §Brittle marks (read
-its investigation, if one exists). `## Weight` in the body is a claim, not the trigger; a red
-`internal/arch` test is a `design-fit` finding by construction. **Ask:** (1) right layer — does
-the change live in the owner the semantic index names? (2) should it exist — could removal fix
-the symptom? (3) what does it replace — are `retires:`/`why-add:` true and sufficient? A "no" is
-a finding with basis `design-fit` (clause 13).
+its investigation, if any). `## Weight` is a claim, not the trigger; a red `internal/arch` test
+is a `design-fit` finding by construction. **Ask:** (1) right layer — is it in the owner the
+semantic index names? (2) should it exist — could removal fix the symptom? (3) what does it
+replace — are `retires:`/`why-add:` true and sufficient? A "no" is a finding with basis `design-fit`
+(clause 13). If the brief has `oracle:`, read the oracle: the body's `## Oracle` triage table is a material claim.
 <!-- lane:correctness:end -->
 <!-- lane:security:begin -->
 **Not run in the security lane.** The design-fit pass is the correctness lane's, and every
