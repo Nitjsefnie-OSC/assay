@@ -129,7 +129,16 @@ slots, and a sweep proving nothing eligible exists (§HARD GATE).
     unset state is also the rollback. A raw harness launch that does not go through `deskdispatch`
     is outside this enforcement, exactly as it is outside the durable claim.
 - **Fill to N, refill on completion** — the instant a worker finishes (draft PR open, or done /
-  NEEDS_CONTEXT), dispatch the next eligible item into the freed slot.
+  NEEDS_CONTEXT), before refilling run `deskusage record --claim-key <the claim key the dispatch used>`
+  with `--repo`, `--item`, `--tier` (the dispatched tier), and only the usage counts the completion
+  notification itself reports (`--input-tokens`, `--output-tokens`, `--total-tokens`, `--cost-micros`,
+  `--wall-seconds`); omit absent counts. Never read, quote or pass worker transcript, prompt or tool
+  output. Token flags take integer token counts, `--cost-micros` takes integer millionths of the
+  currency unit, and `--wall-seconds` takes integer seconds. Omit a figure unless the notification
+  reports it in that exact unit; never relabel milliseconds as seconds or currency units as micros.
+  These figures are not for ranking agents or people. Log a refusal verbatim and continue the refill;
+  never re-attempt the record another way.
+  Then dispatch the next eligible item into the freed slot.
 - **Never stop-and-wait-for-restart.** "The plan came back empty" is a reading from ONE instrument,
   not a state of the queue: re-sweep §Sources of work with each source's own instrument. Where every
   visible row really is claimed, in flight or capped, §WIP-capped — re-check, never stop applies. The

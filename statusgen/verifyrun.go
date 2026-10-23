@@ -1276,7 +1276,7 @@ func briefSectionsOf(raw string) (verify, evidence string) {
 	content := strings.ReplaceAll(raw, "\r\n", "\n")
 	body := content
 	if first, _, _ := strings.Cut(content, "\n"); strings.TrimSpace(first) == "---" {
-		if _, b, ferr := splitFrontmatter(content); ferr == nil {
+		if _, b, ferr := splitFrontmatter(raw); ferr == nil { // one CRLF rewrite, as parseBriefFileBytes
 			body = b
 		}
 	}
