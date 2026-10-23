@@ -96,7 +96,9 @@ conformance claim carries exactly the weight of its author's reputation.
 
 The milestone and stream integration drafts, and the explicitly proposed sections in
 the brief and lifecycle contracts, are not claims of reference-implementation support.
-They do not add supported YAML fields, require existing streams to migrate, or authorize
+The proposed prefixed brief labels and deprecation in brief §3.8 likewise require
+coordinated reader support; canonical internal brief IDs remain unchanged. These drafts
+do not add supported YAML fields, require existing streams to migrate, or authorize
 implementation. Their capability negotiation and rollout requirements must be implemented
 before use; they are excluded from current reference-implementation conformance claims.
 

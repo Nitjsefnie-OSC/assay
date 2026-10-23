@@ -34,11 +34,26 @@ supported brief authoring and preserve approved work. If that source
 is unavailable, report the coverage gap and continue independent scoping; do not invent
 a contract from memory. No automatic bulk backfill of existing streams.
 
+## Preferred brief labels and migration
+
+Read brief §3.8 before choosing identifiers. Use `<stream>/b-<NN>` for newly authored
+briefs once the pinned generator and all required consumers advertise support;
+`<stream>/m-<NN>` names milestones. The old `<stream>/<NN>` brief label is deprecated
+for new authoring after adoption, while existing records and aliases remain readable.
+Before support, capture `b-` labels in scoping proposals and retain supported legacy
+forms for executable briefs. Do not invent generator flags or write `b-` under brief-v2.
+
+Canonical internal brief fullIds remain `<cell>:<repo>:<stream>:<NN>`; milestone
+`contributes` always uses those values. A future prefixed-brief adapter normalizes
+new labels to that existing identity. Preserve UUIDs, versions, claim/workflow history
+and evidence, reject alias collisions and deduplicate mixed old/new references.
+No automatic filename changes, bulk migration or changed completion state.
+
 ## Author-spec: establish the promises
 
 1. Identify independently useful outcomes and owning streams from the requested scope.
    For each, capture stable `<stream>/m-<NN>` identity, title, accountable owner and promise
-   version. Brief IDs remain `<stream>/<NN>`. Preserve existing IDs and accepted history;
+   version. Preferred future brief labels are `<stream>/b-<NN>`; apply the support boundary above. Preserve existing IDs and accepted history;
    numbering implies no order. Independent maintenance outcomes can remain independent.
 2. Define the user/operator capability, supported environment/workload/interfaces,
    relevant quality limits, exclusions and manual steps. Capture existing REQ/decision/spec
@@ -97,12 +112,12 @@ affected unfinished work and consumers through the existing context-handoff mech
    does not establish milestone acceptance or current availability. Link the existing
    acceptance/evidence mechanism; authoring does not execute it or grant approval.
 
-For example, `build/m-03@1` includes briefs `build/11` and `build/12` and requires
+For example, `build/m-03@1` includes briefs `build/b-11` and `build/b-12` and requires
 `stream-y/m-01@1` and `stream-z/m-02@1` for acceptance. If only brief 12 needs Y to start,
 record that need on brief 12; brief 11 can proceed. Z can remain a final acceptance need.
 Use fully qualified refs when crossing roots. Check that splitting Y's internal brief
 preserves this behavior, and that making brief 11 require its own milestone is rejected.
 In the record's `contributes`, write those brief labels as full IDs, for example
-`example-cell:tools:build:11` and `example-cell:tools:build:12`; slash labels here are
-prose shorthand only. These are reasoning checks during authoring, not claims that
+`example-cell:tools:build:11` and `example-cell:tools:build:12`; prefixed slash labels here are
+future authoring labels, normalized by the negotiated adapter, not contribution values. These are reasoning checks during authoring, not claims that
 current tooling enforces them.

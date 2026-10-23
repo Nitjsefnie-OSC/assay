@@ -58,14 +58,17 @@ milestones. Unknown aliases, ambiguous roots, whitespace or unrecognized forms M
 rejected or reported unknown as appropriate; never search other roots by matching a slug.
 
 This is a new typed **milestone-reference** grammar, intentionally retaining `/m-` to
-distinguish it from a brief's familiar `<stream>/<NN>` label. It MUST NOT be passed to
+distinguish it from the proposed brief label `<stream>/b-<NN>`. The legacy
+`<stream>/<NN>` label is deprecated for new authoring after negotiated `b-` support
+is adopted (brief §3.8); existing records remain readable. It MUST NOT be passed to
 `qualifiedRef`, `ResolveQualifiedID` or the verification-domain work-identity parser.
 Those existing contracts continue to reject slash references. Reusing their repository
 registry does not extend their brief-only syntax or advertise milestone reader support.
 
 `contributes` uses only canonical brief `fullId` values:
 `<cell>:<repo>:<stream>:<NN>`, per context-handoff §2. Neither `<stream>/<NN>` labels
-nor the two/three-segment brief elisions are accepted in that field. Thus milestone
+nor proposed `<stream>/b-<NN>` labels or two/three-segment brief elisions are
+accepted in that field. The internal fullId is not deprecated by the new label. Thus milestone
 reference resolution and brief contribution resolution have distinct input grammars,
 with the same registry owning repository aliases. IDs MUST NOT be reused after retirement.
 A rename MUST preserve identity or retain an unambiguous alias through the existing
@@ -146,7 +149,8 @@ Its `contributes` list is `["example-cell:tools:build:11", "example-cell:tools:b
 Its `requires-milestones` list may be `["stream-y/m-01@1", "stream-z/m-02@1"]` when both
 are in that same root. A cross-root dependency uses, for example,
 `example-cell:other-tools:stream-y/m-01@1`, with `other-tools` registered there.
-The labels `build/11` and `build/12` below are prose shorthand, not contribution values.
+The labels `build/b-11` and `build/b-12` are preferred future authoring labels,
+not contribution values; existing `build/11` and `build/12` remain migration aliases.
 If only brief 12 needs Y's capability to start, only brief 12 declares that requirement.
 Brief 11 can proceed independently. Z may be needed only for joined acceptance.
 Splitting Y's internal brief into three updates Y's contribution list and coverage;

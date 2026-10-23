@@ -28,7 +28,9 @@ proposal does not approve its source or authorize a parked stream to run.
 
 For an opted-in future stream, canonical milestone records live beneath `milestones/`
 per [`milestone-v1.md`](./milestone-v1.md), with stable IDs `<stream>/m-<NN>`
-distinct from brief IDs `<stream>/<NN>`. Discover records there rather than hand-maintain
+distinct from the proposed brief labels `<stream>/b-<NN>` (brief §3.8). Legacy
+`<stream>/<NN>` labels remain readable and are deprecated only for new authoring
+after coordinated reader support; canonical internal brief fullIds are unchanged. Discover records there rather than hand-maintain
 an additional membership list in README frontmatter. Each milestone has one owning
 stream; cross-stream contributors and prerequisite milestones are references to their
 canonical owners. Moving work across repositories must preserve identity, provenance,

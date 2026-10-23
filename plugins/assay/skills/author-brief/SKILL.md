@@ -57,7 +57,10 @@ Do not rewrite completed Evidence or let a draft proposal veto approved work.
 When the source defines delivery milestones or the request needs staged outcomes,
 read the [shared milestone authoring procedure](../../references/milestone-authoring.md),
 including its support check and **Author-brief** section. Map existing/new briefs to
-`<stream>/m-<NN>` outcomes and criteria; keep `<stream>/<NN>` for briefs. Membership is
+`<stream>/m-<NN>` outcomes and criteria; prefer `<stream>/b-<NN>` for new briefs
+once the pinned generator and required readers support brief §3.8. Until then use
+supported legacy IDs for executable briefs and `b-` labels in scoping proposals;
+disclose the limitation. Do not rewrite existing identities or Evidence. Membership is
 owned by the milestone, not a second brief field. Separate actual brief start needs
 from prerequisites for final outcome acceptance. If the source lacks a consequential
 outcome/scope decision, reconcile it with `author-spec` before committing affected work;
@@ -116,6 +119,13 @@ authoring stays valid (fix a typo without re-running a tool); the generator just
 author can otherwise get wrong. Run `statusgen newbrief --help` for the flags.
 
 ### Brief file template (data-first)
+
+Select the identifier/schema pair before writing. With negotiated prefixed-label
+support, write `brief: <stream>/b-<NN>` and use that supporting schema for references
+and dependency fields. The template below shows the currently supported legacy
+`brief-v2` pair; do not combine its schema with an unsupported `b-` identifier.
+The unprefixed label is deprecated for new authoring after adoption, not invalid for
+legacy consumers. Existing canonical fullIds and filenames remain unchanged (brief §3.8).
 
 ```markdown
 ---
