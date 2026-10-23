@@ -15,7 +15,8 @@ Read the relevant source revision of the
 and [brief integration](https://github.com/medici-finance/assay/blob/main/spec/brief-v1.md#37-proposed-delivery-milestone-integration-not-shipped).
 In an Assay checkout, use those `spec/` files from the selected source revision; elsewhere
 retrieve the corresponding versioned canonical source. Record revisions and unavailable
-sources. This procedure is not a second schema: the contracts own fields and semantics.
+sources. The `blob/main` links are discovery pointers; use the selected checkout or
+pinned release revision for the controlling contract, not an unrecorded moving main. This procedure is not a second schema: the contracts own fields and semantics.
 
 Before operational declarations, establish both the contract's approval state and the
 actual pinned readers' advertised support for milestone records, stream discovery,
@@ -47,7 +48,9 @@ a contract from memory. No automatic bulk backfill of existing streams.
    Identify the existing authorized acceptance mechanism and exact subject/profile being
    accepted. Expose unresolved criteria or authority as decisions with owners.
 4. Identify prerequisite capability promises and why they are needed, pinning exact versions
-   as `<stream>/m-<NN>@<version>` (cross-root qualification per the contract). Separate final
+   as `<stream>/m-<NN>@<version>` within the declaring root, or
+   `<cell>:<repo>:<stream>/m-<NN>@<version>` for explicit qualification. Use graph alias
+   registry repository aliases; these are milestone refs, not brief `qualifiedRef` inputs. Separate final
    acceptance needs from known implementation start needs; leave brief scheduling to
    author-brief. Do not insert a dependency on an entire stream because its details are unknown.
 5. Hand off proposed criterion-to-deliverable coverage, existing evidence and known briefs
@@ -69,7 +72,7 @@ affected unfinished work and consumers through the existing context-handoff mech
    to existing deliverables and Verify rows before creating work; expose uncovered
    criteria and any joined outcome check. Do not re-author completed work or fabricate evidence.
 2. Maintain `contributes` only in the canonical milestone record once operational support
-   exists; until then maintain the proposed mapping in the scoping document. A brief can
+   exists, using canonical brief `fullId` values `<cell>:<repo>:<stream>:<NN>`; until then maintain the proposed mapping in the scoping document. A brief can
    contribute to multiple milestones; reverse membership is derived. Do not add a
    `milestones:` field or hand-maintained inverse list to every brief.
 3. Keep brief-to-brief start needs in `depends`/`unblocks`. Only a brief that actually
@@ -99,4 +102,7 @@ For example, `build/m-03@1` includes briefs `build/11` and `build/12` and requir
 record that need on brief 12; brief 11 can proceed. Z can remain a final acceptance need.
 Use fully qualified refs when crossing roots. Check that splitting Y's internal brief
 preserves this behavior, and that making brief 11 require its own milestone is rejected.
-These are reasoning checks during authoring, not claims that current tooling enforces them.
+In the record's `contributes`, write those brief labels as full IDs, for example
+`example-cell:tools:build:11` and `example-cell:tools:build:12`; slash labels here are
+prose shorthand only. These are reasoning checks during authoring, not claims that
+current tooling enforces them.

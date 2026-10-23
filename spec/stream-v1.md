@@ -23,7 +23,7 @@ No milestone field is supported there today. This draft MUST NOT change legacy v
 
 The stream README at `docs/streams/<stream>/README.md` remains the stream index.
 The owning repository identity and stream slug MUST resolve uniquely using existing
-root/graph identity facilities. The scoping source follows lifecycle §8; a milestone
+graph alias registry and existing root/cell identity facilities. The scoping source follows lifecycle §8; a milestone
 proposal does not approve its source or authorize a parked stream to run.
 
 For an opted-in future stream, canonical milestone records live beneath `milestones/`

@@ -30,18 +30,46 @@ No runtime quality or performance measurements were made for this documentation 
 
 ## 2. Identity, location and revisions
 
-Each milestone MUST have exactly one canonical record at
-`docs/streams/<stream>/milestones/m-<NN>-<slug>.md` in its owning repository.
+Each `(milestone ID, contract-version)` MUST have exactly one canonical record under
+`docs/streams/<stream>/milestones/` in its owning repository. Version-one records use
+`m-<NN>-<slug>.md`; later versions MAY use a `-v2` suffix before `.md`. Identity and
+version come from the record's keys, never by parsing a slug or filename suffix.
 The owning stream is accountable for the promise; contributing briefs MAY live elsewhere.
-A stable milestone ID is `<stream>/m-<NN>` (for example, `build/m-03`), distinct
-from a brief ID `<stream>/<NN>` (for example, `build/03`). `NN` is a positive decimal
-number padded to at least two digits; alternative spellings such as `m-3` MUST NOT
-create aliases or duplicate identities. The `m-` prefix identifies a milestone, not its
-execution wave. For cross-root references, qualify that same ID as
-`<cell>:<repo>:<stream>/m-<NN>` using the existing graph identity registry for the
-cell/repository identity. Unqualified references resolve only within the current root;
-an ambiguous reference MUST be rejected. IDs MUST NOT be reused after retirement.
-A rename MUST preserve the ID or provide an unambiguous alias; duplicate identity is an error.
+
+The record's `milestone` key is `<stream>/m-<NN>`, for example `build/m-03`.
+`NN` is a positive decimal number padded to at least two digits; noncanonical spellings
+such as `m-3` MUST be rejected. The `m-` prefix identifies a milestone, not its execution
+wave. The containing stream MUST match the key. Global identity includes the owning
+cell and repository, so two roots with the same local label are distinct.
+
+A milestone dependency pins an exact positive contract version. Its accepted forms are:
+
+| Written milestone reference | Resolution |
+|---|---|
+| `<stream>/m-<NN>@<version>` | Current declaring cell and repository only. |
+| `<cell>:<repo>:<stream>/m-<NN>@<version>` | Explicit cell and repository; also permitted for same-root references. |
+
+`<cell>`, `<repo>` and `<stream>` use the lower-case name grammar from
+[`context-handoff-v1.md` §2](./context-handoff-v1.md#2-qualified-brief-ids).
+`<repo>` is an alias from the existing **graph alias registry**, never an owner/name pair.
+Expansion uses the declaration's owning root and the same cell/repository identities
+already used for briefs. No repository-only or stream-only colon elision is defined for
+milestones. Unknown aliases, ambiguous roots, whitespace or unrecognized forms MUST be
+rejected or reported unknown as appropriate; never search other roots by matching a slug.
+
+This is a new typed **milestone-reference** grammar, intentionally retaining `/m-` to
+distinguish it from a brief's familiar `<stream>/<NN>` label. It MUST NOT be passed to
+`qualifiedRef`, `ResolveQualifiedID` or the verification-domain work-identity parser.
+Those existing contracts continue to reject slash references. Reusing their repository
+registry does not extend their brief-only syntax or advertise milestone reader support.
+
+`contributes` uses only canonical brief `fullId` values:
+`<cell>:<repo>:<stream>:<NN>`, per context-handoff §2. Neither `<stream>/<NN>` labels
+nor the two/three-segment brief elisions are accepted in that field. Thus milestone
+reference resolution and brief contribution resolution have distinct input grammars,
+with the same registry owning repository aliases. IDs MUST NOT be reused after retirement.
+A rename MUST preserve identity or retain an unambiguous alias through the existing
+identity mechanism; duplicate `(owning cell, repository, ID, version)` is an error.
 
 Three different versions MUST remain distinct:
 
@@ -56,8 +84,7 @@ Three different versions MUST remain distinct:
 
 The public promise includes outcome, supported scope, exclusions, acceptance criteria
 and prerequisite capability versions. A change to any of those MUST create a new
-contract version and retain the old version as an addressable record. For a second
-version use a `-v2` suffix on the filename; uniqueness is `(ID, contract-version)`.
+contract version and retain the old version as an addressable record. The filename is only a locator; an apparent `-v2` in a slug does not establish version 2.
 A typo or a relocated evidence link with unchanged meaning MAY preserve the version.
 Acceptance records MUST still bind the exact source revision they assessed.
 
@@ -69,13 +96,13 @@ typed keys MUST be diagnosed, rather than silently ignored.
 | Key | Type | Meaning |
 |---|---|---|
 | `schema` | string | Exactly `milestone-v1`. |
-| `milestone` | string | Stable ID `<stream>/m-<NN>` from §2; cross-root references add its cell/repository qualification. |
+| `milestone` | string | Local stable ID `<stream>/m-<NN>` from §2; containing root supplies its owning cell/repository. |
 | `contract-version` | integer | Positive promise version. |
 | `title` | string | A plain-language useful outcome, not only “m-03” or a wave label. |
 | `owner` | string | Accountable role or team; confers no approval authority. |
 | `sources` | array[string] | Nonempty canonical spec/decision references; pin material revisions in the body. Reuse existing REQ IDs where applicable. |
-| `contributes` | array[string] | Fully qualified brief IDs, unique within this record; required completion work. Empty is permitted for an existing capability, with justification and evidence. |
-| `requires-milestones` | array[string] | Exact milestone-version references needed to accept this outcome. Empty explicitly means none. |
+| `contributes` | array[string] | Canonical four-segment brief `fullId` values from §2, unique within this record; required completion work. Empty is permitted for an existing capability, with justification and evidence. |
+| `requires-milestones` | array[string] | Exact milestone-version references in either form defined in §2, needed to accept this outcome. Empty explicitly means none. |
 
 The body MUST contain:
 
@@ -113,8 +140,13 @@ A brief MAY contribute to several milestones. Counts deduplicate by canonical br
 
 ### Example: “Build changes are less brittle”
 
-For a hypothetical `build/m-03@1`, `contributes` names `build/11` and `build/12`, and
-`requires-milestones` names `stream-y/m-01@1` and `stream-z/m-02@1` (cross-root references use the qualification in §2).
+In a hypothetical record owned by cell `example-cell`, repository alias `tools`,
+`milestone: build/m-03` and `contract-version: 1` identify `build/m-03@1` locally.
+Its `contributes` list is `["example-cell:tools:build:11", "example-cell:tools:build:12"]`.
+Its `requires-milestones` list may be `["stream-y/m-01@1", "stream-z/m-02@1"]` when both
+are in that same root. A cross-root dependency uses, for example,
+`example-cell:other-tools:stream-y/m-01@1`, with `other-tools` registered there.
+The labels `build/11` and `build/12` below are prose shorthand, not contribution values.
 If only brief 12 needs Y's capability to start, only brief 12 declares that requirement.
 Brief 11 can proceed independently. Z may be needed only for joined acceptance.
 Splitting Y's internal brief into three updates Y's contribution list and coverage;
@@ -177,6 +209,10 @@ at read time MUST be reported as could-not-check. A later incident, withdrawal o
 subject MUST NOT erase an earlier acceptance; record a superseding/revocation decision
 through the same existing mechanism and show current availability separately. A revoked
 acceptance MUST NOT satisfy new readiness checks. New versions are not accepted by inheritance.
+Retirement and identity withdrawal are recorded through existing authorized decision
+records bound to the milestone ID/version, not an undeclared frontmatter status key.
+Consumers MUST consult those decisions; an unavailable retirement decision is unknown,
+never permission to erase identity or infer satisfaction.
 
 ## 7. Change propagation
 
@@ -255,8 +291,9 @@ No JSON schema, release support entry or live declaration is added by this draft
 The implementation handoff MUST enumerate parser/schema/lint, graph resolution, eligibility,
 Next-up/dispatch, board/deskboard, historian/export and trace report consumers. Unsupported
 required semantics MUST stop the affected operation with a diagnostic. Legacy operations
-remain unchanged where no milestone capability is required. Wire the existing repository
-identity registry rather than introducing another cross-root registry.
+remain unchanged where no milestone capability is required. Wire the existing graph alias
+registry for repository identity rather than introducing another cross-root registry;
+the new milestone-reference syntax still needs its own negotiated typed resolver.
 
 Author-spec would author outcome, scope, criteria and authority; author-brief would map
 contributors and start requirements and validate cycles; trace-path-to-live would select
