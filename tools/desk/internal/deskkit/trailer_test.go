@@ -128,7 +128,7 @@ func TestSharedWorkrefTrailerParity(t *testing.T) {
 	}
 	for _, ref := range []string{"build:b-11@2", "alias:build:b-11@2", "example:tools:build/b-11@2"} {
 		got, err := ResolveWorkTrailer(ref, &workref.Context{Cell: "example", Repo: "tools"}, reg)
-		if err != nil || got.Identity.String() != "example:tools:build:b-11" || got.Revision != 2 || got.Compatibility != "example:tools:build:11" {
+		if err != nil || got.String() != "example:tools:build:b-11" || got.Revision != 2 || got.Compatibility != "example:tools:build:11" {
 			t.Errorf("typed adapter %s = %+v, %v", ref, got, err)
 		}
 	}

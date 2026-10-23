@@ -103,7 +103,7 @@ func TestWorkrefGrammarAndAliases(t *testing.T) {
 	}
 	// Large selectors retain exact values; this layer never substitutes a known revision.
 	got, err := workref.Resolve("build:b-11@18446744073709551615", ctx, reg, workref.Typed)
-	if err != nil || got.Revision != ^uint64(0) || strings.Contains(got.Identity.String(), "@") {
+	if err != nil || got.Revision != ^uint64(0) || strings.Contains(got.String(), "@") {
 		t.Errorf("identity/selector conflated: %+v, %v", got, err)
 	}
 }

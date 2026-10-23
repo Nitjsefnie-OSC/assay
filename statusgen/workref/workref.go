@@ -264,7 +264,7 @@ func Resolve(ref string, declaring *Context, registry Registry, profile Profile)
 			parsed.Repo = declaring.Repo
 		}
 	}
-	key := parsed.Identity.String()
+	key := parsed.String()
 	if profile != LegacyQualified {
 		id, err := registry.canonical(parsed.Identity)
 		if err != nil {
@@ -276,7 +276,7 @@ func Resolve(ref string, declaring *Context, registry Registry, profile Profile)
 			parsed.Identity, key = binding.Identity, binding.Key
 		}
 	}
-	return Result{Reference: parsed, LogicalKey: key, Compatibility: parsed.Identity.Compatibility()}, nil
+	return Result{Reference: parsed, LogicalKey: key, Compatibility: parsed.Compatibility()}, nil
 }
 func (r Registry) canonical(id Identity) (Identity, error) {
 	if id.Kind != Brief && id.Kind != Milestone {
