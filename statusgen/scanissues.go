@@ -574,11 +574,6 @@ func planScan(root string, streams []*Stream, list issueLister, bless issueBless
 					}
 					continue
 				}
-				// Issue is still open. Addressed work remains in its inbox; do not
-				// retire, resolve or reactivate its existing projection.
-				if openAddressed[ph.Issue] {
-					continue
-				}
 				if openExcluded[ph.Issue] {
 					// Open but has GAINED an excluded label — retire it the same
 					// way as a close-out, but with a distinct resolved marker
@@ -592,6 +587,17 @@ func planScan(root string, streams []*Stream, list issueLister, bless issueBless
 					} else {
 						// Already done + still excluded, but sitting at the ROOT
 						// → sweep it into done/ too (frontmatter unchanged).
+						closeOuts = append(closeOuts, closeOutPlan{
+							Repo: repo, Issue: ph.Issue, Path: ph.Path, Rel: rel,
+							Action: "sweep", Dest: dest,
+						})
+					}
+					continue
+				}
+				// Addressing prevents reactivation, but never overrides an excluded
+				// label above or leaves a completed placeholder at the stream root.
+				if openAddressed[ph.Issue] {
+					if ph.Status == "done" {
 						closeOuts = append(closeOuts, closeOutPlan{
 							Repo: repo, Issue: ph.Issue, Path: ph.Path, Rel: rel,
 							Action: "sweep", Dest: dest,

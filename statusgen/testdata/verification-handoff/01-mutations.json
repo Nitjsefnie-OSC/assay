@@ -1,13 +1,13 @@
 {
-  "schema": "verification-handoff-mutations-v1",
+  "schema": "verification-handoff-mutations-v2",
   "snapshot_budget": {
     "files": 16000,
     "bytes": 100663296
   },
-  "mutations": [
+  "cases": [
     {
       "id": "shared-addressed",
-      "file": "deskcore/issueflow/selection.go",
+      "target": "deskcore/issueflow/selection.go",
       "old": "return !c.HasPlaceholder && !c.Excluded && !c.Addressed && !c.AddressUnknown",
       "new": "return !c.HasPlaceholder && !c.Excluded",
       "test": "TestHandoffPolicyParity",
@@ -16,7 +16,7 @@
     },
     {
       "id": "scanner-second-site",
-      "file": "statusgen/scanissues.go",
+      "target": "statusgen/scanissues.go",
       "old": "if !issueflow.Select(issueflow.Scanner, candidate, \"\") {",
       "new": "if excluded {",
       "test": "TestHandoffPolicyParity",
@@ -25,7 +25,7 @@
     },
     {
       "id": "source-binding",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if !sameSource(h.Source, f.Source) {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
@@ -34,7 +34,7 @@
     },
     {
       "id": "incomplete-facts",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if !f.Complete {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
@@ -43,7 +43,7 @@
     },
     {
       "id": "human-hold",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if f.HumanHold {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
@@ -52,7 +52,7 @@
     },
     {
       "id": "activation-hold",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if f.ActivationHold {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
@@ -61,7 +61,7 @@
     },
     {
       "id": "freshness",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "f.Now.After(h.FreshUntil)",
       "new": "false",
       "test": "TestHandoffPolicyParity",
@@ -70,7 +70,7 @@
     },
     {
       "id": "successor",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if !briefRef.MatchString(h.Successor) && !issueRef.MatchString(h.Successor) {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
@@ -79,7 +79,7 @@
     },
     {
       "id": "external-owner",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "return unknown(\"missing external owner\")",
       "new": "return Assessment{h.Disposition,\"observed\",\"mutant\"}",
       "test": "TestHandoffPolicyParity",
@@ -88,7 +88,7 @@
     },
     {
       "id": "version",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "return schema == HandoffSchema",
       "new": "return true",
       "test": "TestHandoffPolicyParity",
@@ -97,7 +97,7 @@
     },
     {
       "id": "consumer-route",
-      "file": "statusgen/scanissues.go",
+      "target": "statusgen/scanissues.go",
       "old": "if !issueflow.Select(issueflow.Scanner, candidate, \"\") {",
       "new": "if excluded {",
       "test": "TestHandoffModuleImports",
@@ -106,7 +106,7 @@
     },
     {
       "id": "second-clock",
-      "file": "deskcore/issueflow/planted_effect.go",
+      "target": "deskcore/issueflow/planted_effect.go",
       "plant": "package issueflow\nimport \"time\"\nfunc plantedSecond() { _ = time.Now() }\n",
       "test": "TestHandoffModuleImports",
       "expect": "time.Now",
@@ -114,7 +114,7 @@
     },
     {
       "id": "second-process",
-      "file": "deskcore/issueflow/planted_effect.go",
+      "target": "deskcore/issueflow/planted_effect.go",
       "plant": "package issueflow\nimport \"os/exec\"\nfunc plantedSecond() { _ = exec.Command(\"fixture\") }\n",
       "test": "TestHandoffModuleImports",
       "expect": "os/exec",
@@ -122,7 +122,7 @@
     },
     {
       "id": "second-env",
-      "file": "deskcore/issueflow/planted_effect.go",
+      "target": "deskcore/issueflow/planted_effect.go",
       "plant": "package issueflow\nimport \"os\"\nfunc plantedSecond() { _ = os.Getenv(\"HANDOFF_FIXTURE\") }\n",
       "test": "TestHandoffModuleImports",
       "expect": "os",
@@ -130,7 +130,7 @@
     },
     {
       "id": "cli-projection",
-      "file": "deskcore/issueflow/selection.go",
+      "target": "deskcore/issueflow/selection.go",
       "old": "return p == Full || p == WorkReady || p == Intake || p == Inbox",
       "new": "return p == Full || p == WorkReady || p == Intake || p == Inbox || p == Scanner",
       "test": "TestHandoffPolicyParity",
@@ -139,7 +139,7 @@
     },
     {
       "id": "row-shape",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if row < 1 || seen[row] {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
@@ -148,7 +148,7 @@
     },
     {
       "id": "expected-rows",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "delete(rows, row)",
       "new": "_ = row",
       "test": "TestHandoffPolicyParity",
@@ -157,7 +157,7 @@
     },
     {
       "id": "deciding-role",
-      "file": "deskcore/issueflow/handoff.go",
+      "target": "deskcore/issueflow/handoff.go",
       "old": "if !knownRole(h.DecidingRole) {",
       "new": "if false {",
       "test": "TestHandoffPolicyParity",
