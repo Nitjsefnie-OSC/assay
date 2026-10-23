@@ -89,6 +89,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 | [fresh-views](docs/streams/fresh-views/README.md) | P2 | 0/6 | 2026-09-17 |
 | [review-profiles](docs/streams/review-profiles/README.md) | P2 | 0/6 | 2026-10-20 |
 | [server-controls](docs/streams/server-controls/README.md) | P2 | 0/5 | 2026-10-20 |
+| [verification-handoff](docs/streams/verification-handoff/README.md) | P2 | 0/6 | 2026-10-23 |
 
 ## Next up
 
@@ -108,6 +109,7 @@ _Held by per-stream caps: 19 brief(s) across 1 stream(s) — top: desktools-v2. 
 | desk-containers | 16 — Interim mechanism for the runner-lifecycle `pause` transition — cell-scoped stop flags `STOP.cell.<cell>[.<loop>]`, honoured by the Guard for any session carrying the cell marker [exec:strong] | 7 | 6500 |
 | performance-collection | 01 — Local performance event contract, spool and offline report [exec:strong] | 0 | 5010 |
 | comms-core | 01 — Extract the comms contract and isolate Assay policy [exec:strong] | 0 | 4520 |
+| desk-tools | 49 — Deduplicate verifier filings by their canonical work identity [exec:strong] | 1 | 3500 |
 | desk-tools | 45 — Expose the canonical verification queue to its consumers [exec:strong] | 1 | 3000 |
 | statusgen | 28 — Separate frozen historical notices from actionable lint findings [exec:strong] | 1 | 3000 |
 | iso-9001 | 08 — Versioned source obligations and project applicability [exec:strong] | 0 | 2510 |
@@ -121,13 +123,12 @@ _Held by per-stream caps: 19 brief(s) across 1 stream(s) — top: desktools-v2. 
 | derived-board | 07 — per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills | 4 | 2000 |
 | derived-board | 10 — Complete candidate coverage for partial-delivery reconciliation [exec:strong] | 0 | 2000 |
 | statusgen | 32 — Connect board drift notices to the existing reconciliation owners [exec:strong] | 1 | 2000 |
-| statusgen | 36 — Content-bound witness schema v2: the reader and the one digest owner [exec:strong] | 1 | 2000 |
 
 ## Drive: `build-less-brittle`
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: 74c6d9a9 2026-10-23T12:01:51Z_
+_last regen: a1228caa 2026-10-23T13:20:01Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -148,7 +149,7 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: 74c6d9a9 2026-10-23T12:01:51Z_
+_last regen: a1228caa 2026-10-23T13:20:01Z_
 
 **Progress:** 34/90 brief items done.
 
@@ -930,6 +931,15 @@ _Deliberately WIDER than `--signoff-digest`: this counts every `gate: human` bri
 - 38 One-time v1-to-v2 witness backfill where the witnessed content is still fetchable — todo (wave 3)
 - 39 Multi-root objective reader: prerequisite graph, critical path and ranked moves — todo (wave 1)
 
+### verification-handoff (6 open)
+
+- 01 Share the blocker disposition and routing contract — todo (wave 0)
+- 02 Persist verifier blockers without losing the handoff — todo (wave 2)
+- 03 Require an accountable intake disposition before repair scheduling — todo (wave 1)
+- 04 Discover and claim the successor repair work — todo (wave 3)
+- 05 Return repaired blockers to independent verification — todo (wave 4)
+- 06 Qualify the handoff rollout and update desk guidance — todo (wave 5)
+
 ### windows-port (9 open)
 
 - 00 Build-tag split for the unix-only syscall sites in statusgen and desk-tools — verified (wave 0)
@@ -1130,4 +1140,4 @@ _Terminal: retired by a later decision or merged into a successor. Not counted i
 
 ## Totals
 
-**33** streams (**23** active, **0** paused, **10** parked) · **107/522** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
+**34** streams (**23** active, **0** paused, **11** parked) · **107/528** briefs done · **15** withdrawn · completed initiatives: see `docs/archive/`
