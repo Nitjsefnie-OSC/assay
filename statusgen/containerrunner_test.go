@@ -18,12 +18,15 @@ import (
 
 // isolateGitIdentity leaves the fixture home's own git config as the only
 // identity source: no global or XDG config, no system config, no roster.
+// The commands under test re-read the roster under this empty HOME, so the
+// cleanup drops that cached read: a later test re-reads the fixture roster.
 func isolateGitIdentity(t *testing.T) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "absent"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Cleanup(func() { scanSetToolClass(scanClassWrite); scanReloadConfig() })
 }
 
 // pinBracketClock runs the test on its own clock, so a close a minute after
@@ -150,7 +153,7 @@ func TestContainerReceiptRunner(t *testing.T) {
 	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
 	t.Setenv("GIT_CONFIG_VALUE_0", "assay-verifier-app[bot]")
 	t.Setenv("GIT_CONFIG_KEY_1", "user.email")
-	t.Setenv("GIT_CONFIG_VALUE_1", "1+assay-verifier-app[bot]@users.noreply.github.com")
+	t.Setenv("GIT_CONFIG_VALUE_1", "verifier@example.invalid")
 	fx.writeBracketReceipt(t, validCheck)
 	if res, stderr := captureVerifyrun(t, fx.runArgs()); res.code != verifyrunExitPass {
 		t.Fatalf("injected env: exit %d stderr %q", res.code, stderr)
