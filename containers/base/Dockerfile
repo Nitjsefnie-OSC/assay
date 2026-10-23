@@ -74,7 +74,8 @@ FROM ${DESK_TOOLS_IMAGE} AS desktools
 # (made over the uncompressed tar, by the git maintainer's release key), BEFORE
 # copying anything from it. Then set both ARGs from the release's entry and add
 # the same pair to knownGitTarballs in
-# tools/desk/internal/deskkit/gitfloor_test.go.
+# tools/desk/internal/deskkit/gitfloor_test.go, and set the same two ARGs in
+# images/verify-runner/Dockerfile (a test requires the two pairs to match).
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS gitbuild
 ARG GIT_VERSION=2.56.0
 ARG GIT_TARBALL_SHA256=26c56c296b38c0695b26fa95f475f1d01704d2d38e73465ca30b0b2f5dc789d3

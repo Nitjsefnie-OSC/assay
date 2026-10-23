@@ -129,6 +129,19 @@ package installation is never a recovery path. The release manifest remains the
 existing versioned image-reference contract, without a second dependency manifest
 for consumers to reconcile.
 
+## Runner git
+
+The admitted runner calls `/usr/bin/git` and needs `git --attr-source`, which
+arrived in git 2.41; the Go base image's Debian git is 2.39.5. The runner image
+therefore builds git in its own `gitbuild` stage from the same pinned upstream
+tarball and sha256 as `containers/base/Dockerfile`, purges the distro git, and
+installs the built one over `/usr`. The source-built git is not a Debian
+package, so it does not appear in `packages.txt`. The last layer runs
+`containers/scripts/git-floor-check.sh` under the runner's fixed `PATH`, so an
+image whose git is below the floor fails the build. The image stays offline at
+runtime: the tarball is fetched only during the build. A git bump changes the
+pair in both Dockerfiles in one change.
+
 The source-side fake-Docker tests run in pull-request CI. They prove the capability
 check uses the release-owned source payload, keeps its declared resource bounds,
 precedes all pushes, and stops publication on a simulated import-error exit. The
