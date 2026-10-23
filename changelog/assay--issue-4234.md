@@ -1,0 +1,2 @@
+### Fixed
+- The `deskcore/issueflow` consumer-build check now passes from a cold module cache, so the release workflow's `test (desk-tools)` leg no longer depends on another leg having fetched statusgen's dependencies first. Consumer modules (statusgen, tools/desk) build with workspace resolution still disabled, the job's module proxy inherited, and `-mod=readonly` holding each to its own `go.sum`; runs inside deskcore itself stay fully offline (#4234).
