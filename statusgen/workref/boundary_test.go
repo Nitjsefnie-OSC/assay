@@ -80,12 +80,13 @@ func TestWorkrefPublicImportBoundary(t *testing.T) {
 		}
 	}
 	// Both real consumers must compile and exercise their production adapters with
-	// workspace assistance disabled. Positive named guards reject an absent test.
+	// workspace assistance disabled and go.sum pinning (consumerGo). Positive
+	// named guards reject an absent test.
 	for _, consumer := range []struct{ dir, pkg, test string }{
 		{"statusgen", "./contexthandoff", "TestLegacyQIDParity"},
 		{"tools/desk", "./internal/deskkit", "TestSharedWorkrefTrailerParity"},
 	} {
-		out, err := runGo(t, filepath.Join(root, consumer.dir), nil, "test", "-count=1", "-timeout=45s", "-v", "-run", "^"+consumer.test+"$", consumer.pkg)
+		out, err := consumerGo(t, filepath.Join(root, consumer.dir), "test", "-count=1", "-timeout=45s", "-v", "-run", "^"+consumer.test+"$", consumer.pkg)
 		if err != nil || !strings.Contains(out, "--- PASS: "+consumer.test+" ") {
 			t.Errorf("production consumer %s: %v\n%s", consumer.dir, err, out)
 		}
@@ -158,14 +159,34 @@ func TestWorkrefPublicImportBoundary(t *testing.T) {
 	}
 }
 
+// runGo runs a child go command fully offline. The dependency walk needs no
+// module outside the standard library, and the external consumer names its own
+// file proxy and module cache in extra.
 func runGo(t *testing.T, dir string, extra []string, args ...string) (string, error) {
+	t.Helper()
+	env := []string{"GOWORK=off", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1", "NO_PROXY=", "GOPRIVATE=", "GONOPROXY=none"}
+	return goChild(t, dir, append(env, extra...), args...)
+}
+
+// consumerGo tests a real consumer module of this repository. Those packages
+// import third-party modules (yaml in contexthandoff; go-git and others in
+// desk) that a cold module cache does not hold, so lookup cannot be disabled
+// (#4238). Workspace resolution stays off; the job's proxy and checksum
+// database are inherited, and -mod=readonly holds the child to its own
+// module's go.mod and go.sum.
+func consumerGo(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	args = append([]string{args[0], "-mod=readonly"}, args[1:]...)
+	return goChild(t, dir, []string{"GOWORK=off", "GOTOOLCHAIN=local"}, args...)
+}
+
+func goChild(t *testing.T, dir string, env []string, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 65*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1", "NO_PROXY=", "GOPRIVATE=", "GONOPROXY=none")
-	cmd.Env = append(cmd.Env, extra...)
+	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
