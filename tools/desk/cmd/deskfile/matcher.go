@@ -241,3 +241,64 @@ func classMarker(hasClass bool) string {
 	}
 	return ""
 }
+
+// Exact filing identity (example-stream/49). A structured filing (--filing-brief / --filing-case with
+// --raised-by) carries a canonical key; the lookup runs BEFORE the fuzzy title matcher above and
+// is the only thing that can suppress a filing on identity. It is scoped to the actual -R
+// repository and the raising role, matches only OPEN issues whose body carries the exact key
+// marker, and treats a failed, truncated or malformed read as unknown. A filing without a key
+// never reaches it, and the title matcher is unchanged.
+
+// filedCases returns the open issues already tracking the case named by key, lowest number
+// first. A backend error (including a truncated or incomplete walk) is returned, never read as
+// "no issues": the caller files nothing on it.
+func filedCases(fg deskkit.Forge, fr deskkit.ForgeRepo, key, role string) ([]deskkit.IssueSearchResult, error) {
+	hits, err := fg.SearchIssues(fr, deskkit.SearchIssuesInput{FilingKey: key})
+	if err != nil {
+		return nil, err
+	}
+	return deskkit.MatchFiledIssues(hits, key, role), nil
+}
+
+// filedCaseRefusal is the exit-5 text for an exact hit: the existing issue's number first, then
+// the one motion that is allowed (attach, because the existing obligation covers this case).
+func filedCaseRefusal(repo string, key string, found []deskkit.IssueSearchResult) error {
+	top := found[0]
+	extra := ""
+	if len(found) > 1 {
+		nums := make([]string, 0, len(found)-1)
+		for _, f := range found[1:] {
+			nums = append(nums, fmt.Sprintf("#%d", f.Number))
+		}
+		extra = " (the same case is also filed as " + strings.Join(nums, ", ") + " — reconcile those by hand)"
+	}
+	return deskkit.Refused(fmt.Sprintf(
+		"refused: this case is already filed as #%d in %s (exact filing identity %s) — nothing was filed%s.\n"+
+			"  url: %s\n"+
+			"Reconciled to the existing issue: attach new evidence there only if it adds to it:\n"+
+			"  deskfile attach -R %s --to %d --body-file <f>\n"+
+			"Override with --force-new --reason only if you can justify why this is a separate filing.",
+		top.Number, repo, key, extra, deskkit.StripControl(top.URL), repo, top.Number))
+}
+
+// ambiguousCreate turns a create that did not confirm into a reconciled answer. A create whose
+// response was lost may have landed, so a structured filing asks the exact lookup before anything
+// could be created again: found means the issue exists (never re-file), unreadable means the
+// state is unknown, and none means nothing carries the identity yet. It never creates anything.
+func ambiguousCreate(fg deskkit.Forge, fr deskkit.ForgeRepo, repo, key, role string, cerr error) error {
+	if key == "" {
+		return deskkit.Unverifiable("file issue failed", cerr)
+	}
+	found, ferr := filedCases(fg, fr, key, role)
+	switch {
+	case ferr != nil:
+		return deskkit.Unverifiable("file issue failed and whether the create landed could not be read — do not re-file by hand; "+
+			"re-run the same `deskfile new` (it reconciles by exact identity before it creates)", cerr)
+	case len(found) > 0:
+		return deskkit.Unverifiable(fmt.Sprintf("file issue reported a failure, but #%d in %s already carries this case's filing "+
+			"identity (%s) — the create landed; do not re-file (its labels were not applied)", found[0].Number, repo, key), cerr)
+	default:
+		return deskkit.Unverifiable("file issue failed; no open issue carries this case's filing identity yet (search indexing can lag) — "+
+			"re-run the same `deskfile new`, which reconciles by exact identity before it creates", cerr)
+	}
+}

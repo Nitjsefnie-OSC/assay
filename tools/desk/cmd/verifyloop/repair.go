@@ -135,3 +135,88 @@ func repairReceiptID(repo, brief, sha, verdict string) string {
 	}, "\x00")))
 	return "receipt/" + hex.EncodeToString(h[:])[:16]
 }
+
+// --- filing identity (example-stream/49) -----------------------------------------------------------
+//
+// The bug a failed or blocked verify files is one observation of a CASE, and the case already has
+// an identity: the repair obligation's immutable ID. repairFilingIdentity hands that identity to
+// the filer (deskfile new --filing-brief/--filing-case with --raised-by verifier), and
+// reconcileFiling asks the repository whether an OPEN issue by this role already carries it —
+// through the forge read the loop already owns, never a private cache — before anything is filed.
+
+// FilingIdentity is the structured identity a filing carries: the canonical brief and the case id
+// of the repair obligation, in the repository the obligation names.
+type FilingIdentity struct {
+	Repo  string
+	Brief string
+	Case  string
+}
+
+// repairFilingIdentity derives the identity from the obligation a Result builds. ok is false for
+// an obligation that cannot carry one (no deliverable repository, a malformed brief), which keeps
+// the legacy, identity-free filing.
+func repairFilingIdentity(o deskkit.RepairObligation) (FilingIdentity, string, bool) {
+	key, err := o.FilingKey(verifyloopRole)
+	if err != nil {
+		return FilingIdentity{}, "", false
+	}
+	return FilingIdentity{Repo: o.Repo, Brief: deskkit.CanonicalBriefID(o.Brief), Case: o.ID}, key, true
+}
+
+// FiledCaseSource is the existing issue source's exact read: the open issues in repo that carry
+// key and were raised by the verifier. An error (including a truncated read) is unknown.
+type FiledCaseSource interface {
+	FiledCases(repo deskkit.ForgeRepo, key string) ([]deskkit.IssueSearchResult, error)
+}
+
+// IdentifiedBugFiler is the optional Durable capability that files with a structured identity.
+// A Durable without it files exactly as before.
+type IdentifiedBugFiler interface {
+	FileBugFor(it loopengine.Item, detail string, id FilingIdentity) (string, error)
+}
+
+// FiledCases implements FiledCaseSource over the per-repo forge this source already resolves
+// (allowlist, credential and request observer included); the typed forge does the paged,
+// complete-or-error search.
+func (s *forgeIssueSource) FiledCases(repo deskkit.ForgeRepo, key string) ([]deskkit.IssueSearchResult, error) {
+	fg, err := s.forge(repo)
+	if err != nil {
+		return nil, err
+	}
+	hits, err := fg.SearchIssues(repo, deskkit.SearchIssuesInput{FilingKey: key})
+	if err != nil {
+		return nil, err
+	}
+	return deskkit.MatchFiledIssues(hits, key, verifyloopRole), nil
+}
+
+// fileBug files the bug for a non-passing Result, once per case. The order is the brief's:
+// exact identity first, then whatever the Durable's own (title) matching does.
+//   - identity found open: reconcile to it, print its number, file nothing;
+//   - the exact read failed or was truncated: unknown, file nothing and say so;
+//   - not found, or no identity / no exact source: file as before (with the identity when the
+//     Durable can carry it).
+func (v *VerifyLoop) fileBug(d Durable, r loopengine.Result, detail string) (string, error) {
+	id, key, ok := repairFilingIdentity(buildRepairObligation(r, v.now()))
+	if !ok {
+		return d.FileBug(r.Item, detail)
+	}
+	if src, isSrc := v.Issues.(FiledCaseSource); isSrc {
+		owner, name, _ := strings.Cut(id.Repo, "/")
+		found, err := src.FiledCases(deskkit.ForgeRepo{Owner: owner, Name: name}, key)
+		if err != nil {
+			fmt.Fprintf(v.emit(), "verifyloop: could-not-check whether %s case %s is already filed (%s) — nothing filed\n",
+				id.Brief, id.Case, oneLine(err))
+			return "", fmt.Errorf("could not check whether %s case %s is already filed: %w", id.Brief, id.Case, err)
+		}
+		if len(found) > 0 {
+			fmt.Fprintf(v.emit(), "verifyloop: %s case %s is already filed as %s#%d — reconciled, nothing filed\n",
+				id.Brief, id.Case, id.Repo, found[0].Number)
+			return found[0].URL, nil
+		}
+	}
+	if f, ok := d.(IdentifiedBugFiler); ok {
+		return f.FileBugFor(r.Item, detail, id)
+	}
+	return d.FileBug(r.Item, detail)
+}
