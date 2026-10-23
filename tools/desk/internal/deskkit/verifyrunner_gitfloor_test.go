@@ -2,6 +2,7 @@ package deskkit
 
 import (
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -31,6 +32,9 @@ const (
 	// runnerFloorCmd is the last command of the floor RUN: the shipped script,
 	// under the runner's fixed PATH, bare so a failure fails the build.
 	runnerFloorCmd = runnerFixedPath + " " + gitFloorScriptInImg
+	// runnerOwnerGate fails the build on any file of the install tree that is
+	// not root:root.
+	runnerOwnerGate = `if find /usr/bin/git /usr/libexec/git-core /usr/share/git-core -xdev \( ! -user 0 -o ! -group 0 \) -print | grep .`
 )
 
 // verifyRunnerFloorProblem returns why the verify-runner Dockerfile does not
@@ -66,6 +70,13 @@ func verifyRunnerFloorProblem(runner, base string) string {
 	}
 	if ins[gitbuild].args[0] != ins[lastFrom].args[0] {
 		return "gitbuild starts FROM " + ins[gitbuild].args[0] + " but the final stage from " + ins[lastFrom].args[0] + ", so git is built against other libraries than it runs on"
+	}
+	// Both stages share the one reference, so checking each is checking it; do
+	// both anyway so a future split of the two cannot leave one unguarded.
+	for _, i := range []int{gitbuild, lastFrom} {
+		if p := runnerBaseProblem(ins, i); p != "" {
+			return p
+		}
 	}
 	args, problem := gitbuildStageProblem(ins, gitbuild)
 	if problem != "" {
@@ -135,6 +146,44 @@ func verifyRunnerFloorProblem(runner, base string) string {
 	return runnerFloorRunProblem(ins[runCheck])
 }
 
+// runnerBaseRe is the one base the runner may start FROM: the fleet's Go
+// toolchain image, by tag and by digest (#4207, F-runner-base-unguarded).
+// TestGoSingleVersion reads the tag of an `ARG NAME=golang:…` line; this holds
+// the digest, which that test does not, and that the FROM actually resolves to
+// the ARG's value rather than to some other image.
+var runnerBaseRe = regexp.MustCompile(`^golang:` + regexp.QuoteMeta(fleetGoToolchain) + `-[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$`)
+
+// runnerBaseProblem returns why the FROM at ins[from], resolved through the
+// ARGs that precede the first FROM, is not `golang:<fleetGoToolchain>-…@sha256:…`.
+func runnerBaseProblem(ins []dfInstr, from int) string {
+	globals := map[string]string{}
+	for _, in := range ins {
+		if in.op == "FROM" {
+			break
+		}
+		if in.op == "ARG" && len(in.args) == 1 {
+			if k, v, ok := strings.Cut(in.args[0], "="); ok {
+				globals[k] = v
+			}
+		}
+	}
+	ref := ""
+	for _, a := range ins[from].args {
+		if !strings.HasPrefix(a, "--") {
+			ref = a
+			break
+		}
+	}
+	shown := ref
+	if strings.HasPrefix(ref, "${") && strings.HasSuffix(ref, "}") {
+		ref = globals[strings.TrimSuffix(strings.TrimPrefix(ref, "${"), "}")]
+	}
+	if !runnerBaseRe.MatchString(ref) {
+		return "FROM " + shown + " resolves to `" + ref + "`, not golang:" + fleetGoToolchain + "-<variant>@sha256:<64 hex>, the fleet's digest-pinned Go image"
+	}
+	return ""
+}
+
 // aptInstallsGit reports whether any `apt-get install` in a RUN's words lists
 // the package git. The list ends at the next `&&`, `apt-get` or `rm`, so a
 // `purge git` later in the same RUN is not an install.
@@ -174,6 +223,15 @@ func runnerFloorRunProblem(in dfInstr) string {
 	}
 	if p := gateProblem(segs, lddGate, "ldd"); p != "" {
 		return "the git-floor-check RUN " + p
+	}
+	// The owner gate keeps the install tree root-owned and the last test proves
+	// the distro git's exec directory is gone (both asserted by the Dockerfile's
+	// own comment); a dropped one must go red here too.
+	if p := gateProblem(segs, runnerOwnerGate, "root-ownership"); p != "" {
+		return "the git-floor-check RUN " + p
+	}
+	if segAt(segs, "test ! -e /usr/lib/git-core") < 0 {
+		return "the git-floor-check RUN lacks `test ! -e /usr/lib/git-core` (the distro git's exec directory must be gone)"
 	}
 	return ""
 }
