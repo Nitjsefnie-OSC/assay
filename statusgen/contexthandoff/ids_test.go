@@ -2,7 +2,7 @@ package contexthandoff
 
 import "testing"
 
-// regression: milestone-support/01
+// regression: #4219
 func TestLegacyQIDParity(t *testing.T) {
 	ctx := &QID{Cell: "example", Repo: "tools", Stream: "declaring", NN: "01"}
 	for ref, want := range map[string]string{

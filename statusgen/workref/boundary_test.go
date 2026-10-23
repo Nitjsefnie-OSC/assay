@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// regression: milestone-support/01
+// regression: #4219
 func TestWorkrefPublicImportBoundary(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {

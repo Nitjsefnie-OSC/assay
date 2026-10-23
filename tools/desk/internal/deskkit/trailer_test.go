@@ -79,7 +79,7 @@ func TestParseTrailersBothKinds(t *testing.T) {
 	}
 }
 
-// regression: milestone-support/01
+// regression: #4219
 func TestSharedWorkrefTrailerParity(t *testing.T) {
 	// This historical projection ignores prefixes and accepts numeric lengths the
 	// strict QID API rejects. Preserve exact spelling here; CanonicalBriefID lowers it.

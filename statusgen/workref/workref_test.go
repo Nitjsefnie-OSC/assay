@@ -7,7 +7,7 @@ import (
 	"github.com/medici-finance/assay/statusgen/workref"
 )
 
-// regression: milestone-support/01
+// regression: #4219
 func TestWorkrefGrammarAndAliases(t *testing.T) {
 	ctx := &workref.Context{Cell: "example", Repo: "tools"}
 	id := workref.Identity{Kind: workref.Brief, Cell: "example", Repo: "tools", Stream: "build", Number: "11"}
