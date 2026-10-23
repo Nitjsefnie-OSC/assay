@@ -24,13 +24,30 @@ func repoRoot(t *testing.T) string {
 	}
 	return root
 }
+
+// goCheck runs a child go command in dir. Workspace resolution is always
+// disabled. Where dir sits decides how modules resolve:
+//   - inside deskcore, the module under test: lookup is disabled, at no cost,
+//     because deskcore requires no modules;
+//   - in another module of this repository (a consumer): the job's proxy is
+//     inherited and -mod=readonly holds the child to that module's own go.sum.
+//     deskcore's cache does not hold a consumer's dependencies: the release
+//     leg tests deskcore before anything has fetched statusgen's (#4234);
+//   - anywhere else (a temporary module): lookup is disabled unless env
+//     names the caller's own hermetic proxy.
 func goCheck(t *testing.T, dir string, env []string, names []string, args ...string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	root := repoRoot(t)
+	base := []string{"GOWORK=off", "GOPROXY=off", "GOSUMDB=off"}
+	if within(root, dir) && !within(filepath.Join(root, "deskcore"), dir) {
+		base = base[:1]
+		args = append([]string{args[0], "-mod=readonly"}, args[1:]...)
+	}
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
+	cmd.Env = append(os.Environ(), base...)
 	cmd.Env = append(cmd.Env, env...)
 	raw, err := cmd.CombinedOutput()
 	if err != nil {
@@ -42,6 +59,13 @@ func goCheck(t *testing.T, dir string, env []string, names []string, args ...str
 		}
 	}
 }
+
+// within reports whether path is dir or lies beneath it.
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
 func checkConsumers(t *testing.T) {
 	t.Helper()
 	root := repoRoot(t)
