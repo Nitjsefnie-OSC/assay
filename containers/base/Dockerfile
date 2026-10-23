@@ -62,7 +62,7 @@
 # ---- Reused binary suite --------------------------------------------------
 # Pin the already-published desk-tools image; its static binaries (desk-tools
 # suite + statusgen) are copied into the final stage rather than recompiled.
-ARG DESK_TOOLS_IMAGE=ghcr.io/medici-finance/assay/desk-tools:v1.0.52@sha256:64f131ec208def087b50565a4ddd407b95bd89ac418a86597ad1bac1d29047d3
+ARG DESK_TOOLS_IMAGE=ghcr.io/medici-finance/assay/desk-tools:v1.0.57@sha256:29846ed301722ff4b3f552dc14cdf1fdc1575add590cc9705d05eef00a884d82
 FROM ${DESK_TOOLS_IMAGE} AS desktools
 
 # ---- git, built from a pinned upstream release ---------------------------
