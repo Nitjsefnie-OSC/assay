@@ -15,6 +15,7 @@ accepted:
   - "Real reverses exist for three components only: assay/streams-scaffold, assay/main-guard and assay/registers-scaffold. `deskdisable` refuses every other component that has an inside step (exit 5, nothing changed), so for most of the tree there is no \"turn it off\" yet."
   - "The three executors remove fixed paths with no proof that Assay created them: the scaffold README under docs/streams, the FINDINGS, INTAKE and RETRO register files, the .githooks/pre-commit hook, and the repository's core.hooksPath setting. A file the adopter already had at one of those exact paths before install is deleted, and a core.hooksPath the adopter had set is unset. Verify row 2's fixture places adopter content only at other paths."
   - "Nothing outside tests writes the ledger. `AppendLedger` has no production caller; `deskinstall` only prints the ledger path, because its own effects are inside the boundary. An outside step's checklist line therefore reads \"(no ledger entries found for this step)\" on a real install until a later brief (composability/03) writes ledger lines at creation."
+  - "main-guard's reverse treats every git exit 5 from `git config --unset core.hooksPath` as \"already absent\". When the setting holds several values, git also exits 5 and changes nothing. The executor then reports success, deletes .githooks/pre-commit, and leaves core.hooksPath pointing at the deleted hook."
   - "Every outside step is printed as a human checklist line, whatever its manifest text or ledger state. Removing forge labels, Actions variables, the reviewer App installation and the forge binding stays human work."
   - "`deskdisable` reads the ledger but never edits it, and its dependent check counts every manifest under `--root` as present, because no notion of an ACTIVE component exists yet. It refuses more often than the brief's \"ACTIVE component\" wording asked."
 ---
@@ -116,9 +117,13 @@ performance-instrumentation wrapper around `main` (#3051) and a test-only git-ma
      and its parent only if empty.
    - **registers-scaffold:** removes the FINDINGS, INTAKE and RETRO register files, then the
      directory if empty.
-   - **main-guard:** unsets `core.hooksPath` first, treating git's exit 5 (key already absent)
-     as a no-op, then removes the pre-commit hook and its directory if empty. Unsetting first
-     avoids a half-reversed state in which the setting points at a missing hook.
+   - **main-guard:** unsets `core.hooksPath` first, then removes the pre-commit hook and its
+     directory if empty. It treats any git exit 5 from the unset as a no-op. Git returns 5 when
+     the key is absent, which is the intended case, but also when `core.hooksPath` holds several
+     values: a plain `git config --unset` refuses those with a "has multiple values" warning
+     and changes nothing (checked with git on 2026-10-24). In that case the executor reports
+     success, deletes the hook, and leaves every value set. That is the half-reversed state the
+     unset-first ordering was meant to prevent: the setting points at a hook that is gone.
 
    Each executor is idempotent on an already-reversed tree.
 
@@ -133,6 +138,23 @@ this record approves:
   scaffold paths. None are written.
 - The brief's `unattended: true` path for compensations is not implemented.
 - The brief's dependents rule names ACTIVE components. The tool counts every manifest present.
+- The brief's facts say "The reviewer-App and main-guard components are human-installed
+  today; their manifests' reverses are human checklists, not code, and `deskdisable` prints
+  them". main-guard's reverse is compiled code instead (`mainGuardInverse`). It unsets
+  `core.hooksPath` and deletes the pre-commit hook, and nothing is printed for a human. The
+  reviewer-App step is printed as the brief says.
+- The brief's ground rule says a step whose reverse "cannot be written without deleting
+  something Assay did not create" gets `compensation: list-for-human`, "never a best-effort
+  delete". The three executors delete fixed paths without checking that Assay created them
+  (see `accepted` and Review question 1), which is a best-effort delete under that rule. This
+  record cites the same rule above to rule out reverses for the components whose targets the
+  manifest does not pin down. The delivery applies the rule there, but not to the three
+  components it did reverse.
+- The brief's facts say inside reverses "MUST leave the tree byte-identical to the
+  pre-install snapshot". The delivered tool takes no snapshot at install or at disable, and
+  compares against nothing. The only snapshots are in the tests (`treeSnapshot` in the
+  deskdisable test helpers). So byte-identity is proven for those fixtures only. On a real
+  tree it is assumed: a disable run neither checks nor reports it.
 
 ## The Review-gate questions, answered from the code
 
