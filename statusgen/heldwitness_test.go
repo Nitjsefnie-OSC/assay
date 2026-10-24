@@ -1,0 +1,178 @@
+package main
+
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// Tests for the held scan reading statusgen verifyrun's own execution witness
+// (#4294). A witness table's Output cell is a digest and its Result cell may
+// carry a sandbox token; a write-mode run puts its attestation (and, for a
+// container run, its tree, image and bracket lines) directly under the table.
+// None of those is caller prose, so a later witness that re-ran every row
+// clean supersedes an earlier hold the way a hand-written results table
+// already does (#1894, #3841) — and nothing else about the scope changes.
+
+const (
+	witHex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	witHex40 = "0123456789abcdef0123456789abcdef01234567"
+	// witAttest is a version-1 attestation line as the admission receipt
+	// renders it.
+	witAttest = "Verification-Attestation: example-org/example-repo#4017 run=" + witHex64 +
+		" source=" + witHex40 + " brief=docs/streams/fixture/brief-02-fixture.md model=fixture-model tier=strong"
+	// witContainer is the block a container run writes under its table
+	// (containerWitnessLines) plus the bracket close's line.
+	witContainer = "Tree-Digest: sha256:" + witHex64 + "\n" +
+		"Container-Image: sha256:" + witHex64 + "\n" + witAttest + "\n" +
+		"Admission-Bracket: run=" + witHex64 + " source=" + witHex40 + " tree=sha256:" + witHex64 +
+		" witness=sha256:" + witHex64 + " opened=2026-10-22T17:09:57Z closed=2026-10-22T17:12:01Z before=receipt after=check-verifier"
+)
+
+// witPass re-runs a row clean; witRow3 returns state for row 3 and a clean
+// pass for every other row.
+func witPass(int) (string, int, string) { return statePass, 0, "" }
+
+func witRow3(state string, exit int, note string) func(int) (string, int, string) {
+	return func(r int) (string, int, string) {
+		if r == 3 {
+			return state, exit, note
+		}
+		return statePass, 0, ""
+	}
+}
+
+// witTable renders a verifyrun witness table for rows 1..n through the
+// production renderer (witness.row), each row's state from state, the sandbox
+// token on every row, then trailer (if any) directly under the last row.
+func witTable(n int, sandbox string, state func(int) (string, int, string), trailer string) string {
+	s := witnessHeader + "\n"
+	for r := 1; r <= n; r++ {
+		st, exit, note := state(r)
+		w := witness{ID: strconv.Itoa(r), Command: "tool check " + strconv.Itoa(r), State: st, Exit: exit,
+			OutHash: "0123456789ab", Date: "2026-10-22", Runner: "fixture-verifier[bot]", Tree: "0123456789ab",
+			HostOnBehalfOf: true, Sandbox: sandbox, Note: note}
+		s += w.row() + "\n"
+	}
+	if trailer != "" {
+		s += trailer + "\n"
+	}
+	return s
+}
+
+// witEntry is a level-3 Evidence entry: heading, witness, prose, verdict.
+func witEntry(heading, table, prose, verdict string) string {
+	s := "### " + heading + "\n\n" + table + "\n"
+	if prose != "" {
+		s += prose + "\n\n"
+	}
+	return s + verdict + "\n\n"
+}
+
+// witLatest is the latest entry: a write-mode container witness that re-ran
+// all four rows clean, closing on a strict PASS.
+func witLatest(state func(int) (string, int, string)) string {
+	return witEntry("2026-10-22 verify pass (witnessed)", witTable(4, sandboxContainerNetns, state, witContainer),
+		"", "**VERIFY: PASS** — 4/4 rows at the attested source")
+}
+
+const (
+	witCNR    = "check:ci hermetic execution requires a network-off sandbox, unavailable on this host"
+	witBullet = "- Row 3: BLOCKED — could-not-check, no Linux runner online."
+	witHeldBy = "| # | Command | Expect | Observed | Date | Runner |\n|---|---------|--------|----------|------|--------|\n" +
+		"| 3 | `tool check 3` | exit 0 | could-not-check — no runner online | 2026-09-23 | fixture-verifier |\n"
+)
+
+// The three superseded shapes the issue names, each in an earlier entry whose
+// own witness ran under unshare and carries its attestation line straight
+// under the table.
+var (
+	// (a) an old results-table row: row 3 held in its Observed cell.
+	witOldRow = witEntry("2026-09-23 verifier run", witTable(4, sandboxUnshare, witRow3(stateCouldNotRun, -1, witCNR), witAttest)+
+		"\n"+witHeldBy, "", "VERIFY: BLOCKED")
+	// (b) an old BLOCKED bullet in the entry's prose.
+	witOldBullet = witEntry("2026-09-27 verifier re-run", witTable(4, sandboxUnshare, witRow3(stateCouldNotRun, -1, witCNR), witAttest),
+		witBullet, "**VERIFY: BLOCKED** — 3/4 pass, 1 could-not-check")
+	// (c) an old entry heading carrying VERIFY: BLOCKED.
+	witOldHeading = witEntry("Non-implementer verifier run — VERIFY: BLOCKED — 3/4 pass, 1 could-not-check, 0 fail — 2026-09-23",
+		witTable(4, sandboxUnshare, witRow3(stateCouldNotRun, -1, witCNR), witAttest), "", "")
+)
+
+// TestHeldScopeWitnessCover: a later write-mode verifyrun witness that re-ran
+// every row clean supersedes an earlier held row (rule 3a) and, as a whole, an
+// earlier BLOCKED bullet or BLOCKED heading (rule 3b). Each case refused before
+// #4294: the Output digest kept every row from covering, and the attestation
+// line under an earlier witness read as a row the scan could not key.
+// regression: #4294
+func TestHeldScopeWitnessCover(t *testing.T) {
+	handLatest := witEntry("2026-10-22 verify pass", "| # | Command | Exit | Result |\n|---|---|---|---|\n"+
+		"| 1 | `tool check 1` | 0 | ok |\n| 2 | `tool check 2` | 0 | ok |\n| 3 | `tool check 3` | 0 | ok |\n| 4 | `tool check 4` | 0 | ok |\n",
+		"", "**VERIFY: PASS**")
+	unshareLatest := witEntry("2026-10-22 verify pass", witTable(4, "", witPass, witAttest), "", "**VERIFY: PASS**")
+	runHeldLayerCases(t, []heldScanCase{
+		{"(a) old held table row", witOldRow + witLatest(witPass), false},
+		{"(b) old BLOCKED bullet", witOldBullet + witLatest(witPass), false},
+		{"(c) old BLOCKED heading", witOldHeading + witLatest(witPass), false},
+		{"all three, oldest first", witOldHeading + witOldBullet + witOldRow + witLatest(witPass), false},
+		// The digest alone: the earlier entry has no trailer line.
+		{"digest only, no earlier trailer",
+			witEntry("Run 1", witTable(4, "", witRow3(stateFail, 2, ""), ""), witBullet, "VERIFY: BLOCKED") + witLatest(witPass), false},
+		// The trailer alone: the latest entry is a hand table.
+		{"trailer only, hand-table latest", witOldBullet + handLatest, false},
+		// A witness with no sandbox and a bare attestation line.
+		{"host witness, attestation only", witOldHeading + unshareLatest, false},
+		// Planted second instance: the container block under an earlier witness.
+		{"container block under earlier witness",
+			witEntry("Run 1", witTable(4, sandboxContainerNetns, witRow3(stateFail, 1, ""), witContainer), witBullet, "VERIFY: BLOCKED") +
+				witLatest(witPass), false},
+	})
+}
+
+// TestHeldScopeWitnessLive: a hold that is still live keeps refusing — the
+// latest entry is not a PASS, its witness did not re-run the held row clean,
+// or a line under an earlier witness is not one the tool writes.
+func TestHeldScopeWitnessLive(t *testing.T) {
+	failed := witRow3(stateFail, 1, "")
+	cnr := witRow3(stateCouldNotRun, -1, witCNR)
+	blank := func(trailer string) string {
+		return witEntry("Run 1", witTable(4, sandboxUnshare, cnr, trailer), witBullet, "VERIFY: BLOCKED")
+	}
+	runHeldLayerCases(t, []heldScanCase{
+		// The latest entry itself is the hold.
+		{"latest entry BLOCKED", witLatest(witPass) + witOldHeading, true},
+		{"latest PASS with a held bullet", witEntry("Run 2", witTable(4, "", witPass, witAttest), witBullet, "**VERIFY: PASS**"), true},
+		// A later row with the same key that did not pass.
+		{"(a) re-run row 3 failed", witOldRow + witLatest(failed), true},
+		{"(a) re-run row 3 could-not-run", witOldRow + witLatest(cnr), true},
+		{"(b) re-run row 3 failed", witOldBullet + witLatest(failed), true},
+		{"(c) re-run row 3 could-not-run", witOldHeading + witLatest(cnr), true},
+		{"(b) latest skipped row 3",
+			witOldBullet + witEntry("Run 2", strings.Replace(witTable(4, "", witPass, witAttest), witnessRow3(), "", 1), "", "**VERIFY: PASS**"), true},
+		// A digest is no outcome: a row whose Result is empty does not cover.
+		{"digest with an empty Result", witOldRow + witEntry("Run 2", witnessHeader+"\n"+
+			"| 1 | `tool check 1` |  | sha256:0123456789ab | 2026-10-22 | r @ 0123456789ab |\n"+
+			"| 2 | `tool check 2` |  | sha256:0123456789ab | 2026-10-22 | r @ 0123456789ab |\n"+
+			"| 3 | `tool check 3` |  | sha256:0123456789ab | 2026-10-22 | r @ 0123456789ab |\n", "", "**VERIFY: PASS**"), true},
+		{"digest outside an Output column", witOldRow + witEntry("Run 2", "| # | Command | Result | Notes |\n|---|---|---|---|\n"+
+			"| 3 | `tool check 3` | pass exit=0 | sha256:0123456789ab |\n", "", "**VERIFY: PASS**"), true},
+		{"digest of the wrong length", witOldRow + witEntry("Run 2", strings.ReplaceAll(witTable(4, "", witPass, witAttest),
+			"sha256:0123456789ab", "sha256:0123456789abcdef"), "", "**VERIFY: PASS**"), true},
+		{"sandbox token outside the closed set", witOldRow + witEntry("Run 2", strings.ReplaceAll(witTable(4, "", witPass, witAttest),
+			"pass exit=0 ", "pass exit=0 sandbox=none "), "", "**VERIFY: PASS**"), true},
+		// Under an earlier witness, only the tool's own lines are passed over.
+		{"prose straight after the trailer", strings.Replace(blank(witAttest), witAttest+"\n", witAttest+"\nrow 3 still waits\n", 1) +
+			witLatest(witPass), true},
+		{"prose straight after the table", blank("row 3 still waits") + witLatest(witPass), true},
+		{"trailer with a note appended", blank(witAttest+" (row 3 HELD)") + witLatest(witPass), true},
+		{"trailer under a hand table", witEntry("Run 1", "| # | Command | Exit | Result |\n|---|---|---|---|\n"+
+			"| 1 | `tool check 1` | 0 | ok |\n"+witAttest+"\n", witBullet, "VERIFY: BLOCKED") + witLatest(witPass), true},
+		{"fence straight after the trailer", blank(witAttest+"\n```\nlog\n```") + witLatest(witPass), true},
+	})
+}
+
+// witnessRow3 is row 3 of a host witness of clean rows, as witTable renders it.
+func witnessRow3() string {
+	w := witness{ID: "3", Command: "tool check 3", State: statePass, Exit: 0, OutHash: "0123456789ab",
+		Date: "2026-10-22", Runner: "fixture-verifier[bot]", Tree: "0123456789ab", HostOnBehalfOf: true}
+	return w.row() + "\n"
+}

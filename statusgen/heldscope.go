@@ -1056,6 +1056,57 @@ type heldTable struct {
 	notResult   []bool // per column: not a result column
 }
 
+var (
+	// heldWitnessHeaders are the header lines statusgen verifyrun writes for
+	// its execution witness table (witnessHeader, witnessHeaderFailFirst).
+	heldWitnessHeaders = map[string]bool{
+		strings.SplitN(witnessHeader, "\n", 2)[0]:          true,
+		strings.SplitN(witnessHeaderFailFirst, "\n", 2)[0]: true,
+	}
+	// heldWitnessTrailerRes are the lines statusgen verifyrun and its
+	// container bracket write directly under a witness table, with no blank
+	// line between (containerWitnessLines, the admission receipt's
+	// attestation, the bracket close): every field a digest, a hex id, a
+	// repo, a path or a timestamp, never caller prose. A "|", "<" or ">"
+	// cannot appear in any of them, so such a line is never a row GFM splits
+	// into cells nor markup.
+	heldWitnessTrailerRes = []*regexp.Regexp{
+		regexp.MustCompile(`^Tree-Digest: sha256:[0-9a-f]{64}$`),
+		regexp.MustCompile(`^Container-Image: sha256:[0-9a-f]{64}$`),
+		regexp.MustCompile(`^Verification-Attestation: [A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+ run=[0-9a-f]{64} (?:source-repo=[A-Za-z0-9._-]+/[A-Za-z0-9._-]+ )?source=[0-9a-f]{40} (?:tracking-source=[0-9a-f]{40} )?brief=[A-Za-z0-9._/-]+ model=[A-Za-z0-9._:\[\]-]+ tier=[a-z]+$`),
+		regexp.MustCompile(`^Admission-Bracket: run=[0-9a-f]{64} source=[0-9a-f]{40} tree=sha256:[0-9a-f]{64} witness=sha256:[0-9a-f]{64} opened=[0-9TZ:+.-]+ closed=[0-9TZ:+.-]+ before=receipt after=check-verifier$`),
+	}
+)
+
+// heldWitnessTrailerEnd returns the first line at or after j, the line after
+// the table that opens at header, that is not a verifyrun trailer line
+// (heldWitnessTrailerRes), or j when the table is not a verifyrun witness
+// table (heldWitnessHeaders) or line j is no trailer (#4294). GFM reads such
+// a line as one more row of the table above, but every one of its fields is
+// a digest or an id the tool wrote, so it cannot be a row the scan fails to
+// key: whole supersession may read past it, as long as the run of trailer
+// lines then ends at a blank line or the entry's end. Any other line there
+// still counts against the entry (heldScanScope).
+func heldWitnessTrailerEnd(lines []string, inFence []bool, header, j, hi int) int {
+	if !heldWitnessHeaders[lines[header]] {
+		return j
+	}
+	t := j
+	for ; t < hi && !inFence[t]; t++ {
+		trailer := false
+		for _, re := range heldWitnessTrailerRes {
+			if re.MatchString(lines[t]) {
+				trailer = true
+				break
+			}
+		}
+		if !trailer {
+			break
+		}
+	}
+	return t
+}
+
 // heldScanScope returns what the held scan reads of evidence (split on "\n"),
 // under the rules documented above.
 func heldScanScope(evidence string) heldScope {
@@ -1118,7 +1169,7 @@ func heldScanScope(evidence string) heldScope {
 				}
 				if tb.keyCol >= 0 && hasResult {
 					hasResults = true
-					if j < hi && !isBlankLine(lines[j]) {
+					if t := heldWitnessTrailerEnd(lines, inFence, i, j, hi); t < hi && !isBlankLine(lines[t]) {
 						aligned[e] = false // a line GFM may read as one more row of the table
 					}
 					tables = append(tables, tb)
@@ -1226,7 +1277,7 @@ func heldCovered(lines []string, live []bool, out []heldLineRead, tables []heldT
 					continue
 				}
 				role := heldCoverColumn(lines[tb.header][header[c][0]:header[c][1]])
-				if role == heldColExpect {
+				if role == heldColExpect || heldOutputDigest(lines[tb.header][header[c][0]:header[c][1]], lines[r][rg[0]:rg[1]]) {
 					continue
 				}
 				st := heldOutcome(lines[r][rg[0]:rg[1]], role == heldColExit)
@@ -1322,8 +1373,16 @@ var (
 		regexp.MustCompile(`^(\d+)[ \t]+of[ \t]+(\d+)(?:[ \t]+(?:tests?|subtests?|checks?|cases?|rows?))?[ \t]+(?:passed|passing|ok|green)`),
 		regexp.MustCompile(`^(?:0[ \t]+(?:failures?|failed|fails|errors?|findings?)|no[ \t]+(?:failures|errors|findings))`),
 		regexp.MustCompile(`^(?:in[ \t]+)?\d+(?:\.\d+)?[ \t]*(?:minutes?|mins?|ms|m|seconds?|secs?|s)`),
+		// The sandbox token statusgen verifyrun writes after `exit=` (#2350):
+		// it names WHICH network-off sandbox ran the row, one of the two
+		// compile-time modes (verifysandbox.go), never caller text.
+		regexp.MustCompile(`^sandbox=(?:unshare|container-netns)`),
 		heldOutcomeRe,
 	}
+	// heldDigestRe is the Output cell statusgen verifyrun writes for every
+	// witness row: the first 12 hex digits of the sha256 of the row's captured
+	// output (hashOutput), never caller text.
+	heldDigestRe = regexp.MustCompile(`^sha256:[0-9a-f]{12}$`)
 	// heldStrikeRe is a struck span as GFM renders one: the text between the
 	// tildes neither starts nor ends with a space. "~~ HELD ~~" is not a
 	// strike on GitHub, so the cover keeps it.
@@ -1358,6 +1417,15 @@ func heldOutcome(cell string, exit bool) heldCellState {
 		return heldCellOther
 	}
 	return heldCellPass
+}
+
+// heldOutputDigest reports whether cell, under header, is a verifyrun witness
+// row's output digest (heldDigestRe in an Output column; #4294). A digest says
+// nothing about the outcome — the row's Result cell does — so the cover reads
+// it as neither a clean outcome nor a note: such a row is clean only on what
+// its other outcome cells say, and a digest alone never makes a row clean.
+func heldOutputDigest(header, cell string) bool {
+	return heldNorm(header) == "output" && heldDigestRe.MatchString(heldNorm(cell))
 }
 
 // heldDetailsClean reports whether t, the text after a clean outcome, is
