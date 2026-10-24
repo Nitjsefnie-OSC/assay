@@ -122,9 +122,10 @@ reads. Consequently no age cutoff in the file can authorize stale mutable facts.
 The planner's caller-owned policy/cutoff remains the separate selection contract.
 
 One invocation-scoped context supplies the round and packet. Successful assembly
-reads are shared; terminal reads bypass the memo. A head/base/body/metadata,
+reads are shared; terminal reads bypass the memo. A head/base/body/base-branch/open-state/decision-label,
 review/check or required-check-policy change, or failed access at that boundary,
-aborts the assignment and releases the claim. Packet construction remains optional;
+aborts the assignment and releases the claim. Unrelated title, mergeability,
+update-time and routine label changes do not invalidate source applicability. Packet construction remains optional;
 if it fails before its terminal check, dispatch performs that check itself. It never
 silently relabels old source facts with a new head. Publisher and reviewer-owned
 freshness checks remain necessary after dispatch.
@@ -139,8 +140,16 @@ symlinks are never followed. When both base and head objects exist, gitcore buil
 the three-dot diff from the exact endpoints. A provider without an exact base
 endpoint gets full-pass scope and an explicit diff omission, not a claimed frozen diff. Packet file,
 history, time and output caps and untrusted-content escaping remain in force.
-A 60-second preparation context reaches both provider transports, including blocked
-requests and response bodies. Omitted/unused requests still count as requests.
+Round reads, packet assembly and terminal rechecks each have their own bounded
+60-second context through both provider transports, including blocked requests and
+response bodies. The packet clock starts at packet construction, after claim/workspace
+latency; an expired optional packet reports omissions and does not poison the fresh
+terminal check. A terminal read failure is reported as could-not-recheck, distinct
+from an observed input change. Omitted/unused requests still count as requests.
+GitLab maps `diff_refs.base_sha` to the exact base so its existing patch fallback and
+delta path remain available. Local diff inputs are header-checked against the diff
+byte budget before rename detection or patch construction can inflate blobs;
+over-budget inputs are explicitly omitted without an unbounded remote fallback.
 
 The qualified one-file delta fixture measures **17 -> 14 HTTP attempts** for round
 plus packet with local exact objects (18% fewer), while adding terminal mutable

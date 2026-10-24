@@ -38,3 +38,14 @@ func TestForgePreparationCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestGitLabPreparationBase(t *testing.T) {
+	s := newGLServer(t)
+	s.mr = glMR(nil)
+	const base = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	s.mr["diff_refs"] = map[string]any{"base_sha": base, "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	pr, e := s.forge().GetPullRequest(glRepo, 7)
+	if e != nil || pr == nil || pr.BaseSHA != base {
+		t.Fatalf("GitLab exact base was discarded: %#v %v", pr, e)
+	}
+}

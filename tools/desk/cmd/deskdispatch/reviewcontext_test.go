@@ -23,9 +23,13 @@ type prepareFixture struct {
 	transport        *reviewtest.Transport
 	moved            string
 	prReads          int
+	blockContent     bool
 }
 
 func prepareTestFixture(t *testing.T) *prepareFixture {
+	return prepareSourceFixture(t, "assigned bytes\n")
+}
+func prepareSourceFixture(t *testing.T, assigned string) *prepareFixture {
 	t.Helper()
 	f := &prepareFixture{root: t.TempDir()}
 	git := func(args ...string) string {
@@ -48,7 +52,7 @@ func prepareTestFixture(t *testing.T) *prepareFixture {
 		return git("rev-parse", "HEAD")
 	}
 	f.base = commit("base bytes\n")
-	f.head = commit("assigned bytes\n")
+	f.head = commit(assigned)
 	commit("wrong allocated head\n")
 	reviewtest.Home(t, reviewtest.Request{Home: t.TempDir()}, `ASSAY_BLESS_LOGIN=ada:2001
 ASSAY_TRUSTED_LOGINS=ada:2001
@@ -65,6 +69,9 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 	t.Cleanup(func() { reviewPacketReviewerFn = oldReviewer })
 	f.transport = &reviewtest.Transport{Answer: func(r *http.Request) (int, string) {
 		path := r.URL.Path
+		if r.Context().Err() != nil {
+			return 408, `{"message":"request cancelled"}`
+		}
 		if r.Method != "GET" {
 			t.Fatalf("preparation wrote %s %s", r.Method, path)
 		}
@@ -124,6 +131,10 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 			return 200, fmt.Sprintf(`{"sha":%q,"parents":[{"sha":%q}],"files":[{"filename":"a.go"}]}`, f.head, f.base)
 		}
 		if strings.Contains(path, "/contents/") {
+			if f.blockContent {
+				<-r.Context().Done()
+				return 408, `{"message":"packet read deadline"}`
+			}
 			return 200, fmt.Sprintf(`{"type":"file","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","encoding":"base64","content":%q}`, base64.StdEncoding.EncodeToString([]byte("assigned bytes\n")))
 		}
 		if strings.Contains(r.Header.Get("Accept"), "diff") {
@@ -250,7 +261,8 @@ func liveReviewRoundPacket(repo string) (reviewPacketForge, deskkit.ForgeRepo, e
 
 // Full entrypoint: the normal claim/workspace/stamp seams remain in control;
 // only their external effects are replaced by the existing dispatch harness.
-func TestReviewPrepareDispatchWiring(t *testing.T) {
+func prepareDispatchFixture(t *testing.T) (*stub, *prepareFixture, *ghStampServer, *[]queueLabelCall, []string) {
+	t.Helper()
 	s := &stub{}
 	s.install(t)
 	realTransport := http.DefaultTransport
@@ -263,12 +275,17 @@ func TestReviewPrepareDispatchWiring(t *testing.T) {
 		t.Fatal(e)
 	}
 	reviewRoundForgeFn = func(string) (reviewRoundForge, deskkit.ForgeRepo, error) { return fg, fr, nil }
-	installGHStamp(t)
+	stamp := installGHStamp(t)
 	http.DefaultTransport = prepareRoutingTransport{preparation: f.transport, effects: realTransport}
-	stubQueueLabel(t, nil)
+	queue := stubQueueLabel(t, nil)
 	usePacketBuilder(t)
 	args := stampArgs(t, f.root, "--kit", "review", "--quiet", "--repo", rrRepo, "--observation", savedPrepareObservation(t, f, "valid"))
 	args[0] = rrKeyC
+
+	return s, f, stamp, queue, args
+}
+func TestReviewPrepareDispatchWiring(t *testing.T) {
+	_, f, _, _, args := prepareDispatchFixture(t)
 	rc, stderr := runCapturingStderr(t, args)
 	if rc != 0 {
 		t.Fatalf("full preparation dispatch failed %d: %s", rc, stderr)
@@ -425,5 +442,113 @@ func TestReviewPrepareMissingBase(t *testing.T) {
 	}
 	if len(built.Omitted) == 0 || !strings.Contains(string(built.Text), "exact base endpoint") {
 		t.Fatal("unknown base did not omit unfrozen diff")
+	}
+}
+
+func TestReviewPrepareDispatchAbort(t *testing.T) {
+	for _, change := range []string{"body", "access"} {
+		t.Run(change, func(t *testing.T) {
+			s, f, stamp, queue, args := prepareDispatchFixture(t)
+			buildPacketFn = func(dispatchOpts, dispatchPlan, string, string) string { f.moved = change; return "" }
+			rc, stderr := runCapturingStderr(t, args)
+			want := "review preparation changed before dispatch"
+			if change == "access" {
+				want = "review preparation could not be rechecked"
+			}
+			if rc != deskkit.ExitUnverifiable || !strings.Contains(stderr, want) {
+				t.Fatalf("dispatch did not abort on %s: rc=%d %s", change, rc, stderr)
+			}
+			released := false
+			for _, call := range s.calls {
+				if strings.Contains(strings.Join(call, " "), "release") {
+					released = true
+				}
+			}
+			if !released {
+				t.Fatal("invalidated dispatch did not release its claim")
+			}
+			if len(stamp.requests) != 0 || len(*queue) != 0 {
+				t.Fatal("invalidated dispatch wrote a stamp or queue label")
+			}
+			if _, e := os.Stat(emittedPathFor(promptFileOf(t, args))); !os.IsNotExist(e) {
+				t.Fatal("invalidated dispatch emitted a prompt")
+			}
+		})
+	}
+}
+func TestReviewPrepareBudgets(t *testing.T) {
+	f := prepareTestFixture(t)
+	old := reviewStageBudget
+	reviewStageBudget = 100 * time.Millisecond
+	t.Cleanup(func() { reviewStageBudget = old })
+	o := dispatchOpts{kit: "review", pr: 77, root: f.root}
+	p, e := newPreparedReview(o, rrRepo)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { p.cancel() }()
+	if _, e := prepareReviewRound(o, dispatchPlan{claimKey: rrKeyC, reviewContext: p}, rrRepo); e != nil {
+		t.Fatal(e)
+	}
+	// Claim/workspace latency is outside the later packet budget.
+	time.Sleep(150 * time.Millisecond)
+	spec, e := reviewPacket(packetInput{o: o, plan: dispatchPlan{claimKey: rrKeyC, reviewContext: p}, repo: rrRepo})
+	if e != nil {
+		t.Fatal(e)
+	}
+	p.local = nil
+	f.blockContent = true
+	built, e := packet.Build(spec)
+	if e != nil {
+		t.Fatal("packet expiry poisoned the fresh terminal check", e)
+	}
+	if len(built.Omitted) == 0 {
+		t.Fatal("expired packet failed to report partial coverage")
+	}
+	if !p.checked {
+		t.Fatal("packet expiry skipped the fresh terminal check")
+	}
+}
+func TestReviewPrepareVolatileMetadata(t *testing.T) {
+	p := &deskkit.PullRequest{HeadSHA: rrHead1, BaseSHA: rrMain, BaseRef: "main", Body: "description", State: "open"}
+	n := *p
+	n.Title = "new title"
+	n.Mergeable = "MERGEABLE"
+	n.UpdatedAt = "later"
+	n.Labels = []string{"review-in-flight"}
+	n.Draft = true
+	if !samePreparedSubject(p, &n) {
+		t.Fatal("volatile metadata spuriously invalidates the prepared source")
+	}
+	n.Labels = []string{decisionLabel}
+	if samePreparedSubject(p, &n) {
+		t.Fatal("decision-label transition bypassed gate freshness")
+	}
+}
+
+type opaquePreparationForge struct{ deskkit.Forge }
+
+func TestReviewPrepareUnknownIdentityFallback(t *testing.T) {
+	f := prepareTestFixture(t)
+	fg, fr, e := liveReviewRoundForge(rrRepo)
+	if e != nil {
+		t.Fatal(e)
+	}
+	opaque := opaquePreparationForge{Forge: fg.(deskkit.Forge)}
+	reviewRoundForgeFn = func(string) (reviewRoundForge, deskkit.ForgeRepo, error) { return opaque, fr, nil }
+	p, e := newPreparedReview(dispatchOpts{kit: "review", pr: 77, root: f.root}, rrRepo)
+	if e != nil || p != nil {
+		t.Fatal("unknown wrapper did not retain unprepared compatibility path", p, e)
+	}
+}
+func TestReviewPrepareLocalOmission(t *testing.T) {
+	f := prepareSourceFixture(t, strings.Repeat("x", packet.DefaultPerItemCap+1))
+	_, spec := prepareFlow(t, f)
+	built, e := packet.Build(spec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !strings.Contains(string(built.Text), "local exact blob exceeds the packet per-item byte cap") {
+		t.Fatal("local cap omission attributed to provider")
 	}
 }

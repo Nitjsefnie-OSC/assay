@@ -169,6 +169,9 @@ func reviewPacketSafePath(p string) bool {
 }
 
 func reviewPacket(in packetInput) (packet.Spec, error) {
+	if in.plan.reviewContext != nil {
+		in.plan.reviewContext.startPacket()
+	}
 	pr := in.o.pr
 	if pr <= 0 {
 		return packet.Spec{}, errNoPacket
@@ -520,6 +523,10 @@ func reviewDiffSection(fg reviewPacketForge, fr deskkit.ForgeRepo, pr int, chang
 		return out, nil
 	}
 	diff, derr := fg.ChangeDiff(fr, pr)
+	if p, ok := fg.(*preparedReview); ok && p.diffOmitted != "" {
+		out.Omit("diff", packet.SizeUnknown, p.diffOmitted)
+		return out, nil
+	}
 	if derr == nil && strings.TrimSpace(diff) != "" {
 		if p, ok := fg.(*preparedReview); ok && p.localDiff {
 			out.Textf("Unified diff from local exact Git objects, merge-base of %s and %s to head %s.", packet.Code(change.BaseSHA), packet.Code(change.HeadSHA), packet.Code(change.HeadSHA))
@@ -615,6 +622,8 @@ func reviewFilesSection(fg reviewPacketForge, fr deskkit.ForgeRepo, change *desk
 			out.Omit(name, packet.SizeUnknown, "the forge has no such file at the head commit")
 		case rerr != nil:
 			out.OmitDetail(name, packet.SizeUnknown, "could not be read", firstLine(rerr.Error()))
+		case localPacketOmission(fg, f.Filename) != "":
+			out.Omit(name, packet.SizeUnknown, localPacketOmission(fg, f.Filename))
 		case len(fc.Content) == 0:
 			out.Omit(name, 0, "the forge returned no inline content (an empty file, or one over its inline-read limit)")
 		default:
@@ -625,4 +634,11 @@ func reviewFilesSection(fg reviewPacketForge, fr deskkit.ForgeRepo, change *desk
 		}
 	}
 	return out, nil
+}
+
+func localPacketOmission(fg reviewPacketForge, path string) string {
+	if p, ok := fg.(*preparedReview); ok {
+		return p.omissions[p.context.SourceKey(path)]
+	}
+	return ""
 }

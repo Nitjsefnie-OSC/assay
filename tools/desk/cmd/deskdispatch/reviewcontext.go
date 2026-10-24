@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,25 +24,51 @@ type preparationForge interface {
 // never across the terminal check or across assignments. Errors are not memoized.
 type preparedReview struct {
 	preparationForge
-	repo        deskkit.ForgeRepo
-	context     rf.ReviewContext
-	cancel      context.CancelFunc
-	local       *gitcore.Repo
-	change      *deskkit.PullRequest
-	reviews     []deskkit.Review
-	reviewsRead bool
-	checks      *deskkit.ChecksAtHead
-	files       []deskkit.ChangedFile
-	filesRead   bool
-	content     map[rf.SourceKey]*deskkit.FileContent
-	comparisons map[rf.SourceKey]*deskkit.RefComparison
-	commits     map[rf.SourceKey]*deskkit.RepoCommit
-	required    map[string][]string
-	localDiff   bool
-	checked     bool
+	source        preparationForge
+	packetStarted bool
+	omissions     map[rf.SourceKey]string
+	repo          deskkit.ForgeRepo
+	context       rf.ReviewContext
+	cancel        context.CancelFunc
+	local         *gitcore.Repo
+	change        *deskkit.PullRequest
+	reviews       []deskkit.Review
+	reviewsRead   bool
+	checks        *deskkit.ChecksAtHead
+	files         []deskkit.ChangedFile
+	filesRead     bool
+	content       map[rf.SourceKey]*deskkit.FileContent
+	comparisons   map[rf.SourceKey]*deskkit.RefComparison
+	commits       map[rf.SourceKey]*deskkit.RepoCommit
+	required      map[string][]string
+	diffOmitted   string
+	localDiff     bool
+	checked       bool
 }
 
-const reviewPreparationVersion = "review-prepare-v1"
+const reviewPreparationVersion = "review-prepare-v2"
+
+var reviewStageBudget = reviewPacketReadBudget
+var errPreparedInputsChanged = errors.New("prepared inputs changed")
+
+func boundedPreparation(f preparationForge) (preparationForge, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), reviewStageBudget)
+	if live, ok := f.(deskkit.Forge); ok {
+		return deskkit.WithForgeReadContext(live, ctx).(preparationForge), cancel
+	}
+	return f, cancel
+}
+func (p *preparedReview) startPacket() {
+	if p.packetStarted {
+		return
+	}
+	p.cancel()
+	p.preparationForge, p.cancel = boundedPreparation(p.source)
+	p.packetStarted = true
+}
+func samePreparedSubject(a, b *deskkit.PullRequest) bool {
+	return a != nil && b != nil && a.HeadSHA == b.HeadSHA && a.BaseSHA == b.BaseSHA && a.BaseRef == b.BaseRef && a.Body == b.Body && a.State == b.State && hasDecisionLabel(a.Labels) == hasDecisionLabel(b.Labels)
+}
 
 func newPreparedReview(o dispatchOpts, repo string) (*preparedReview, error) {
 	if reviewRoundForgeFn == nil {
@@ -64,11 +91,9 @@ func newPreparedReview(o dispatchOpts, repo string) (*preparedReview, error) {
 		}
 		return nil, nil
 	} // test/legacy adapter without a packet surface
-	ctx, cancel := context.WithTimeout(context.Background(), reviewPacketReadBudget)
-	if live, ok := full.(deskkit.Forge); ok {
-		full = deskkit.WithForgeReadContext(live, ctx).(preparationForge)
-	}
-	p := &preparedReview{preparationForge: full, repo: fr, cancel: cancel, content: map[rf.SourceKey]*deskkit.FileContent{}, comparisons: map[rf.SourceKey]*deskkit.RefComparison{}, commits: map[rf.SourceKey]*deskkit.RepoCommit{}, required: map[string][]string{}}
+	source := full
+	full, cancel := boundedPreparation(full)
+	p := &preparedReview{preparationForge: full, source: source, omissions: map[rf.SourceKey]string{}, repo: fr, cancel: cancel, content: map[rf.SourceKey]*deskkit.FileContent{}, comparisons: map[rf.SourceKey]*deskkit.RefComparison{}, commits: map[rf.SourceKey]*deskkit.RepoCommit{}, required: map[string][]string{}}
 	pr, err := p.GetPullRequest(fr, o.pr)
 	if err != nil || pr == nil || !isCommitID(pr.HeadSHA) {
 		cancel()
@@ -80,13 +105,19 @@ func newPreparedReview(o dispatchOpts, repo string) (*preparedReview, error) {
 	live, ok := full.(deskkit.Forge)
 	if !ok {
 		cancel()
-		return nil, fmt.Errorf("review backend has no qualified identity")
+		if o.observation != "" {
+			return nil, deskkit.Unverifiable("review backend has no qualified identity", nil)
+		}
+		return nil, nil
 	}
 	kind, host, err := deskkit.ForgeReadIdentity(live, fr)
 	identity := rf.Repository{Provider: string(kind), Host: host, Repository: strings.ToLower(repo)}
 	if err != nil {
 		cancel()
-		return nil, err
+		if o.observation != "" {
+			return nil, deskkit.Unverifiable("observation identity could not be checked", err)
+		}
+		return nil, nil
 	}
 	p.context = rf.ReviewContext{Subject: rf.ChangeIdentity{Repository: identity, Number: o.pr, Head: pr.HeadSHA, Base: pr.BaseSHA, BaseUsed: pr.BaseSHA != ""}, AdapterVersion: reviewPreparationVersion}
 	p.local, _ = gitcore.Open(o.root)
@@ -189,6 +220,7 @@ func (p *preparedReview) ReadFile(r deskkit.ForgeRepo, in deskkit.ReadFileInput)
 		if raw, large, e := p.local.FileAtBounded(in.Ref, in.File, packet.DefaultPerItemCap); e == nil {
 			v = &deskkit.FileContent{Content: []byte(raw), Exists: true}
 			if large {
+				p.omissions[key] = "local exact blob exceeds the packet per-item byte cap"
 				v.Content = nil
 			}
 		}
@@ -205,7 +237,11 @@ func (p *preparedReview) ReadFile(r deskkit.ForgeRepo, in deskkit.ReadFileInput)
 }
 func (p *preparedReview) ChangeDiff(r deskkit.ForgeRepo, n int) (string, error) {
 	if p.local != nil && isCommitID(p.change.BaseSHA) {
-		if raw, e := p.local.DiffSymmetric(p.change.BaseSHA, p.change.HeadSHA, 3); e == nil {
+		if raw, large, e := p.local.DiffSymmetricBounded(p.change.BaseSHA, p.change.HeadSHA, 3, reviewPacketDiffCap); e == nil {
+			if large {
+				p.diffOmitted = "local diff input exceeds the bounded changed-blob byte budget"
+				return "", fmt.Errorf("%s", p.diffOmitted)
+			}
 			p.localDiff = true
 			return raw, nil
 		}
@@ -247,40 +283,42 @@ func (p *preparedReview) RequiredStatusChecks(r deskkit.ForgeRepo, branch string
 	return v, e
 }
 func (p *preparedReview) recheck() error {
+	fresh, cancel := boundedPreparation(p.source)
+	defer cancel()
 	// Bypass the assembly memo: permission failures and edits invalidate it even
 	// without a new head. No stale packet can certify current mutable facts.
-	pr, e := p.preparationForge.GetPullRequest(p.repo, p.change.Number)
+	pr, e := fresh.GetPullRequest(p.repo, p.change.Number)
 	if e != nil {
 		return e
 	}
-	if pr == nil || !reflect.DeepEqual(pr, p.change) {
-		return fmt.Errorf("change head/base/body/access metadata moved during preparation")
+	if pr == nil || !samePreparedSubject(pr, p.change) {
+		return fmt.Errorf("%w: change head/base/body/access metadata moved during preparation", errPreparedInputsChanged)
 	}
 	if p.reviewsRead {
-		v, e := p.preparationForge.ReviewsAtHead(p.repo, p.change.Number)
+		v, e := fresh.ReviewsAtHead(p.repo, p.change.Number)
 		if e != nil {
 			return e
 		}
 		if !reflect.DeepEqual(v, p.reviews) {
-			return fmt.Errorf("reviews changed during preparation")
+			return fmt.Errorf("%w: reviews changed during preparation", errPreparedInputsChanged)
 		}
 	}
 	if p.checks != nil {
-		v, e := p.preparationForge.ChecksAtHead(p.repo, p.change.HeadSHA)
+		v, e := fresh.ChecksAtHead(p.repo, p.change.HeadSHA)
 		if e != nil {
 			return e
 		}
 		if !reflect.DeepEqual(v, p.checks) {
-			return fmt.Errorf("checks changed during preparation")
+			return fmt.Errorf("%w: checks changed during preparation", errPreparedInputsChanged)
 		}
 	}
 	for branch, want := range p.required {
-		v, e := p.preparationForge.RequiredStatusChecks(p.repo, branch)
+		v, e := fresh.RequiredStatusChecks(p.repo, branch)
 		if e != nil {
 			return e
 		}
 		if !reflect.DeepEqual(v, want) {
-			return fmt.Errorf("required-check policy changed during preparation")
+			return fmt.Errorf("%w: required-check policy changed during preparation", errPreparedInputsChanged)
 		}
 	}
 	p.checked = true

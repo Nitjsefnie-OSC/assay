@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -356,7 +357,7 @@ func dispatch(o dispatchOpts) error {
 		}
 		plan.reviewContext = ctx
 		if ctx != nil {
-			defer ctx.cancel()
+			defer func() { ctx.cancel() }()
 		}
 		round, herr := prepareReviewRound(o, plan, repo)
 		if herr != nil {
@@ -560,7 +561,11 @@ func dispatch(o dispatchOpts) error {
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
 		if plan.reviewContext != nil && !plan.reviewContext.checked {
 			if err := plan.reviewContext.recheck(); err != nil {
-				return held.settle(deskkit.Unverifiable("review preparation changed before dispatch", err))
+				why := "review preparation could not be rechecked"
+				if errors.Is(err, errPreparedInputsChanged) {
+					why = "review preparation changed before dispatch"
+				}
+				return held.settle(deskkit.Unverifiable(why, err))
 			}
 		}
 		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
