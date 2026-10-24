@@ -1287,6 +1287,9 @@ func heldCovered(lines []string, live []bool, out []heldLineRead, tables []heldT
 				if role == heldColExpect || heldOutputDigest(lines[tb.header][header[c][0]:header[c][1]], lines[r][rg[0]:rg[1]]) {
 					continue
 				}
+				if heldFailFirstBase(lines[tb.header][header[c][0]:header[c][1]], lines[r][rg[0]:rg[1]]) {
+					continue
+				}
 				st := heldOutcome(lines[r][rg[0]:rg[1]], role == heldColExit)
 				if role == heldColOther && st != heldCellEmpty {
 					st = heldCellOther
@@ -1392,6 +1395,12 @@ var (
 	// witness row: the first 12 hex digits of the sha256 of the row's captured
 	// output (hashOutput), never caller text.
 	heldDigestRe = regexp.MustCompile(`^sha256:[0-9a-f]{12}$`)
+	// heldBaseCellRe is the Base cell a fail-first verifyrun run writes for
+	// every witness row (failFirstCell): the merge-base SHA or "-", the base
+	// run's state (an exit code only after red or green), and the head tree
+	// as treeSHA renders it. It records the run at the merge-base, never the
+	// head outcome, and none of it is caller text.
+	heldBaseCellRe = regexp.MustCompile(`^base=(?:[0-9a-f]{7,40}|-) (?:(?:red|green) rc=(?:-|[0-9]+)|unproven|not-selected) · head=(?:[0-9a-f]{7,40}(?:\+dirty|\+unknown)?|no-git)$`)
 	// heldStrikeRe is a struck span as GFM renders one: the text between the
 	// tildes neither starts nor ends with a space. "~~ HELD ~~" is not a
 	// strike on GitHub, so the cover keeps it.
@@ -1433,8 +1442,20 @@ func heldOutcome(cell string, exit bool) heldCellState {
 // nothing about the outcome — the row's Result cell does — so the cover reads
 // it as neither a clean outcome nor a note: such a row is clean only on what
 // its other outcome cells say, and a digest alone never makes a row clean.
+// The cell is compared as the tool writes it, trimmed of space only: a digest
+// in emphasis or in upper case is not the tool's text, so it is a note.
 func heldOutputDigest(header, cell string) bool {
-	return heldNorm(header) == "output" && heldDigestRe.MatchString(heldNorm(cell))
+	return heldNorm(header) == "output" && heldDigestRe.MatchString(strings.TrimSpace(cell))
+}
+
+// heldFailFirstBase reports whether cell, under header, is a fail-first
+// witness row's Base cell (heldBaseCellRe in a Base column; #4294). Like the
+// output digest it says nothing about the head outcome, so the cover reads it
+// as neither a clean outcome nor a note, and a Base cell alone never makes a
+// row clean. Any other text in a Base column, or a Base cell in any other
+// column, is still a note.
+func heldFailFirstBase(header, cell string) bool {
+	return heldNorm(header) == "base" && heldBaseCellRe.MatchString(strings.TrimSpace(cell))
 }
 
 // heldDetailsClean reports whether t, the text after a clean outcome, is

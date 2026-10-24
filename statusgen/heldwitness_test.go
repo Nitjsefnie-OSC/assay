@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -214,5 +216,122 @@ func TestHeldScopeWitnessAnchors(t *testing.T) {
 		// A trailer line in the latest entry is read for holds like any line.
 		{"hold word in a latest trailer", witOldRow + witEntry("Run 2", witTable(4, sandboxContainerNetns, witPass,
 			strings.Replace(witContainer, "model=fixture-model", "model=HELD", 1)), "", "**VERIFY: PASS**"), true},
+	})
+}
+
+// witTableFF renders a fail-first verifyrun witness table for rows 1..n
+// through the production table renderer (witnessTable), so the header is
+// witnessHeaderFailFirst and every row carries the Base cell failFirstCell
+// writes: a mix of the four base states, as a real fail-first run records
+// them. trailer (if any) follows directly under the last row.
+func witTableFF(n int, sandbox string, state func(int) (string, int, string), trailer string) string {
+	bases := [][3]string{{"abc1234", baseRed, "1"}, {"-", baseNotSelected, ""}, {"-", baseUnproven, ""}, {"abc1234", baseGreen, "0"}}
+	var ws []witness
+	for r := 1; r <= n; r++ {
+		st, exit, note := state(r)
+		b := bases[(r-1)%len(bases)]
+		rc, _ := strconv.Atoi(b[2])
+		w := witness{ID: strconv.Itoa(r), Command: "tool check " + strconv.Itoa(r), State: st, Exit: exit,
+			OutHash: "0123456789ab", Date: "2026-10-22", Runner: "fixture-verifier[bot]", Tree: "0123456789ab",
+			HostOnBehalfOf: true, Sandbox: sandbox, Note: note}
+		w.Base = failFirstCell(strings.TrimPrefix(b[0], "-"), b[1], rc, w.Tree)
+		ws = append(ws, w)
+	}
+	s := witnessTable(ws) + "\n"
+	if trailer != "" {
+		s += trailer + "\n"
+	}
+	return s
+}
+
+// witAttestV2 is a version-2 (cross-repository) attestation line, rendered
+// by the production receipt reader (verifierAdmissionReceipt) so its fields
+// sit in the order the tool writes them: source-repo= before source=,
+// tracking-source= after it.
+func witAttestV2(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs("fixture-tracking")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := filepath.Abs("fixture-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type binding struct {
+		Version                                                           int
+		Run, Repo, Source, SourceRepo, TrackingSource, Brief, Model, Tier string
+	}
+	out, err := json.Marshal(struct {
+		Issue      int
+		BriefRoot  string
+		SourceHome string
+		Binding    binding
+	}{4017, root, home, binding{2, witHex64, "example-org/example-tracking", witHex40, "example-org/example-source",
+		witHex40, "docs/streams/fixture/brief-02-fixture.md", "fixture-model", "strong"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, _, _, err := verifierAdmissionReceipt(out, "docs/streams/fixture/brief-02-fixture.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(line, " source-repo=") || !strings.Contains(line, " tracking-source=") {
+		t.Fatalf("not a version-2 attestation: %q", line)
+	}
+	return line
+}
+
+// TestHeldScopeWitnessForms: each production form a clean verifyrun witness
+// takes covers, so none of them falsely holds: the fail-first witness
+// (witnessHeaderFailFirst with its Base cell) as an earlier or the latest
+// entry, a version-2 attestation under an earlier witness, and the default
+// unshare sandbox on a clean latest row. Each case is pinned by a
+// heldscope-mutations.json entry that drops the form and is caught here.
+// regression: #4294
+func TestHeldScopeWitnessForms(t *testing.T) {
+	cnr := witRow3(stateCouldNotRun, -1, witCNR)
+	v2 := witAttestV2(t)
+	runHeldLayerCases(t, []heldScanCase{
+		// The fail-first header passes its trailer over as witnessHeader does.
+		{"fail-first witness, earlier",
+			witEntry("Run 1", witTableFF(4, sandboxUnshare, cnr, witAttest), witBullet, "VERIFY: BLOCKED") + witLatest(witPass), false},
+		{"fail-first container block, earlier",
+			witEntry("Run 1", witTableFF(4, sandboxContainerNetns, cnr, witContainer), witBullet, "VERIFY: BLOCKED") + witLatest(witPass), false},
+		// A fail-first witness's Base cell records the merge-base run, not
+		// the head outcome, so a clean latest fail-first row covers.
+		{"fail-first witness, latest", witOldRow + witEntry("Run 2", witTableFF(4, sandboxContainerNetns, witPass, witContainer),
+			"", "**VERIFY: PASS**"), false},
+		{"fail-first latest, (c) heading", witOldHeading + witEntry("Run 2", witTableFF(4, sandboxUnshare, witPass, witAttest),
+			"", "**VERIFY: PASS**"), false},
+		// A cross-repository run's version-2 attestation is a trailer line.
+		{"v2 attestation, earlier",
+			witEntry("Run 1", witTable(4, sandboxUnshare, cnr, v2), witBullet, "VERIFY: BLOCKED") + witLatest(witPass), false},
+		{"v2 attestation in a container block",
+			witEntry("Run 1", witTable(4, sandboxContainerNetns, cnr, strings.Replace(witContainer, witAttest, v2, 1)), witBullet,
+				"VERIFY: BLOCKED") + witLatest(witPass), false},
+		// unshare is the default sandbox: a clean row carrying it covers.
+		{"unshare sandbox, latest", witOldRow + witEntry("Run 2", witTable(4, sandboxUnshare, witPass, witAttest), "", "**VERIFY: PASS**"), false},
+		{"unshare latest, (b) bullet", witOldBullet + witEntry("Run 2", witTable(4, sandboxUnshare, witPass, witAttest), "", "**VERIFY: PASS**"), false},
+	})
+}
+
+// TestHeldScopeWitnessExact pins the cells read as neutral to the exact
+// text the tool writes: a digest or a Base cell with anything else in it, or
+// a Base cell outside a Base column, is a note and keeps the row from
+// covering. Each case is a hold that must keep refusing.
+// regression: #4294
+func TestHeldScopeWitnessExact(t *testing.T) {
+	ff := witTableFF(4, sandboxUnshare, witPass, witAttest)
+	base3 := failFirstCell("", baseUnproven, -1, "0123456789ab")
+	latest := func(table string) string { return witOldRow + witEntry("Run 2", table, "", "**VERIFY: PASS**") }
+	runHeldLayerCases(t, []heldScanCase{
+		{"digest in emphasis", latest(strings.ReplaceAll(witTable(4, "", witPass, witAttest),
+			"sha256:0123456789ab", "**sha256:0123456789ab**")), true},
+		{"digest in upper case", latest(strings.ReplaceAll(witTable(4, "", witPass, witAttest),
+			"sha256:0123456789ab", "SHA256:0123456789AB")), true},
+		{"Base cell with a note", latest(strings.Replace(ff, base3+" |", base3+" (see log) |", 1)), true},
+		{"Base cell in a Notes column", latest("| # | Command | Result | Notes |\n|---|---|---|---|\n" +
+			"| 3 | `tool check 3` | pass exit=0 | " + base3 + " |\n"), true},
 	})
 }

@@ -736,8 +736,8 @@
     {
       "name": "#4294 witness: a digest counts as a clean outcome, not neutral",
       "file": "heldscope.go",
-      "old": "\treturn heldNorm(header) == \"output\" && heldDigestRe.MatchString(heldNorm(cell))\n",
-      "new": "\treturn heldDigestRe.MatchString(heldNorm(cell))\n"
+      "old": "\treturn heldNorm(header) == \"output\" && heldDigestRe.MatchString(strings.TrimSpace(cell))\n",
+      "new": "\treturn heldDigestRe.MatchString(strings.TrimSpace(cell))\n"
     },
     {
       "name": "#4294 witness: a digest of any length is neutral",
@@ -786,6 +786,48 @@
       "file": "heldscope.go",
       "old": "container-netns)(?:[ \\t,;]|$)`),",
       "new": "container-netns)`),"
+    },
+    {
+      "name": "#4294 witness: the fail-first witness header is not a witness header",
+      "file": "heldscope.go",
+      "old": "strings.SplitN(witnessHeaderFailFirst, \"\\n\", 2)[0]: true,",
+      "new": "strings.SplitN(witnessHeaderFailFirst, \"\\n\", 2)[0]: false,"
+    },
+    {
+      "name": "#4294 witness: a version-2 attestation (source-repo=, tracking-source=) is no trailer",
+      "file": "heldscope.go",
+      "old": "(?:source-repo=[A-Za-z0-9._-]+/[A-Za-z0-9._-]+ )?source=[0-9a-f]{40} (?:tracking-source=[0-9a-f]{40} )?brief=",
+      "new": "source=[0-9a-f]{40} brief="
+    },
+    {
+      "name": "#4294 witness: sandbox=unshare, the default mode, is not a neutral detail",
+      "file": "heldscope.go",
+      "old": "`^sandbox=(?:unshare|container-netns)(?:[ \\t,;]|$)`",
+      "new": "`^sandbox=(?:container-netns)(?:[ \\t,;]|$)`"
+    },
+    {
+      "name": "#4294 witness: a fail-first Base cell is never neutral",
+      "file": "heldscope.go",
+      "old": "\treturn heldNorm(header) == \"base\" && heldBaseCellRe",
+      "new": "\treturn false && heldNorm(header) == \"base\" && heldBaseCellRe"
+    },
+    {
+      "name": "#4294 witness: a Base cell is neutral in any result column, not only Base",
+      "file": "heldscope.go",
+      "old": "\treturn heldNorm(header) == \"base\" && heldBaseCellRe",
+      "new": "\treturn heldCoverColumn(header) == heldColOther && heldBaseCellRe"
+    },
+    {
+      "name": "#4294 witness: a Base cell may carry text after its head tree",
+      "file": "heldscope.go",
+      "old": "(?:\\+dirty|\\+unknown)?|no-git)$`)",
+      "new": "(?:\\+dirty|\\+unknown)?|no-git)`)"
+    },
+    {
+      "name": "#4294 witness: a digest is matched after heldNorm (case and emphasis ignored)",
+      "file": "heldscope.go",
+      "old": "heldDigestRe.MatchString(strings.TrimSpace(cell))",
+      "new": "heldDigestRe.MatchString(heldNorm(cell))"
     }
   ]
 }
