@@ -335,7 +335,16 @@ func composeDockerArgs(inv containerInvocation) []string {
 // with the brief addressed by its path under /work. The pass-through flags mirror
 // what the outer run parsed.
 func buildInnerCommand(briefRel string, check, dryRun, ci bool, timeout string) []string {
+	return buildInnerCommandRows(briefRel, check, dryRun, ci, timeout, "")
+}
+
+// buildInnerCommandRows is buildInnerCommand carrying a --rows selector
+// (desktools-v2/74) through to the inner run unchanged; "" adds nothing.
+func buildInnerCommandRows(briefRel string, check, dryRun, ci bool, timeout, rows string) []string {
 	inner := []string{"statusgen", "verifyrun", "--brief", briefRel}
+	if rows != "" {
+		inner = append(inner, "--rows", rows)
+	}
 	if check {
 		inner = append(inner, "--check")
 	}
@@ -355,6 +364,12 @@ func buildInnerCommand(briefRel string, check, dryRun, ci bool, timeout string) 
 // after flag parsing. It resolves the pin, refuses fail-closed on anything
 // unpinned, composes the docker argv, and execs docker, streaming its output.
 func runInContainer(briefPath, root, envFile string, check, dryRun, ci bool, timeout string, stdout, stderr *os.File) int {
+	return runInContainerRows(briefPath, root, envFile, check, dryRun, ci, timeout, "", stdout, stderr)
+}
+
+// runInContainerRows is runInContainer with the --rows value passed to the
+// inner run ("" when the outer run named none).
+func runInContainerRows(briefPath, root, envFile string, check, dryRun, ci bool, timeout, rows string, stdout, stderr *os.File) int {
 	pin, err := readHarnessPin(root)
 	if err != nil {
 		fmt.Fprintln(stderr, "statusgen verifyrun --in-container:", err)
@@ -413,7 +428,7 @@ func runInContainer(briefPath, root, envFile string, check, dryRun, ci bool, tim
 		root:     absRoot,
 		briefRel: briefRel,
 		envFile:  envFile,
-		inner:    buildInnerCommand(briefRel, check, dryRun, ci, timeout),
+		inner:    buildInnerCommandRows(briefRel, check, dryRun, ci, timeout, rows),
 		uid:      hostUID(),
 		gid:      hostGID(),
 		identity: identity,

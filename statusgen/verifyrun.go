@@ -1281,6 +1281,81 @@ func briefVerifyRows(verifySection string) []verifyRow {
 	return rows
 }
 
+// parseRowSelector splits a --rows value into row IDs (desktools-v2/74). Each
+// element is read the way a Verify `#` cell is (normalizeRowID), so the selector
+// and the Evidence reader agree on what an ID is. It returns the reason the
+// value is refused, or "".
+func parseRowSelector(value string) ([]string, string) {
+	if strings.TrimSpace(value) == "" {
+		return nil, "the list is empty; name at least one Verify row ID"
+	}
+	var ids []string
+	seen := map[string]bool{}
+	for i, part := range strings.Split(value, ",") {
+		id := normalizeRowID(part)
+		if id == "" {
+			return nil, fmt.Sprintf("element %d is empty; every comma-separated element names one Verify row ID", i+1)
+		}
+		if seen[id] {
+			return nil, fmt.Sprintf("row %s is named twice", id)
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids, ""
+}
+
+// selectVerifyRows keeps, in table order, the rows ids names. It refuses an ID
+// the rows do not carry, an ID two rows share, and a table whose rows are not
+// all keyed by a `#` cell (briefVerifyRows' ordinal fallback is not a
+// selector). scope names the row set in the refusal.
+func selectVerifyRows(sections []string, rows []verifyRow, ids []string, scope string) ([]verifyRow, string) {
+	for _, s := range sections {
+		if n := unnumberedVerifyRow(s); n != "" {
+			return nil, fmt.Sprintf("the Verify table has no `#` column (row %s has no `#` cell), and an ordinal is not a selector", n)
+		}
+	}
+	count := map[string]int{}
+	for _, r := range rows {
+		count[r.ID]++
+	}
+	want := map[string]bool{}
+	for _, id := range ids {
+		switch count[id] {
+		case 0:
+			return nil, fmt.Sprintf("%s carries no row %s", scope, id)
+		case 1:
+		default:
+			return nil, fmt.Sprintf("%d Verify rows share the ID %s", count[id], id)
+		}
+		want[id] = true
+	}
+	var picked []verifyRow
+	for _, r := range rows {
+		if want[r.ID] {
+			picked = append(picked, r)
+		}
+	}
+	return picked, ""
+}
+
+// unnumberedVerifyRow returns the ordinal of the first runnable Verify row with
+// no `#` cell, or "" when every runnable row has one. "Runnable" is
+// briefVerifyRows' own skip rule, so the ordinals are the ones it assigns.
+func unnumberedVerifyRow(section string) string {
+	ordinal, first := 0, ""
+	verifyRowTable(section, func(r verifyRowCells) {
+		if strings.TrimSpace(verifyCommand(r.Command)) == "" && strings.TrimSpace(r.Expect) == "" {
+			return
+		}
+		ordinal++
+		if first == "" && normalizeRowID(r.Num) == "" {
+			first = strconv.Itoa(ordinal)
+		}
+	})
+	return first
+}
+
 // briefSections reads a brief file's Verify and Evidence bodies.
 func briefSections(path string) (verify, evidence string, err error) {
 	raw, err := readFileMemo(path)
@@ -1685,6 +1760,7 @@ const verifyrunUsage = `statusgen verifyrun — execution witness for a brief's 
 Usage:
   statusgen verifyrun --brief <path> [--dry-run] [--timeout <dur>] [--root <dir>] [--sandbox <mode>]
   statusgen verifyrun --brief <path> --fail-first [--base <rev>] [--dry-run]
+  statusgen verifyrun --brief <path> --rows <id>[,<id>...] [any run flags above or below]
   statusgen verifyrun --check <path>
   statusgen verifyrun --open-bracket --root <home> --brief <path> --out <receipt>
   statusgen verifyrun --sandbox=container-netns --brief <path> --admission-receipt <receipt>
@@ -1701,8 +1777,27 @@ one witness row per Verify row to the brief's ` + "`## Evidence`" + ` section:
 
 Flags:
   --brief <path>    brief file whose Verify table to run (or pass the path positionally)
-  --check           audit an existing witness table; runs nothing
+  --check           audit an existing witness table; runs nothing. It always audits
+                    the whole Verify table (the last witness per row wins),
+                    whatever --rows earlier runs used
   --dry-run         run the rows and print the witness table, but do not write it back
+  --rows <ids>      run and record ONLY the named Verify rows: a comma-separated
+                    list of IDs as the brief's # column carries them, spaces
+                    around an ID ignored. They run in table order; the witness
+                    table holds only them, under the standard (or fail-first)
+                    header, so each keys by its # ID; every other row is
+                    printed "row <id>: not selected" and is never run or
+                    written. Refused as a usage error, running no row and
+                    writing nothing (--dry-run too): an ID the table does not
+                    carry (with --acceptance-record, one outside the protected
+                    run set), an empty list or element, an ID named twice, an
+                    ID two Verify rows share, a table with no # column, and
+                    --rows with --check, --open-bracket, --close-bracket or
+                    --bracket-digest. It composes with --dry-run, --fail-first
+                    (the base run uses the same rows), --in-container (passed
+                    to the inner run), --acceptance-record and
+                    --sandbox=container-netns, whose receipt, image, witness,
+                    tree and admission checks are unchanged
   --timeout <dur>   per-row wall-clock limit (default 10m); a row that times out is could-not-run
   --root <dir>      repo root the commands run in (default: the git toplevel of the cwd);
                     a directory below its repository's toplevel is refused. A
@@ -1919,6 +2014,7 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	creditMode := fs.Bool("credit", false, "with --bracket-digest and --source: judge each bracket's credit (provenance, record, binding)")
 	creditSource := fs.String("source", "", "with --credit: the 40-hex source commit under verification")
 	bracketDigestMode := fs.Bool("bracket-digest", false, "read-only: check every Admission-Bracket line of --witness <file> against the digest of its span, one line per bracket")
+	rowsFlag := fs.String("rows", "", "comma-separated Verify row IDs (the # column) to run and record; every other row is reported not selected")
 	// --help is handled by ContinueOnError returning flag.ErrHelp; print the
 	// usage and exit 0, because asking for help is not an error.
 	if err := fs.Parse(args); err != nil {
@@ -1928,6 +2024,33 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		}
 		fmt.Fprint(stderr, verifyrunUsage)
 		return verifyrunExitUsageError
+	}
+
+	// --rows (desktools-v2/74) narrows which Verify rows a run executes and
+	// records; it never narrows an audit. It is checked before any mode runs, so
+	// a refused selector runs no row and writes nothing, --dry-run included.
+	rowsSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "rows" {
+			rowsSet = true
+		}
+	})
+	var selectedIDs []string
+	if rowsSet {
+		for _, m := range []struct {
+			flag string
+			on   bool
+		}{{"--check", *checkMode}, {"--open-bracket", *openBracket}, {"--close-bracket", *closeBracket}, {"--bracket-digest", *bracketDigestMode}} {
+			if m.on {
+				fmt.Fprintf(stderr, "statusgen verifyrun: refusing --rows with %s: it runs no rows, and an audit always covers the whole Verify table. No row ran\n", m.flag)
+				return verifyrunExitUsageError
+			}
+		}
+		var why string
+		if selectedIDs, why = parseRowSelector(*rowsFlag); why != "" {
+			fmt.Fprintf(stderr, "statusgen verifyrun: refusing --rows %q: %s. No row ran\n", *rowsFlag, why)
+			return verifyrunExitUsageError
+		}
 	}
 
 	// --bracket-digest is read-only and stands alone: it checks each bracket of
@@ -2162,7 +2285,9 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		if *timeout != witnessTimeoutDefault {
 			innerTimeout = timeout.String()
 		}
-		return runInContainer(path, root, ef, *checkMode, *dryRun, *ci, innerTimeout, stdout, stderr)
+		// --rows travels to the inner run unchanged; the inner run, which reads
+		// the brief, makes the selection and its refusals.
+		return runInContainerRows(path, root, ef, *checkMode, *dryRun, *ci, innerTimeout, *rowsFlag, stdout, stderr)
 	}
 
 	verify, evidence, err := briefSections(path)
@@ -2240,6 +2365,21 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	if len(rows) == 0 {
 		fmt.Fprintf(stderr, "statusgen verifyrun: %s has a `## Verify` section with no runnable rows\n", path)
 		return verifyrunExitCouldNot
+	}
+	// The selection is made from the rows this run would otherwise execute (with
+	// --acceptance-record, the protected run set), after every admission check
+	// and before any row runs or anything is written.
+	allRows := rows
+	if rowsSet {
+		sections, scope := []string{verify}, "the Verify table"
+		if transitionDescriptor != "" {
+			sections, scope = []string{protectedExecution.Verify, verify}, "the protected run set (original plus author-added rows)"
+		}
+		var why string
+		if rows, why = selectVerifyRows(sections, rows, selectedIDs, scope); why != "" {
+			fmt.Fprintf(stderr, "statusgen verifyrun: refusing --rows %q: %s. No row ran\n", *rowsFlag, why)
+			return verifyrunExitUsageError
+		}
 	}
 
 	plan := resolveShellPlan()
@@ -2326,12 +2466,12 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	}
 
 	worst := verifyrunExitPass
-	for _, w := range ws {
+	report := func(w witness) {
 		if w.State == stateSkipped {
 			// A skip is neither a run nor a verdict — report it, but it never
 			// enters the exit-code fold and it is not in the witness table.
 			fmt.Fprintf(stdout, "row %s: skip — %s\n", w.ID, w.Note)
-			continue
+			return
 		}
 		line := fmt.Sprintf("row %s: %s (exit=%s, sha256:%s)", w.ID, w.State, exitCell(w.Exit), w.OutHash)
 		if w.Note != "" {
@@ -2345,6 +2485,27 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			if worst != verifyrunExitCouldNot {
 				worst = verifyrunExitFail
 			}
+		}
+	}
+	if !rowsSet {
+		for _, w := range ws {
+			report(w)
+		}
+	} else {
+		// In table order: an unselected row is named, never run, never in the
+		// table. The selected IDs are unique (selectVerifyRows refuses a shared
+		// one), so ws follows the selected rows one for one.
+		next := 0
+		for _, r := range allRows {
+			if next < len(ws) && ws[next].ID == r.ID {
+				report(ws[next])
+				next++
+				continue
+			}
+			fmt.Fprintf(stdout, "row %s: not selected\n", r.ID)
+		}
+		for ; next < len(ws); next++ {
+			report(ws[next])
 		}
 	}
 	if ff != nil {
