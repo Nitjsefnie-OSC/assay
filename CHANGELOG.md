@@ -23,6 +23,32 @@ Pending notable changes are recorded as one-file-per-PR fragments under
 here at release time. This section is written only by the release workflow;
 do not add highlight bullets to it directly.
 
+## v1.0.58 — 2026-10-23
+
+### Added
+- Add a pure public work-reference resolver in statusgen, with typed identities, exact selectors and copied supplied aliases; route existing qualified-ID and desk trailer readers through separate compatibility profiles without enabling operational prefixed references.
+- Author 14 implementation briefs in an active stream for shared in-process reference/capability libraries, milestone/schema/graph support, desk-tools integration, reporting and candidate release qualification. Scope approval and stream activation take effect on the maintainer's merge of PR #4182; existing brief states, root-contract approvals, pins and operational declarations remain unchanged.
+- Author six parked briefs for durable verifier blocker handoff, accountable intake disposition, shared routing, worker pickup, independent recheck and rollout qualification; reuse existing filing and acceptance owners.
+- Shared pure issue selection and advisory verification handoff contract in deskcore, with legacy observations retained as unknown.
+
+### Fixed
+- Addressed issues no longer enter ordinary scanner creation/reactivation or worker-ready discovery; receiving inboxes and independent gates retain authority.
+- Amend the command of desktools-v2/65 Verify row 4 (command only, version 2 to 3; Expect, class and order unchanged) so the consumer-routes check pins the delivering merge and its first parent and can be discharged on merged main. This is the bounded acceptance-transition amendment; it is not in effect until a mapped human approves the exact payload.
+- Amend the command of desktools-v2/71 Verify row 8 (command only, version 1 to 2; Expect, class and order unchanged) so the consumer-routes check pins the delivering merge and its first parent and can be discharged on merged main. This is the bounded acceptance-transition amendment; it is not in effect until a mapped human approves the exact payload.
+- Include deskcore and gitquiet when archiving the trusted base commit for the corroboration guard, so its build has every local sibling module.
+- Routing labels preserve excluded-label retirement and completed-placeholder cleanup; malformed addresses stay held across full and work-ready views without extra history reads.
+- The `deskcore/issueflow` consumer-build check now passes from a cold module cache, so the release workflow's `test (desk-tools)` leg no longer depends on another leg having fetched statusgen's dependencies first. Consumer modules (statusgen, tools/desk) build with workspace resolution still disabled, the job's module proxy inherited, and `-mod=readonly` holding each to its own `go.sum`; runs inside deskcore itself stay fully offline (#4234).
+- The bounded handoff mutation runner uses its own schema and verifies unmodified named tests before applying any of its eighteen production mutations.
+- The verify-runner image now ships git 2.56.0 at `/usr/bin/git`, built from the same pinned tarball and sha256 as the base image, instead of the Debian bookworm git 2.39.5. The admitted runner calls `git --attr-source` (git 2.41 or later) through its fixed `PATH`, so briefs with an eol-converted file were refused on the old git. The build now runs the git-floor check as its last step, and a unit test holds the two images to one pinned git.
+- `statusgen verifyrun --sandbox=container-netns` no longer refuses `could-not-attribute` on a home cut as a linked worktree. `--open-bracket` derives every part of the witness Runner cell on the host and records it in the receipt (`runner`, `runner_source`, `runner_tree`, `on_behalf_of`). The container run writes that cell into every row and derives no part of it itself; a receipt with no runner still refuses `could-not-attribute`, and a malformed runner, source, tree token or annotation refuses before any row. `--close-bracket` re-derives the cell on the host and refuses unless the receipt carries it and every row's Runner cell is exactly it.
+
+### Changed
+- Add pure review candidate-plus-priority selection to the existing observation contract, retaining complete coverage and holds while applying explicit policy and capacity without recollection.
+- Approve the verification-handoff implementation scope and activate its stream on the maintainer's merge of PR #4206 after publication of v1.0.57. Preserve individual decision, verification and live-cutover requirements.
+- Pair plugin 1.0.58 with the published v1.0.57 statusgen and desk-tools binaries, and pin the base container and the harness image to the matching desk-tools image digest.
+- Route prose and discrete desk selection through the same candidate-plus-priority planner in the existing efficiency, loop-admin and forge-mirror work; add parity and ranked GitHub-request qualification without creating parallel plans or changing live authority.
+- `deskfile`: change-bound filings (`new --for-pr`), their back-links and `attach --kind mr` replies no longer count toward the fixed 20-an-hour repo-wide write ceiling. They are held by their own larger runaway backstop, knob `write.bound.repo_hour` (default 60 per repository per hour, never off), and the value in force and its source are recorded on each audit line. Unbound filings and every other tool keep the fixed ceiling.
+
 ## v1.0.57 — 2026-10-23
 
 ### Added
