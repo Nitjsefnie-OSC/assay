@@ -175,10 +175,10 @@ func TestVerifyrunRowsSelectsOnlyNamed(t *testing.T) {
 	}
 
 	// --in-container: the builder and the docker argv carry --rows 2,4.
-	if inner := buildInnerCommandRows("docs/brief.md", false, false, false, "", "2,4"); !argvHasPair(inner, "--rows", "2,4") {
+	if inner := buildInnerCommand("docs/brief.md", false, false, false, "", "2,4"); !argvHasPair(inner, "--rows", "2,4") {
 		t.Fatalf("the inner command drops --rows: %q", inner)
 	}
-	if inner := buildInnerCommandRows("docs/brief.md", false, false, false, "", ""); strings.Join(inner, " ") != strings.Join(buildInnerCommand("docs/brief.md", false, false, false, ""), " ") || indexOf(inner, "--rows") >= 0 {
+	if inner := buildInnerCommand("docs/brief.md", false, false, false, "", ""); strings.Join(inner, " ") != "statusgen verifyrun --brief docs/brief.md" {
 		t.Fatalf("an inner command without --rows changed: %q", inner)
 	}
 	root := vicHostIdentRoot(t, "\tname = Quillon Vex\n\temail = qvex@example.invalid\n")

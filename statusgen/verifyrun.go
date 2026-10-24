@@ -1253,6 +1253,10 @@ type verifyRow struct {
 	// above keeps only the code span, which would drop a `live` written in the
 	// prose around it.
 	RiskText string
+	// Numbered is set by briefVerifyRows when the row carried its own `#` cell;
+	// false means ID is the ordinal fallback, which --rows refuses to select
+	// by (desktools-v2/74).
+	Numbered bool
 }
 
 func briefVerifyRows(verifySection string) []verifyRow {
@@ -1265,10 +1269,11 @@ func briefVerifyRows(verifySection string) []verifyRow {
 		}
 		ordinal++
 		id := strconv.Itoa(ordinal)
-		if v := normalizeRowID(r.Num); v != "" {
+		v := normalizeRowID(r.Num)
+		if v != "" {
 			id = v
 		}
-		row := verifyRow{ID: id, Command: cmd, CommandCell: strings.TrimSpace(r.Command), Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect)}
+		row := verifyRow{ID: id, Command: cmd, CommandCell: strings.TrimSpace(r.Command), Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect), Numbered: v != ""}
 		if first, why := proseLedCommandWhy(r.Command); why != "" {
 			what := "first span "
 			if why == shellCommentMarkedWhy || why == shellNoOpMarkedWhy {
@@ -1283,77 +1288,54 @@ func briefVerifyRows(verifySection string) []verifyRow {
 
 // parseRowSelector splits a --rows value into row IDs (desktools-v2/74). Each
 // element is read the way a Verify `#` cell is (normalizeRowID), so the selector
-// and the Evidence reader agree on what an ID is. It returns the reason the
-// value is refused, or "".
-func parseRowSelector(value string) ([]string, string) {
+// and the Evidence reader agree on what an ID is. It returns the IDs in
+// selector order and as a set, or the reason the value is refused.
+func parseRowSelector(value string) ([]string, map[string]bool, string) {
 	if strings.TrimSpace(value) == "" {
-		return nil, "the list is empty; name at least one Verify row ID"
+		return nil, nil, "the list is empty; name at least one Verify row ID"
 	}
-	var ids []string
-	seen := map[string]bool{}
-	for i, part := range strings.Split(value, ",") {
+	parts := strings.Split(value, ",")
+	ids, set := make([]string, 0, len(parts)), make(map[string]bool, len(parts))
+	for i, part := range parts {
 		id := normalizeRowID(part)
 		if id == "" {
-			return nil, fmt.Sprintf("element %d is empty; every comma-separated element names one Verify row ID", i+1)
+			return nil, nil, fmt.Sprintf("element %d is empty; every comma-separated element names one Verify row ID", i+1)
 		}
-		if seen[id] {
-			return nil, fmt.Sprintf("row %s is named twice", id)
+		if set[id] {
+			return nil, nil, fmt.Sprintf("row %s is named twice", id)
 		}
-		seen[id] = true
+		set[id] = true
 		ids = append(ids, id)
 	}
-	return ids, ""
+	return ids, set, ""
 }
 
-// selectVerifyRows keeps, in table order, the rows ids names. It refuses an ID
-// the rows do not carry, an ID two rows share, and a table whose rows are not
-// all keyed by a `#` cell (briefVerifyRows' ordinal fallback is not a
-// selector). scope names the row set in the refusal.
-func selectVerifyRows(sections []string, rows []verifyRow, ids []string, scope string) ([]verifyRow, string) {
-	for _, s := range sections {
-		if n := unnumberedVerifyRow(s); n != "" {
-			return nil, fmt.Sprintf("the Verify table has no `#` column (row %s has no `#` cell), and an ordinal is not a selector", n)
-		}
-	}
-	count := map[string]int{}
+// selectVerifyRows keeps, in table order, the rows the selector names, in one
+// pass over rows with set lookup. It refuses a row set whose rows are not all
+// keyed by a `#` cell (briefVerifyRows' ordinal fallback is not a selector),
+// an ID the rows do not carry, and an ID two rows share. scope names the row
+// set in the refusal.
+func selectVerifyRows(rows []verifyRow, ids []string, set map[string]bool, scope string) ([]verifyRow, string) {
+	count := make(map[string]int, len(ids))
+	picked := make([]verifyRow, 0, len(ids))
 	for _, r := range rows {
-		count[r.ID]++
-	}
-	want := map[string]bool{}
-	for _, id := range ids {
-		switch count[id] {
-		case 0:
-			return nil, fmt.Sprintf("%s carries no row %s", scope, id)
-		case 1:
-		default:
-			return nil, fmt.Sprintf("%d Verify rows share the ID %s", count[id], id)
+		if !r.Numbered {
+			return nil, fmt.Sprintf("the Verify table has no `#` column (row %s has no `#` cell), and an ordinal is not a selector", r.ID)
 		}
-		want[id] = true
-	}
-	var picked []verifyRow
-	for _, r := range rows {
-		if want[r.ID] {
+		if set[r.ID] {
+			count[r.ID]++
 			picked = append(picked, r)
 		}
 	}
+	for _, id := range ids {
+		switch n := count[id]; {
+		case n == 0:
+			return nil, fmt.Sprintf("%s carries no row %s", scope, id)
+		case n > 1:
+			return nil, fmt.Sprintf("%d Verify rows share the ID %s", n, id)
+		}
+	}
 	return picked, ""
-}
-
-// unnumberedVerifyRow returns the ordinal of the first runnable Verify row with
-// no `#` cell, or "" when every runnable row has one. "Runnable" is
-// briefVerifyRows' own skip rule, so the ordinals are the ones it assigns.
-func unnumberedVerifyRow(section string) string {
-	ordinal, first := 0, ""
-	verifyRowTable(section, func(r verifyRowCells) {
-		if strings.TrimSpace(verifyCommand(r.Command)) == "" && strings.TrimSpace(r.Expect) == "" {
-			return
-		}
-		ordinal++
-		if first == "" && normalizeRowID(r.Num) == "" {
-			first = strconv.Itoa(ordinal)
-		}
-	})
-	return first
 }
 
 // briefSections reads a brief file's Verify and Evidence bodies.
@@ -2036,6 +2018,7 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		}
 	})
 	var selectedIDs []string
+	var selectedSet map[string]bool
 	if rowsSet {
 		for _, m := range []struct {
 			flag string
@@ -2047,7 +2030,7 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			}
 		}
 		var why string
-		if selectedIDs, why = parseRowSelector(*rowsFlag); why != "" {
+		if selectedIDs, selectedSet, why = parseRowSelector(*rowsFlag); why != "" {
 			fmt.Fprintf(stderr, "statusgen verifyrun: refusing --rows %q: %s. No row ran\n", *rowsFlag, why)
 			return verifyrunExitUsageError
 		}
@@ -2287,7 +2270,7 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		}
 		// --rows travels to the inner run unchanged; the inner run, which reads
 		// the brief, makes the selection and its refusals.
-		return runInContainerRows(path, root, ef, *checkMode, *dryRun, *ci, innerTimeout, *rowsFlag, stdout, stderr)
+		return runInContainer(path, root, ef, *checkMode, *dryRun, *ci, innerTimeout, *rowsFlag, stdout, stderr)
 	}
 
 	verify, evidence, err := briefSections(path)
@@ -2371,12 +2354,12 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 	// and before any row runs or anything is written.
 	allRows := rows
 	if rowsSet {
-		sections, scope := []string{verify}, "the Verify table"
+		scope := "the Verify table"
 		if transitionDescriptor != "" {
-			sections, scope = []string{protectedExecution.Verify, verify}, "the protected run set (original plus author-added rows)"
+			scope = "the protected run set (original plus author-added rows)"
 		}
 		var why string
-		if rows, why = selectVerifyRows(sections, rows, selectedIDs, scope); why != "" {
+		if rows, why = selectVerifyRows(rows, selectedIDs, selectedSet, scope); why != "" {
 			fmt.Fprintf(stderr, "statusgen verifyrun: refusing --rows %q: %s. No row ran\n", *rowsFlag, why)
 			return verifyrunExitUsageError
 		}
@@ -2504,6 +2487,8 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			}
 			fmt.Fprintf(stdout, "row %s: not selected\n", r.ID)
 		}
+		// Unreachable while runWitnessesSandboxed returns one witness per row
+		// in row order; it keeps every witness in the exit-code fold if not.
 		for ; next < len(ws); next++ {
 			report(ws[next])
 		}
