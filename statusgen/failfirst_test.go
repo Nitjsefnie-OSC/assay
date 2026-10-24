@@ -577,6 +577,7 @@ func TestVerifyrunFailFirstRefusesAncestorBaseOfBranchBornBrief(t *testing.T) {
 
 // TestPathHeldAtReadsTheTree — the default probe asks git: a file in the
 // tree is held, a file added later (or never) is not.
+// regression: #4360
 func TestPathHeldAtReadsTheTree(t *testing.T) {
 	root, older, _, _, _, _ := ffRepo(t)
 	if !pathHeldAt(root, older, "flag.txt") {
