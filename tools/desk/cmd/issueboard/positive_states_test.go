@@ -59,7 +59,7 @@ func TestPositiveStateDuplicatePlaceholdersKeepSerialReads(t *testing.T) {
 				return f, fr, err
 			}
 			dir := filepath.Join(root, issueLoopDir)
-			if err := os.WriteFile(filepath.Join(dir, "tracker-issue-9.md"), []byte(placeholderFixture(homeRepo, "todo", "")), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "second-issue-9.md"), []byte(placeholderFixture(homeRepo, "todo", "")), 0600); err != nil {
 				t.Fatal(err)
 			}
 			code, out := projectionRun(t, root, "--projection", "intake")
