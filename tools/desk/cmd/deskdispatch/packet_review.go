@@ -46,6 +46,8 @@ const (
 	// whole, so it gets three times a file's allowance; past that it is listed as omitted
 	// and read from the worktree, never shown in part.
 	reviewPacketDiffCap = 192 << 10
+	// Local input memory is independent of the rendered diff cap.
+	reviewPacketDiffInputCap = 4 << 20
 	// reviewPacketMaxFiles bounds how many touched files are read — one forge call each.
 	reviewPacketMaxFiles = 60
 	// reviewPacketReadBudget bounds the time spent reading files: the dispatch holds its
@@ -523,10 +525,6 @@ func reviewDiffSection(fg reviewPacketForge, fr deskkit.ForgeRepo, pr int, chang
 		return out, nil
 	}
 	diff, derr := fg.ChangeDiff(fr, pr)
-	if p, ok := fg.(*preparedReview); ok && p.diffOmitted != "" {
-		out.Omit("diff", packet.SizeUnknown, p.diffOmitted)
-		return out, nil
-	}
 	if derr == nil && strings.TrimSpace(diff) != "" {
 		if p, ok := fg.(*preparedReview); ok && p.localDiff {
 			out.Textf("Unified diff from local exact Git objects, merge-base of %s and %s to head %s.", packet.Code(change.BaseSHA), packet.Code(change.HeadSHA), packet.Code(change.HeadSHA))
@@ -546,8 +544,12 @@ func reviewDiffSection(fg reviewPacketForge, fr deskkit.ForgeRepo, pr int, chang
 	if ferr != nil {
 		return out, fmt.Errorf("no whole diff (%s) and no per-file patches (%s)", why, firstLine(ferr.Error()))
 	}
-	out.Textf("The forge did not serve one diff for the whole change (%s). Its per-file patches follow instead; "+
-		"a file the forge gave no patch for is listed as omitted.", shown)
+	if p, ok := fg.(*preparedReview); ok && p.localDiffSkipped != "" {
+		out.Textf("Local diff construction was skipped (%s). The provider's already-collected per-file patches follow; unavailable patches are explicitly omitted.", packet.Code(p.localDiffSkipped))
+	} else {
+		out.Textf("The forge did not serve one diff for the whole change (%s). Its per-file patches follow instead; "+
+			"a file the forge gave no patch for is listed as omitted.", shown)
+	}
 	for _, f := range files {
 		if f.PatchAbsent || f.Patch == "" {
 			out.Omit("patch of "+f.Filename, packet.SizeUnknown, "the forge served no patch for it (binary, too large, or no content change)")

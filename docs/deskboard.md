@@ -148,9 +148,11 @@ latency; an expired optional packet reports omissions and does not poison the fr
 terminal check. A terminal read failure is reported as could-not-recheck, distinct
 from an observed input change. Omitted/unused requests still count as requests.
 GitLab maps `diff_refs.base_sha` to the exact base so its existing patch fallback and
-delta path remain available. Local diff inputs are header-checked against the diff
-byte budget before rename detection or patch construction can inflate blobs;
-over-budget inputs are explicitly omitted without an unbounded remote fallback.
+delta path remain available. Local diff inputs are header-checked against a separate 4 MiB input budget before
+rename detection or patch construction can inflate blobs; the rendered diff keeps
+its 192 KiB output cap. Over-budget or non-regular local inputs use the already-
+collected per-file patches under the existing packet caps, with explicit omission
+only where a patch is unavailable. This adds no whole-provider diff request.
 
 The qualified one-file delta fixture measures **17 -> 14 HTTP attempts** for round
 plus packet with local exact objects (18% fewer), while adding terminal mutable

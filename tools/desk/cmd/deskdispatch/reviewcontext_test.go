@@ -23,6 +23,8 @@ type prepareFixture struct {
 	transport        *reviewtest.Transport
 	moved            string
 	prReads          int
+	diffReads        int
+	symlink          bool
 	blockContent     bool
 }
 
@@ -131,6 +133,9 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 			return 200, fmt.Sprintf(`{"sha":%q,"parents":[{"sha":%q}],"files":[{"filename":"a.go"}]}`, f.head, f.base)
 		}
 		if strings.Contains(path, "/contents/") {
+			if f.symlink {
+				return 200, `{"type":"symlink","target":"target"}`
+			}
 			if f.blockContent {
 				<-r.Context().Done()
 				return 408, `{"message":"packet read deadline"}`
@@ -138,6 +143,7 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 			return 200, fmt.Sprintf(`{"type":"file","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","encoding":"base64","content":%q}`, base64.StdEncoding.EncodeToString([]byte("assigned bytes\n")))
 		}
 		if strings.Contains(r.Header.Get("Accept"), "diff") {
+			f.diffReads++
 			return 200, "diff --git a/a.go b/a.go\n-base bytes\n+assigned bytes\n"
 		}
 		t.Fatalf("unexpected preparation read %s", path)
@@ -497,6 +503,9 @@ func TestReviewPrepareBudgets(t *testing.T) {
 		t.Fatal(e)
 	}
 	p.local = nil
+	if _, e := p.ReadFile(p.repo, deskkit.ReadFileInput{Ref: f.head, File: "budget-probe.go"}); e != nil {
+		t.Fatal("claim/workspace latency consumed packet budget", e)
+	}
 	f.blockContent = true
 	built, e := packet.Build(spec)
 	if e != nil {
@@ -550,5 +559,72 @@ func TestReviewPrepareLocalOmission(t *testing.T) {
 	}
 	if !strings.Contains(string(built.Text), "local exact blob exceeds the packet per-item byte cap") {
 		t.Fatal("local cap omission attributed to provider")
+	}
+}
+
+func TestReviewPrepareDiffCoverage(t *testing.T) {
+	for _, mode := range []string{"small-edit-large-file", "budget-fallback", "nonregular-fallback"} {
+		t.Run(mode, func(t *testing.T) {
+			size := 100 << 10
+			if mode == "budget-fallback" {
+				size = 5 << 20
+			}
+			body := strings.Repeat("x", size) + "\n"
+			if mode == "small-edit-large-file" {
+				body = strings.Repeat("unchanged fixture line\n", 5000)
+			}
+			f := prepareSourceFixture(t, body)
+			git := func(args ...string) string {
+				c := exec.Command("git", args...)
+				c.Dir = f.root
+				c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+				b, e := c.CombinedOutput()
+				if e != nil {
+					t.Fatal(e, string(b))
+				}
+				return strings.TrimSpace(string(b))
+			}
+			if mode != "budget-fallback" {
+				git("update-ref", "HEAD", f.head)
+				if mode == "small-edit-large-file" {
+					if e := os.WriteFile(filepath.Join(f.root, "a.go"), []byte(body+"small edit\n"), 0600); e != nil {
+						t.Fatal(e)
+					}
+				} else {
+					if e := os.Remove(filepath.Join(f.root, "a.go")); e != nil {
+						t.Fatal(e)
+					}
+					if e := os.Symlink("target", filepath.Join(f.root, "a.go")); e != nil {
+						t.Skip(e)
+					}
+					f.symlink = true
+				}
+				git("add", "a.go")
+				git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "edit")
+				f.base = f.head
+				f.head = git("rev-parse", "HEAD")
+			}
+			p, spec := prepareFlow(t, f)
+			built, e := packet.Build(spec)
+			if e != nil {
+				t.Fatal(e)
+			}
+			text := string(built.Text)
+			if mode == "small-edit-large-file" {
+				if !p.localDiff || !strings.Contains(text, "small edit") {
+					t.Fatal("small edit in large file lost its local diff")
+				}
+			} else {
+				if !strings.Contains(text, "+assigned") {
+					t.Fatal("local resource fallback dropped collected patches")
+				}
+				if p.localDiffSkipped == "" {
+					t.Fatal("fixture did not exercise local input preflight")
+				}
+			}
+			if f.diffReads != 0 {
+				t.Fatal("bounded fallback issued an unbounded whole-provider diff request")
+			}
+		})
 	}
 }

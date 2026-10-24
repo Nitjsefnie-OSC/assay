@@ -24,26 +24,26 @@ type preparationForge interface {
 // never across the terminal check or across assignments. Errors are not memoized.
 type preparedReview struct {
 	preparationForge
-	source        preparationForge
-	packetStarted bool
-	omissions     map[rf.SourceKey]string
-	repo          deskkit.ForgeRepo
-	context       rf.ReviewContext
-	cancel        context.CancelFunc
-	local         *gitcore.Repo
-	change        *deskkit.PullRequest
-	reviews       []deskkit.Review
-	reviewsRead   bool
-	checks        *deskkit.ChecksAtHead
-	files         []deskkit.ChangedFile
-	filesRead     bool
-	content       map[rf.SourceKey]*deskkit.FileContent
-	comparisons   map[rf.SourceKey]*deskkit.RefComparison
-	commits       map[rf.SourceKey]*deskkit.RepoCommit
-	required      map[string][]string
-	diffOmitted   string
-	localDiff     bool
-	checked       bool
+	source           preparationForge
+	packetStarted    bool
+	omissions        map[rf.SourceKey]string
+	repo             deskkit.ForgeRepo
+	context          rf.ReviewContext
+	cancel           context.CancelFunc
+	local            *gitcore.Repo
+	change           *deskkit.PullRequest
+	reviews          []deskkit.Review
+	reviewsRead      bool
+	checks           *deskkit.ChecksAtHead
+	files            []deskkit.ChangedFile
+	filesRead        bool
+	content          map[rf.SourceKey]*deskkit.FileContent
+	comparisons      map[rf.SourceKey]*deskkit.RefComparison
+	commits          map[rf.SourceKey]*deskkit.RepoCommit
+	required         map[string][]string
+	localDiffSkipped string
+	localDiff        bool
+	checked          bool
 }
 
 const reviewPreparationVersion = "review-prepare-v2"
@@ -237,10 +237,10 @@ func (p *preparedReview) ReadFile(r deskkit.ForgeRepo, in deskkit.ReadFileInput)
 }
 func (p *preparedReview) ChangeDiff(r deskkit.ForgeRepo, n int) (string, error) {
 	if p.local != nil && isCommitID(p.change.BaseSHA) {
-		if raw, large, e := p.local.DiffSymmetricBounded(p.change.BaseSHA, p.change.HeadSHA, 3, reviewPacketDiffCap); e == nil {
+		if raw, large, e := p.local.DiffSymmetricBounded(p.change.BaseSHA, p.change.HeadSHA, 3, reviewPacketDiffInputCap); e == nil {
 			if large {
-				p.diffOmitted = "local diff input exceeds the byte budget or includes a non-regular entry"
-				return "", fmt.Errorf("%s", p.diffOmitted)
+				p.localDiffSkipped = "local diff input exceeds the byte budget or includes a non-regular entry"
+				return "", fmt.Errorf("%s", p.localDiffSkipped)
 			}
 			p.localDiff = true
 			return raw, nil
