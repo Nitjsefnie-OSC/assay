@@ -7,6 +7,7 @@ depends: []
 unblocks: []
 effort: M
 gate: human
+decision-issue: 4070
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: yes}
 gate-why: "Changes how the tool writes human attribution into Evidence: the stamped subject is a login on a target the roster states private, and the on-behalf-of annotation is an attribution control the segregation-of-duties checks trust. Human acceptance of the restamp-or-refuse rule is required at done."
 issues: []
@@ -15,7 +16,7 @@ version: 1
 authored: 2026-10-22 by statusgen newbrief
 sources:
   - 'desktools-v2: Make deskevidence own the on-behalf-of principal on Runner cells'
-  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR): the verifier adds the principal through the existing tool, no new verb; deskevidence restamps or refuses any annotation that is not a roster principal; the skill says leave Runner cells unannotated and pre-check with deskevidence --dry-run"
+  - "driver ruling, 2026-10-22, for ratification at merge (its public record is the driver's merge of this gate: human brief PR, #4069, merged 2026-10-22): the verifier adds the principal through the existing tool, no new verb; deskevidence restamps or refuses any annotation that is not a roster principal; the skill says leave Runner cells unannotated and pre-check with deskevidence --dry-run"
   - docs/on-behalf-of.md
   - docs/proposals/non-ci-architecture/11-target-architecture.md (independent verification; attributed result)
   - freshness-checked 2026-10-22 @ 9a2c6ba2bc85558d77c4227984d93a728a7f7e94 (origin/main)
@@ -58,7 +59,7 @@ single-point-of-failure: deskevidence's roster resolution of the subject — bac
 
 ## Human decision
 
-For ratification at merge: driver ruling, 2026-10-22, as in sources; its public record is the driver's merge of this gate: human brief PR. For acceptance at done, the
+For ratification at merge: driver ruling, 2026-10-22, as in sources; its public record is the driver's merge of this gate: human brief PR, #4069, merged 2026-10-22. For acceptance at done, the
 restamp-or-refuse split. Recommended: restamp when the added row's annotation names no
 recognised roster human, or is not in the `human:` form. Leave it when it names the same
 subject the roster resolves. Refuse (exit 5, nothing written) when it names a different
