@@ -32,6 +32,19 @@ func TestEvidenceSubmissionAttribution(t *testing.T) {
 		"commented_header":        {base + strings.ReplaceAll(unattributed4114, "Command", "Com<!-- note -->mand"), base, true},
 		"actual_header":           {base + "| # | Check | Expected | Actual |\n|---|---|---|---|\n| 1 | check | pass | blocked |\n", base, true},
 		"comments":                {base + strings.ReplaceAll(unattributed4114, "| 9 |", "| <!--comment-->9 |"), base, true},
+		"header_split_comment":    {base + "| # | Command <!--\n--> | Notes |\n|---|---|---|\n| 1 | statusgen --lint | pass |\n", base, true},
+		"header_tail_comment":     {base + "| # | Command | Observed | <!--\n-->\n|---|---|---|\n| 1 | statusgen --lint | exit 0 |\n", base, true},
+		"row_split_comment":       {base + "| # | Command | Observed | Date | Runner |\n|---|---|---|---|---|\n| 1 | statusgen <!--\n--> | exit 0 | 2026-10-23 | alice |\n", base, false},
+		"en_dash_runner":          {base + strings.ReplaceAll(attributedBlocked, "human:operator", "\u2013"), base, true},
+		"em_dash_runner":          {base + strings.ReplaceAll(attributedBlocked, "human:operator", "\u2014"), base, true},
+		"zero_width_runner":       {base + strings.ReplaceAll(attributedBlocked, "human:operator", "\u200b"), base, true},
+		"hangul_filler_runner":    {base + strings.ReplaceAll(attributedBlocked, "human:operator", "\u3164"), base, true},
+		"emphasised_dash_runner":  {base + strings.ReplaceAll(attributedBlocked, "human:operator", "**\u2013**"), base, true},
+		"date_not_beside_runner":  {base + "| # | Date | Command | Observed | Runner |\n|---|---|---|---|---|\n| 1 | 2026-10-23 | check | exit 0 | alice |\n", base, true},
+		"emphasis_header":         {base + "| # | **Command** | Notes |\n|---|---|---|\n| 1 | check | pass |\n", base, true},
+		"plural_header":           {base + "| # | Commands | Notes |\n|---|---|---|\n| 1 | check | pass |\n", base, true},
+		"exit_code_header":        {base + "| # | Exit code | Notes |\n|---|---|---|\n| 1 | 0 | pass |\n", base, true},
+		"zero_width_header":       {base + "| # | Com\u200bmand | Notes |\n|---|---|---|\n| 1 | check | pass |\n", base, true},
 		"quoted":                  {base + "```\n" + unattributed4114 + "```\n", base, false},
 		"derivation":              {base + "| Rank | Value | Derivation |\n|---|---|---|\n| 1 | 5 | derived |\n", base, false},
 	} {
@@ -104,5 +117,14 @@ func TestAttributionRefusalLine(t *testing.T) {
 	err := checkAddedRowAttribution([]byte(content), []byte(base))
 	if err == nil || !strings.Contains(err.Error(), "at line 9 ") {
 		t.Fatalf("want refusal naming line 9, got %v", err)
+	}
+}
+
+func TestAttributionRefusalLineAfterJoinedComment(t *testing.T) {
+	base := "# Brief\n\n## Evidence\n"
+	content := base + "| # | Command | Observed |\n|---|---|---|\n| 1 | a <!--\nx --> | b |\n"
+	err := checkAddedRowAttribution([]byte(content), []byte(base))
+	if err == nil || !strings.Contains(err.Error(), "at line 6 ") {
+		t.Fatalf("want refusal naming line 6 (where the row starts), got %v", err)
 	}
 }
