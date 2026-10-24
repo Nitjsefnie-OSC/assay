@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -69,24 +70,37 @@ func capIssueBody(head string, sections []string, tail string, link func() strin
 	budget := issueBodyCap - forgeBodyLen(head) - forgeBodyLen(tail) - len(sections)*reserve
 	level := cutLevel(sizes, max(budget, 0))
 
-	var b strings.Builder
-	b.WriteString(head)
-	for i, s := range sections {
-		if sizes[i] <= level {
-			b.WriteString(s)
-			continue
+	render := func(level int) string {
+		var b strings.Builder
+		b.WriteString(head)
+		for i, s := range sections {
+			if sizes[i] <= level {
+				b.WriteString(s)
+				continue
+			}
+			kept := cutAtLine(s, level)
+			b.WriteString(kept)
+			b.WriteString(closeOpenConstructs(kept))
+			b.WriteString(cutNotice("this section", full, forgeBodyLen(kept), sizes[i]))
 		}
-		kept := cutAtLine(s, level)
-		b.WriteString(kept)
-		b.WriteString(closeOpenConstructs(kept))
-		b.WriteString(cutNotice("this section", full, forgeBodyLen(kept), sizes[i]))
+		b.WriteString(tail)
+		return b.String()
 	}
-	b.WriteString(tail)
-	out := b.String()
+	out := render(level)
+	// A closer longer than cutCloseReserve (a fence run of more than a few dozen
+	// characters) can overrun the cap. Lower the level by the overrun and cut
+	// the sections again, so the tail survives whenever head, tail and the
+	// notices fit. level strictly falls, so this ends; at level 0 every section
+	// is already empty.
+	for forgeBodyLen(out) > issueBodyCap && level > 0 {
+		level = max(level-(forgeBodyLen(out)-issueBodyCap), 0)
+		out = render(level)
+	}
 	if total := forgeBodyLen(whole); forgeBodyLen(out) > issueBodyCap {
-		// Backstop: the head and tail alone overrun the cap (an enormous
-		// title or rationale). Cut the body itself; the marker is its first
-		// line, far inside the cap, so it survives.
+		// Backstop: with every section cut to nothing the head, the tail and
+		// the notices alone overrun the cap (an enormous title or rationale).
+		// Cut the body itself, tail included; the marker is its first line,
+		// far inside the cap, so it survives.
 		// The loop only re-runs when a closer is longer than cutCloseReserve,
 		// shrinking the kept part by the overrun each time.
 		limit := issueBodyCap - forgeBodyLen(cutNotice("this issue body", full, issueBodyCap, total)) - cutCloseReserve
@@ -104,8 +118,9 @@ func capIssueBody(head string, sections []string, tail string, link func() strin
 	return out
 }
 
-// cutCloseReserve covers what closeOpenConstructs can append: a newline, a
-// fence run of up to a few dozen characters and a newline, and " -->".
+// cutCloseReserve covers what closeOpenConstructs usually appends: a fence
+// run of up to a few dozen characters, "\n-->" and a couple of "\n</details>".
+// A longer closer is caught by the level loop in capIssueBody, not by this.
 const cutCloseReserve = 64
 
 // cutNotice renders the statement placed where content was cut.
@@ -152,17 +167,34 @@ func cutAtLine(s string, limit int) string {
 	return s
 }
 
+// detailsOpenRe and detailsCloseRe find <details> block tags outside fences.
+var (
+	detailsOpenRe  = regexp.MustCompile(`(?i)<details\b`)
+	detailsCloseRe = regexp.MustCompile(`(?i)</details\s*>`)
+)
+
 // closeOpenConstructs returns what must follow kept so the notice after it
 // renders as a notice: a closing fence when kept ends inside a fenced code
-// block, and " -->" when it ends inside an HTML comment (either would swallow
-// the notice and everything after it).
+// block, a comment closer when it ends inside an HTML comment, and one
+// </details> per <details> left open (any of these would swallow the notice
+// and the closing checklist after it, or fold them into a collapsed block).
+//
+// The comment closer is "\n-->", never " -->": the verify-gate marker pattern
+// (verifyMarkerRe) needs a space before its closing dashes, so a cut that falls
+// inside a marker-shaped comment cannot be completed into a second marker that
+// names another brief. The leading newline puts the closer on a line of its
+// own, so the character before the dashes is never a space.
 func closeOpenConstructs(kept string) string {
 	var close string
 	open := ""
+	details := 0
 	for _, line := range strings.Split(kept, "\n") {
 		c, run, rest, ok := fenceRun(line)
 		switch {
 		case !ok:
+			if open == "" {
+				details += len(detailsOpenRe.FindAllStringIndex(line, -1)) - len(detailsCloseRe.FindAllStringIndex(line, -1))
+			}
 		case open == "" && fenceLineValid(line):
 			open = strings.Repeat(string(c), run)
 		case open != "" && c == open[0] && run >= len(open) && strings.Trim(rest, " \t\r") == "":
@@ -173,7 +205,10 @@ func closeOpenConstructs(kept string) string {
 		close += "\n" + open + "\n"
 	}
 	if strings.LastIndex(kept, "<!--") > strings.LastIndex(kept, "-->") {
-		close += " -->"
+		close += "\n-->"
+	}
+	for ; details > 0; details-- {
+		close += "\n</details>"
 	}
 	return close
 }

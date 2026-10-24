@@ -139,3 +139,107 @@ func TestCapBodyBackstop(t *testing.T) {
 		t.Error("the backstop cut must be stated")
 	}
 }
+
+// TestCapBodyExactCap pins the boundary: a body of exactly issueBodyCap (as
+// forgeBodyLen counts) and one under it pass through unchanged, and one unit
+// over is cut under the cap.
+//
+// regression: #4091
+func TestCapBodyExactCap(t *testing.T) {
+	head, tail := "<!-- verify-gate: x/01 -->\n\n", "### Before you close\n"
+	prefix := "### Evidence\n\n"
+	// one line of x, then a newline (counted as two)
+	base := forgeBodyLen(head) + forgeBodyLen(tail) + forgeBodyLen(prefix) + 2
+	for _, tc := range []struct {
+		extra int
+		cut   bool
+	}{{-1, false}, {0, false}, {1, true}} {
+		sec := prefix + strings.Repeat("x", issueBodyCap-base+tc.extra) + "\n"
+		whole := head + sec + tail
+		if got := forgeBodyLen(whole) - issueBodyCap; got != tc.extra {
+			t.Fatalf("fixture is %d over the cap, want %d", got, tc.extra)
+		}
+		out := capIssueBody(head, []string{sec}, tail, ibLinkFn)
+		if tc.cut {
+			if n := forgeBodyLen(out); n > issueBodyCap || !strings.Contains(out, issueBodyCutMark) {
+				t.Errorf("extra=%d: want a cut body within the cap, got len %d, cut stated %v", tc.extra, n, strings.Contains(out, issueBodyCutMark))
+			}
+		} else if out != whole {
+			t.Errorf("extra=%d: a body within the cap must pass through unchanged", tc.extra)
+		}
+	}
+}
+
+// TestCapBodyLongFenceKeepsTail: a cut inside a fence whose run is longer than
+// cutCloseReserve gets a long closer; the body must still end with the tail
+// (the closing checklist) rather than fall to the whole-body backstop.
+//
+// regression: #4091
+func TestCapBodyLongFenceKeepsTail(t *testing.T) {
+	head := "<!-- verify-gate: x/01 -->\n\n"
+	tail := "### Before you close\n\n- [ ] I accept this brief as done\n"
+	fence := strings.Repeat("`", 120)
+	sec := ibFill("### Evidence\n\n"+fence+"text", 3000)
+	got := capIssueBody(head, []string{sec}, tail, ibLinkFn)
+	if n := forgeBodyLen(got); n > issueBodyCap {
+		t.Fatalf("capped body is %d, over the cap %d", n, issueBodyCap)
+	}
+	if !strings.HasSuffix(got, tail) {
+		t.Errorf("the closing checklist was dropped; body ends %q", got[max(0, len(got)-120):])
+	}
+	if strings.Contains(got, "this issue body was cut") {
+		t.Error("the whole-body backstop ran although head and tail fit")
+	}
+	if !strings.Contains(got, "\n"+fence+"\n") {
+		t.Error("the closing fence must repeat the 120-character opening run")
+	}
+}
+
+// TestCloseNoSecondMarker: completing a comment the cut left open must not
+// turn a split verify-gate marker into one that verifyMarkerRe accepts.
+//
+// regression: #4091
+func TestCloseNoSecondMarker(t *testing.T) {
+	for _, kept := range []string{
+		"x\n<!-- verify-gate: victim/07\n",
+		"x\n<!-- verify-gate: victim/07 \n",
+		"x\n<!-- verify-gate: victim/07",
+	} {
+		got := kept + closeOpenConstructs(kept)
+		if m := verifyMarkerRe.FindString(got); m != "" {
+			t.Errorf("closing %q made a marker %q", kept, m)
+		}
+		if strings.LastIndex(got, "<!--") > strings.LastIndex(got, "-->") {
+			t.Errorf("the comment in %q is still open after closing", kept)
+		}
+	}
+}
+
+// TestCloseOpenDetails: a cut inside a <details> block closes it, so the
+// notice and the checklist are not folded into the collapsed block; balanced
+// blocks and tags shown inside a code fence are left alone.
+//
+// regression: #4091
+func TestCloseOpenDetails(t *testing.T) {
+	for _, tc := range []struct{ name, kept, want string }{
+		{"open", "<details>\n<summary>Rows</summary>\n| 1 |\n", "\n</details>"},
+		{"nested", "<details>\n<DETAILS open>\n| 1 |\n", "\n</details>\n</details>"},
+		{"balanced", "<details>\nrow\n</details>\n", ""},
+		{"in fence", "```html\n<details>\n", "\n```\n"},
+		{"fence then details", "```\nx\n```\n<details>\n| 1 |\n", "\n</details>"},
+	} {
+		if got := closeOpenConstructs(tc.kept); got != tc.want {
+			t.Errorf("%s: closeOpenConstructs(%q) = %q, want %q", tc.name, tc.kept, got, tc.want)
+		}
+	}
+	// End to end: a details-wrapped section is closed before the notice.
+	sec := "### Evidence\n\n<details>\n<summary>Rows</summary>\n\n" + ibFill("", 3000) + "</details>\n\n"
+	got := capIssueBody("<!-- verify-gate: x/01 -->\n\n", []string{sec}, "### Before you close\n", ibLinkFn)
+	at := strings.Index(got, "> "+issueBodyCutMark)
+	if at < 0 {
+		t.Fatal("no cut stated")
+	}
+	if o, c := strings.Count(got[:at], "<details"), strings.Count(got[:at], "</details>"); o != c {
+		t.Errorf("%d <details> opened and %d closed before the notice", o, c)
+	}
+}
