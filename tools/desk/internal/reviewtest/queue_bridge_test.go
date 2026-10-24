@@ -278,6 +278,9 @@ func TestReviewPlanNoFetch(t *testing.T) {
 	}
 	if os.Getenv("ASSAY_REVIEW_CONTRACT_MUTANT") != "1" {
 		t.Run("mutation-controls", func(t *testing.T) {
+			contractMutation(t, "cmd/deskboard/reviewobservation.go", `encodeErr := json.NewEncoder(f).Encode(value)`, `_ = os.Chmod(f.Name(),0644); encodeErr := json.NewEncoder(f).Encode(value)`, "^TestReviewObservationPrivateAtomicOutput$", "artifact not a private regular file", "./cmd/deskboard")
+			contractMutation(t, "cmd/deskboard/reviewobservation.go", `security = "blocked"`, `security = "missing"`, "^TestQueuePlanBridge$", "security fail was lost")
+			contractMutation(t, "cmd/reviewloop/plan.go", `strings.TrimSpace(*nowStr) == ""`, `*nowStr == ""`, "^TestReviewPlanNoFetch$", "invalid-now accepted")
 			contractMutation(t, "cmd/deskboard/reviewobservation.go", `part.truncated || len(part.external) != 0`, `part.truncated`, "^TestQueuePartialAndDepth$", "incomplete collector emitted complete artifact")
 			contractMutation(t, "cmd/deskboard/board.go", `pr.HeadSHA != expectedHead[0]`, `false && pr.HeadSHA != expectedHead[0]`, "^TestQueuePartialAndDepth$", "incomplete collector emitted complete artifact")
 			contractMutation(t, "cmd/reviewloop/snapshot.go", `if p.Idle.State == rf.IdleCouldNotCheck {`, `if false && p.Idle.State == rf.IdleCouldNotCheck {`, "^TestReviewPlanNoFetch$", "unobserved priority looked idle")
