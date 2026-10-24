@@ -120,33 +120,44 @@ design-fit:
 6. **Decisions owed.** List every choice that touches protected-table authority or approval
    semantics as a question for the driver with options and a default. File each as a
    `needs-decision` issue through the desk's filing verb before this brief is handed to
-   verification; do not resolve them in the record.
+   verification; do not resolve them in the record. In the record, write each owed decision
+   as one line that carries the word `needs-decision` and its filed issue's full reference
+   (`medici-finance/assay#N` or the issue URL), and use that word on no other line: Verify
+   row 7 fails any `needs-decision` line without a filed-issue reference.
 7. **Implementation briefs, not written here.** List the briefs the recommendation implies
    (title, owning module, depends, effort, risk answers, the Verify row that proves the lower
    layer with the upper one bypassed). Authoring them is a separate PR after the decisions in
-   step 6 are settled.
+   step 6 are settled. State the ordering in the record: Verify rows 4–5 pin today's
+   derived-path behaviour, including that a marker naming a later mainline delivery is
+   accepted, so this brief is verified before any implementation brief that changes that
+   behaviour merges; after that, rows 4–5 going red is the expected effect of the successor,
+   not a defect in this record.
 8. Cite only public references in the record (no private tracker aliases). Describe long
    identifiers instead of quoting them.
+9. Give the record these six level-2 headings, verbatim and each on its own line:
+   `## Instance census`, `## Alternatives`, `## Recommended design`, `## Independent layers`,
+   `## Decisions owed`, `## Implementation briefs` (Verify row 1 matches whole lines).
 
 ## Verify (executable — no prose-only DoD items)
 | # | Command | Expect | Class |
 |---|---------|--------|-------|
-| 1 | `grep -c -F -e '## Instance census' -e '## Alternatives' -e '## Recommended design' -e '## Independent layers' -e '## Decisions owed' -e '## Implementation briefs' docs/streams/build-less-brittle/design-delivery-binding.md` | output is 6 | check |
+| 1 | `grep -q -x -F '## Instance census' docs/streams/build-less-brittle/design-delivery-binding.md && grep -q -x -F '## Alternatives' docs/streams/build-less-brittle/design-delivery-binding.md && grep -q -x -F '## Recommended design' docs/streams/build-less-brittle/design-delivery-binding.md && grep -q -x -F '## Independent layers' docs/streams/build-less-brittle/design-delivery-binding.md && grep -q -x -F '## Decisions owed' docs/streams/build-less-brittle/design-delivery-binding.md && grep -q -x -F '## Implementation briefs' docs/streams/build-less-brittle/design-delivery-binding.md` | exit 0 — each of the six headings is present as a whole line of its own | check |
 | 2 | `grep -c -E '^[0-9a-f]{40}$' docs/streams/build-less-brittle/design-delivery-binding.md` | output is at least 3 (the commits the census cites, one full id per line in a fenced block) | check |
 | 3 | `test "$(grep -E '^[0-9a-f]{40}$' docs/streams/build-less-brittle/design-delivery-binding.md \| git cat-file --batch-check \| grep -c ' commit ')" = "$(grep -c -E '^[0-9a-f]{40}$' docs/streams/build-less-brittle/design-delivery-binding.md)"` | exit 0 — every commit the record cites resolves to a commit object in the repository | check +dereference |
-| 4 | `cd statusgen && go test . -run 'TestDerivedDeliveryPinsRecordedDeliveryParent$' -count=1 -v \| grep -c -F -e '--- PASS: TestDerivedDeliveryPinsRecordedDeliveryParent'` | output is 1 — the derived-path behaviour the record builds on still holds as described | check |
-| 5 | `cd statusgen && go test . -run 'TestDerivedDeliveryCouldNotCheck$' -count=1 -v \| grep -c -F -e '--- PASS: TestDerivedDeliveryCouldNotCheck'` | output is 1 — the derived path still refuses to pass when its source is unavailable | check |
+| 4 | `cd statusgen && go test . -run 'TestDerivedDeliveryPinsRecordedDeliveryParent$' -count=1 -v \| grep -c -E '^--- PASS: TestDerivedDeliveryPinsRecordedDeliveryParent \('` | output is 1 — the derived-path behaviour the record builds on still holds as described (the anchored pattern counts the top-level result line only, never a subtest's) | check |
+| 5 | `cd statusgen && go test . -run 'TestDerivedDeliveryCouldNotCheck$' -count=1 -v \| grep -c -E '^--- PASS: TestDerivedDeliveryCouldNotCheck \('` | output is 1 — the derived path still refuses to pass when its source is unavailable (the anchored pattern counts the top-level result line only, never a subtest's) | check |
 | 6 | `statusgen --root . --lint` | exit 0; no PROBLEM line names `build-less-brittle/14` | check |
-| 7 | `grep -c -F 'needs-decision' docs/streams/build-less-brittle/design-delivery-binding.md` | output is at least 1 — each owed decision names its filed issue | check |
+| 7 | `test "$(grep -c -F 'needs-decision' docs/streams/build-less-brittle/design-delivery-binding.md)" -ge 1 && ! grep -F 'needs-decision' docs/streams/build-less-brittle/design-delivery-binding.md \| grep -q -v -e 'https://github\.com/medici-finance/assay/issues/[0-9]' -e 'medici-finance/assay#[0-9]'` | exit 0 — at least one owed decision is recorded, and every `needs-decision` line names its filed issue by full reference | check |
 
 <!--
 Pre-mortem → detection map (author-brief B5)
 | Failure mode of the work | Caught by |
 |---|---|
 | Record is well-formed but cites commits that do not exist or are not the deliveries claimed | row 3 (existence); row 3 cannot check "is the real delivery" — review-only, and the record must say so |
-| Record's description of today's derived path is stale or wrong | row 4 |
+| Record's description of today's derived path is stale or wrong | rows 4–5 |
+| An implementation brief that changes the derived path merges before this brief is verified | rows 4–5 go red legitimately; the record states the ordering (Task step 7) and the verifier runs this brief first |
 | Design quietly weakens protected-table authority or adds an override | review-only (adequacy); Ground rules forbid it and the design-fit reviewer answers both core-system questions |
-| Record resolves a protected-authority choice itself instead of escalating | row 6 (names filed issues); adequacy review-only |
+| Record resolves a protected-authority choice itself instead of escalating | row 7 (every `needs-decision` line names a filed issue); adequacy review-only |
 | Section headings present but empty | review-only; rows 1-2 only prove shape |
 -->
 
