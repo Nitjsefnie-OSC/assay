@@ -239,7 +239,7 @@ func (p *preparedReview) ChangeDiff(r deskkit.ForgeRepo, n int) (string, error) 
 	if p.local != nil && isCommitID(p.change.BaseSHA) {
 		if raw, large, e := p.local.DiffSymmetricBounded(p.change.BaseSHA, p.change.HeadSHA, 3, reviewPacketDiffCap); e == nil {
 			if large {
-				p.diffOmitted = "local diff input exceeds the bounded changed-blob byte budget"
+				p.diffOmitted = "local diff input exceeds the byte budget or includes a non-regular entry"
 				return "", fmt.Errorf("%s", p.diffOmitted)
 			}
 			p.localDiff = true

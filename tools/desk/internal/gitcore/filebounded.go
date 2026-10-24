@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -13,7 +14,11 @@ import (
 // FileAtBounded reads only a regular blob at an exact caller-selected revision.
 // A large blob is reported before decompression; no filesystem path is followed.
 func (r *Repo) FileAtBounded(rev, path string, limit int64) (string, bool, error) {
-	tree, e := r.treeAt(rev)
+	commit, e := r.exactCommit(rev)
+	if e != nil {
+		return "", false, e
+	}
+	tree, e := commit.Tree()
 	if e != nil {
 		return "", false, e
 	}
@@ -51,15 +56,27 @@ func (r *Repo) FileAtBounded(rev, path string, limit int64) (string, bool, error
 // patch construction can inflate their contents. Over-budget inputs are omitted;
 // no unbounded provider fallback is implied by this result.
 func (r *Repo) DiffSymmetricBounded(a, b string, contextLines int, budget int64) (string, bool, error) {
-	base, e := r.MergeBase(a, b)
+	ac, e := r.exactCommit(a)
 	if e != nil {
 		return "", false, e
 	}
-	from, e := r.treeAt(base)
+	bc, e := r.exactCommit(b)
 	if e != nil {
 		return "", false, e
 	}
-	to, e := r.treeAt(b)
+	bases, e := ac.MergeBase(bc)
+	if e != nil {
+		return "", false, e
+	}
+	if len(bases) == 0 {
+		return "", false, fmt.Errorf("no common ancestor")
+	}
+	base := bases[0]
+	from, e := base.Tree()
+	if e != nil {
+		return "", false, e
+	}
+	to, e := bc.Tree()
 	if e != nil {
 		return "", false, e
 	}
@@ -88,6 +105,15 @@ func (r *Repo) DiffSymmetricBounded(a, b string, contextLines int, budget int64)
 			total += n
 		}
 	}
-	raw, e := r.Diff(base, b, contextLines)
+	raw, e := diffTrees(from, to, contextLines, base.Hash.String(), bc.Hash.String())
 	return raw, false, e
+}
+
+// exactCommit is the immutable object boundary for preparation source reads.
+// Revision expressions are deliberately unsupported by these bounded APIs.
+func (r *Repo) exactCommit(id string) (*object.Commit, error) {
+	if len(id) != 40 || strings.ToLower(id) != id || plumbing.NewHash(id).String() != id {
+		return nil, fmt.Errorf("a canonical full object id is required")
+	}
+	return r.repo.CommitObject(plumbing.NewHash(id))
 }

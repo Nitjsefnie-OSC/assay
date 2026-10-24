@@ -131,7 +131,8 @@ silently relabels old source facts with a new head. Publisher and reviewer-owned
 freshness checks remain necessary after dispatch.
 
 Immutable source keys include provider/host/repository, full commit, path and
-adapter version. Comparisons additionally key both full endpoint SHAs and the
+adapter version. Bounded local APIs accept canonical commit object IDs directly;
+missing objects fall back to the provider without revision-expression interpretation. Comparisons additionally key both full endpoint SHAs and the
 comparison adapter. Branch-named comparisons are not memoized. Source bytes come
 from gitcore at the assigned head, even when the allocated checkout has another
 HEAD; missing objects fall back to exact-head provider reads. Local regular blobs

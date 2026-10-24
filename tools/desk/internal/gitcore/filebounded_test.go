@@ -88,3 +88,27 @@ func TestDiffBoundedPreflight(t *testing.T) {
 		t.Fatalf("diff inflated blobs before budget refusal: large=%v reads=%d err=%v", large, guard.reads, e)
 	}
 }
+
+func TestPreparationExactObjects(t *testing.T) {
+	r, base, head := boundedFixture(t, false)
+	absent := strings.Repeat("e", 40)
+	if _, e := r.repo.CommitObject(plumbing.NewHash(absent)); e == nil {
+		t.Fatal("fixture absent object exists")
+	}
+	// A named reference is not an immutable object observation.
+	if e := r.repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/"+absent), plumbing.NewHash(head))); e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e := r.FileAtBounded(absent, "a", 8192); e == nil {
+		t.Fatal("missing exact file object accepted a reference substitute")
+	}
+	if _, _, e := r.DiffSymmetricBounded(base, absent, 3, 8192); e == nil {
+		t.Fatal("missing exact diff head accepted a reference substitute")
+	}
+	if _, _, e := r.DiffSymmetricBounded(absent, head, 3, 8192); e == nil {
+		t.Fatal("missing exact diff base accepted a reference substitute")
+	}
+	if raw, large, e := r.FileAtBounded(head, "a", 8192); e != nil || large || len(raw) != 4096 {
+		t.Fatal("present exact object failed", large, e)
+	}
+}
