@@ -695,7 +695,7 @@ RISK-VALUE: DERIVED — patternRoleEffectPermissions worker = push, pr-open, com
 RISK-VALUE: NAMED, NOT DERIVED — implementation risk-input elevated = [review, verify], human = [review, verify] @ spec/workflow-patterns/implementation-v1.yaml:17-18 — Task 1's example maps these to security-review and human-signoff gates, and the shipped pattern has neither node. Deriving the value needs a design ruling, still open at #1933.
 RISK-VALUE: DERIVED — topologyAppRoles = desk, reviewer, verifier, worker @ statusgen/topologyvalues.go:73-78 — equals the four apps: roles in topology.yaml (lines 237-249). Row 7, witnessed in the bracket above, pins the two together at this commit.
 RISK-VALUE: DERIVED — patternRiskVerdicts = low, standard, elevated, human @ statusgen/patterns.go:100 — the stream's fixed risk-class vocabulary from the brief's Context.
-RISK-VALUE: DERIVED — patternsExitClean = 0, patternsExitFailed = 1, patternsExitCouldNot = 2, patternsExitUsageError = 2 @ statusgen/patterns.go:67-70 — Task 4's stated exit contract (0 clean, 1 on any PROBLEM, 2 could-not-check).
+RISK-VALUE: DERIVED — patternsExitClean = 0, patternsExitFailed = 1, patternsExitCouldNot = 2, patternsExitUsageError = 2 @ statusgen/patterns.go:67-70 — Task 4's stated exit contract (0 clean, 1 on any PROBLEM, 2 when it cannot check).
 RISK-VALUE: reversible knob, ranked last, no derivation owed — budget.attempts = 2 @ spec/workflow-patterns/implementation-v1.yaml:31.
 
 **VERIFY: PASS** — 9 of 9 rows witnessed passing on merged main 385cb29e5682, 0 fail, 0 could-not-run; the check:ci rows 1, 3, 4 and 7 ran in a closed container-netns admission bracket. The risk-input design question stays routed at #1933.
