@@ -10,7 +10,7 @@ gate: model
 risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}
 issues: [4247]
 schema: brief-v2
-version: 1
+version: 2
 authored: 2026-10-24 by statusgen newbrief
 sources:
   - 'desktools-v2: Add a verifyrun row selector that records only the named Verify rows'
@@ -102,9 +102,9 @@ Normal worker admission, one isolated worktree and one draft PR. Tests use tempo
 | 4 | check:ci | `(cd statusgen && rows_out=$(mktemp) && trap 'rm -f "$rows_out"' 0 && go test -run '^TestVerifyrunRowsContainerBracket$' -count=1 -v . > "$rows_out" 2>&1 && grep -q -- '--- PASS: TestVerifyrunRowsContainerBracket ' "$rows_out")` | exit 0 and named PASS. A `--sandbox=container-netns` run with a valid fixture receipt and `--rows` naming two of four rows writes to `--witness` only those two rows, plus exactly one `Tree-Digest:`, one `Container-Image:` and one attestation line. The close step appends an `Admission-Bracket:` line, and `--bracket-digest` on the closed file reports `verdict=match` and `span-lines=tree-digest:1,container-image:1,attestation:1`. With a host `--rows` table and its attestation line placed above the container block, and again below the bracket, `--bracket-digest` still reports `verdict=match` for the container bracket. With `--rows` present, a missing receipt, a missing image digest, a `--witness` inside the home, an existing `--witness` file and a mounted tree that differs from the receipt each refuse before any row runs, exactly as without `--rows` |
 | 5 | check:ci | `(cd statusgen && rows_out=$(mktemp) && trap 'rm -f "$rows_out"' 0 && go test -run '^TestVerifyrunRowsAcceptanceTransition$' -count=1 -v . > "$rows_out" 2>&1 && grep -q -- '--- PASS: TestVerifyrunRowsAcceptanceTransition ' "$rows_out")` | exit 0 and named PASS. With `--acceptance-record` and `--acceptance-forge`, using the existing fake-forge seam: `--rows` naming one original row and one author-added row writes a table headed by the descriptor exactly once, holding only those two rows, with the author-added row in the `author-added` state. An ID outside the protected plan's run set is refused with nothing written. The same selection under `--dry-run` prints the table and writes nothing |
 | 6 | check:ci | `cd statusgen && go test -count=1 .` | exit 0; output contains `ok`; the existing verifyrun, sandbox, container-bracket, protected-closure and acceptance-transition tests are unchanged and pass |
-| 7 | check:ci | `grep -n -e '--rows' -e 'disjoint' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md` | both files match both patterns: each states the container-bracket-first, host `--rows`-second assembly with disjoint selections covering the table, and that last-wins and the rule 45 credit rule are unchanged |
+| 7 | check:ci | `grep -n -e '--rows' docs/brief-rules.md && grep -n -e 'disjoint' docs/brief-rules.md && grep -n -e '--rows' plugins/assay/skills/verify-desk/SKILL.md && grep -n -e 'disjoint' plugins/assay/skills/verify-desk/SKILL.md` | both files match both patterns: each states the container-bracket-first, host `--rows`-second assembly with disjoint selections covering the table, and that last-wins and the rule 45 credit rule are unchanged |
 | 8 | check:ci | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | exit 0; no Cursor-mirror drift reported |
-| 9 | check | `statusgen --root . --consumers --brief desktools-v2/74 --base $(git merge-base origin/main HEAD)` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
+| 9 | check | `statusgen --root . --consumers --brief desktools-v2/74 --base 7da05ebcfe482c6d35bddafc25e8ca83c56a9a00` | pre-merge, on the implementation branch: exit 0; declared implementation sites and follow-up references corroborate; out-of-scope judgments remain UNCHECKED and reviewer-owned; completeness is not proved |
 | 10 | check | `statusgen --root . --lint` | exit 0; no PROBLEM line names this brief |
 
 Pre-mortem:
