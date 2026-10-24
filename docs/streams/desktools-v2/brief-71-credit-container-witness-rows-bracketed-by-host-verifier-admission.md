@@ -413,6 +413,8 @@ RISK-VALUE: DERIVED — receipt version gate `b.Version == 2` refused, `b.Versio
 
 **VERIFY: BLOCKED** — 1 / 11 rows passed at source 8f103c4712; check:ci rows lack network-off credit (admitted route closure refusal, #4112), row 8 is a pre-merge-only check
 
+### Postmerge verification, 2026-10-23, source fbe0331e2f
+
 | # | Command | Result | Output | Date | Runner |
 |---|---------|--------|--------|------|--------|
 | 1 | `cd statusgen && go test -run '^TestContainerNetnsRequiresAdmissionReceipt$' -count=1 -v .` | could-not-run exit=- sandbox=unshare — check:ci hermetic execution requires a network-off sandbox, unavailable on this host: the network sandbox uses `unshare --net`, a Linux facility, and this host is darwin. check:ci rows are re-executed network-off by design (verdict-lane/02, R-6 c.6) — run on a Linux runner that provides `unshare --net` | sha256:e3b0c44298fc | 2026-10-23 | assay-verifier-app[bot] @ fbe0331e2fc9 (on-behalf-of human:ian) (forge-identity) |
@@ -531,6 +533,77 @@ RISK-VALUE: deskread record timeout `90*time.Second` @ statusgen/containercredit
 Two items keep this from closing as a PASS now. (1) Rule 45 forbids crediting the nine container rows on `verdict=match` alone, and `--credit` needs the landed brief. (2) This run's witnesses span two tables: the container table records rows 8 and 9 as fail, and the host table records rows 1–7, 10 and 11 as could-not-run. The closure audit reads the latest witness per row, so whichever table comes last masks the other. How these combine into one closure record is a lane question for the desk, not something a verifier should settle by editing either table.
 
 **VERIFY: BLOCKED** — credit-timing and evidence-assembly block, not an obligation failure. All 11 rows were observed passing; credit for the nine container rows waits on `--credit` against the landed brief. Status is not flipped (`gate: human`).
+
+### Independent verification — 2026-10-24 (source 385cb29e5682dcb9a886b298076f722b4823ec1b)
+
+Non-implementer verifier `assay-verifier-app[bot]` (on-behalf-of human:ian), model claude-opus-5-5, tier strong, run `0263a46c7a3a3393d2502217faba8d4d625d321831a06a73e31d836f7bab46ac` (attestation medici-finance/assay#4293). Merged main `385cb29e5682dcb9a886b298076f722b4823ec1b`, clean detached checkout, git 2.56.0, `core.autocrlf=input`, `eol=native`. Host tools: `statusgen v1.0.59`; `deskdispatch sourceSHA=dff97978 releaseTag=v1.0.59`. Runner image `ghcr.io/medici-finance/verify-runner:v1.0.59@sha256:c2e32c7ff99f67951174e8ff835d928d8999b1bb2ecdc7c63d3775528178640e` (local image Id `sha256:756b81ba91a8627b30524316a3baabed654a0369f9331a31e77546ead69c19ad`, linux/amd64, `statusgen v1.0.59`, go1.27.2 inside), run with `--pull never --network none --read-only --cap-drop ALL`, the checkout bind-mounted read-only, no gitdir mount, no injected identity, no locally built binary. `deskdispatch --check-verifier` exited 0 before the work and again before this hand-off (same binding: run, source, model, tier, issue 4293).
+
+Prior attempts, disclosed and not credited here (recorded earlier in this Evidence section):
+- 2026-10-22, source 8f103c4712: BLOCKED, 1/11 rows passed. The admitted offline route was refused at its closure check (#4112).
+- 2026-10-23, source fbe0331e2f (statusgen v1.0.57, attestation #4204): BLOCKED, 1/11 rows passed. The container lane returned could-not-attribute on a linked-worktree home (#4208). Row 8 could only be checked before merge (#4209).
+- 2026-10-23, source 3e24567bbc (statusgen v1.0.58, attestation #4245): BLOCKED. All 11 rows were observed passing, but the container and host tables each recorded the other's rows as fail or could-not-run, so whichever landed last masked the other (#4247). The driver ruled option A, `verifyrun --rows` (https://github.com/medici-finance/assay/issues/4247#issuecomment-6377158517), shipped as desktools-v2/74 in v1.0.59. This run uses it: the container and host selections are disjoint and together cover all 11 rows.
+
+#### Host run under the approved acceptance transition (rows 8 and 9)
+
+The host run came first, on the clean home, because a transition run refuses a dirty source. The container witness file was written and closed outside the home, so the home was still clean at that point. The descriptor below was passed with `--acceptance-record` (kept outside the checkout), together with `--acceptance-forge` and the absolute brief path (#4246). The verifier checked the coordinates independently: delivery f7ad98d5 is an ancestor of HEAD; delivery and amendment 4c63244c are both on HEAD's first-parent chain; the merge-base of delivery's two parents is d8b64df8 (= base); and deee3295 is an ancestor of base. verifyrun read the approval and executed the canonical plan. The table below is the one it wrote (`statusgen verifyrun --brief <abs brief> --root <home> --rows 8,9 --acceptance-record <descriptor> --acceptance-forge`, exit 0; rows 1–7, 10 and 11 printed `not selected`).
+
+Verification-Table: delivery=f7ad98d584842aef0001ddf22ee83b9e56e4f91f base=d8b64df87c1d94a61ca398fb5371acfe81569f78 original=deee32957a70aa7e7a6bbae14f004284ab1b5fa4
+Acceptance-Transition: amendment=4c63244c4665af3bc1ec2319379f1bafd5dd4c8d approval=https://github.com/medici-finance/assay/issues/4227#issuecomment-6373814726
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 8 | `statusgen --root . --consumers --brief desktools-v2/71 --delivery f7ad98d584842aef0001ddf22ee83b9e56e4f91f --base 0191789433dcb3d43618ac0b43e35bdede3e8c84` | pass exit=0 | sha256:2243e380259d | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682dcb9a886b298076f722b4823ec1b (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --lint` | pass exit=0 | sha256:a621a2dd6336 | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682dcb9a886b298076f722b4823ec1b (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#4293 run=0263a46c7a3a3393d2502217faba8d4d625d321831a06a73e31d836f7bab46ac source=385cb29e5682dcb9a886b298076f722b4823ec1b brief=docs/streams/desktools-v2/brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md model=claude-opus-5-5 tier=strong
+
+Row 8 was re-run directly and gave the same output hash (`sha256:2243e380259d`). Summary line: `4 corroborated, 0 disproved, 2 unchecked, 0 brief(s) claiming nothing`. Both UNCHECKED entries (version-2 receipts, and the adopter-owned image and runtime) are declared out of scope, and the reviewer weighs them. **Row 8 is routing-only corroboration (F3; interim rule medici-finance/assay#4244).** All four CORROBORATED entries are `follow-up desktools-v2/71` self-routes, so they show only that each named surface routes to this brief. They do not show that the delivery changed it. The delivery diff `0191789433dc..f7ad98d58484` (37 files) does not touch `statusgen/verifieradmission.go` or `statusgen/verifysandbox.go`, even though the first entry names both. Row 8's pass therefore means only that its Expect (exit 0 with this summary) was met. It is not evidence that those two files implement anything. Their behaviour is covered by rows 1, 2 and 5, which pass in the container below.
+
+Row 9 was re-run directly: `LINT: PASS`, zero PROBLEM lines. Its output hash differs from the witness because the brief had gained this run's host table by then. The NOTICEs naming this brief are the pre-existing Verify-table authoring notices (`risk-files-crossread`, a `+dereference` verify-obligation, `gotest-run-vacuous` on rows 1–5). For rows 1–5, every named test function exists at source: `TestContainerNetnsRequiresAdmissionReceipt`, `TestContainerNetnsReceipt` and `TestCloseBracket` in `statusgen/containerbracket_test.go`, `TestSandbox*` (7 functions) in `statusgen/verifysandbox_test.go`, and `TestBracketedWitnessSurvivesLanding` in `tools/desk/cmd/deskevidence/bracketlanding_test.go`. The `-run` filters therefore match real tests. Rows 10 and 11 already assert `--- PASS:`.
+
+#### Container-netns lane (rule 45): bracketed witness (rows 1–7, 10, 11)
+
+Open: `statusgen verifyrun --open-bracket` exit 0, `opened 2026-10-24T17:06:53Z tree=sha256:98685d6717c495aecd71bc3b8cb782aa9cc7dc0ac1332b029f60eb2c3a1c1104 runner=assay-verifier-app[bot] (forge-identity)`. One container run (17:07:03Z–17:08:51Z) with `--rows 1,2,3,4,5,6,7,10,11`, no discarded attempt, exit 0, empty stderr; rows 8 and 9 printed `not selected`. Close: `--close-bracket` exit 0. `--bracket-digest` on the closed file: `bracket=L15 header=L1 witness=sha256:a507b1f846105713bdb631dd0e062465f17c413a21302304e3bd67cec3e1ba3e recorded=sha256:a507b1f846105713bdb631dd0e062465f17c413a21302304e3bd67cec3e1ba3e verdict=match span-lines=tree-digest:1,container-image:1,attestation:1`, exit 0. The closed witness follows byte for byte:
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `cd statusgen && go test -run '^TestContainerNetnsRequiresAdmissionReceipt$' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:2bf3dbcd46cd | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 2 | `cd statusgen && go test -run '^TestContainerNetnsReceipt$' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:051d05edfffb | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 3 | `cd statusgen && go test -run '^TestCloseBracket$' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:180d4d02e15e | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go test ./cmd/deskevidence/ -run '^TestBracketedWitnessSurvivesLanding$' -count=1 -v` | pass exit=0 sandbox=container-netns | sha256:b3b855c11332 | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd statusgen && go test -run '^TestSandbox' -count=1 -v .` | pass exit=0 sandbox=container-netns | sha256:fddd8c65a52c | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 6 | `grep -n -e 'Admission-Bracket' -e 'credit=credited' docs/brief-rules.md plugins/assay/skills/verify-desk/SKILL.md plugins/assay/skills/pr-review-desk/SKILL.md` | pass exit=0 sandbox=container-netns | sha256:0b4800eb3a49 | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 7 | `cd tools/desk && go run ./cmd/deskinstall --harness cursor --forge github --repo ../.. --bundle ../../plugins/assay --check` | pass exit=0 sandbox=container-netns | sha256:54208d57d196 | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 10 | `(cd statusgen && credit_out=$(mktemp) && trap 'rm -f "$credit_out"' 0 && go test -run '^TestBracketCredit$' -count=1 -v . > "$credit_out" 2>&1 && grep -q -- '--- PASS: TestBracketCredit ' "$credit_out")` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+| 11 | `(cd tools/desk && parity_out=$(mktemp) && trap 'rm -f "$parity_out"' 0 && go test ./internal/deskkit/ -run '^TestVerifierAttestationCreditParity$' -count=1 -v > "$parity_out" 2>&1 && grep -q -- '--- PASS: TestVerifierAttestationCreditParity ' "$parity_out")` | pass exit=0 sandbox=container-netns | sha256:e3b0c44298fc | 2026-10-24 | assay-verifier-app[bot] @ 385cb29e5682 (on-behalf-of human:ian) (forge-identity) |
+Tree-Digest: sha256:98685d6717c495aecd71bc3b8cb782aa9cc7dc0ac1332b029f60eb2c3a1c1104
+Container-Image: sha256:c2e32c7ff99f67951174e8ff835d928d8999b1bb2ecdc7c63d3775528178640e
+Verification-Attestation: medici-finance/assay#4293 run=0263a46c7a3a3393d2502217faba8d4d625d321831a06a73e31d836f7bab46ac source=385cb29e5682dcb9a886b298076f722b4823ec1b brief=docs/streams/desktools-v2/brief-71-credit-container-witness-rows-bracketed-by-host-verifier-admission.md model=claude-opus-5-5 tier=strong
+Admission-Bracket: run=0263a46c7a3a3393d2502217faba8d4d625d321831a06a73e31d836f7bab46ac source=385cb29e5682dcb9a886b298076f722b4823ec1b tree=sha256:98685d6717c495aecd71bc3b8cb782aa9cc7dc0ac1332b029f60eb2c3a1c1104 witness=sha256:a507b1f846105713bdb631dd0e062465f17c413a21302304e3bd67cec3e1ba3e opened=2026-10-24T17:06:53Z closed=2026-10-24T17:09:00Z before=receipt after=check-verifier
+
+`verdict=match` is not credit. Under rule 45, the nine container rows are credited only when `statusgen verifyrun --bracket-digest --witness <brief> --credit --source 385cb29e5682dcb9a886b298076f722b4823ec1b` returns `credit=credited` on the landed brief. Condition 1 blames the landing commit, so before landing the check can only return not-credited for uncommitted lines. The check must be re-run on the landed brief, and this verdict's credit for rows 1–7, 10 and 11 stands only on that result.
+
+Row 6 content was read in full, not only as an exit code: `docs/brief-rules.md`, the verify-desk skill and the pr-review-desk skill each name `Admission-Bracket` and require `credit=credited`.
+
+Runner-cell gate: every Runner cell in both tables reads `assay-verifier-app[bot] @ <sha> (on-behalf-of human:ian) (forge-identity)`, as verifyrun wrote it. No cell was hand-edited.
+
+#### Risk-bearing values (enumerated, ranked, derived; re-checked at 385cb29e)
+
+RISK-VALUE: onBehalfOfStampRe `\(on-behalf-of human:[^\s()]+\)` @ statusgen/containerbracket.go:948 — DERIVED from Task 1's case-sensitive exact stamp form; looser spellings stay inside the hashed cell (whitespace collapse `[ \t]+` @ :950 per Task 1).
+RISK-VALUE: sha256DigestRe `^sha256:[0-9a-f]{64}$` @ statusgen/containerbracket.go:61 — DERIVED: a 32-byte sha256 is 64 lowercase hex characters.
+RISK-VALUE: hex40Re `^[0-9a-f]{40}$` @ statusgen/containerbracket.go:63 and creditHexCommitRe `^([0-9a-f]{40}|[0-9a-f]{64})$` @ statusgen/containercredit.go:286 — DERIVED: SHA-1 and SHA-256 git object id lengths.
+RISK-VALUE: tree modes "100644"/"100755"/"120000" @ statusgen/containerbracket.go:333/346/340 — DERIVED: git's canonical blob, executable and symlink tree modes (Task 1 tree digest).
+RISK-VALUE: receipt version gate (2 refused naming the limit; anything but 1 refused) @ statusgen/containerbracket.go:205/208 and statusgen/containercredit.go:419/421 — DERIVED from Task 3.
+RISK-VALUE: `closed.Truncate(time.Second).After(opened)` @ statusgen/containerbracket.go:640 — DERIVED: "opened strictly before closed" at RFC 3339 second precision (Tasks 1 and 6).
+RISK-VALUE: deskread record timeout `90*time.Second` @ statusgen/containercredit.go:603 — NAMED, NOT DERIVED (reversible knob, ranked last).
+
+#### Accounting
+
+11 rows. Every row was observed meeting its Expect: rows 1–7, 10 and 11 in the bracketed container witness (`verdict=match`), and rows 8 and 9 on the host under the approved transition. For the go-test rows, the mutation obligations were exercised only as far as the named tests encode them. Row 8 is routing-only corroboration, as stated above. No obligation was observed failing.
+
+The closure audit refuses the assembled run, so this cannot be recorded as a PASS. With a strict PASS verdict marker in place, `statusgen verifyrun --check <brief>` exits 2: `refused — protected table: refusing: sha mismatch: rows of the latest PASS name 385cb29e5682dcb9a886b298076f722b4823ec1b and 385cb29e5682`. Without a verdict line it exits 2: `refused — protected table: acceptance transition: a fresh completed independent run is required`. The cause is in the tools, not in the rows. Under `--acceptance-record`, the host run writes the full 40-hex HEAD into its Runner cells (`statusgen/verifyrun.go:2430`, the transition branch that sets `executionTree` from `rev-parse HEAD`). The container rows take the receipt's 12-hex `runner_tree`. `flipLatestPass` (`statusgen/verifyflip.go:510`) requires one identical Runner cell across every row of a PASS run. So when a protected table mixes container rows with host rows, as desktools-v2/74 (`--rows`) prescribes, it can never close. Every other way to assemble it is also refused: the container cannot take `--acceptance-record` (host only), and a whole-table host run leaves rows 1–7, 10 and 11 could-not-run on darwin (#1800). No witness cell was edited to make the forms agree.
+
+**VERIFY: BLOCKED** — tool defect, not an obligation failure. All 11 rows were observed passing (the container bracket gives `verdict=match`; rows 8 and 9 pass on the host under the transition; row 8 is routing-only, medici-finance/assay#4244). The closure audit cannot close a protected table whose run mixes a container bracket (12-hex runner tree from the receipt) with a transition host run (40-hex HEAD). Next actor: a desk-tools worker, to make the two Runner-cell sha forms agree (blocker: #4299). Then re-dispatch. Status is not flipped (`gate: human`).
+
 
 ## Review
 
