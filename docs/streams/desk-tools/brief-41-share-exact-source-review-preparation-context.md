@@ -27,6 +27,8 @@ consumers:
   - "tools/desk/cmd/deskdispatch/: fixed-here"
   - "tools/desk/cmd/deskdispatch/references/review-prompt.md: fixed-here"
   - "plugins/assay/skills/pr-review-desk/SKILL.md: fixed-here"
+  - ".cursor/skills/pr-review-desk/SKILL.md: fixed-here"
+  - ".cursor/assay-managed.json: fixed-here"
 ---
 
 # Brief 41 — Share exact-source review preparation context
