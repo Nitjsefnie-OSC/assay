@@ -95,11 +95,11 @@ func recordingStatusgen(t *testing.T) (bin, log string) {
 }
 
 // regression: #4264
-// TestWitnessEntrypointRefusesWithoutAdmission: a key run with no receipt, no
-// image digest, a malformed digest, or a symlink on the way to the brief exits
-// 2 before statusgen is started, so no row runs. Portable: every refusal is
-// decided before the script reads its network namespace.
-func TestWitnessEntrypointRefusesWithoutAdmission(t *testing.T) {
+// TestWitnessKeyRefusals: a key run with no receipt, no image digest, a
+// malformed digest, or a symlink on the way to the brief exits 2 before
+// statusgen is started, so no row runs. Portable: every refusal is decided
+// before the script reads its network namespace.
+func TestWitnessKeyRefusals(t *testing.T) {
 	fx := newWitnessFixture(t)
 	bin, log := recordingStatusgen(t)
 	receipt := filepath.Join(fx.admit, "receipt.json")
@@ -165,12 +165,12 @@ func mustRename(t *testing.T, from, to string) {
 }
 
 // regression: #4264
-// TestWitnessEntrypointRunsAdmittedRow: the entrypoint, the built statusgen
-// and the kernel's namespaces together. A key run with the host's receipt and
-// the image digest executes the brief's row inside the empty namespace and
-// prints the witness, base64 on the last `vr-witness ` line, carrying the
-// image digest; with the receipt removed, the same run executes nothing.
-func TestWitnessEntrypointRunsAdmittedRow(t *testing.T) {
+// TestWitnessKeyAdmittedRun: the entrypoint, the built statusgen and the
+// kernel's namespaces together. A key run with the host's receipt and the
+// image digest executes the brief's row inside the empty namespace and prints
+// the witness, base64 on the last `vr-witness ` line, carrying the image
+// digest; with the receipt removed, the same run executes nothing.
+func TestWitnessKeyAdmittedRun(t *testing.T) {
 	requireSandbox(t)
 	fx := newWitnessFixture(t)
 	bin := t.TempDir()
