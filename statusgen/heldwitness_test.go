@@ -285,9 +285,12 @@ func witAttestV2(t *testing.T) string {
 // TestHeldScopeWitnessForms: each production form a clean verifyrun witness
 // takes covers, so none of them falsely holds: the fail-first witness
 // (witnessHeaderFailFirst with its Base cell) as an earlier or the latest
-// entry, a version-2 attestation under an earlier witness, and the default
-// unshare sandbox on a clean latest row. Each case is pinned by a
-// heldscope-mutations.json entry that drops the form and is caught here.
+// entry, a version-2 attestation under an earlier or the latest witness, and
+// the default unshare sandbox on a clean latest row (a container run writes
+// container-netns on every row, so unshare never sits in a container block).
+// Each form is pinned by a heldscope-mutations.json entry that drops it and
+// is caught here. A trailer in the latest entry does not affect alignment,
+// so the v2 latest cases are coverage of that position, not a mutant's kill.
 // regression: #4294
 func TestHeldScopeWitnessForms(t *testing.T) {
 	cnr := witRow3(stateCouldNotRun, -1, witCNR)
@@ -310,6 +313,9 @@ func TestHeldScopeWitnessForms(t *testing.T) {
 		{"v2 attestation in a container block",
 			witEntry("Run 1", witTable(4, sandboxContainerNetns, cnr, strings.Replace(witContainer, witAttest, v2, 1)), witBullet,
 				"VERIFY: BLOCKED") + witLatest(witPass), false},
+		{"v2 attestation, latest", witOldRow + witEntry("Run 2", witTable(4, sandboxUnshare, witPass, v2), "", "**VERIFY: PASS**"), false},
+		{"v2 container block, latest", witOldBullet + witEntry("Run 2", witTable(4, sandboxContainerNetns, witPass,
+			strings.Replace(witContainer, witAttest, v2, 1)), "", "**VERIFY: PASS**"), false},
 		// unshare is the default sandbox: a clean row carrying it covers.
 		{"unshare sandbox, latest", witOldRow + witEntry("Run 2", witTable(4, sandboxUnshare, witPass, witAttest), "", "**VERIFY: PASS**"), false},
 		{"unshare latest, (b) bullet", witOldBullet + witEntry("Run 2", witTable(4, sandboxUnshare, witPass, witAttest), "", "**VERIFY: PASS**"), false},
@@ -317,9 +323,10 @@ func TestHeldScopeWitnessForms(t *testing.T) {
 }
 
 // TestHeldScopeWitnessExact pins the cells read as neutral to the exact
-// text the tool writes: a digest or a Base cell with anything else in it, or
-// a Base cell outside a Base column, is a note and keeps the row from
-// covering. Each case is a hold that must keep refusing.
+// text the tool writes: a digest or a Base cell with anything else in it
+// (before, after or around it), or a Base cell outside a Base column, is a
+// note and keeps the row from covering, and a Base cell with an empty Result
+// beside it is no outcome. Each case is a hold that must keep refusing.
 // regression: #4294
 func TestHeldScopeWitnessExact(t *testing.T) {
 	ff := witTableFF(4, sandboxUnshare, witPass, witAttest)
@@ -331,7 +338,14 @@ func TestHeldScopeWitnessExact(t *testing.T) {
 		{"digest in upper case", latest(strings.ReplaceAll(witTable(4, "", witPass, witAttest),
 			"sha256:0123456789ab", "SHA256:0123456789AB")), true},
 		{"Base cell with a note", latest(strings.Replace(ff, base3+" |", base3+" (see log) |", 1)), true},
+		// Anchored at the start too: text before base= is a note.
+		{"Base cell with leading text", latest(strings.Replace(ff, "| "+base3+" |", "| see log; "+base3+" |", 1)), true},
+		// As the tool writes it, not after heldNorm: emphasis is a note.
+		{"Base cell in emphasis", latest(strings.Replace(ff, "| "+base3+" |", "| **"+base3+"** |", 1)), true},
 		{"Base cell in a Notes column", latest("| # | Command | Result | Notes |\n|---|---|---|---|\n" +
 			"| 3 | `tool check 3` | pass exit=0 | " + base3 + " |\n"), true},
+		// A Base cell is no outcome: a row whose Result is empty does not cover.
+		{"Base cell, empty Result", latest("| # | Command | Result | Base |\n|---|---|---|---|\n" +
+			"| 3 | `tool check 3` |  | " + base3 + " |\n"), true},
 	})
 }

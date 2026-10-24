@@ -828,6 +828,24 @@
       "file": "heldscope.go",
       "old": "heldDigestRe.MatchString(strings.TrimSpace(cell))",
       "new": "heldDigestRe.MatchString(heldNorm(cell))"
+    },
+    {
+      "name": "#4294 witness: a Base cell may carry text before base=",
+      "file": "heldscope.go",
+      "old": "heldBaseCellRe = regexp.MustCompile(`^base=",
+      "new": "heldBaseCellRe = regexp.MustCompile(`base="
+    },
+    {
+      "name": "#4294 witness: a Base cell counts as a clean outcome, not neutral",
+      "file": "heldscope.go",
+      "old": "lines[r][rg[0]:rg[1]]) {\n\t\t\t\t\tcontinue\n\t\t\t\t}\n\t\t\t\tst := heldOutcome(",
+      "new": "lines[r][rg[0]:rg[1]]) {\n\t\t\t\t\tran = true\n\t\t\t\t\tcontinue\n\t\t\t\t}\n\t\t\t\tst := heldOutcome("
+    },
+    {
+      "name": "#4294 witness: a Base cell is matched after heldNorm (emphasis ignored)",
+      "file": "heldscope.go",
+      "old": "heldBaseCellRe.MatchString(strings.TrimSpace(cell))",
+      "new": "heldBaseCellRe.MatchString(heldNorm(cell))"
     }
   ]
 }
