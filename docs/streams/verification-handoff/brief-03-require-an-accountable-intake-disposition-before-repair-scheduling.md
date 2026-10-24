@@ -122,7 +122,7 @@ source; both consumer modules import them. The original authoring-time statement
 above remain historical, rather than being rewritten as implementation evidence.
 
 Inspected owners: `scanloop.SelectQueue`, the production monitor composition in
-`scanloop/run.go`, `scanloop land` and `appendExitRecord`, the register export in
+`tools/desk/cmd/scanloop/run.go`, `scanloop land` and `appendExitRecord`, the register export in
 `statusgen/intakeexits.go`, `statusgen/scanissues.go`, placeholder eligibility in
 `statusgen/nextup.go`, and issueboard classification. `SelectQueue` currently uses
 only the monitor's current delta. An unresolved item with no new delta can vanish
