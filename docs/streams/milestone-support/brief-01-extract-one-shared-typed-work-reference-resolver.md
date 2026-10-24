@@ -201,7 +201,9 @@ RISK-VALUE: DERIVED — revision == 0 refused, uint64 bound @ statusgen/workref/
 RISK-VALUE: DERIVED — milestone requires revision != 0 @ statusgen/workref/workref.go:218 — milestone-v1: a milestone reference pins an exact positive contract version
 RISK-VALUE: DERIVED — prefixed slash alias with 3 segments refused @ statusgen/workref/workref.go:213 — the spec's draft slash forms are only stream/ID and the full cell:repo:stream/ID
 
-Gate. The brief is gate: human with risk sensitive-data yes, Its start decision #4219 was ruled option 1 (approve the bounded design) by the ratifying human on 2026-10-23, before implementation. That ruling approves the design and signs off no verification run. A model PASS does not flip a gate: human item, so the verified transition stays with the human gate (human:ian).
+Gate. The brief is gate: human with risk sensitive-data yes. Its start decision #4219 was ruled option 1 (approve the bounded design) by the ratifying human at 2026-10-23T20:23Z. That was after implementation began (#4224 opened at 14:40Z, and the pickup section above records no ruling at pickup) and before the delivery merged (#4224, merge 3de4d1295, at 20:50Z). That ruling approves the design and signs off no verification run. A model PASS does not flip a gate: human item, so the verified transition stays with the human gate (human:ian).
+
+Output column. Every row's Output cell is the SHA-256 of empty input (sha256:e3b0c44298fc…). This follows from the commands themselves, not a capture gap: each row redirects its go test output to a mktemp file and gates on grep -q, so it prints nothing to stdout. The cells therefore attest each row's exit code and its named-PASS grep guard, not test output.
 
 Disclosure (#4163). There were no discarded or failed attempts. One admitted bracket run produced the table above. The only other runs were the supplemental mutation probe and the hand plants. They ran on a copy outside the verifier home and receive no row credit.
 
