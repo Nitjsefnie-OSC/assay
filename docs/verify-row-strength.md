@@ -212,10 +212,15 @@ finding and is promoted.
 The identity is the rule, the Verify row number and the subject, with no count. Two consequences
 are accepted and stated here. First, a second instance of a subject-less rule on the same row, or
 of a brief-level rule with the same subject, adds nothing when the base already carries one, so the
-comparison is lenient by at most one instance. Second, the row number is the `#` cell: renumbering
+comparison is lenient by at most one instance. Second, the row number is the whole `#` cell, spaces
+and brackets included (`3 (DEREFERENCING)` is one row id): renumbering
 the rows of an edited brief makes carried debt read as new and reports it as a PROBLEM, which is
 stricter, not a bypass. An author who renumbers will see findings on rows they did not otherwise
-change. The dot-root side fix in `normalizeDiffProblem` also changes one outcome: with the default
+change. Third, a brief already closed (verified or done) at the merge-base is a historical record:
+without `--all` the lint reports its findings only as path-less `[historical-notices]` totals, and
+those totals are left as NOTICE like every other historical summary. An edit to such a record is
+therefore not compared finding by finding unless the run passes `--all`, which lists each finding
+and compares it. A brief closed on the branch itself is never historical and is always compared. The dot-root side fix in `normalizeDiffProblem` also changes one outcome: with the default
 `--root .`, a base-side PROBLEM whose line contains a dot used to miss its match and fire at full
 strength, and is now demoted to NOTICE as the `--diff-base` contract documents; no
 diff-introduced PROBLEM gets weaker.
