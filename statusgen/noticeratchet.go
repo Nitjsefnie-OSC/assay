@@ -134,6 +134,9 @@ var (
 
 	ratchetBacktickRe = regexp.MustCompile("`([^`]*)`")
 	ratchetDeclaredRe = regexp.MustCompile(`declares path ("(?:[^"\\]|\\.)*")`)
+
+	// fullObjectIDRe is a full SHA-1 or SHA-256 object id, as git merge-base prints.
+	fullObjectIDRe = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 )
 
 // lintFinding is the structured form of one actionable NOTICE. Equality of the
@@ -297,6 +300,12 @@ func evaluateNoticeRatchet(headNotices, baseNotices []string, headRoot, baseRoot
 // relative to root. A rename carries its old path so debt that merely moved is
 // not re-counted as new. Untracked brief files count as added.
 func productionChangedBriefs(root, baseSHA string) (map[string]string, error) {
+	// baseSHA is the resolved merge-base: a full object id. Anything else (an
+	// option-shaped value above all) is refused before git parses it, so it can
+	// never turn into a git flag and an empty, falsely clean change set.
+	if !fullObjectIDRe.MatchString(baseSHA) {
+		return nil, fmt.Errorf("base %q is not a full object id", baseSHA)
+	}
 	out, err := exec.Command("git", "-C", root, "diff", "--name-status", "-M", "-z", "--relative", "--no-color", baseSHA, "--", ".").Output()
 	if err != nil {
 		return nil, fmt.Errorf("git diff --name-status %s: %w", short(baseSHA), err)

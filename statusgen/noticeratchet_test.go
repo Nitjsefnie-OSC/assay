@@ -447,6 +447,50 @@ func TestNoticeRatchet(t *testing.T) {
 			t.Fatalf("want 1 classified finding and 1 visible could-not-check, got %d/%d: %v", fired, unknown, notices)
 		}
 	})
+
+	t.Run("closed_at_base_records_stay_historical", func(t *testing.T) {
+		// statusgen/28 interaction, driven through the real --lint: the inner
+		// lint gets --all only when the caller passed it, so a brief already
+		// closed at the merge-base reports its findings as path-less
+		// [historical-notices] totals. Those totals are never ratchet findings
+		// (closed records are not rewritten); an edited active brief is still
+		// gated, and --all restores per-finding comparison on the closed one.
+		root := noticeFixtureRoot(t)
+		withBase(t, true, "demo/02", "demo/03")
+		closed := "docs/streams/demo/brief-02-predone.md"
+		active := "docs/streams/demo/brief-01-active.md"
+		lintNotices := func(all bool) []string {
+			resetNoticeReportState(t)
+			lintDetailAll = all
+			_, _, stderr := lintFixture(t, root)
+			var out []string
+			for _, l := range strings.Split(stderr, "\n") {
+				if strings.HasPrefix(l, "NOTICE:") {
+					out = append(out, l)
+				}
+			}
+			return out
+		}
+		bounded := lintNotices(false)
+		var summaries int
+		for _, l := range bounded {
+			if strings.Contains(l, noticeSummaryTag) {
+				summaries++
+			}
+		}
+		if summaries == 0 {
+			t.Fatalf("fixture produced no [historical-notices] totals: %v", bounded)
+		}
+		if rr := evaluateNoticeRatchet(bounded, nil, root, root, map[string]string{closed: closed}); len(rr.introduced) != 0 {
+			t.Fatalf("a historical total on a record closed at the base must stay a NOTICE: %v", rr.introduced)
+		}
+		if rr := evaluateNoticeRatchet(bounded, nil, root, root, map[string]string{active: active}); len(rr.introduced) == 0 {
+			t.Fatal("an edited active brief's findings must still be compared and promoted")
+		}
+		if rr := evaluateNoticeRatchet(lintNotices(true), nil, root, root, map[string]string{closed: closed}); len(rr.introduced) == 0 {
+			t.Fatal("with --all the closed record's findings are listed one by one and must be compared")
+		}
+	})
 }
 
 // TestChangedBriefsGit drives the production changed-brief listing against a
@@ -503,5 +547,15 @@ func TestChangedBriefsGit(t *testing.T) {
 	}
 	if _, err := productionChangedBriefs(root, "no-such-ref"); err == nil {
 		t.Fatal("an unresolvable base must be an error, never an empty (clean) set")
+	}
+	// An option-shaped base is refused before git sees it: `--output=<f>` would
+	// otherwise make git write the diff to a file and print nothing, which reads
+	// as a clean, empty change set.
+	sink := filepath.Join(t.TempDir(), "diff.out")
+	if got, err := productionChangedBriefs(root, "--output="+sink); err == nil {
+		t.Fatalf("an option-shaped base must be an error, never a change set: %v", got)
+	}
+	if _, err := os.Stat(sink); err == nil {
+		t.Fatal("an option-shaped base reached git: it wrote the diff to a file")
 	}
 }
