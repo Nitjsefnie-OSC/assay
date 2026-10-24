@@ -239,7 +239,9 @@ tables in the same run before its verdict line. Before that verdict, `statusgen 
 narrows a run, never an audit: `--check` covers the whole table, the last witness for a row
 wins, and the credit rule above is unchanged. A bad selector (an unknown, empty, repeated or
 shared ID, a table with no `#` column, or `--rows` with an audit or bracket step) is refused
-before any row runs.
+before any row runs. Under `--acceptance-record`, witness the protected run set in ONE run
+that covers it whole: its `Verification-Table:` descriptor must appear exactly once, so split
+`--rows` runs under one transition fail closed and never close.
 
 On failed pre-work stamping, no verifier prompt is emitted and the claim is released.
 Keep the retained worktree for recovery; return its real dispatch receipt to the coordinator

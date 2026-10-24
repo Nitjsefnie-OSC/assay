@@ -1253,13 +1253,29 @@ type verifyRow struct {
 	// above keeps only the code span, which would drop a `live` written in the
 	// prose around it.
 	RiskText string
-	// Numbered is set by briefVerifyRows when the row carried its own `#` cell;
-	// false means ID is the ordinal fallback, which --rows refuses to select
-	// by (desktools-v2/74).
-	Numbered bool
 }
 
+// verifyRow carries no record of whether its ID came from a `#` cell: the
+// protected-closure and acceptance-transition audits compare row slices with
+// reflect.DeepEqual, and a table that adds or drops only a `#` column whose
+// values equal the ordinals must still compare equal. --rows reads that bit
+// from numberedVerifyRows' parallel slice instead (desktools-v2/74).
 func briefVerifyRows(verifySection string) []verifyRow {
+	return verifyRowsOf(verifySection, nil)
+}
+
+// numberedVerifyRows is briefVerifyRows plus, index for index, whether each
+// row carried its own `#` cell; false means its ID is the ordinal fallback,
+// which --rows refuses to select by.
+func numberedVerifyRows(verifySection string) ([]verifyRow, []bool) {
+	var numbered []bool
+	rows := verifyRowsOf(verifySection, &numbered)
+	return rows, numbered
+}
+
+// verifyRowsOf parses the Verify rows; when numbered is non-nil it also
+// appends each row's `#`-cell bit to it.
+func verifyRowsOf(verifySection string, numbered *[]bool) []verifyRow {
 	var rows []verifyRow
 	ordinal := 0
 	verifyRowTable(verifySection, func(r verifyRowCells) {
@@ -1273,7 +1289,7 @@ func briefVerifyRows(verifySection string) []verifyRow {
 		if v != "" {
 			id = v
 		}
-		row := verifyRow{ID: id, Command: cmd, CommandCell: strings.TrimSpace(r.Command), Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect), Numbered: v != ""}
+		row := verifyRow{ID: id, Command: cmd, CommandCell: strings.TrimSpace(r.Command), Expect: r.Expect, Class: r.class(), Classed: r.Classed, Shell: r.shell(), Obligations: r.obligations(), RiskText: strings.TrimSpace(r.Command) + " " + strings.TrimSpace(r.Expect)}
 		if first, why := proseLedCommandWhy(r.Command); why != "" {
 			what := "first span "
 			if why == shellCommentMarkedWhy || why == shellNoOpMarkedWhy {
@@ -1282,6 +1298,9 @@ func briefVerifyRows(verifySection string) []verifyRow {
 			row.ProseLed = what + strings.ReplaceAll(first, "|", "\\|") + " is " + why
 		}
 		rows = append(rows, row)
+		if numbered != nil {
+			*numbered = append(*numbered, v != "")
+		}
 	})
 	return rows
 }
@@ -1312,14 +1331,14 @@ func parseRowSelector(value string) ([]string, map[string]bool, string) {
 
 // selectVerifyRows keeps, in table order, the rows the selector names, in one
 // pass over rows with set lookup. It refuses a row set whose rows are not all
-// keyed by a `#` cell (briefVerifyRows' ordinal fallback is not a selector),
-// an ID the rows do not carry, and an ID two rows share. scope names the row
-// set in the refusal.
-func selectVerifyRows(rows []verifyRow, ids []string, set map[string]bool, scope string) ([]verifyRow, string) {
+// keyed by a `#` cell (numbered[i], from numberedVerifyRows: the ordinal
+// fallback is not a selector), an ID the rows do not carry, and an ID two rows
+// share. scope names the row set in the refusal.
+func selectVerifyRows(rows []verifyRow, numbered []bool, ids []string, set map[string]bool, scope string) ([]verifyRow, string) {
 	count := make(map[string]int, len(ids))
 	picked := make([]verifyRow, 0, len(ids))
-	for _, r := range rows {
-		if !r.Numbered {
+	for i, r := range rows {
+		if !numbered[i] {
 			return nil, fmt.Sprintf("the Verify table has no `#` column (row %s has no `#` cell), and an ordinal is not a selector", r.ID)
 		}
 		if set[r.ID] {
@@ -2332,16 +2351,20 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			return verifyrunExitCouldNot
 		}
 	}
-	rows := briefVerifyRows(verify)
+	// numbered runs index for index with rows: whether each row carried its own
+	// `#` cell, which --rows requires of every row in the run set.
+	rows, numbered := numberedVerifyRows(verify)
 	if transitionDescriptor != "" {
-		rows = briefVerifyRows(protectedExecution.Verify)
+		current, currentNumbered := rows, numbered
+		rows, numbered = numberedVerifyRows(protectedExecution.Verify)
 		added := map[string]bool{}
 		for _, a := range protectedExecution.Added {
 			added[a.ID] = true
 		}
-		for _, r := range briefVerifyRows(verify) {
+		for i, r := range current {
 			if added[r.ID] {
 				rows = append(rows, r)
+				numbered = append(numbered, currentNumbered[i])
 			}
 		}
 	}
@@ -2359,7 +2382,7 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 			scope = "the protected run set (original plus author-added rows)"
 		}
 		var why string
-		if rows, why = selectVerifyRows(rows, selectedIDs, selectedSet, scope); why != "" {
+		if rows, why = selectVerifyRows(rows, numbered, selectedIDs, selectedSet, scope); why != "" {
 			fmt.Fprintf(stderr, "statusgen verifyrun: refusing --rows %q: %s. No row ran\n", *rowsFlag, why)
 			return verifyrunExitUsageError
 		}
@@ -2385,7 +2408,13 @@ func runVerifyrun(args []string, stdout, stderr *os.File) int {
 		}
 		riskyIDs = failFirstRiskyIDs(risk, rows)
 		if len(riskyIDs) == 0 {
-			fmt.Fprintln(stdout, "--fail-first: no risk-bearing row in this table; every row is recorded not-selected at base")
+			// Under --rows the tagging read only the selected rows: an unselected
+			// risk-bearing row is out of this run, not absent from the table.
+			where := "in this table"
+			if rowsSet {
+				where = "among the selected rows"
+			}
+			fmt.Fprintf(stdout, "--fail-first: no risk-bearing row %s; every row is recorded not-selected at base\n", where)
 		}
 		var ferr error
 		ff, ferr = runFailFirstBase(plan, *sandbox, root, base, rows, riskyIDs, *timeout, *ci)

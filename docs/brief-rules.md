@@ -797,6 +797,11 @@ passing run — which is why they are lint rules and not review vigilance.
       list or element, an ID named twice or shared by two rows, a table with
       no `#` column, and with `--check`, `--open-bracket`, `--close-bracket`
       or `--bracket-digest`.
+      Under `--acceptance-record` the protected run set is witnessed by ONE
+      run that covers it whole (no `--rows`, or one naming every protected
+      row): its `Verification-Table:` descriptor must appear exactly once in
+      the run closure reads, so split `--rows` runs under one transition
+      fail closed and never close.
     - `check` — deterministic but ENV-BOUND (a live PEM, a real queue, a tool on
       PATH). A runner executes it; CI skips an explicitly-classed one (its verdict
       rests on the verifier's authorship+signature, not on a CI re-run).

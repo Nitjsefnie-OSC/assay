@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -98,17 +99,39 @@ func evidenceOf(t *testing.T, path string) string {
 	return ev
 }
 
-// regression: #4247
-// TestVerifyrunRowsSelectsOnlyNamed: `--rows 2,4` runs and records rows 2 and 4
-// only, under the standard header so they key by their # IDs; --check then
-// credits only those rows; stdout names the others not selected; a run without
-// --rows writes the table it wrote before the flag existed; --in-container
-// carries the selector to the inner run.
-func TestVerifyrunRowsSelectsOnlyNamed(t *testing.T) {
+// TestVerifyrunRowsUnrestrictedGolden: without --rows the run writes the table
+// it wrote before --rows existed: a golden built from the witness format, byte
+// for byte. It uses no --rows step, so it runs unchanged on the tree before the
+// flag existed.
+func TestVerifyrunRowsUnrestrictedGolden(t *testing.T) {
 	pinClock(t)
 	f := newRowsFixture(t, "")
 	before := getFile(t, f.brief)
 	tree := treeSHA(f.root)
+	if res, out := captureVerifyrunOut(t, f.args()); res.code != verifyrunExitPass || strings.Contains(out, "not selected") {
+		t.Fatalf("unrestricted run: exit %d output %q", res.code, out)
+	}
+	if got := f.touched(t); strings.Join(got, ",") != "1,2,3,4" {
+		t.Fatalf("an unrestricted run ran rows %v, want all four", got)
+	}
+	golden := witnessHeader
+	for _, id := range []string{"1", "2", "3", "4"} {
+		golden += fmt.Sprintf("\n| %s | `touch %s` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-22 | human:fixture @ %s (git-config) |", id, f.marker(id), tree)
+	}
+	if want := strings.Replace(before, "## Evidence\n", "## Evidence\n\n"+golden+"\n", 1); getFile(t, f.brief) != want {
+		t.Fatalf("an unrestricted run is not byte-identical to the pre-change output:\n--- got\n%s\n--- want\n%s", getFile(t, f.brief), want)
+	}
+}
+
+// regression: #4247
+// TestVerifyrunRowsSelectsOnlyNamed: `--rows 2,4` runs and records rows 2 and 4
+// only, under the standard header so they key by their # IDs; --check then
+// credits only those rows; stdout names the others not selected;
+// --in-container carries the selector to the inner run. The unrestricted
+// golden is TestVerifyrunRowsUnrestrictedGolden.
+func TestVerifyrunRowsSelectsOnlyNamed(t *testing.T) {
+	pinClock(t)
+	f := newRowsFixture(t, "")
 	res, out := captureVerifyrunOut(t, f.args("--rows", "2,4"))
 	if res.code != verifyrunExitPass {
 		t.Fatalf("--rows 2,4: exit %d output %q", res.code, out)
@@ -154,24 +177,6 @@ func TestVerifyrunRowsSelectsOnlyNamed(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("--check does not report %q:\n%s", want, out)
 		}
-	}
-
-	// Without --rows the run writes the table it wrote before --rows existed:
-	// a golden built from the witness format, byte for byte.
-	putFile(t, f.brief, before)
-	resetReadMemo()
-	if res, out := captureVerifyrunOut(t, f.args()); res.code != verifyrunExitPass || strings.Contains(out, "not selected") {
-		t.Fatalf("unrestricted run: exit %d output %q", res.code, out)
-	}
-	if got := f.touched(t); strings.Join(got, ",") != "1,2,3,4" {
-		t.Fatalf("an unrestricted run ran rows %v, want all four", got)
-	}
-	golden := witnessHeader
-	for _, id := range []string{"1", "2", "3", "4"} {
-		golden += fmt.Sprintf("\n| %s | `touch %s` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-22 | human:fixture @ %s (git-config) |", id, f.marker(id), tree)
-	}
-	if want := strings.Replace(before, "## Evidence\n", "## Evidence\n\n"+golden+"\n", 1); getFile(t, f.brief) != want {
-		t.Fatalf("an unrestricted run is not byte-identical to the pre-change output:\n--- got\n%s\n--- want\n%s", getFile(t, f.brief), want)
 	}
 
 	// --in-container: the builder and the docker argv carry --rows 2,4.
@@ -727,5 +732,128 @@ func TestVerifyrunRowsAcceptanceTransition(t *testing.T) {
 	}
 	if !strings.Contains(out, "row 1: not selected") {
 		t.Fatalf("stdout does not name row 1 not selected:\n%s", out)
+	}
+}
+
+// regression: #4247
+// TestVerifyrunRowsTransitionSplitRunsDoNotClose: under an acceptance
+// transition the protected run set is witnessed by ONE run, because its
+// Verification-Table descriptor must appear exactly once in the run closure
+// reads. Splitting it into two --rows runs is not a supported shape, and it
+// fails closed: the second run is refused while the first run's Evidence is
+// uncommitted, and once that is committed, the two descriptors' witnesses do
+// not close.
+func TestVerifyrunRowsTransitionSplitRunsDoNotClose(t *testing.T) {
+	f := transitionFixtureAt(t)
+	vfGit(t, f.root, vfMailVerifier, "config", "user.name", vfRunner)
+	vfGit(t, f.root, vfMailVerifier, "config", "user.email", vfMailVerifier)
+	descriptor := filepath.Join(t.TempDir(), "transition.txt")
+	if err := os.WriteFile(descriptor, []byte(f.descriptor), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := func(extra ...string) []string {
+		return append([]string{"--brief", f.path, "--root", f.root, "--acceptance-record", descriptor, "--acceptance-forge"}, extra...)
+	}
+	resetReadMemo()
+	if res, out := captureVerifyrunOut(t, args("--rows", "2,3")); res.code != verifyrunExitPass {
+		t.Fatalf("first --rows 2,3 run: exit %d output %q", res.code, out)
+	}
+	resetReadMemo()
+	if res, out := captureVerifyrunOut(t, args("--rows", "1")); res.code == verifyrunExitPass {
+		t.Fatalf("a second run over the uncommitted first run passed:\n%s", out)
+	}
+	vfCommit(t, f.root, vfMailVerifier)
+	resetReadMemo()
+	if res, out := captureVerifyrunOut(t, args("--rows", "1")); res.code != verifyrunExitPass {
+		t.Fatalf("second --rows 1 run: exit %d output %q", res.code, out)
+	}
+	if n := strings.Count(evidenceOf(t, f.path), f.descriptor); n != 2 {
+		t.Fatalf("the split runs wrote %d descriptors, want 2", n)
+	}
+	vfAppend(t, f.root, "\n\n"+vfPass)
+	vfCommit(t, f.root, vfMailVerifier)
+	resetReadMemo()
+	code, out, diag := captureVerifyclosure(t, []string{"--root", f.root, "--brief", "vf/01", "--acceptance-forge"})
+	if code == 0 || !strings.Contains(out+diag, "NOT accepted — protected table:") {
+		t.Fatalf("split protected runs closed: %d %s %s", code, out, diag)
+	}
+}
+
+// regression: #4247
+// TestVerifyrunRowsFailFirstScope: under --rows the fail-first risk tagging
+// reads only the selected rows, so with no risk-bearing row among them the
+// notice names the selection, not the table (row 1 carries the risk here).
+func TestVerifyrunRowsFailFirstScope(t *testing.T) {
+	f := newRowsFixture(t, "| # | Command | Expect |\n|---|---|---|\n| 1 | `true` | exit 0 (live) |\n| 2 | `true` | exit 0 |\n")
+	base := mustGitOut(t, f.root, "rev-parse", "HEAD")
+	// Selecting the risk-bearing row 1 prints no notice (its exit is the
+	// fail-first verdict: green at base is non-discriminating).
+	for _, c := range []struct {
+		rows, want, not string
+		code            int
+	}{
+		{"2", "--fail-first: no risk-bearing row among the selected rows;", "in this table", verifyrunExitPass},
+		{"1", "row 1: non-discriminating", "no risk-bearing row", verifyrunExitFail},
+	} {
+		resetReadMemo()
+		res, out := captureVerifyrunOut(t, f.args("--rows", c.rows, "--fail-first", "--base", base, "--dry-run"))
+		if res.code != c.code || !strings.Contains(out, c.want) || strings.Contains(out, c.not) {
+			t.Fatalf("--rows %s --fail-first: exit %d output %q", c.rows, res.code, out)
+		}
+	}
+}
+
+// dropHashColumn removes the `#` column from the Verify table of a brief body
+// (or of a bare Verify table), leaving the rows to their ordinal IDs.
+func dropHashColumn(body string) string {
+	verify, rest := body, ""
+	if i := strings.Index(body, "## Evidence"); i >= 0 {
+		verify, rest = body[:i], body[i:]
+	}
+	verify = regexp.MustCompile(`(?m)^\| (#|\d+) \|`).ReplaceAllString(verify, "|")
+	return regexp.MustCompile(`(?m)^\|---\|`).ReplaceAllString(verify, "|") + rest
+}
+
+// regression: #4247
+// TestVerifyRowsHashColumnNeutral: the protected-closure and acceptance-
+// transition audits compare row slices with reflect.DeepEqual, so a table that
+// adds or drops only a `#` column whose values equal the ordinals must parse
+// to equal rows; --rows reads the `#`-cell bit from numberedVerifyRows'
+// parallel slice, never from verifyRow.
+func TestVerifyRowsHashColumnNeutral(t *testing.T) {
+	classed := strings.Replace(strings.Replace(strings.Replace(vfVerify, "| Expect |", "| Expect | Class |", 1), "|--------|", "|--------|---|", 1), "| exit 1 |", "| exit 1 | check |", 1)
+	classed = strings.Replace(classed, "| exit 0 |", "| exit 0 | check |", 1)
+	for _, c := range []struct{ name, table string }{{"plain", vfVerify}, {"class", classed}} {
+		t.Run(c.name, func(t *testing.T) {
+			bare := dropHashColumn(c.table)
+			if bare == c.table || strings.Contains(bare, "| # |") {
+				t.Fatalf("the fixture lost no `#` column:\n%s", bare)
+			}
+			withHash, bareRows := briefVerifyRows(c.table), briefVerifyRows(bare)
+			if len(withHash) != 2 || !reflect.DeepEqual(withHash, bareRows) {
+				t.Fatalf("a `#`-only difference compares unequal:\n%+v\n%+v", withHash, bareRows)
+			}
+			_, n1 := numberedVerifyRows(c.table)
+			_, n2 := numberedVerifyRows(bare)
+			if !reflect.DeepEqual(n1, []bool{true, true}) || !reflect.DeepEqual(n2, []bool{false, false}) {
+				t.Fatalf("numbered bits %v / %v", n1, n2)
+			}
+		})
+	}
+	// End to end: a delivery or an amendment that drops only the `#` column
+	// still passes the acceptance transition, its execution and closure.
+	for _, stage := range []string{"delivery", "amendment"} {
+		t.Run(stage, func(t *testing.T) {
+			f := contextFixture(t, nil, func(s, body string) string {
+				if s == stage {
+					return dropHashColumn(body)
+				}
+				return body
+			})
+			if strings.Contains(extractSectionByPrefix(f.amended, "Verify"), "| # |") {
+				t.Fatalf("the amended table kept its `#` column:\n%s", f.amended)
+			}
+			runTransitionExecution(t, f)
+		})
 	}
 }
