@@ -3,7 +3,7 @@
   "control": {
     "name": "discard successful wrapped positive observations",
     "file": "internal/deskkit/issuestates.go",
-    "old": "return batch.PositiveIssueStates(repo, numbers)",
+    "old": "return batch.positiveIssueStates(repo, numbers)",
     "new": "_ = batch; return nil, nil"
   },
   "mutations": [

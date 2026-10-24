@@ -19,7 +19,7 @@ type issueStateGetter interface {
 }
 
 type positiveIssueStateReader interface {
-	PositiveIssueStates(ForgeRepo, []int) ([]PositiveIssueState, error)
+	positiveIssueStates(ForgeRepo, []int) ([]PositiveIssueState, error)
 }
 
 // ReadPositiveIssueStates retains the original wrapped reader. Only an explicit
@@ -34,7 +34,7 @@ func ReadPositiveIssueStates(f issueStateGetter, repo ForgeRepo, numbers []int) 
 		seen[n] = true
 	}
 	if batch, ok := f.(positiveIssueStateReader); ok && len(numbers) > 1 && positiveIssueStateBatchAllowed(f) {
-		return batch.PositiveIssueStates(repo, numbers)
+		return batch.positiveIssueStates(repo, numbers)
 	}
 	out := make([]PositiveIssueState, 0, len(numbers))
 	for _, n := range numbers {
@@ -64,11 +64,11 @@ func positiveIssueStateBatchAllowed(f issueStateGetter) bool {
 
 // The wrappers delegate this fixed read explicitly. No backend unwrapping or
 // write API is exposed; unknown inner wrappers keep their original serial path.
-func (o *outboundForge) PositiveIssueStates(repo ForgeRepo, numbers []int) ([]PositiveIssueState, error) {
+func (o *outboundForge) positiveIssueStates(repo ForgeRepo, numbers []int) ([]PositiveIssueState, error) {
 	return ReadPositiveIssueStates(o.Forge, repo, numbers)
 }
 
-func (r *readOnlyForge) PositiveIssueStates(repo ForgeRepo, numbers []int) ([]PositiveIssueState, error) {
+func (r *readOnlyForge) positiveIssueStates(repo ForgeRepo, numbers []int) ([]PositiveIssueState, error) {
 	return ReadPositiveIssueStates(r.inner, repo, numbers)
 }
 
@@ -97,7 +97,7 @@ func (a githubIssueStateAccess) IssueStateBatch(_ context.Context, slug string, 
 	return raw, nil
 }
 
-func (g *GitHubForge) PositiveIssueStates(repo ForgeRepo, numbers []int) ([]PositiveIssueState, error) {
+func (g *GitHubForge) positiveIssueStates(repo ForgeRepo, numbers []int) ([]PositiveIssueState, error) {
 	out, err := ghissues.PositiveIssueStates(context.Background(), githubIssueStateAccess{g}, repo.Slug(), numbers)
 	if err != nil {
 		return nil, Unverifiable("cannot read positive issue states for "+repo.Slug(), err)
