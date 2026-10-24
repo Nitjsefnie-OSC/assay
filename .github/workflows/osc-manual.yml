@@ -1,0 +1,129 @@
+name: assay fork CI
+
+# Fork-only exact-ref validation. This file exists only on the fork; it is
+# intentionally not sent upstream.
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Git branch, tag, or 40-character commit SHA
+        required: true
+        type: string
+      base_sha:
+        description: Base SHA for the changelog fragment check
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assay-osc-manual-${{ inputs.target_ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.27.2"
+
+jobs:
+  build-and-suite:
+    name: build + deskwt filtered suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout candidate ref
+        uses: actions/checkout@v5
+        with:
+          repository: Nitjsefnie-OSC/assay
+          ref: ${{ inputs.target_ref }}
+          persist-credentials: false
+
+      - name: Report checked-out SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+
+      - name: Build the desk module
+        working-directory: tools/desk
+        run: go build ./...
+
+      - name: deskwt filtered suite (the spec's own test command)
+        working-directory: tools/desk
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          go test ./cmd/deskwt/ -count=1 -timeout 600s -run 'TestPrune|TestReap|TestDeadSession|TestMergeGateBeforeStatus|TestConcurrentPrunesCostOne|TestRemove|TestStaleLock|TestReclaim|TestUnattributedLock|TestDirtyHeld|TestUnmergedHeld|TestAdmission|TestAddLockSession|TestActivityGate|TestWorktreeAdminDirs'
+
+  mutation-shards:
+    name: muhar ${{ matrix.shard }} of 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    needs: build-and-suite
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["0/3", "1/3", "2/3"]
+    steps:
+      - name: Checkout candidate ref
+        uses: actions/checkout@v5
+        with:
+          repository: Nitjsefnie-OSC/assay
+          ref: ${{ inputs.target_ref }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+
+      - name: Run the deskwt prune mutation spec (this shard)
+        working-directory: tools/desk
+        run: |
+          set -euo pipefail
+          report="$(go run ./cmd/muhar -j 0 -spec cmd/deskwt/prune-mutations.json -shard ${{ matrix.shard }})"
+          echo "$report"
+          grep -qE 'Totals: [0-9]+ caught, 0 NOT CAUGHT, 0 could-not-mutate' <<<"$report"
+
+  changelog-fragment-mirror:
+    name: changelog fragment (fork mirror of changelog-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate ref (full history for the base diff)
+        uses: actions/checkout@v5
+        with:
+          repository: Nitjsefnie-OSC/assay
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: A fragment must be added and carry a bullet
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
+          fi
+          git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
+          added="$(git diff --name-only --diff-filter=A "$BASE"..HEAD -- changelog/)"
+          echo "added fragments: $added"
+          if [ -z "$added" ] && ! git diff --name-only "$BASE"..HEAD -- CHANGELOG.md | grep -q .; then
+            echo "no changelog fragment added and CHANGELOG.md untouched - changelog-check would refuse"
+            exit 1
+          fi
+          for f in $added; do
+            if ! grep -q '^-' "$f"; then
+              echo "$f carries no bullet line - changelog-check would refuse"
+              exit 1
+            fi
+          done
