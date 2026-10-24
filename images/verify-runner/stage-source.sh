@@ -32,22 +32,15 @@ SHA=
 case $# in
   1) [ "$1" = --probe ] || usage; MODE=probe ;;
   2)
-    case $1 in
-      --write-helper) MODE=write-helper ;;
-      --repo=*)
-        case $2 in --sha=*) ;; *) usage ;; esac
-        MODE=run; REPO=${1#--repo=}; SHA=${2#--sha=}
-        ;;
-      *) usage ;;
-    esac
+    case $1 in --repo=*) ;; *) usage ;; esac
+    case $2 in --sha=*) ;; *) usage ;; esac
+    MODE=run; REPO=${1#--repo=}; SHA=${2#--sha=}
+    [[ $REPO =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || usage
+    case /$REPO/ in */./*|*/../*) usage ;; esac
+    [[ $SHA =~ ^[0-9a-f]{40}$ ]] || usage
     ;;
   *) usage ;;
 esac
-if [ "$MODE" = run ]; then
-  [[ $REPO =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || usage
-  case /$REPO/ in */./*|*/../*) usage ;; esac
-  [[ $SHA =~ ^[0-9a-f]{40}$ ]] || usage
-fi
 
 # The three VR_* names are test hooks. The Job template gives this container no env at all, so
 # in a Job these are the defaults.
@@ -95,22 +88,15 @@ HELPER
   chmod 755 "$dir/helper"
 }
 
-case $MODE in
-  write-helper)
-    # a test hook only: the Job's arguments are --repo=/--sha= or --probe, so no Job reaches it
-    write_helper "$2" || die "could not write the helper"
-    exit 0
-    ;;
-  probe)
-    # the probe variant: the directories the witness probe's sub-path mounts need, and one line
-    mkdir -p "$CLONE" "$CACHE/mod" 2>/dev/null
-    seccomp=$(awk '$1 == "Seccomp:" { print $2; exit }' /proc/self/status 2>/dev/null)
-    apparmor=
-    if read -r first _ < /proc/self/attr/current 2>/dev/null; then apparmor=$first; fi
-    printf 'stage seccomp=%s apparmor=%s\n' "${seccomp:-unknown}" "${apparmor:-unknown}"
-    exit 0
-    ;;
-esac
+if [ "$MODE" = probe ]; then
+  # the probe variant: the directories the witness probe's sub-path mounts need, and one line
+  mkdir -p "$CLONE" "$CACHE/mod" 2>/dev/null
+  seccomp=$(awk '$1 == "Seccomp:" { print $2; exit }' /proc/self/status 2>/dev/null)
+  apparmor=
+  if read -r first _ < /proc/self/attr/current 2>/dev/null; then apparmor=$first; fi
+  printf 'stage seccomp=%s apparmor=%s\n' "${seccomp:-unknown}" "${apparmor:-unknown}"
+  exit 0
+fi
 
 # --- custody: a missing, malformed or expired credential fails before any clone ---------------
 for f in token issued-at expires-at; do
@@ -129,12 +115,19 @@ NOW=$(date +%s)
 TOK=
 
 # --- a clean Git world: no system or global config, no prompt, no askpass, no hooks -----------
+# Every inherited GIT_* variable goes (trace and curl-verbose output, GIT_SSL_NO_VERIFY,
+# GIT_DIR, askpass and config injection alike), with the proxy variables and the startup files
+# a child bash or sh would read (the helper is a bash script git starts).
 rm -rf "$WORK" "$HOMEDIR" "$HELPERDIR"
 mkdir -p "$HOMEDIR" || die "no scratch space"
+while IFS= read -r v; do
+  case $v in GIT_*) unset "$v" ;; esac
+done < <(compgen -e)
+unset SSH_ASKPASS BASH_ENV ENV \
+  http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
 export HOME=$HOMEDIR
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 export GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never
-unset GIT_ASKPASS SSH_ASKPASS GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_SSH GIT_SSH_COMMAND
 write_helper "$HELPERDIR" || die "could not write the helper"
 
 git init -q "$WORK" || die "git init failed"

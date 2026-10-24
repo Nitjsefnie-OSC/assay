@@ -66,8 +66,14 @@ done
 for v in GOPRIVATE GONOPROXY GONOSUMDB GONOSUMCHECK GOINSECURE GOFLAGS GIT_ASKPASS; do
   [ -z "${!v:-}" ] || die "$v must be empty here"
 done
+# a go.work in the clone, or one named by GOWORK, would bring in its own replacements: off
+export GOWORK=off
+while IFS= read -r v; do
+  case $v in GIT_*) unset "$v" ;; esac
+done < <(compgen -e)
+unset SSH_ASKPASS BASH_ENV ENV \
+  http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
-unset GIT_ASKPASS SSH_ASKPASS GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
 
 # --- the clone must be the exact commit, with the pinned origin/main -------------------------
 [ -d "$CLONE/.git" ] || die "no clone at $CLONE"
@@ -88,23 +94,34 @@ OWNER_LC=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
 GOMODS=$(find "$CLONE" \( -name .git -o -name vendor -o -name testdata \) -prune -o -name go.mod -type f -print | sort)
 [ -n "$GOMODS" ] || cnc "no go.mod in the clone: nothing to prefetch"
 
-OWN=$(printf '%s\n' "$GOMODS" | while IFS= read -r m; do
-  awk '$1 == "module" { gsub(/"/, "", $2); print $2; exit }' "$m"
-done)
-DECLARED=$(printf '%s\n' "$GOMODS" | while IFS= read -r m; do
-  awk '
-    /^[[:space:]]*\/\// { next }
-    $1 == "require" && $2 == "(" { inreq = 1; next }
-    $1 == "replace" && $2 == "(" { inrep = 1; next }
-    $1 == ")" { inreq = 0; inrep = 0; next }
-    inreq { print $1; next }
-    $1 == "require" { print $2; next }
-    inrep || $1 == "replace" {
-      for (i = 1; i <= NF; i++) if ($i == "=>") { if ($(i + 1) !~ /^[.]{1,2}\//) print $(i + 1) }
-      next
-    }
-  ' "$m"
-done | sort -u)
+# Each go.mod is read by Go's own parser (`go mod edit -json`, which runs no target code and
+# makes no request), never by a line pattern: every require and every replacement that names a
+# module version is declared; a replacement by a directory is not a module request. A go.mod
+# that does not parse is could-not-check.
+MODJSON=$(mktemp) || die "no scratch file"
+OWN=
+DECLARED=
+while IFS= read -r m; do
+  go mod edit -json "$m" > "$MODJSON" 2>/dev/null \
+    || cnc "${m#"$CLONE"/} does not parse as a go.mod, nothing was sent to the proxy"
+  out=$(python3 -I -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+own = (m.get("Module") or {}).get("Path") or ""
+if not own:
+    sys.exit(1)
+print("own", own)
+for r in m.get("Require") or []:
+    print("dep", r["Path"])
+for r in m.get("Replace") or []:
+    if r["New"].get("Version"):
+        print("dep", r["New"]["Path"])
+' "$MODJSON") || cnc "${m#"$CLONE"/} names no module, nothing was sent to the proxy"
+  OWN=$OWN$(printf '%s\n' "$out" | sed -n 's/^own //p')$'\n'
+  DECLARED=$DECLARED$(printf '%s\n' "$out" | sed -n 's/^dep //p')$'\n'
+done <<< "$GOMODS"
+rm -f "$MODJSON"
+DECLARED=$(printf '%s' "$DECLARED" | sort -u)
 
 BAD=
 for p in $DECLARED; do

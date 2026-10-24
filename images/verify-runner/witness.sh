@@ -14,10 +14,19 @@
 # With no argument, or any other argument list, it prints its usage on stderr and exits 2
 # before it reads or writes anything.
 #
-# The whole run enters the empty network namespace as ONE process tree: this script records
-# its own namespace id, then execs
+# A run is the container half of statusgen's verification bracket. The host opens the bracket
+# (`statusgen verifyrun --open-bracket`) and hands its receipt in, with the digest of the image
+# this container runs, as two read-only files under /run/verify-admission: receipt.json and
+# image-digest. Without both, or with a digest that is not sha256:<64 hex>, the run exits 2 and
+# no row runs. statusgen itself then refuses any mounted tree that does not digest to the
+# receipt's tree. The witness it writes is printed on the last line of the log, base64 on one
+# line after `vr-witness `, for the host to close the bracket with.
+#
+# The run enters the empty network namespace as ONE process tree: this script records its own
+# namespace id, then runs
 #   unshare --user --map-root-user --net statusgen __verifyrun-netns <outer-id> \
-#     statusgen verifyrun --sandbox container-netns --brief <path> --dry-run --root /work
+#     statusgen verifyrun --sandbox container-netns --brief <path> --root /work \
+#       --admission-receipt <receipt> --container-image-digest <digest> --witness <file>
 # statusgen's own helper raises lo inside the new namespace (a new namespace starts with lo
 # DOWN) and proves lo is up, no other interface is up and the namespace differs from <outer-id>,
 # and only then execs verifyrun. Every boundary failure is terminal: there is no unsandboxed
@@ -38,26 +47,34 @@ case $1 in
   *) [[ $1 =~ $KEY_RE ]] || usage ;;
 esac
 
-# VR_CACHE_DIR and VR_WORK_DIR are test hooks; the Job's env allowlist never sets them
+# VR_CACHE_DIR, VR_WORK_DIR, VR_ADMISSION_DIR and VR_SCRATCH_DIR are test hooks; the Job's env
+# allowlist never sets them
 CACHE=${VR_CACHE_DIR:-/cache}
 WORK=${VR_WORK_DIR:-/work}
+ADMIT=${VR_ADMISSION_DIR:-/run/verify-admission}
+SCRATCH=${VR_SCRATCH_DIR:-/tmp}
+FX=$SCRATCH/vr-fx
+WITNESS=$SCRATCH/vr-witness.md
 NETNS_RE='^net:\[[0-9]+\]$'
 BASE_RE='^brief-[0-9]{2,}-[A-Za-z0-9._-]+[.]md$'
+DIGEST_RE='^sha256:[0-9a-f]{64}$'
 
-# whole_run <brief> <root>: replaces this process
-whole_run() {
-  local brief=$1 root=$2 outer
+# netns_run <command...>: <command> as one process tree in a new network namespace, behind
+# statusgen's lo-raising helper. Its exit status is the command's, or the boundary's refusal.
+netns_run() {
+  local outer
   outer=$(readlink /proc/self/ns/net) || die "cannot read this process's network namespace"
   [[ $outer =~ $NETNS_RE ]] || die "unreadable network namespace id: $outer"
-  exec unshare --user --map-root-user --net \
+  unshare --user --map-root-user --net \
     statusgen __verifyrun-netns "$outer" \
-    statusgen verifyrun --sandbox container-netns --brief "$brief" --dry-run --root "$root"
+    "$@"
 }
 
 # --- the probe's fixture: one row of each class, each recording what the row itself sees -----
-FX=/tmp/vr-fx
+# A container-netns run gives every row class the one namespace of its process tree, so the
+# probe runs both rows through netns_run itself: the probe has no host receipt to run under.
 write_fixture() {
-  mkdir -p "$FX/docs/streams/fx" "$FX/out" || return 1
+  rm -rf "$FX" && mkdir -p "$FX/out" || return 1
   cat > "$FX/probe.go" <<'GO'
 package main
 
@@ -99,36 +116,16 @@ func main() {
 GO
   cat > "$FX/row.sh" <<'ROW'
 #!/bin/sh
-# row.sh <class>: record what a row of that class sees inside the whole-run namespace
-outer=$(cat /tmp/vr-fx/outer 2>/dev/null)
+# row.sh <fixture dir> <class>: record what a row of that class sees inside the run's namespace
+fx=$1
+outer=$(cat "$fx/outer" 2>/dev/null)
 me=$(readlink /proc/self/ns/net)
 ns=differs
 [ -n "$outer" ] && [ "$me" != "$outer" ] || ns=same
-res=$(go run /tmp/vr-fx/probe.go 2>/dev/null) || res="iface=other lo=down listener=refused"
-echo "ns=$ns $res" > "/tmp/vr-fx/out/$1.txt"
+res=$(go run "$fx/probe.go" 2>/dev/null) || res="iface=other lo=down listener=refused"
+echo "ns=$ns $res" > "$fx/out/$2.txt"
 exit 0
 ROW
-  cat > "$FX/docs/streams/fx/brief-01-fixture.md" <<'BRIEF'
----
-brief: assay:at:fx:01
-title: fixture
-version: 2
----
-
-# Fixture
-
-## Verify (executable)
-
-| # | Command | Expect | Class |
-|---|---------|--------|-------|
-| 1 | `sh row.sh ordinary` | exit 0 | check |
-| 2 | `sh row.sh ci` | exit 0 | check:ci |
-
-## Evidence
-
-## Review
-BRIEF
-  ( cd "$FX" && git init -q . && git add -A && git -c commit.gpgsign=false commit -q -m fixture ) || return 1
 }
 
 # field <file> <key>: the value of key= in the one-line record, or the empty string
@@ -148,7 +145,8 @@ class_state() {
 
 probe() {
   local dns egress api token unsh seccomp apparmor first
-  # the OUTER pod, before the inner wrapper
+  # the OUTER pod, before the inner wrapper; the targets are named before any is contacted
+  printf 'probe-targets dns=proxy.golang.org egress=1.1.1.1:443 apiserver=10.96.0.1:443\n'
   if timeout 5 getent hosts proxy.golang.org >/dev/null 2>&1; then dns=ok; else dns=refused; fi
   if timeout 5 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' >/dev/null 2>&1; then egress=open; else egress=refused; fi
   if timeout 5 bash -c 'exec 3<>/dev/tcp/10.96.0.1/443' >/dev/null 2>&1; then api=open; else api=refused; fi
@@ -160,10 +158,11 @@ probe() {
   printf 'probe dns=%s egress=%s apiserver=%s token=%s unshare=%s seccomp=%s apparmor=%s\n' \
     "$dns" "$egress" "$api" "$token" "$unsh" "${seccomp:-unknown}" "${apparmor:-unknown}"
 
-  # the WHOLE-RUN entrypoint, with one fixture row of each class
+  # the run's namespace boundary, with one fixture row of each class
   write_fixture >/dev/null 2>&1 || die "could not write the probe fixture"
   readlink /proc/self/ns/net > "$FX/outer" || die "cannot read this process's network namespace"
-  ( whole_run "$FX/docs/streams/fx/brief-01-fixture.md" "$FX" ) > "$FX/run.log" 2>&1
+  # shellcheck disable=SC2016 # $1 is the inner shell's argument, the fixture directory
+  ( netns_run sh -c 'sh "$1/row.sh" "$1" ordinary; sh "$1/row.sh" "$1" ci' row "$FX" ) > "$FX/run.log" 2>&1
   class_state ordinary; o_ns=$C_NS; o_lo=$C_LO; o_lis=$C_LIS
   class_state ci; c_ns=$C_NS; c_lo=$C_LO; c_lis=$C_LIS
   w_ns=other; [ "$o_ns" = loopback-only ] && [ "$c_ns" = loopback-only ] && w_ns=loopback-only
@@ -173,16 +172,29 @@ probe() {
     "$w_ns" "$w_lo" "$w_lis" "$o_ns" "$o_lis" "$c_ns" "$c_lis"
 }
 
-# resolve_key <stream>/<NN>: sets BRIEF to the one regular brief file of that key under $WORK
+# resolve_key <stream>/<NN>: sets BRIEF to the one regular brief file of that key under $WORK.
+# No directory on the way to it may be a symlink.
 resolve_key() {
-  local stream=${1%/*} nn=${1#*/} f n=0
+  local stream=${1%/*} nn=${1#*/} d f n=0
   BRIEF=
+  for d in "$WORK/docs" "$WORK/docs/streams" "$WORK/docs/streams/$stream"; do
+    [ ! -L "$d" ] || die "$d is a symlink: the brief must be a file of the clone itself"
+  done
   for f in "$WORK/docs/streams/$stream/brief-$nn-"*.md; do
     [ -f "$f" ] && [ ! -L "$f" ] || continue
     [[ ${f##*/} =~ $BASE_RE ]] || continue
     n=$((n + 1)); BRIEF=$f
   done
   [ "$n" = 1 ] || die "$n brief files match $1 (need exactly one regular file docs/streams/$stream/brief-$nn-<slug>.md)"
+}
+
+# admission: sets RECEIPT and DIGEST from the host's hand-over, or exits 2 before any row runs
+admission() {
+  RECEIPT=$ADMIT/receipt.json
+  [ -f "$RECEIPT" ] && [ -r "$RECEIPT" ] || die "no admission receipt at $RECEIPT: the host has not opened the bracket, no row ran"
+  [ -f "$ADMIT/image-digest" ] && [ -r "$ADMIT/image-digest" ] || die "no image digest at $ADMIT/image-digest: no row ran"
+  DIGEST=$(cat "$ADMIT/image-digest") || die "unreadable image digest: no row ran"
+  [[ $DIGEST =~ $DIGEST_RE ]] || die "the image digest is not sha256:<64 hex>: no row ran"
 }
 
 # --- dispatch ---------------------------------------------------------------------------------
@@ -198,6 +210,13 @@ case $1 in
     ;;
   *)
     resolve_key "$1"
-    whole_run "$BRIEF" "$WORK"
+    admission
+    netns_run statusgen verifyrun --sandbox container-netns --brief "$BRIEF" --root "$WORK" \
+      --admission-receipt "$RECEIPT" --container-image-digest "$DIGEST" --witness "$WITNESS"
+    rc=$?
+    if [ -f "$WITNESS" ]; then
+      printf 'vr-witness %s\n' "$(base64 < "$WITNESS" | tr -d '\n')"
+    fi
+    exit "$rc"
     ;;
 esac
