@@ -29,7 +29,7 @@ consumers:
   - "changelog/ (one top-level fragment): follow-up desktools-v2/74"
   - "closure audit last-wins (checkWitnesses) and rule 45 credit: out-of-scope (the #4247 ruling chose the row selector as the remedy and kept last-wins and rule 45 unchanged; the selector changes only which rows a run writes)"
   - "protected-record audit run selection and its single Verification-Table marker rule (statusgen/protectedclosure.go): out-of-scope (unchanged; the selector composes with it, it does not relax it)"
-  - "parseEvidenceRows reading a table inside a code fence (statusgen/unrun.go): out-of-scope (a scope choice of this brief, not part of the #4247 ruling, which covers only last-wins and rule 45; the fence-aware parser is owned by follow-up issue #4250)"
+  - "parseEvidenceRows reading a table inside a code fence (statusgen/unrun.go): out-of-scope (a scope choice of this brief, not part of the #4247 ruling, which chose the row selector and kept last-wins and rule 45 unchanged; the fence-aware parser is owned by follow-up issue #4250)"
 ---
 
 # Brief 74 — Add a verifyrun row selector that records only the named Verify rows
