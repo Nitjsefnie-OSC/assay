@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       base_sha:
-        description: Base SHA for the changelog fragment check
+        description: Base SHA for the changelog fragment check and the job touch guards
         required: false
         type: string
 
@@ -33,14 +33,15 @@ jobs:
       - name: Checkout candidate ref
         uses: actions/checkout@v5
         with:
-          repository: Nitjsefnie-OSC/assay
           ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Report checked-out SHA
+      - name: Provenance
         shell: bash
         run: |
           set -euo pipefail
+          echo "tested_target_ref=${{ inputs.target_ref }}"
           checked_out_sha="$(git rev-parse HEAD)"
           if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
@@ -48,16 +49,40 @@ jobs:
           fi
           printf 'checked-out SHA: %s\n' "$checked_out_sha"
 
+      # The guard needs the full history: with base_sha absent it diffs the
+      # candidate against its merge-base with upstream main.
+      - name: Guard — does the candidate touch tools/desk/cmd/deskwt/?
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
+            git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
+          fi
+          changed="$(git diff --name-only "$BASE"...HEAD)"
+          printf '%s\n' "$changed"
+          if ! printf '%s\n' "$changed" | grep -q '^tools/desk/cmd/deskwt/'; then
+            echo "SKIP: candidate does not touch tools/desk/cmd/deskwt/"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
+        if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: "1.27.2"
 
       - name: Build the desk module
+        if: steps.guard.outputs.run == 'true'
         working-directory: tools/desk
         run: go build ./...
 
       - name: deskwt filtered suite (the spec's own test command)
+        if: steps.guard.outputs.run == 'true'
         working-directory: tools/desk
         timeout-minutes: 12
         run: |
@@ -77,20 +102,182 @@ jobs:
       - name: Checkout candidate ref
         uses: actions/checkout@v5
         with:
-          repository: Nitjsefnie-OSC/assay
           ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tested_target_ref=${{ inputs.target_ref }}"
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
+
+      - name: Guard — does the candidate touch tools/desk/cmd/deskwt/?
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
+            git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
+          fi
+          changed="$(git diff --name-only "$BASE"...HEAD)"
+          printf '%s\n' "$changed"
+          if ! printf '%s\n' "$changed" | grep -q '^tools/desk/cmd/deskwt/'; then
+            echo "SKIP: candidate does not touch tools/desk/cmd/deskwt/"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
+        if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: "1.27.2"
 
       - name: Run the deskwt prune mutation spec (this shard)
+        if: steps.guard.outputs.run == 'true'
         working-directory: tools/desk
         run: |
           set -euo pipefail
           report="$(go run ./cmd/muhar -j 0 -spec cmd/deskwt/prune-mutations.json -shard ${{ matrix.shard }})"
+          echo "$report"
+          grep -qE 'Totals: [0-9]+ caught, 0 NOT CAUGHT, 0 could-not-mutate' <<<"$report"
+
+  desktoken-build-test:
+    name: build + desktoken suite
+    # Upstream CI runs on the self-hosted `medici-builder-public` runner, which
+    # is unavailable to the fork, so these jobs run on GitHub-hosted instead.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout candidate ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tested_target_ref=${{ inputs.target_ref }}"
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
+
+      - name: Guard — does the candidate touch tools/desk/cmd/desktoken/?
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
+            git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
+          fi
+          changed="$(git diff --name-only "$BASE"...HEAD)"
+          printf '%s\n' "$changed"
+          if ! printf '%s\n' "$changed" | grep -q '^tools/desk/cmd/desktoken/'; then
+            echo "SKIP: candidate does not touch tools/desk/cmd/desktoken/"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+
+      - name: Build the desk module
+        if: steps.guard.outputs.run == 'true'
+        working-directory: tools/desk
+        run: go build ./...
+
+      - name: desktoken suite (the spec's own test command)
+        if: steps.guard.outputs.run == 'true'
+        working-directory: tools/desk
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          go test ./cmd/desktoken/... -count=1 -timeout 600s
+
+  desktoken-mutation-shards:
+    name: muhar desktoken ${{ matrix.shard }} of 4
+    # Upstream CI runs on the self-hosted `medici-builder-public` runner, which
+    # is unavailable to the fork, so these jobs run on GitHub-hosted instead.
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    needs: desktoken-build-test
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["0/4", "1/4", "2/4", "3/4"]
+    steps:
+      - name: Checkout candidate ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tested_target_ref=${{ inputs.target_ref }}"
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
+
+      - name: Guard — does the candidate touch tools/desk/cmd/desktoken/?
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
+            git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
+          fi
+          changed="$(git diff --name-only "$BASE"...HEAD)"
+          printf '%s\n' "$changed"
+          if ! printf '%s\n' "$changed" | grep -q '^tools/desk/cmd/desktoken/'; then
+            echo "SKIP: candidate does not touch tools/desk/cmd/desktoken/"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+
+      - name: Run the desktoken mutation spec (this shard)
+        if: steps.guard.outputs.run == 'true'
+        working-directory: tools/desk
+        run: |
+          set -euo pipefail
+          report="$(go run ./cmd/muhar -j 0 -spec cmd/desktoken/mutations.json -shard ${{ matrix.shard }})"
           echo "$report"
           grep -qE 'Totals: [0-9]+ caught, 0 NOT CAUGHT, 0 could-not-mutate' <<<"$report"
 
@@ -102,10 +289,21 @@ jobs:
       - name: Checkout candidate ref (full history for the base diff)
         uses: actions/checkout@v5
         with:
-          repository: Nitjsefnie-OSC/assay
           ref: ${{ inputs.target_ref }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tested_target_ref=${{ inputs.target_ref }}"
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
 
       - name: A fragment must be added and carry a bullet
         run: |
