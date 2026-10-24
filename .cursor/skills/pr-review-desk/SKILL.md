@@ -103,6 +103,45 @@ identity. Three desk-specific residues `deskboot` does not carry:
    the new recipe succeed, or run both collection/effect paths in the same cycle.
    A fresh actionable PR is a review trigger at any age; the `UNREVIEWED` alarm is a
    monitor-health incident, not an age threshold before dispatch.
+   The qualified recipe retires none of the guard lines below. Its watcher is the same
+   shipped script, armed the same way — never hand-written, never a disowned loop; its
+   one collection authenticates as a minted App token for the window's `$DESK_LOOP` role
+   (the script unsets any inherited `GH_TOKEN` first), never the ambient `gh` login; and
+   `deskboard prs --quiet` is never a substitute for its liveness wake either.
+
+   **Supported legacy recipe — these lines bind it unchanged.**
+   **Arm BOTH watchers via `capability:durable-monitor` — each a durable, re-arming watcher that survives across turns** (check
+   what is already armed first; never arm a second of either). The **event monitor** is the
+   shipped `plugins/assay/scripts/pr-monitor.sh` — do NOT hand-write the poll. It reads each
+   repo's open PRs once (`gh pr list --state open --limit <N> --json
+   number,headRefOid,isDraft,state,mergeStateStatus`, the explicit `--limit` mandatory — bare
+   `gh pr list` silently caps at 30, and a page returning `--limit` rows is truncated and
+   degraded, not diffed), keeps a per-repo baseline so the first sight of a repo SEEDS silently
+   (pre-seeded, never a flood), and emits one `PR-EVENT: <slug>#<num> <kind> <old> -> <new>` line
+   per change (`kind ∈ opened | pushed | draft-flip | state | merge-state | closed`) — so a fresh
+   PR, a push, or a draft flip surfaces within one cadence tick. Each repo is read under its own
+   per-repo role token, minted inside the poll from the window's `$DESK_LOOP` (`desktoken <role>
+   --repo <slug>`) and scoped to that one read — never the ambient `gh` login, never an inherited
+   `GH_TOKEN`. A mint that fails (or a `$DESK_LOOP` that is unset) prints `MONITOR-DEGRADED: <slug>
+   token mint FAILED (...)`, the repo keeps its previous baseline, and the cycle exits 2: that is
+   could-not-check, never "no open PRs" — so arm the monitor with `DESK_LOOP` exported. It PACES its reads: it sleeps
+   `ASSAY_MONITOR_PACE_SECONDS` (default 2) between repos and, at
+   `ASSAY_MONITOR_MAX_REPOS_PER_CYCLE` (default 0 = all), caps a cycle and carries a cursor to the
+   next run, so the watcher cannot become the tight-loop poll that once tripped the forge's
+   secondary rate limit and blocked the same session's flip tool; a tripped limit ends the cycle
+   without further reads. **Never a disowned shell loop** (`... & disown`): it dies silently and
+   nothing says so (§HARD GATE) — arm the script through the durable monitor. The **cadenced liveness sweep** is a second,
+   independent watcher running the CLASSIFIED board — `deskboard actions --delta --quiet`, ~5 min —
+   emitting *regardless of whether the event monitor fired*; the event monitor is best-effort,
+   never the sole wake signal. **Never substitute `deskboard prs --quiet`**: the `prs` payload
+   carries no review state and its "actionable" counts only ci-red/conflicting, so a loop swept on
+   `prs` is structurally blind to NEEDS-REVIEW — that substitution is how this desk's review
+   latency once became the 2h UNREVIEWED alarm instead of one cadence tick.
+   **The cadenced sweep is also the REVIEW TRIGGER.** Its `actionable: N NEEDS-REVIEW, N
+   RE-REVIEW` line is the dispatch signal: a fresh PR is actionable **at any age** — fill a slot on
+   the first sweep that shows it, never wait for it to "age in". The `UNREVIEWED` banner (default
+   30m) is a NEGLECT alarm, never the trigger: it firing means the trigger path missed a PR —
+   dispatch immediately AND treat the miss as a monitor-health incident.
 
 Then announce "Review desk up — N PRs on the board" ONCE, and work SILENTLY (§Output contract).
 
@@ -297,8 +336,11 @@ failure this section prevents**, and there is no state in this loop called "the 
 - **Never stop-and-wait.** When actionable = 0, do not exit — the watchers keep the loop alive. "I
   dispatched everything I saw" is not a stop condition and is not an idle claim (§HARD GATE).
 - **Priority within a refill:** use the shared plan’s ordered selected proposals. The
-  supported legacy recipe retains its prior board ordering. Priority never serialises
-  reviews that can occupy independent free slots now.
+  supported legacy recipe retains its prior board ordering, unchanged:
+  RE-REVIEW before NEEDS-REVIEW at the same score (the worker is
+  waiting on the desk), otherwise board order (gate-score, oldest first). Priority decides which
+  rows take the free slots when rows outnumber slots; it never serialises rows that could all take a
+  free slot now.
 
 ## The loop
 
@@ -319,6 +361,26 @@ rerun the offline planner on an applicable observation; due freshness, scope or 
 changes require refresh or a visible hold. Exit 6 is could-not-check, never idle. Driver
 cutover remains human-gated; source recipe qualification does not switch an installed desk.
 
+**Supported legacy recipe — unchanged.** Write each sweep to a per-invocation scratch file and pass its path — never a fixed name in a
+shared scratch dir (desk-shell.md §Scratch files):
+
+```bash
+ACTIONS=<a per-invocation scratch file — desk-shell.md §Scratch files>
+PRS=<a per-invocation scratch file — desk-shell.md §Scratch files>
+deskboard actions --out "$ACTIONS"    # JSON is the default shape
+deskboard prs     --out "$PRS"        # supplies the head SHAs `actions` omits
+reviewloop plan --actions "$ACTIONS" --prs "$PRS"
+```
+
+`reviewloop plan` classifies every board row against an action table required by test to be
+exhaustive over `deskboard`'s own constants, coalesces verbs on (repo, pr, head, verb) from the
+board alone (claims and write idempotency are checked at execution), and states the idle verdict
+three-state. It spawns nothing and writes nothing outward — the desk executes the verbs. Exit 6
+(board unreadable, an ACTION the table does not know, an idle question the board cannot answer) is
+BLIND, never "all clear"; without `--prs` every outward verb is SUPPRESSED as could-not-check.
+Cutover of the standing window onto reviewloop as the *driver* is `gate: human`; the desk runs it
+as the planner and acts on its rows.
+
 - **NEEDS-REVIEW / RE-REVIEW** → fill a slot PER LANE at the right tier for that PR at its current
   head, on the first sweep that shows the row, at any age, and apply `authorization-needed` in the
   same turn (§PR-state labels). A risk-classed PR gets its security lane dispatched in the SAME turn
@@ -329,9 +391,14 @@ cutover remains human-gated; source recipe qualification does not switch an inst
   rejected at claim-acquire):
 
   ```bash
-  deskdispatch <alias>--pr-<N> --kit review --tier strong|any --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"
-  deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"   # risk-classed only, SAME turn
+  deskdispatch <alias>--pr-<N> --kit review --tier strong|any --model <actual-model> --repo <owner/repo> --pr <N>
+  deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N>   # risk-classed only, SAME turn
   ```
+
+  Under the qualified recipe only, append `--observation <path>` to each line, where the path is
+  the one THIS cycle's monitor printed on its `REVIEW-OBSERVATION:` line. The supported legacy
+  recipe omits the flag. Never pass a path from an earlier cycle — after a hold or a rollback to
+  the legacy recipe, an older artifact is not this cycle's observation.
 
   `<alias>` is the repo's short label/basename. It takes the durable claim, cuts the reviewer a
   worktree in the PR's OWN repo, stamps the dispatcher's model attestation, and emits the prompt —

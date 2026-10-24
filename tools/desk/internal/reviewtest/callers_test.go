@@ -183,6 +183,9 @@ func TestReviewCallerFaults(t *testing.T) {
 	if os.Getenv("ASSAY_REVIEW_CONTRACT_MUTANT") != "1" {
 		contractMutation(t, "cmd/deskboard/throughput.go", `if !reflect.DeepEqual(scope, o.Inputs.Requested) {`, `if false && !reflect.DeepEqual(scope, o.Inputs.Requested) {`, "^TestReviewDriverParity$", "invalid frozen review depth accepted")
 		contractMutation(t, "cmd/deskboard/throughput.go", `Oldest: now.Add(-5 * time.Minute)`, `Oldest: now.Add(-5 * time.Hour)`, "^TestReviewDriverParity$", "invalid frozen review depth accepted")
+		// A refusal from a DIFFERENT check (here the provenance cutoff) must not
+		// satisfy the stale case: each applicability check is asserted by cause.
+		contractMutation(t, "internal/reviewflow/observation.go", `if c.Start.Before(policy.Oldest) {`, `if false && c.Start.Before(policy.Oldest) {`, "^TestReviewDriverParity$", "by the wrong check")
 		contractMutation(t, "internal/reviewflow/selection.go", `return a.Priority > b.Priority`, `return a.Priority < b.Priority`, "^TestReviewDriverParity$", "prose/discrete priority parity lost")
 	}
 }

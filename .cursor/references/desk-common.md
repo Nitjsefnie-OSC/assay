@@ -128,7 +128,11 @@ wake and stop/health checks even when the PR event dimensions did not change.
 Treat only a successful current cycle as reusable. On a selected-mode failure,
 exit 2 and `MONITOR-DEGRADED` hold the whole cycle and invalidate the output;
 prior event baselines remain. A quarantine or failed repo is never removed from
-scope. Repair/retry, or deliberately choose the supported prior recipe on a later
+scope. On a public repo, a single quarantined or untrusted open PR therefore holds
+the WHOLE classified cycle — every repo's selection, not only that PR — for as long
+as it stays open and unresolved; run the supported prior recipe below meanwhile. If
+the hold cannot remove a prior artifact it says so on a second `MONITOR-DEGRADED`
+line; that file is never this cycle's output. Repair/retry, or deliberately choose the supported prior recipe on a later
 cycle; never auto-fallback within the failed cycle. Rerun pure selection for a
 capacity or priority change using that same supported invocation while applicability
 holds; execute candidates in returned policy order. Keep the observation for

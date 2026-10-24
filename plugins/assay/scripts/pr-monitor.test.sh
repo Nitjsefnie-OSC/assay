@@ -582,6 +582,31 @@ STUB
   check "$([[ "$RC" -eq 0 ]] && echo 0 || echo 1)" "legacy rollback recovers full monitor population" "$OUT"
 fi
 
+# regression: medici-finance/assay#4311
+if want classified-unwritable-hold; then
+  echo "classified-unwritable-hold — a hold that cannot invalidate the prior artifact still says so"
+  w="$TMPROOT/classified-ro"; st="$TMPROOT/classified-ro-st"; make_gh "$w"
+  for tool in deskboard reviewloop; do
+    cat > "$w/$tool" <<'STUB'
+#!/bin/sh
+printf 'tool releaseTag=v1.0.58\n'
+STUB
+    chmod +x "$w/$tool"
+  done
+  ro="$w/ro"; mkdir -p "$ro"; artifact="$ro/review.json"
+  printf '{"prior":"valid-looking"}' > "$artifact"
+  chmod 555 "$ro"
+  run "$w" "$st" "PR_MONITOR_REVIEW_OBSERVATION=$artifact" 'PR_MONITOR_REVIEW_POLICY={}' PR_MONITOR_REVIEW_CAPACITY=1 -- o/r
+  chmod 755 "$ro"
+  check "$([[ "$RC" -eq 2 ]] && echo 0 || echo 1)" "unwritable artifact directory still holds the cycle" "$OUT"
+  check "$(contains "$OUT" 'MONITOR-DEGRADED: complete review cycle held' && echo 0 || echo 1)" \
+    "the hold line prints even when the invalidating temp file cannot be made" "$OUT"
+  check "$(contains "$OUT" "prior review artifact NOT invalidated ($artifact)" && echo 0 || echo 1)" \
+    "a surviving prior artifact is named, never left silently" "$OUT"
+  check "$([[ ! -s "$w/calls.log" && ! -s "$w/mint.log" ]] && echo 0 || echo 1)" \
+    "the hold makes no legacy GH or credential call" "$OUT"
+fi
+
 echo
 printf '%s passed, %s failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]] || exit 1

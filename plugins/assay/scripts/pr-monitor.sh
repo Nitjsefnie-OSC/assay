@@ -250,12 +250,22 @@ if [[ -n "${PR_MONITOR_REVIEW_OBSERVATION:-}" ]]; then
   classified_hold() {
     # Replace only our selected output artifact with an invalid, private file.
     # A prior healthy artifact must not survive a failed cycle as fresh evidence.
-    local invalid target
+    # The degraded line prints on EVERY hold path, and a target that could be
+    # neither replaced nor removed is reported, never silently left in place.
+    local invalid target stale=""
     for target in "$PR_MONITOR_REVIEW_OBSERVATION" "${PR_MONITOR_REVIEW_OBSERVATION}.plan"; do
-      invalid=$(mktemp "${target}.XXXXXX") || exit 2
-      if ! mv "$invalid" "$target"; then rm -f "$invalid"; fi
+      invalid=""
+      if invalid=$(mktemp "${target}.XXXXXX" 2>/dev/null) && mv "$invalid" "$target" 2>/dev/null; then
+        continue
+      fi
+      [[ -n "$invalid" ]] && rm -f "$invalid" 2>/dev/null
+      rm -f "$target" 2>/dev/null
+      [[ -e "$target" ]] && stale="$stale $target"
     done
     printf 'MONITOR-DEGRADED: complete review cycle held (%s); use the supported legacy recipe next cycle or repair and retry; no PR dropped\n' "$1"
+    if [[ -n "$stale" ]]; then
+      printf 'MONITOR-DEGRADED: prior review artifact NOT invalidated (%s); it is not this cycle'"'"'s output and must not be reused\n' "${stale# }"
+    fi
     exit 2
   }
   [[ "$MAX_REPOS" -eq 0 ]] || classified_hold "classified mode requires the full scope, no cursor cap"
