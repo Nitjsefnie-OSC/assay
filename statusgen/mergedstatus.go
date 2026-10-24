@@ -26,6 +26,7 @@ package main
 // could not read.
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -82,13 +83,26 @@ func (p mergedPR) deliveryOf(id string) mergeDelivery {
 // body with the same fence-aware grammar parseBriefLikeTrailers uses, each reduced
 // to its canonical `<stream>/<NN>` key. Pure; no I/O.
 func mergeTrailerKeys(body string) (delivers, authors []string) {
-	inFence := false
+	// A ``` fence is closed only by ```, a ~~~ fence only by ~~~ (the rule
+	// backfillOneFileReport keeps): the other marker inside an open fence is text.
+	fence := ""
 	for _, raw := range strings.Split(body, "\n") {
-		if rePRLinkFence.MatchString(raw) || reMergeTildeFence.MatchString(raw) {
-			inFence = !inFence
+		mark := ""
+		switch {
+		case rePRLinkFence.MatchString(raw):
+			mark = "```"
+		case reMergeTildeFence.MatchString(raw):
+			mark = "~~~"
+		}
+		if mark != "" && (fence == "" || mark == fence) {
+			if fence == "" {
+				fence = mark
+			} else {
+				fence = ""
+			}
 			continue
 		}
-		if inFence {
+		if fence != "" {
 			continue
 		}
 		m := briefLikeTrailerRe.FindStringSubmatch(strings.TrimRight(raw, "\r"))
@@ -164,60 +178,157 @@ const mergedPRLimit = 400
 // --first-parent is what keeps this to the integration history: without it every merged
 // side branch's own merges appear, and a topic branch that merged main into itself would
 // read as a PR merge of main.
+//
+// NO COMMIT TEXT IS EVER PARSED FOR STRUCTURE. A commit message is author-controlled
+// bytes, and a crafted object can carry any byte, NUL included (git refuses NUL only on
+// the porcelain path). So the topology comes from `rev-list --parents`, whose output is
+// nothing but object names, each validated as a full hex name before it is used as a
+// key or an argument; and the messages come from `cat-file --batch`, whose records are
+// length-prefixed, so no byte inside a message can end a record early or invent one.
+// A branch read that fails is a failed read: the merges it would have confirmed are
+// not reported as trailer-less (could-not-check, never "no `Brief:` trailer").
 func mergedPRsFromGit(root string) ([]mergedPR, error) {
-	out, err := exec.Command("git", "-C", root, "log", "--first-parent",
-		"-n", strconv.Itoa(mergedPRLimit), "--format=%H%x1f%s%x1f%b%x1e", "HEAD").Output()
+	window, parents, err := revListParents(root, []string{"--first-parent", "-n", strconv.Itoa(mergedPRLimit)}, "HEAD")
 	if err != nil {
 		return nil, err
 	}
-	return parseMergedLog(string(out), branchBodiesFromGit(root, string(out))), nil
-}
-
-// branchBodiesFromGit returns the branch-commit reader parseMergedLog consults for a
-// `Merge pull request` commit whose own body carries no trailer (a merge commit's body
-// is only the PR title; the trailers live on the branch's own commits). It costs ONE
-// extra `git log` for the whole window, not one per merge: every commit in the window
-// is read once and each merge's branch (second parent back to the first-parent line) is
-// resolved in memory. An unreadable history returns nil, so a merge stays unconfirmed
-// — never a guessed delivery.
-func branchBodiesFromGit(root, firstParentLog string) func(sha string) string {
-	var window []string // first-parent shas, newest first
-	for _, rec := range strings.Split(firstParentLog, "\x1e") {
-		if parts := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x1f", 2); len(parts) == 2 && strings.TrimSpace(parts[0]) != "" {
-			window = append(window, strings.TrimSpace(parts[0]))
-		}
-	}
 	if len(window) == 0 {
-		return nil
+		return nil, nil
 	}
-	oldest := window[len(window)-1]
-	all, err := exec.Command("git", "-C", root, "log", "--format=%H%x1f%P%x1f%B%x1e",
-		"HEAD", "--not", oldest+"^@").Output()
+	// The branch commits of every merge in the window: everything reachable from HEAD
+	// that is not behind the oldest window commit's FIRST parent. Excluding only the
+	// first parent keeps the oldest merge's own branch (its second parent) in the read.
+	rangeArgs := []string{"HEAD"}
+	if p := parents[window[len(window)-1]]; len(p) > 0 {
+		rangeArgs = append(rangeArgs, "^"+p[0])
+	}
+	all, allParents, err := revListParents(root, nil, rangeArgs...)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("branch-commit read: %w", err)
 	}
-	return branchBodiesFromLog(string(all), window)
+	msgs, err := commitMessages(root, all)
+	if err != nil {
+		return nil, fmt.Errorf("commit-message read: %w", err)
+	}
+	commits := make(map[string]gitCommit, len(all))
+	for _, sha := range all {
+		commits[sha] = gitCommit{parents: allParents[sha], msg: msgs[sha]}
+	}
+	return parseMergedLog(window, commits, branchBodiesFrom(commits, window)), nil
 }
 
-// branchBodiesFromLog is the pure half of branchBodiesFromGit. allLog is
-// `git log --format=%H%x1f%P%x1f%B%x1e` over the window; firstParent lists the
-// first-parent shas newest first. Walking merges oldest first and claiming every
-// branch commit it visits keeps a branch that merged main into itself from
-// absorbing main's commits: those are either on the first-parent line or already
-// claimed by the older merge that brought them in.
-func branchBodiesFromLog(allLog string, firstParent []string) func(sha string) string {
-	type commit struct {
-		parents []string
-		body    string
+// gitCommit is one commit reduced to what the merge read needs: its parents (from
+// rev-list, which honours a shallow boundary) and its raw message (%B).
+type gitCommit struct {
+	parents []string
+	msg     string
+}
+
+// mergeSHARe is a full object name, SHA-1 or SHA-256. Every name read out of git
+// passes it before it is used as a map key or a git argument.
+var mergeSHARe = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// revListParents runs `git rev-list --parents <opts> --end-of-options <revs>` and
+// returns the commits in output order with each one's parent list. Every token must
+// be a full object name; anything else is a malformed read, reported as an error
+// rather than skipped.
+func revListParents(root string, opts []string, revs ...string) ([]string, map[string][]string, error) {
+	args := append([]string{"-C", root, "rev-list", "--parents"}, opts...)
+	args = append(append(args, "--end-of-options"), revs...)
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return nil, nil, err
 	}
-	commits := map[string]commit{}
-	for _, rec := range strings.Split(allLog, "\x1e") {
-		parts := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x1f", 3)
-		if len(parts) < 3 {
+	return parseRevListParents(string(out))
+}
+
+// parseRevListParents is the pure half of revListParents.
+func parseRevListParents(out string) ([]string, map[string][]string, error) {
+	var order []string
+	parents := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if line == "" {
 			continue
 		}
-		commits[strings.TrimSpace(parts[0])] = commit{parents: strings.Fields(parts[1]), body: parts[2]}
+		f := strings.Split(line, " ")
+		for _, sha := range f {
+			if !mergeSHARe.MatchString(sha) {
+				return nil, nil, fmt.Errorf("rev-list printed a malformed object name %q", sha)
+			}
+		}
+		order = append(order, f[0])
+		parents[f[0]] = f[1:]
 	}
+	return order, parents, nil
+}
+
+// commitMessages reads the raw message of every named commit in ONE
+// `git cat-file --batch` call.
+func commitMessages(root string, shas []string) (map[string]string, error) {
+	if len(shas) == 0 {
+		return map[string]string{}, nil
+	}
+	cmd := exec.Command("git", "-C", root, "cat-file", "--batch")
+	cmd.Stdin = strings.NewReader(strings.Join(shas, "\n") + "\n")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return parseCatFileBatch(out, shas)
+}
+
+// parseCatFileBatch splits `git cat-file --batch` output into each commit's message.
+// Records are `<name> <type> <size>\n<size bytes>\n`, in request order; the size is
+// what bounds a record, so the content's own bytes are never scanned for a boundary.
+// The message is everything after the header block's first blank line.
+func parseCatFileBatch(out []byte, want []string) (map[string]string, error) {
+	msgs := make(map[string]string, len(want))
+	pos := 0
+	for _, sha := range want {
+		nl := bytes.IndexByte(out[pos:], '\n')
+		if nl < 0 {
+			return nil, fmt.Errorf("cat-file output ends before %s", sha)
+		}
+		hdr := strings.Fields(string(out[pos : pos+nl]))
+		pos += nl + 1
+		if len(hdr) != 3 || hdr[0] != sha || hdr[1] != "commit" {
+			return nil, fmt.Errorf("cat-file record for %s has header %q", sha, strings.Join(hdr, " "))
+		}
+		size, err := strconv.Atoi(hdr[2])
+		if err != nil || size < 0 || pos+size+1 > len(out) || out[pos+size] != '\n' {
+			return nil, fmt.Errorf("cat-file record for %s is truncated", sha)
+		}
+		obj := out[pos : pos+size]
+		pos += size + 1
+		if i := bytes.Index(obj, []byte("\n\n")); i >= 0 {
+			msgs[sha] = string(obj[i+2:])
+		} else {
+			msgs[sha] = ""
+		}
+	}
+	return msgs, nil
+}
+
+// splitCommitMessage is git's %s / %b split: the title paragraph folded onto one
+// line, and the body after it.
+func splitCommitMessage(msg string) (subject, body string) {
+	lines := strings.Split(strings.TrimLeft(msg, "\n"), "\n")
+	i := 0
+	var title []string
+	for ; i < len(lines) && strings.TrimSpace(lines[i]) != ""; i++ {
+		title = append(title, strings.TrimSpace(lines[i]))
+	}
+	return strings.Join(title, " "), strings.TrimLeft(strings.Join(lines[i:], "\n"), "\n")
+}
+
+// branchBodiesFrom returns the branch-commit reader parseMergedLog consults for a
+// `Merge pull request` commit whose own body carries no trailer (a merge commit's body
+// is only the PR title; the trailers live on the branch's own commits). firstParent
+// lists the first-parent shas newest first. Walking merges oldest first and claiming
+// every branch commit it visits keeps a branch that merged main into itself from
+// absorbing main's commits: those are either on the first-parent line or already
+// claimed by the older merge that brought them in.
+func branchBodiesFrom(commits map[string]gitCommit, firstParent []string) func(sha string) string {
 	onLine := map[string]bool{}
 	for _, sha := range firstParent {
 		onLine[sha] = true
@@ -239,7 +350,7 @@ func branchBodiesFromLog(allLog string, firstParent []string) func(sha string) s
 				continue
 			}
 			claimed[sha] = true
-			b.WriteString(c.body)
+			b.WriteString(c.msg)
 			b.WriteString("\n")
 			for j := len(c.parents) - 1; j >= 0; j-- {
 				stack = append(stack, c.parents[j])
@@ -250,22 +361,18 @@ func branchBodiesFromLog(allLog string, firstParent []string) func(sha string) s
 	return func(sha string) string { return bodies[sha] }
 }
 
-// parseMergedLog turns `git log --first-parent --format=%H%x1f%s%x1f%b%x1e` output
-// into merged PRs. branchBody, when non-nil, supplies the branch commits' bodies
-// for a `Merge pull request` commit whose own body carries no trailer. Pure given branchBody — the git reads live in the caller.
-func parseMergedLog(log string, branchBody func(sha string) string) []mergedPR {
+// parseMergedLog turns the first-parent window (newest first) into merged PRs.
+// branchBody, when non-nil, supplies the branch commits' bodies for a `Merge pull
+// request` commit whose own body carries no trailer. Pure given branchBody — the git
+// reads live in the caller.
+func parseMergedLog(window []string, commits map[string]gitCommit, branchBody func(sha string) string) []mergedPR {
 	var prs []mergedPR
-	for _, rec := range strings.Split(log, "\x1e") {
-		rec = strings.TrimLeft(rec, "\n")
-		parts := strings.SplitN(rec, "\x1f", 3)
-		if len(parts) < 2 {
+	for _, sha := range window {
+		c, ok := commits[sha]
+		if !ok {
 			continue
 		}
-		sha, subject := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-		body := ""
-		if len(parts) == 3 {
-			body = parts[2]
-		}
+		subject, body := splitCommitMessage(c.msg)
 		if subject == "" {
 			continue
 		}

@@ -524,10 +524,10 @@ type siblingCommit struct {
 // readSiblingCommits reads a sibling checkout's first-parent history. The
 // format uses %x1e (record separator) ahead of each commit and %x00 between
 // its hash and its raw body, so a multi-line %B can never be mistaken for a
-// record boundary — mergedPRsFromGit (mergedstatus.go) can get away with
-// %s-per-line because it reads only the SUBJECT; this detector needs the
-// full body for the body-only id shape (fact 3) and the Issue:/closing-keyword
-// trailer (key k2), so it cannot use a newline-delimited format.
+// record boundary. It needs the full body for the body-only id shape (fact 3)
+// and the Issue:/closing-keyword trailer (key k2), so it cannot use a
+// newline-delimited format. (mergedPRsFromGit, mergedstatus.go, reads its
+// messages length-prefixed through cat-file instead.)
 func readSiblingCommits(path string) ([]siblingCommit, error) {
 	out, err := exec.Command("git", "-C", path, "log", "--first-parent",
 		"-n", strconv.Itoa(siblingMergeHistoryLimit), "--format=%x1e%H%x00%B").Output()

@@ -331,8 +331,6 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 	inEvidence := false
 	count, repaired := 0, 0
 	var unresolved []string
-	// verifyHeaderRe detects the column-header row of a Verify table.
-	verifyHeaderRe := regexp.MustCompile(`\|\s*#\s*\|\s*Command\s*\|\s*Expect\s*\|`)
 
 	for li, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -363,7 +361,7 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 			}
 			inVerifyTable = false
 		}
-		if verifyHeaderRe.MatchString(trimmed) {
+		if isVerifyHeaderRow(trimmed) {
 			inVerifyTable = true
 			out = append(out, line)
 			continue
@@ -402,6 +400,27 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 		}
 	}
 	return count, repaired, unresolved, nil
+}
+
+// isVerifyHeaderRow reports whether a (trimmed) table row is a Verify table's
+// column header: a row carrying both a Command and an Expect cell, located by
+// header NAME as verifyRowTable does, so the Class-first shapes
+// (`| # | Class | Command | Expect |`, `| # | Class | Shell | Command | Expect |`)
+// freeze their rows exactly as the legacy `| # | Command | Expect |` does.
+func isVerifyHeaderRow(trimmed string) bool {
+	if !strings.HasPrefix(trimmed, "|") {
+		return false
+	}
+	cmd, exp := false, false
+	for _, c := range splitRowEscaped(trimmed) {
+		switch strings.ToLower(strings.TrimSpace(c)) {
+		case "command":
+			cmd = true
+		case "expect":
+			exp = true
+		}
+	}
+	return cmd && exp
 }
 
 // fenceMarkerOf returns "```" or "~~~" when the (trimmed) line opens or closes a

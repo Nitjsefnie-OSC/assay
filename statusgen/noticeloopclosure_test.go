@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -136,11 +137,13 @@ func TestNoticeLoopClosure(t *testing.T) {
 		}
 
 		// The reader: trailers come out of the commit body, fence-aware.
-		log := "aaa\x1fdocs: add brief gtm/07 (#20)\x1fAuthors: gtm:07\n\x1e" +
-			"bbb\x1ffeat: gtm/08 (#21)\x1fBrief: gtm:08\n\x1e" +
-			"ccc\x1ffeat: gtm/09 (#22)\x1f```\nBrief: gtm:09\n```\n\x1e" +
-			"ddd\x1fMerge pull request #23 from o/brief/gtm-10-x\x1f\n\x1e"
-		prs := parseMergedLog(log, func(sha string) string {
+		commits := map[string]gitCommit{
+			"aaa": {msg: "docs: add brief gtm/07 (#20)\n\nAuthors: gtm:07\n"},
+			"bbb": {msg: "feat: gtm/08 (#21)\n\nBrief: gtm:08\n"},
+			"ccc": {msg: "feat: gtm/09 (#22)\n\n```\nBrief: gtm:09\n```\n"},
+			"ddd": {msg: "Merge pull request #23 from o/brief/gtm-10-x\n"},
+		}
+		prs := parseMergedLog([]string{"aaa", "bbb", "ccc", "ddd"}, commits, func(sha string) string {
 			if sha == "ddd" {
 				return "feat: part\n\nBrief: gtm:10\n"
 			}
@@ -320,20 +323,154 @@ func TestNoticeLoopClosure(t *testing.T) {
 			}
 		}
 
-		// The pure half: the same shape through the log text, no git.
-		log := "m5\x1fMerge pull request #5 from o/feat/assay--gtm--01\x1f\n\x1e"
-		all := "m5\x1fp1 b1\x1fMerge pull request #5\n\x1e" + "b1\x1fp1\x1ffeat\n\nBrief: gtm:01\n\x1e" + "p1\x1f\x1finit\n\x1e"
-		prs2 := parseMergedLog(log, branchBodiesFromLog(all, []string{"m5", "p1"}))
+		// The pure half: the same shape through parsed commits, no git.
+		commits := map[string]gitCommit{
+			"m5": {parents: []string{"p1", "b1"}, msg: "Merge pull request #5 from o/feat/assay--gtm--01\n"},
+			"b1": {parents: []string{"p1"}, msg: "feat\n\nBrief: gtm:01\n"},
+			"p1": {msg: "init\n"},
+		}
+		window := []string{"m5", "p1"}
+		prs2 := parseMergedLog(window, commits, branchBodiesFrom(commits, window))
 		if len(prs2) != 1 || len(prs2[0].Delivers) != 1 || prs2[0].Delivers[0] != "gtm/01" {
 			t.Errorf("a trailer-less merge of a house-shape branch must read its branch commits; got %+v", prs2)
 		}
 		// NEGATIVE CONTROL: with no branch reader the same merge is not a delivery.
-		if prs3 := parseMergedLog(log, nil); len(prs3) != 0 {
+		if prs3 := parseMergedLog(window, commits, nil); len(prs3) != 0 {
 			t.Errorf("without a branch reader the merge names no brief; got %+v", prs3)
 		}
 		// A trailer shown inside a ~~~ fence is documentation, not delivery.
 		if d, _ := mergeTrailerKeys("~~~\nBrief: gtm:09\n~~~\n"); len(d) != 0 {
 			t.Errorf("a ~~~-fenced trailer must not read as delivery; got %v", d)
+		}
+		// regression: a ``` fence is closed only by ```, never by a ~~~ line inside it.
+		if d, _ := mergeTrailerKeys("```\n~~~\nBrief: gtm:09\n```\nBrief: gtm:10\n"); len(d) != 1 || d[0] != "gtm/10" {
+			t.Errorf("a ~~~ line inside a ``` fence must not close it; got %v", d)
+		}
+	})
+
+	// regression: commit text is author-controlled; no byte in it may forge a record
+	// or reach git as an option (the 0x1e/0x1f split once did both).
+	t.Run("a commit body cannot forge", func(t *testing.T) {
+		root := t.TempDir()
+		gitInit(t, root, "t", "t@example.invalid")
+		sink := t.TempDir()
+		out := filepath.Join(sink, "pwned")
+		// The root commit is the oldest in the window: its body once became the
+		// exclusion argument of the branch read.
+		runGit(t, root, "commit", "--allow-empty", "-m", "init\n\n\x1e--output="+out+"\x1fx")
+		runGit(t, root, "branch", "-M", "main")
+		forged := "chore: x\n\nnote\x1e" + strings.Repeat("a", 40) +
+			"\x1fMerge pull request #9 from o/brief/gtm-09-x\x1fBrief: gtm:09\n"
+		runGit(t, root, "commit", "--allow-empty", "-m", forged)
+
+		prs, err := mergedPRsFromGit(root)
+		if err != nil {
+			t.Fatalf("a message carrying separator bytes is still readable: %v", err)
+		}
+		for _, p := range prs {
+			if p.Number == 9 || len(p.Delivers) != 0 {
+				t.Errorf("a commit body must not forge a merged PR: %+v", p)
+			}
+		}
+		if left, _ := os.ReadDir(sink); len(left) != 0 {
+			t.Errorf("a commit body reached git as an option and wrote %s", left[0].Name())
+		}
+		// The topology reader refuses anything that is not a full object name.
+		if _, _, err := parseRevListParents("--output=x\n"); err == nil {
+			t.Error("a non-hex rev-list token must be a malformed read, not a key")
+		}
+		// cat-file records are length-bounded: a message carrying a fake record
+		// header stays one message.
+		sha := strings.Repeat("b", 40)
+		obj := "tree " + strings.Repeat("c", 40) + "\n\nsubj\n" + sha + " commit 4\nfake\n"
+		msgs, err := parseCatFileBatch([]byte(sha+" commit "+strconv.Itoa(len(obj))+"\n"+obj+"\n"), []string{sha})
+		if err != nil || msgs[sha] != "subj\n"+sha+" commit 4\nfake\n" {
+			t.Errorf("a fake header inside a message must stay message text: %q err=%v", msgs[sha], err)
+		}
+	})
+
+	// regression: a stacked branch (B2 cut from B1, B1 merged first) must not
+	// re-deliver B1's commits when B2 merges.
+	t.Run("stacked branches claim once", func(t *testing.T) {
+		root := t.TempDir()
+		gitInit(t, root, "t", "t@example.invalid")
+		runGit(t, root, "commit", "--allow-empty", "-m", "init")
+		runGit(t, root, "branch", "-M", "main")
+		runGit(t, root, "checkout", "-b", "feat/assay--gtm--01")
+		runGit(t, root, "commit", "--allow-empty", "-m", "feat: one\n\nBrief: gtm:01")
+		runGit(t, root, "checkout", "-b", "feat/assay--gtm--02")
+		runGit(t, root, "commit", "--allow-empty", "-m", "feat: two\n\nBrief: gtm:02")
+		runGit(t, root, "checkout", "main")
+		runGit(t, root, "merge", "--no-ff", "-m", "Merge pull request #5 from o/feat/assay--gtm--01", "feat/assay--gtm--01")
+		runGit(t, root, "merge", "--no-ff", "-m", "Merge pull request #6 from o/feat/assay--gtm--02", "feat/assay--gtm--02")
+
+		prs, err := mergedPRsFromGit(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[int][]string{}
+		for _, p := range prs {
+			got[p.Number] = p.Delivers
+		}
+		for num, want := range map[int]string{5: "gtm/01", 6: "gtm/02"} {
+			if len(got[num]) != 1 || got[num][0] != want {
+				t.Errorf("PR %d must deliver exactly [%s]; got %v (all: %v)", num, want, got[num], got)
+			}
+		}
+	})
+
+	// regression: a branch read that fails is could-not-check, never "no trailer".
+	t.Run("a failed branch read is unknown", func(t *testing.T) {
+		root := t.TempDir()
+		gitInit(t, root, "t", "t@example.invalid")
+		runGit(t, root, "commit", "--allow-empty", "-m", "init")
+		runGit(t, root, "branch", "-M", "main")
+		runGit(t, root, "checkout", "-b", "feat/assay--gtm--01")
+		runGit(t, root, "commit", "--allow-empty", "-m", "feat: one\n\nBrief: gtm:01")
+		branch := strings.TrimSpace(gitOutT(t, root, "rev-parse", "HEAD"))
+		runGit(t, root, "checkout", "main")
+		runGit(t, root, "merge", "--no-ff", "-m", "Merge pull request #5 from o/feat/assay--gtm--01", "feat/assay--gtm--01")
+		// The first-parent walk never opens the branch commit; the branch read must.
+		if err := os.Remove(filepath.Join(root, ".git", "objects", branch[:2], branch[2:])); err != nil {
+			t.Fatal(err)
+		}
+
+		prs, err := mergedPRsFromGit(root)
+		if err == nil {
+			t.Fatalf("an unreadable branch commit must fail the read; got %+v", prs)
+		}
+		s := nlcStream(t, t.TempDir(), "gtm", map[string]string{"01": "## Context\nx\n"}, Brief{Num: "01", Status: "todo"})
+		got := strings.Join(mergedPRStatusNotices([]*Stream{s}, prs, err), "\n")
+		if !strings.Contains(got, "could-not-check") || strings.Contains(got, "UNCONFIRMED") {
+			t.Errorf("a failed branch read must say could-not-check and conclude nothing; got:\n%s", got)
+		}
+	})
+
+	// regression: the Class-first Verify shapes are frozen like the legacy one.
+	t.Run("a Class-first table is frozen", func(t *testing.T) {
+		root, _ := nlcRegisterTree(t)
+		gDir := filepath.Join(root, "docs", "streams", "gtm")
+		classFirst := writeTemp(t, gDir, "brief-04-class.md", "# Four\n\n## Verify\n"+
+			"| # | Class | Command | Expect |\n|---|---|---|---|\n"+
+			"| 1 | check | `grep -c x y` | names [F-15](../FINDINGS.md) and F-15 |\n")
+		withShell := writeTemp(t, gDir, "brief-05-shell.md", "# Five\n\n## Verify\n"+
+			"| # | Class | Shell | Command | Expect |\n|---|---|---|---|---|\n"+
+			"| 1 | check | bash | `grep -c x y` | names [F-15](../FINDINGS.md) and F-15 |\n")
+		before := map[string][32]byte{classFirst: nlcHash(t, classFirst), withShell: nlcHash(t, withShell)}
+
+		if _, err := backfillRegisterRefsReport(root); err != nil {
+			t.Fatal(err)
+		}
+		for path, h := range before {
+			if nlcHash(t, path) != h {
+				raw, _ := os.ReadFile(path)
+				t.Errorf("a Verify row must be byte-identical after the pass (%s):\n%s", filepath.Base(path), raw)
+			}
+		}
+		// NEGATIVE CONTROL: a table without both cells is not a Verify table (the prose
+		// repair itself is pinned by "a unique register link repairs once").
+		if !isVerifyHeaderRow("| # | Command | Expect |") || isVerifyHeaderRow("| # | Command | Result |") {
+			t.Error("a header is a Verify header by its Command and Expect cells, and only then")
 		}
 	})
 
