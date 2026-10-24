@@ -23,6 +23,11 @@ import (
 const (
 	flowTracker = "example-org/tracker"
 	flowAgents  = "example-org/agents"
+
+	// The filing App as the forge reports an issue author (pinned in the planted roster), and an
+	// account the roster does not name.
+	flowFilerLogin = "assay-verifier-app[bot]"
+	flowFilerID    = 300000005
 )
 
 type flowStored struct {
@@ -31,6 +36,9 @@ type flowStored struct {
 	title  string
 	body   string
 	labels []string
+
+	author   string
+	authorID int64
 }
 
 type flowRepoForge struct {
@@ -66,7 +74,8 @@ func (f flowRepoForge) SearchIssues(r deskkit.ForgeRepo, in deskkit.SearchIssues
 		for _, is := range issues {
 			if strings.Contains(is.body, deskkit.FilingKeyMarkerText(in.FilingKey)) {
 				out = append(out, deskkit.IssueSearchResult{Number: is.number, Title: is.title, State: is.state,
-					Labels: is.labels, Body: is.body, URL: fmt.Sprintf("https://example.test/%s/issues/%d", slug, is.number)})
+					Labels: is.labels, Body: is.body, Author: is.author, AuthorID: is.authorID,
+					URL: fmt.Sprintf("https://example.test/%s/issues/%d", slug, is.number)})
 			}
 		}
 	}
@@ -92,7 +101,7 @@ func (d *flowDurable) FileBugFor(it loopengine.Item, detail string, id FilingIde
 	d.world.issues[id.Repo] = append(d.world.issues[id.Repo], &flowStored{number: n, state: "open",
 		title:  fmt.Sprintf("verification report %d: %s", d.title, strings.Repeat("x", d.title)),
 		body:   detail + "\n" + deskkit.FilingKeyMarker(key),
-		labels: []string{"bug", "raised-by:verifier"}})
+		labels: []string{"bug", "raised-by:verifier"}, author: flowFilerLogin, authorID: flowFilerID})
 	d.world.filed = append(d.world.filed, id.Repo+"#"+fmt.Sprint(n))
 	return fmt.Sprintf("https://example.test/%s/issues/%d", id.Repo, n), nil
 }
@@ -222,15 +231,15 @@ func TestFlowFileKey(t *testing.T) {
 		w := &flowWorld{issues: map[string][]*flowStored{}}
 		v, _, _ := flowLoop(t, w, flowTracker)
 		r := flowFail("example-stream/49", flowTracker, "abc1234", 2)
-		_, key, ok := repairFilingIdentity(buildRepairObligation(r, fixedNow().Format("2006-01-02")))
+		_, key, ok := repairFilingIdentity(buildRepairObligation(r, fixedNow().Format("2006-01-02"), ""))
 		if !ok {
 			t.Fatal("test void: the failure has no filing identity")
 		}
 		m := deskkit.FilingKeyMarker(key)
 		w.issues[flowTracker] = []*flowStored{
-			{number: 1, state: "closed", title: "closed", body: m, labels: []string{"raised-by:verifier"}},
-			{number: 2, state: "open", title: "other role", body: m, labels: []string{"raised-by:worker"}},
-			{number: 3, state: "open", title: "prose mention", body: "see filing-key: " + key},
+			{number: 1, state: "closed", title: "closed", body: m, labels: []string{"raised-by:verifier"}, author: flowFilerLogin, authorID: flowFilerID},
+			{number: 2, state: "open", title: "other role", body: m, labels: []string{"raised-by:worker"}, author: flowFilerLogin, authorID: flowFilerID},
+			{number: 3, state: "open", title: "prose mention", body: "see filing-key: " + key, author: flowFilerLogin, authorID: flowFilerID},
 		}
 		if err := flowLand(t, v, r); err != nil {
 			t.Fatal(err)
@@ -268,6 +277,85 @@ func TestFlowFileKey(t *testing.T) {
 		}
 		if len(d.bugs) != 1 || len(w.filed) != 0 || w.reads != 0 {
 			t.Fatalf("bugs=%v filed=%v reads=%d, want one legacy FileBug and no exact lookup", d.bugs, w.filed, w.reads)
+		}
+	})
+
+	// regression: verifier-filing-identity-inert-in-production-item-shape (review finding F1)
+	t.Run("the production item shapes carry a filing identity and dedup", func(t *testing.T) {
+		// The multi-root scanner names an item "<owner>/<repo>:<stream>/<NN>" and sets payload
+		// repo; the single-root scanner names it by the bare "<stream>/<NN>" with no payload repo,
+		// the plan's own repository being the loop's RootRepo.
+		shapes := map[string]struct {
+			id, payloadRepo, rootRepo string
+		}{
+			"multi-root prefixed id":  {flowTracker + ":example-stream/49", flowTracker, ""},
+			"single-root bare id":     {"example-stream/49", "", flowTracker},
+			"single-root with prefix": {"example-stream/49", flowTracker, flowTracker},
+		}
+		for name, sh := range shapes {
+			t.Run(name, func(t *testing.T) {
+				w := &flowWorld{issues: map[string][]*flowStored{}}
+				v, d, out := flowLoop(t, w, flowTracker)
+				v.RootRepo = sh.rootRepo
+				r := flowFail(sh.id, sh.payloadRepo, "abc1234", 2)
+				for i := 0; i < 2; i++ {
+					if err := flowLand(t, v, r); err != nil {
+						t.Fatalf("land %d: %v", i, err)
+					}
+				}
+				if len(d.bugs) != 0 {
+					t.Fatalf("legacy FileBug used %v — the identity-carrying filer must file production-shaped items", d.bugs)
+				}
+				if len(w.filed) != 1 || !strings.Contains(out.String(), "already filed as "+flowTracker+"#201") {
+					t.Fatalf("filed %v, want one filing and a reconcile on the repeat; output:\n%s", w.filed, out.String())
+				}
+				// The filed key names the CANONICAL brief, not the scanner's prefixed id: it is the
+				// key the bare-id, explicit-repo shape of the same failure derives.
+				_, key, ok := repairFilingIdentity(buildRepairObligation(flowFail("example-stream/49", flowTracker, "abc1234", 2),
+					fixedNow().Format("2006-01-02"), ""))
+				if !ok || !strings.Contains(w.issues[flowTracker][0].body, deskkit.FilingKeyMarker(key)) {
+					t.Fatalf("the filing does not carry the canonical key %q: %q", key, w.issues[flowTracker][0].body)
+				}
+			})
+		}
+	})
+
+	// regression: dedup-suppression-untrusted-author (review finding S1)
+	t.Run("an untrusted author's marker-carrying issue does not suppress the filing", func(t *testing.T) {
+		w := &flowWorld{issues: map[string][]*flowStored{}}
+		v, _, out := flowLoop(t, w, flowTracker)
+		r := flowFail("example-stream/49", flowTracker, "abc1234", 2)
+		_, key, ok := repairFilingIdentity(buildRepairObligation(r, fixedNow().Format("2006-01-02"), ""))
+		if !ok {
+			t.Fatal("test void: the failure has no filing identity")
+		}
+		m := deskkit.FilingKeyMarker(key)
+		w.issues[flowTracker] = []*flowStored{
+			// Anyone can compute the key and plant an open, unstamped issue carrying its marker.
+			{number: 41, state: "open", title: "planted", body: m, author: "drive-by-account", authorID: 999000111},
+			// The App's slug with someone else's numeric id.
+			{number: 42, state: "open", title: "spoofed", body: m, labels: []string{"raised-by:verifier"}, author: flowFilerLogin, authorID: 4242},
+		}
+		if err := flowLand(t, v, r); err != nil {
+			t.Fatal(err)
+		}
+		if len(w.filed) != 1 {
+			t.Fatalf("filed %v, want the case filed once — an untrusted author's issue is not its filing", w.filed)
+		}
+		for _, n := range []string{"#41", "#42"} {
+			if !strings.Contains(out.String(), "NOTICE: "+flowTracker+n) || !strings.Contains(out.String(), "not trusted") {
+				t.Fatalf("the ignored issue %s must be reported; output:\n%s", n, out.String())
+			}
+		}
+		if strings.Contains(out.String(), "planted") || strings.Contains(out.String(), "spoofed") {
+			t.Fatalf("an untrusted issue's text must never be echoed; output:\n%s", out.String())
+		}
+		// The real filing now reconciles the repeat; the untrusted ones still do not.
+		if err := flowLand(t, v, r); err != nil {
+			t.Fatal(err)
+		}
+		if len(w.filed) != 1 || !strings.Contains(out.String(), "already filed as "+flowTracker+"#203") {
+			t.Fatalf("filed %v, want the repeat reconciled to the genuine filing #203; output:\n%s", w.filed, out.String())
 		}
 	})
 }

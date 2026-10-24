@@ -82,7 +82,11 @@ func (g *GitHubForge) searchBodyMarkers(repo ForgeRepo, ms markerSearch) ([]Issu
 				HTMLURL     string    `json:"html_url"`
 				Body        *string   `json:"body"`
 				PullRequest *struct{} `json:"pull_request"`
-				Labels      []struct {
+				User        *struct {
+					Login string `json:"login"`
+					ID    int64  `json:"id"`
+				} `json:"user"`
+				Labels []struct {
 					Name string `json:"name"`
 				} `json:"labels"`
 			} `json:"items"`
@@ -106,6 +110,9 @@ func (g *GitHubForge) searchBodyMarkers(repo ForgeRepo, ms markerSearch) ([]Issu
 			hit := IssueSearchResult{Number: item.Number, Body: *item.Body}
 			if ms.rich {
 				hit.Title, hit.State, hit.URL = item.Title, item.State, item.HTMLURL
+				if item.User != nil {
+					hit.Author, hit.AuthorID = item.User.Login, item.User.ID
+				}
 				for _, l := range item.Labels {
 					hit.Labels = append(hit.Labels, l.Name)
 				}
@@ -163,6 +170,9 @@ func (g *GitLabForge) searchBodyMarkers(repo ForgeRepo, ms markerSearch) ([]Issu
 			if ms.rich {
 				hit.Title, hit.State, hit.URL = item.Title, gitlabState(item.State), item.WebURL
 				hit.Labels = append([]string(nil), item.Labels...)
+				if item.Author != nil {
+					hit.Author, hit.AuthorID = item.Author.Username, item.Author.ID
+				}
 			}
 			out = append(out, hit)
 		}

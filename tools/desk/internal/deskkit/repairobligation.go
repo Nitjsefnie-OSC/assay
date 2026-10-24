@@ -576,33 +576,49 @@ func validateFilingKeySearch(in SearchIssuesInput) error {
 }
 
 // MatchFiledIssues confirms a filing-key search's hits locally: the search is an index, so each
-// candidate must be OPEN and carry the exact marker for key in its body. The role is already part
-// of the key's hash, so a hit by another role cannot carry this key; the label check is the
-// second, independent guard: an issue stamped `raised-by:<other role>` is never this role's
-// filing. An UNSTAMPED issue still matches, because the provenance stamp is applied after the
-// create and is allowed to fail without failing the filing — a lookup that required it would
-// miss exactly the issue a half-finished filing left behind and file the case twice. The result
-// is ordered lowest number first; more than one entry means the case was filed more than once
-// and the caller reconciles to the first.
-func MatchFiledIssues(hits []IssueSearchResult, key, role string) []IssueSearchResult {
+// candidate must be OPEN, carry the exact marker for key in its body, and be AUTHORED by an
+// identity the trust gate admits. The author check is what keeps the lookup from being a
+// suppression lever: every input to the key is public and the marker is visible in any filing,
+// so anyone able to open (or edit) an issue could otherwise plant a body that makes a legitimate
+// filing look already done. An issue by an untrusted or unreadable author is NOT the case's
+// filing; it is returned in untrusted so the caller can report it, and is never obeyed. The
+// numeric id is required for a human login (trustedContentAuthor); a bot login is trusted by its
+// pinned slug alone.
+//
+// The role is already part of the key's hash, so a hit by another role cannot carry this key; the
+// label check is the second, independent guard: an issue stamped `raised-by:<other role>` is never
+// this role's filing. An UNSTAMPED issue by a trusted author still matches, because the provenance
+// stamp is applied after the create and is allowed to fail without failing the filing — a lookup
+// that required it would miss exactly the issue a half-finished filing left behind and file the
+// case twice. Both results are ordered lowest number first; more than one entry in matched means
+// the case was filed more than once and the caller reconciles to the first.
+func MatchFiledIssues(hits []IssueSearchResult, key, role string) (matched, untrusted []IssueSearchResult) {
 	want, err := RaisedByLabel(role)
 	if err != nil || !filingKeyRe.MatchString(key) {
-		return nil
+		return nil, nil
 	}
-	var out []IssueSearchResult
 	for _, h := range hits {
 		if !strings.EqualFold(strings.TrimSpace(h.State), "open") || stampedByOtherRole(h.Labels, want) {
 			continue
 		}
 		for _, m := range filingKeyMarkerRe.FindAllStringSubmatch(h.Body, -1) {
-			if m[1] == key {
-				out = append(out, h)
-				break
+			if m[1] != key {
+				continue
 			}
+			if trustedContentAuthor(h.Author, h.AuthorID) {
+				matched = append(matched, h)
+			} else {
+				untrusted = append(untrusted, h)
+			}
+			break
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Number < out[j].Number })
-	return out
+	byNumber := func(s []IssueSearchResult) {
+		sort.SliceStable(s, func(i, j int) bool { return s[i].Number < s[j].Number })
+	}
+	byNumber(matched)
+	byNumber(untrusted)
+	return matched, untrusted
 }
 
 // stampedByOtherRole reports whether labels carry a raised-by stamp other than want.

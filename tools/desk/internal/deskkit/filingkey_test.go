@@ -87,24 +87,63 @@ func TestHasFilingKeyClaim(t *testing.T) {
 }
 
 func TestMatchFiledIssues(t *testing.T) {
+	plantRoster(t, raisedByFixtureRoster)
+	const bot, botID = "example-verifier-app[bot]", 300000005
 	key := mustKey(t, fkRepo, "example-stream/49", "verifier", "repair/0123456789abcdef")
 	other := mustKey(t, fkRepo, "example-stream/49", "verifier", "repair/fedcba9876543210")
 	m, om := FilingKeyMarker(key), FilingKeyMarker(other)
+	hit := func(n int, state string, labels []string, body string) IssueSearchResult {
+		return IssueSearchResult{Number: n, State: state, Labels: labels, Body: body, Author: bot, AuthorID: botID}
+	}
 	hits := []IssueSearchResult{
-		{Number: 9, State: "open", Labels: []string{"raised-by:verifier"}, Body: "later\n" + m},
-		{Number: 3, State: "closed", Labels: []string{"raised-by:verifier"}, Body: m},
-		{Number: 4, State: "open", Labels: []string{"raised-by:worker"}, Body: m},
-		{Number: 5, State: "open", Labels: []string{"raised-by:verifier"}, Body: "quoted without a marker: filing-key: " + key},
-		{Number: 6, State: "open", Labels: []string{"raised-by:verifier"}, Body: om},
-		{Number: 7, State: "open", Labels: []string{"bug"}, Body: m}, // unstamped: the stamp may have failed
-		{Number: 2, State: "OPEN", Labels: []string{"bug", "raised-by:verifier"}, Body: "x\n" + m},
+		hit(9, "open", []string{"raised-by:verifier"}, "later\n"+m),
+		hit(3, "closed", []string{"raised-by:verifier"}, m),
+		hit(4, "open", []string{"raised-by:worker"}, m),
+		hit(5, "open", []string{"raised-by:verifier"}, "quoted without a marker: filing-key: "+key),
+		hit(6, "open", []string{"raised-by:verifier"}, om),
+		hit(7, "open", []string{"bug"}, m), // unstamped: the stamp may have failed
+		hit(2, "OPEN", []string{"bug", "raised-by:verifier"}, "x\n"+m),
 	}
-	got := MatchFiledIssues(hits, key, "verifier")
-	if len(got) != 3 || got[0].Number != 2 || got[1].Number != 7 || got[2].Number != 9 {
-		t.Fatalf("matched %+v, want #2, #7 (unstamped) and #9 only", got)
+	got, untrusted := MatchFiledIssues(hits, key, "verifier")
+	if len(got) != 3 || got[0].Number != 2 || got[1].Number != 7 || got[2].Number != 9 || len(untrusted) != 0 {
+		t.Fatalf("matched %+v untrusted %+v, want #2, #7 (unstamped) and #9 only", got, untrusted)
 	}
-	if MatchFiledIssues(hits, "garbage", "verifier") != nil || MatchFiledIssues(hits, key, "nobody") != nil {
-		t.Fatal("a malformed key or unknown role must match nothing")
+	if g, u := MatchFiledIssues(hits, "garbage", "verifier"); g != nil || u != nil {
+		t.Fatal("a malformed key must match nothing")
+	}
+	if g, u := MatchFiledIssues(hits, key, "nobody"); g != nil || u != nil {
+		t.Fatal("an unknown role must match nothing")
+	}
+}
+
+// regression: dedup-suppression-untrusted-author (review finding S1)
+func TestMatchFiledIssuesAuthorTrust(t *testing.T) {
+	plantRoster(t, raisedByFixtureRoster)
+	key := mustKey(t, fkRepo, "example-stream/49", "verifier", "repair/0123456789abcdef")
+	m := FilingKeyMarker(key)
+	mk := func(n int, author string, id int64) IssueSearchResult {
+		return IssueSearchResult{Number: n, State: "open", Body: m, Author: author, AuthorID: id}
+	}
+	hits := []IssueSearchResult{
+		mk(1, "example-verifier-app[bot]", 300000005), // the pinned filing App
+		mk(2, "ada", 2001),                       // a trusted human with a matching id
+		mk(3, "ada", 0),                          // a trusted human login but no id: strict, untrusted
+		mk(4, "ada", 777),                        // a trusted human login carrying the wrong id
+		mk(5, "stranger", 12345),                 // anyone able to open an issue
+		mk(6, "", 0),                             // an unreadable author
+		mk(7, "example-verifier-app[bot]", 4242), // the App's slug with someone else's id
+	}
+	got, untrusted := MatchFiledIssues(hits, key, "verifier")
+	if len(got) != 2 || got[0].Number != 1 || got[1].Number != 2 {
+		t.Fatalf("matched %+v, want #1 and #2 only", got)
+	}
+	if len(untrusted) != 5 || untrusted[0].Number != 3 || untrusted[4].Number != 7 {
+		t.Fatalf("untrusted %+v, want #3..#7 reported, not obeyed", untrusted)
+	}
+	// With no roster nobody is trusted, so nothing can suppress a filing.
+	plantRoster(t, "")
+	if g, u := MatchFiledIssues(hits, key, "verifier"); len(g) != 0 {
+		t.Fatalf("unconfigured roster matched %+v (untrusted %+v)", g, u)
 	}
 }
 
@@ -118,13 +157,14 @@ func TestFilingKeySearchGitHub(t *testing.T) {
 		if page == "1" {
 			w.Header().Set("Link", `<https://example.invalid/?page=2>; rel="next"`)
 		}
-		fmt.Fprintf(w, `{"total_count":2,"incomplete_results":false,"items":[{"number":%s,"title":"t%s","state":"open","html_url":"https://example.invalid/%s","body":"b","labels":[{"name":"raised-by:verifier"}]}]}`, page, page, page)
+		fmt.Fprintf(w, `{"total_count":2,"incomplete_results":false,"items":[{"number":%s,"title":"t%s","state":"open","html_url":"https://example.invalid/%s","body":"b","user":{"login":"example-verifier-app[bot]","id":300000005},"labels":[{"name":"raised-by:verifier"}]}]}`, page, page, page)
 	})
 	got, err := gh.forge().SearchIssues(forgeTestRepo, SearchIssuesInput{FilingKey: key})
 	if err != nil || len(got) != 2 {
 		t.Fatalf("walk: %+v %v", got, err)
 	}
-	if got[1].Number != 2 || got[1].Title != "t2" || got[1].State != "open" || got[1].URL != "https://example.invalid/2" || len(got[1].Labels) != 1 {
+	if got[1].Number != 2 || got[1].Title != "t2" || got[1].State != "open" || got[1].URL != "https://example.invalid/2" || len(got[1].Labels) != 1 ||
+		got[1].Author != "example-verifier-app[bot]" || got[1].AuthorID != 300000005 {
 		t.Fatalf("the exact search must return the issue it reconciles to: %+v", got[1])
 	}
 	want := fmt.Sprintf(`repo:%s is:issue is:open "filing-key: %s" in:body`, forgeTestRepo.Slug(), key)

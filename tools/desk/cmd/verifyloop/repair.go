@@ -53,7 +53,7 @@ func (d dryRunRepairSink) RecordRepairObligation(o deskkit.RepairObligation) (st
 // FileBug escalation is the human-visible path, and the record is additive to it (the cutover sink
 // hardens "inability to file is an unlanded obligation" once real filing replaces the emitter).
 func (v *VerifyLoop) recordRepairObligation(r loopengine.Result) {
-	o := buildRepairObligation(r, v.now())
+	o := buildRepairObligation(r, v.now(), v.RootRepo)
 	if _, err := v.repairSink().RecordRepairObligation(o); err != nil {
 		fmt.Fprintf(v.emit(), "verifyloop: NOTE: could not record repair obligation %s: %v — the FileBug escalation still landed\n", o.ID, err)
 	}
@@ -64,9 +64,18 @@ func (v *VerifyLoop) recordRepairObligation(r loopengine.Result) {
 // (implementation); a BLOCKED / NEEDS_CONTEXT outcome is left UNKNOWN — explicit triage, never an
 // invented implementation bug (the interface-contract rule). deskkit.NewRepairObligation applies the
 // routing: implementation → needs-assignment/worker, unknown → needs-assignment/verifier triage.
-func buildRepairObligation(r loopengine.Result, ts string) deskkit.RepairObligation {
+//
+// The brief is the item's statusgen row key (itemKey: its ID minus the multi-root "<owner>/<repo>:"
+// prefix), never the raw ID — the prefixed form is not a brief id and would leave the obligation
+// (and the filing identity derived from it) unable to name its brief. The repository is the item's
+// own deliverable repo, else homeRepo (the single-root plan's own repository, where a same-repo
+// item's deliverable lands); with neither it stays empty and the filing keeps its legacy shape.
+func buildRepairObligation(r loopengine.Result, ts, homeRepo string) deskkit.RepairObligation {
 	repo := strings.TrimSpace(r.Item.Payload["repo"])
-	brief := strings.TrimSpace(r.Item.ID)
+	if repo == "" {
+		repo = strings.TrimSpace(homeRepo)
+	}
+	brief := strings.TrimSpace(itemKey(r.Item))
 	rows := failingRowNumbers(r)
 	receiptID := repairReceiptID(repo, brief, r.Item.TargetSHA, r.Verdict)
 	blockerKind := deskkit.BlockerUnknown
@@ -141,7 +150,7 @@ func repairReceiptID(repo, brief, sha, verdict string) string {
 // The bug a failed or blocked verify files is one observation of a CASE, and the case already has
 // an identity: the repair obligation's immutable ID. repairFilingIdentity hands that identity to
 // the filer (deskfile new --filing-brief/--filing-case with --raised-by verifier), and
-// reconcileFiling asks the repository whether an OPEN issue by this role already carries it —
+// fileBug asks the repository whether an OPEN issue by this role already carries it —
 // through the forge read the loop already owns, never a private cache — before anything is filed.
 
 // FilingIdentity is the structured identity a filing carries: the canonical brief and the case id
@@ -164,9 +173,11 @@ func repairFilingIdentity(o deskkit.RepairObligation) (FilingIdentity, string, b
 }
 
 // FiledCaseSource is the existing issue source's exact read: the open issues in repo that carry
-// key and were raised by the verifier. An error (including a truncated read) is unknown.
+// key, were raised by the verifier and were written by a trusted author. Issues that carry the
+// marker but fail the author check come back in untrusted (reported, never treated as the case's
+// filing). An error (including a truncated read) is unknown.
 type FiledCaseSource interface {
-	FiledCases(repo deskkit.ForgeRepo, key string) ([]deskkit.IssueSearchResult, error)
+	FiledCases(repo deskkit.ForgeRepo, key string) (found, untrusted []deskkit.IssueSearchResult, err error)
 }
 
 // IdentifiedBugFiler is the optional Durable capability that files with a structured identity.
@@ -178,16 +189,17 @@ type IdentifiedBugFiler interface {
 // FiledCases implements FiledCaseSource over the per-repo forge this source already resolves
 // (allowlist, credential and request observer included); the typed forge does the paged,
 // complete-or-error search.
-func (s *forgeIssueSource) FiledCases(repo deskkit.ForgeRepo, key string) ([]deskkit.IssueSearchResult, error) {
+func (s *forgeIssueSource) FiledCases(repo deskkit.ForgeRepo, key string) (found, untrusted []deskkit.IssueSearchResult, err error) {
 	fg, err := s.forge(repo)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	hits, err := fg.SearchIssues(repo, deskkit.SearchIssuesInput{FilingKey: key})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return deskkit.MatchFiledIssues(hits, key, verifyloopRole), nil
+	found, untrusted = deskkit.MatchFiledIssues(hits, key, verifyloopRole)
+	return found, untrusted, nil
 }
 
 // fileBug files the bug for a non-passing Result, once per case. The order is the brief's:
@@ -197,17 +209,21 @@ func (s *forgeIssueSource) FiledCases(repo deskkit.ForgeRepo, key string) ([]des
 //   - not found, or no identity / no exact source: file as before (with the identity when the
 //     Durable can carry it).
 func (v *VerifyLoop) fileBug(d Durable, r loopengine.Result, detail string) (string, error) {
-	id, key, ok := repairFilingIdentity(buildRepairObligation(r, v.now()))
+	id, key, ok := repairFilingIdentity(buildRepairObligation(r, v.now(), v.RootRepo))
 	if !ok {
 		return d.FileBug(r.Item, detail)
 	}
 	if src, isSrc := v.Issues.(FiledCaseSource); isSrc {
 		owner, name, _ := strings.Cut(id.Repo, "/")
-		found, err := src.FiledCases(deskkit.ForgeRepo{Owner: owner, Name: name}, key)
+		found, untrusted, err := src.FiledCases(deskkit.ForgeRepo{Owner: owner, Name: name}, key)
 		if err != nil {
 			fmt.Fprintf(v.emit(), "verifyloop: could-not-check whether %s case %s is already filed (%s) — nothing filed\n",
 				id.Brief, id.Case, oneLine(err))
 			return "", fmt.Errorf("could not check whether %s case %s is already filed: %w", id.Brief, id.Case, err)
+		}
+		for _, u := range untrusted {
+			fmt.Fprintf(v.emit(), "verifyloop: NOTICE: %s#%d carries %s case %s's filing-key marker but its author is not trusted — ignored, not the case's filing\n",
+				id.Repo, u.Number, id.Brief, id.Case)
 		}
 		if len(found) > 0 {
 			fmt.Fprintf(v.emit(), "verifyloop: %s case %s is already filed as %s#%d — reconciled, nothing filed\n",

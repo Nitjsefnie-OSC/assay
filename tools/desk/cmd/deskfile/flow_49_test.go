@@ -20,6 +20,13 @@ const (
 	flowOtherRepo = "example-org/tracker"
 	flowCaseA     = "repair/0123456789abcdef"
 	flowCaseB     = "repair/fedcba9876543210"
+
+	// The filing App's identity as the forge reports an issue author (a roster-pinned bot), and
+	// an account the roster does not name.
+	flowTrustedAuthor   = "assay-verifier-app[bot]"
+	flowTrustedAuthorID = 300000005
+	flowStranger        = "drive-by-account"
+	flowStrangerID      = 999000111
 )
 
 type flowIssue struct {
@@ -28,6 +35,9 @@ type flowIssue struct {
 	title  string
 	body   string
 	labels []string
+
+	author   string
+	authorID int64
 }
 
 // flowForge is a store-backed deskkit.Forge for the filing-key flow: per-repository issues, an
@@ -44,8 +54,15 @@ type flowForge struct {
 	exact     int // exact filing-key searches served
 }
 
+// seed plants an issue written by the trusted filing App.
 func (f *flowForge) seed(repo string, n int, state, title, body string, labels ...string) {
-	f.store[repo] = append(f.store[repo], &flowIssue{number: n, state: state, title: title, body: body, labels: labels})
+	f.seedBy(flowTrustedAuthor, flowTrustedAuthorID, repo, n, state, title, body, labels...)
+}
+
+// seedBy plants an issue written by an arbitrary author.
+func (f *flowForge) seedBy(author string, authorID int64, repo string, n int, state, title, body string, labels ...string) {
+	f.store[repo] = append(f.store[repo], &flowIssue{number: n, state: state, title: title, body: body, labels: labels,
+		author: author, authorID: authorID})
 }
 
 func (f *flowForge) SearchIssues(repo deskkit.ForgeRepo, in deskkit.SearchIssuesInput) ([]deskkit.IssueSearchResult, error) {
@@ -65,7 +82,8 @@ func (f *flowForge) SearchIssues(repo deskkit.ForgeRepo, in deskkit.SearchIssues
 			for _, is := range issues {
 				if strings.Contains(is.body, deskkit.FilingKeyMarkerText(in.FilingKey)) {
 					out = append(out, deskkit.IssueSearchResult{Number: is.number, Title: is.title, State: is.state,
-						Labels: is.labels, Body: is.body, URL: fmt.Sprintf("https://example.test/%s/issues/%d", slug, is.number)})
+						Labels: is.labels, Body: is.body, Author: is.author, AuthorID: is.authorID,
+						URL: fmt.Sprintf("https://example.test/%s/issues/%d", slug, is.number)})
 				}
 			}
 		}
@@ -83,7 +101,8 @@ func (f *flowForge) SearchIssues(repo deskkit.ForgeRepo, in deskkit.SearchIssues
 func (f *flowForge) FileIssue(repo deskkit.ForgeRepo, in deskkit.IssueInput) (*deskkit.IssueRef, error) {
 	f.creates++
 	n := 100 + len(f.store[repo.Slug()]) + 1
-	f.store[repo.Slug()] = append(f.store[repo.Slug()], &flowIssue{number: n, state: "open", title: in.Title, body: in.Body})
+	f.store[repo.Slug()] = append(f.store[repo.Slug()], &flowIssue{number: n, state: "open", title: in.Title, body: in.Body,
+		author: flowTrustedAuthor, authorID: flowTrustedAuthorID})
 	if f.lostReply {
 		return nil, deskkit.Unverifiable("HTTP 502: response lost", nil)
 	}
@@ -252,6 +271,35 @@ func TestFlowFileKey(t *testing.T) {
 					t.Fatalf("creates=%d, store=%d — an unknown read must file nothing", ff.creates, len(ff.store[allowedRepo]))
 				}
 			})
+		}
+	})
+
+	// regression: dedup-suppression-untrusted-author (review finding S1)
+	t.Run("an untrusted author's marker-carrying issue does not suppress the filing", func(t *testing.T) {
+		ff := flowSetup(t)
+		key, err := deskkit.FilingKey(allowedRepo, "example-stream/49", "verifier", flowCaseA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		marker := deskkit.FilingKeyMarker(key)
+		// Anyone can compute the key and open an open, unstamped issue carrying its marker.
+		ff.seedBy(flowStranger, flowStrangerID, allowedRepo, 41, "open", "planted lookalike", "hello\n"+marker)
+		// Also a login that spoofs a trusted bot's slug without the pinned id.
+		ff.seedBy(flowTrustedAuthor, flowStrangerID, allowedRepo, 42, "open", "planted wrong id", marker)
+		rc, out := flowFile(t, allowedRepo, "genuine observation of the case", "example-stream/49", flowCaseA, "verifier")
+		if rc != deskkit.ExitOK || ff.creates != 1 {
+			t.Fatalf("rc = %d creates = %d, want 0 and 1 — an untrusted author's issue is not the case's filing; out=%s", rc, ff.creates, out)
+		}
+		if !strings.Contains(out, "#41") || !strings.Contains(out, "not trusted") {
+			t.Fatalf("the ignored issue must be reported by number; out=%s", out)
+		}
+		if strings.Contains(out, "planted lookalike") {
+			t.Fatalf("an untrusted issue's text must never be echoed; out=%s", out)
+		}
+		// The genuine filing now suppresses a repeat, and the untrusted issues still do not.
+		rc, out = flowFile(t, allowedRepo, "yet another wording", "example-stream/49", flowCaseA, "verifier")
+		if rc != deskkit.ExitRefused || !strings.Contains(out, "#103") || strings.Contains(out, "#41)") {
+			t.Fatalf("repeat rc = %d, want 5 naming the genuine filing #103; out=%s", rc, out)
 		}
 	})
 

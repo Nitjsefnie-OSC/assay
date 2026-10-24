@@ -10,8 +10,8 @@
     {
       "name": "the exact lookup is skipped, so only the title matcher runs",
       "file": "cmd/deskfile/deskfile.go",
-      "old": "\t\tif filingKey != \"\" {\n\t\t\tfound, ferr := filedCases(",
-      "new": "\t\tif false && filingKey != \"\" {\n\t\t\tfound, ferr := filedCases("
+      "old": "\t\tif filingKey != \"\" {\n\t\t\tfound, untrusted, ferr := filedCases(",
+      "new": "\t\tif false && filingKey != \"\" {\n\t\t\tfound, untrusted, ferr := filedCases("
     },
     {
       "name": "the repository is dropped from the key (cross-root suppression)",
@@ -48,6 +48,12 @@
       "file": "cmd/deskfile/deskfile.go",
       "old": "\t\tparts = append(parts, \"filing-key \"+filingKey)",
       "new": "\t\t_ = filingKey"
+    },
+    {
+      "name": "an untrusted author's marker-carrying issue counts as the case's filing",
+      "file": "internal/deskkit/repairobligation.go",
+      "old": "if trustedContentAuthor(h.Author, h.AuthorID) {",
+      "new": "if true {"
     }
   ]
 }

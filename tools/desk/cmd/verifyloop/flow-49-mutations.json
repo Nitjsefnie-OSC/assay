@@ -34,8 +34,26 @@
     {
       "name": "a failed forge search is read as no issues",
       "file": "cmd/verifyloop/repair.go",
-      "old": "\thits, err := fg.SearchIssues(repo, deskkit.SearchIssuesInput{FilingKey: key})\n\tif err != nil {\n\t\treturn nil, err\n\t}",
-      "new": "\thits, err := fg.SearchIssues(repo, deskkit.SearchIssuesInput{FilingKey: key})\n\tif err != nil {\n\t\treturn nil, nil\n\t}"
+      "old": "\thits, err := fg.SearchIssues(repo, deskkit.SearchIssuesInput{FilingKey: key})\n\tif err != nil {\n\t\treturn nil, nil, err\n\t}",
+      "new": "\thits, err := fg.SearchIssues(repo, deskkit.SearchIssuesInput{FilingKey: key})\n\tif err != nil {\n\t\treturn nil, nil, nil\n\t}"
+    },
+    {
+      "name": "an untrusted author's marker-carrying issue counts as the case's filing",
+      "file": "internal/deskkit/repairobligation.go",
+      "old": "if trustedContentAuthor(h.Author, h.AuthorID) {",
+      "new": "if true {"
+    },
+    {
+      "name": "the scanner's repo prefix stays on the brief id",
+      "file": "cmd/verifyloop/repair.go",
+      "old": "brief := strings.TrimSpace(itemKey(r.Item))",
+      "new": "brief := strings.TrimSpace(r.Item.ID)"
+    },
+    {
+      "name": "a same-repo item gets no home-repo fallback",
+      "file": "cmd/verifyloop/repair.go",
+      "old": "repo = strings.TrimSpace(homeRepo)",
+      "new": "_ = homeRepo"
     }
   ]
 }

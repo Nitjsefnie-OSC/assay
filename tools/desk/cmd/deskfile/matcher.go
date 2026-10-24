@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -251,13 +253,24 @@ func classMarker(hasClass bool) string {
 
 // filedCases returns the open issues already tracking the case named by key, lowest number
 // first. A backend error (including a truncated or incomplete walk) is returned, never read as
-// "no issues": the caller files nothing on it.
-func filedCases(fg deskkit.Forge, fr deskkit.ForgeRepo, key, role string) ([]deskkit.IssueSearchResult, error) {
+// "no issues": the caller files nothing on it. A hit whose author the trust gate does not admit
+// is NOT the case's filing: it comes back in untrusted, reported by the caller and never obeyed.
+func filedCases(fg deskkit.Forge, fr deskkit.ForgeRepo, key, role string) (found, untrusted []deskkit.IssueSearchResult, err error) {
 	hits, err := fg.SearchIssues(fr, deskkit.SearchIssuesInput{FilingKey: key})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return deskkit.MatchFiledIssues(hits, key, role), nil
+	found, untrusted = deskkit.MatchFiledIssues(hits, key, role)
+	return found, untrusted, nil
+}
+
+// noteUntrustedHits tells the operator which issues carry the case's marker but were written by
+// an author the trust gate does not admit. They are quoted by number only (never their text) and
+// are ignored: the filing proceeds as if they were absent.
+func noteUntrustedHits(w io.Writer, repo string, untrusted []deskkit.IssueSearchResult) {
+	for _, u := range untrusted {
+		fmt.Fprintf(w, "NOTICE: %s#%d carries this case's filing-key marker but its author is not trusted — ignored, not treated as the case's filing\n", repo, u.Number)
+	}
 }
 
 // filedCaseRefusal is the exit-5 text for an exact hit: the existing issue's number first, then
@@ -289,7 +302,8 @@ func ambiguousCreate(fg deskkit.Forge, fr deskkit.ForgeRepo, repo, key, role str
 	if key == "" {
 		return deskkit.Unverifiable("file issue failed", cerr)
 	}
-	found, ferr := filedCases(fg, fr, key, role)
+	found, untrusted, ferr := filedCases(fg, fr, key, role)
+	noteUntrustedHits(os.Stderr, repo, untrusted)
 	switch {
 	case ferr != nil:
 		return deskkit.Unverifiable("file issue failed and whether the create landed could not be read — do not re-file by hand; "+

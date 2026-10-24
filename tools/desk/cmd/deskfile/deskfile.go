@@ -1101,7 +1101,8 @@ func cmdNew(args []string) (err error) {
 	// --force-new included.
 	if deskkit.HasFilingKeyClaim(string(body)) {
 		return deskkit.Refused("refused: the body carries a filing-key marker (in some spelling), which only this tool " +
-			"writes, from --" + filingBriefFlag + "/--" + filingCaseFlag + ". Remove it.")
+			"writes, from --" + filingBriefFlag + "/--" + filingCaseFlag + ". Remove it; to discuss the marker in prose, " +
+			"spell it without the `filing-key:` colon form (for example `filing key fk1/...`).")
 	}
 
 	// --no-fork content requirements: each re-route names what its body must carry, checked
@@ -1265,7 +1266,8 @@ func cmdNew(args []string) (err error) {
 		// The exact identity comes first. Found: reconcile to that issue and file nothing. Not
 		// answerable (failed, truncated or incomplete read): unknown, so nothing is filed.
 		if filingKey != "" {
-			found, ferr := filedCases(fg, fr, filingKey, *raisedBy)
+			found, untrusted, ferr := filedCases(fg, fr, filingKey, *raisedBy)
+			noteUntrustedHits(os.Stderr, *repo, untrusted)
 			if ferr != nil {
 				return deskkit.Unverifiable(
 					"exact filing-identity search failed — refuse rather than mint a possible duplicate (override with --force-new --reason)", ferr)
