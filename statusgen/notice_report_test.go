@@ -721,3 +721,88 @@ func TestArchiveExcludedFromLifecycleOnly(t *testing.T) {
 		t.Errorf("docs/archive must stay in the link-checked set; only lifecycle classification excludes it")
 	}
 }
+
+// TestNonLintModesBoundClosedRecordNotices is the statusgen/28 callers check:
+// the write / check / record runs reach the same unfailable-row audit as --lint,
+// so a pre-existing closed record's findings must be summarised there too, never
+// printed one line per row (the removed private aggregates did this before the
+// shared report existed). Driven for real through the `check` entrypoint.
+//
+// regression: F-nonlint-closed-rows — the report was built for --lint only, so
+// every other mode printed each closed-brief row as its own NOTICE.
+func TestNonLintModesBoundClosedRecordNotices(t *testing.T) {
+	root := noticeFixtureRoot(t)
+	withBase(t, true, "demo/02", "demo/03")
+	for _, mode := range []string{"check", "write"} {
+		t.Run(mode, func(t *testing.T) {
+			resetNoticeReportState(t)
+			var stderr string
+			dir := t.TempDir()
+			if err := os.CopyFS(dir, os.DirFS(root)); err != nil {
+				t.Fatal(err)
+			}
+			stderr = captureStderr(t, func() {
+				captureStdout(t, func() { run(dir, mode, nil, nil, "") })
+			})
+			for _, closed := range []string{"brief-02-predone.md", "brief-03-preverified.md"} {
+				for _, l := range strings.Split(stderr, "\n") {
+					if !strings.HasPrefix(l, "NOTICE: ") {
+						continue
+					}
+					body := strings.TrimPrefix(l, "NOTICE: ")
+					rule := noticeRuleOf(body)
+					if _, held := noticeHeldActionable[rule]; held {
+						continue // counted per rule but deliberately never demoted
+					}
+					if rule != "" && strings.Contains(l, closed) {
+						t.Errorf("%s mode printed a pre-existing closed record's finding as its own line: %.200s", mode, l)
+					}
+				}
+			}
+			var summaries int
+			for _, l := range strings.Split(stderr, "\n") {
+				if historicalSummaryRe.MatchString(l) {
+					summaries++
+				}
+			}
+			if summaries == 0 {
+				t.Errorf("%s mode printed no per-rule historical total — closed-record findings are neither counted nor bounded:\n%s", mode, stderr)
+			}
+			if !strings.Contains(stderr, "statusgen: notices: ") {
+				t.Errorf("%s mode printed no totals line:\n%s", mode, stderr)
+			}
+		})
+	}
+}
+
+// TestFragmentRulesIgnoreQuotedAuthorText pins the emitter-owned-text rule for
+// fragment-matched notices: the emitter's phrase counts wherever it sits
+// relative to the quoted author entry (the consumers lines put it AFTER the
+// quote), and the same phrase inside the quote does not.
+//
+// regression: F-fragment-quoted-text — fragments matched with strings.Contains
+// on the whole line, so a quoted author entry containing "names no routing"
+// filed an out-of-inventory notice under consumers-unrouted.
+func TestFragmentRulesIgnoreQuotedAuthorText(t *testing.T) {
+	cases := []struct {
+		name, line, want string
+	}{
+		{"phrase after the quoted entry still counts",
+			`docs/streams/demo/brief-02-x.md: consumers entry "thing: follow-up demo/09" names no routing — say where it goes`, ruleConsumersUnrouted},
+		{"phrase only inside the quote does not count",
+			`docs/streams/demo/brief-02-x.md: unrelated notice about "this entry names no routing at all" and nothing else`, ""},
+		{"backtick span does not count either",
+			"docs/streams/demo/brief-02-x.md: unrelated notice about `has no why:` in prose", ""},
+		{"escaped quote inside the span does not end it early",
+			`docs/streams/demo/brief-02-x.md: unrelated notice about "say \"names no routing\" here" end`, ""},
+		{"security-review phrase after a backtick span counts",
+			"docs/streams/demo/brief-02-x.md: risk: yes in `risk:` records no security-review", ruleSecurityReviewAbsent},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := noticeRuleOf(tc.line); got != tc.want {
+				t.Errorf("noticeRuleOf(%q) = %q, want %q", tc.line, got, tc.want)
+			}
+		})
+	}
+}

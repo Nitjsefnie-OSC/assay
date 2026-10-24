@@ -1,5 +1,5 @@
 {
-  "test": "go test . -run 'HistoricalNotice|NoticeInventory|NoticeSubject|HeldRule|CouldNotCheckLines|ProseLedCommandClosed|SecondSite' -count=1 -timeout 300s",
+  "test": "go test . -run 'HistoricalNotice|NoticeInventory|NoticeSubject|HeldRule|CouldNotCheckLines|ProseLedCommandClosed|SecondSite|NonLintModes|FragmentRules|ArchiveExcluded|ClosedBriefsKeepRecords|ProseLedCommandLintReaches|UnfailablePostBase' -count=1 -timeout 300s",
   "control": {
     "name": "CONTROL \u2014 the report demotes nothing (every notice stays actionable)",
     "file": "notice_report.go",
@@ -48,6 +48,60 @@
       "file": "notice_report.go",
       "old": "\"closure-baseline\"",
       "new": "\"closure-baseline-off\""
+    },
+    {
+      "name": "the record index is built for --lint only (write/check/record runs print closed rows one by one)",
+      "file": "main.go",
+      "old": "\t{\n\t\tgrandfathered, baseOK := closedAtBase(root, streams)\n",
+      "new": "\tif mode == \"lint\" {\n\t\tgrandfathered, baseOK := closedAtBase(root, streams)\n"
+    },
+    {
+      "name": "non-lint modes print notices unchanged again (the pre-fix emitLintNotices)",
+      "file": "notice_report.go",
+      "old": "\trep := buildNoticeReport(notices, activeRecordIndex)\n\tif mode == \"lint\" && lintJSONMode {\n",
+      "new": "\tif mode != \"lint\" {\n\t\temitNotices(notices)\n\t\treturn\n\t}\n\trep := buildNoticeReport(notices, activeRecordIndex)\n\tif mode == \"lint\" && lintJSONMode {\n"
+    },
+    {
+      "name": "fragment rules match the whole line, quoted author text included",
+      "file": "notice_report.go",
+      "old": "strings.Contains(noticeUnquoted(line), f.fragment)",
+      "new": "strings.Contains(line, f.fragment)"
+    },
+    {
+      "name": "fragment rules read only the head before the first quote (drops phrases that follow the quoted entry)",
+      "file": "notice_report.go",
+      "old": "strings.Contains(noticeUnquoted(line), f.fragment)",
+      "new": "strings.Contains(noticeHead(line), f.fragment)"
+    },
+    {
+      "name": "--all no longer restores the historical per-row lines",
+      "file": "notice_report.go",
+      "old": "\trenderNoticeText(os.Stderr, rep, lintDetailAll)\n",
+      "new": "\trenderNoticeText(os.Stderr, rep, false)\n"
+    },
+    {
+      "name": "emitter drops a closed brief's gotest-run-vacuous rows (the per-row record is lost)",
+      "file": "verifyrows.go",
+      "old": "\t\t\t\t\tline := fmt.Sprintf(\"%s: %s [%s] %s\", path, where, f.rule, f.msg)\n",
+      "new": "\t\t\t\t\tif closed && !postBase && f.rule == ruleGoTestRunVacuous {\n\t\t\t\t\t\tcontinue\n\t\t\t\t\t}\n\t\t\t\t\tline := fmt.Sprintf(\"%s: %s [%s] %s\", path, where, f.rule, f.msg)\n"
+    },
+    {
+      "name": "emitter drops a closed brief's prose-led-command rows (the per-row record is lost)",
+      "file": "verifyrows.go",
+      "old": "\t\t\t\t\tline := fmt.Sprintf(\"%s: %s [%s] %s\", path, where, f.rule, f.msg)\n",
+      "new": "\t\t\t\t\tif closed && !postBase && f.rule == ruleProseLedCommand {\n\t\t\t\t\t\tcontinue\n\t\t\t\t\t}\n\t\t\t\t\tline := fmt.Sprintf(\"%s: %s [%s] %s\", path, where, f.rule, f.msg)\n"
+    },
+    {
+      "name": "docs/archive is no longer excluded from lifecycle classification",
+      "file": "lifecyclelint.go",
+      "old": "\t\tif strings.HasPrefix(f, archive) {\n",
+      "new": "\t\tif false && strings.HasPrefix(f, archive) {\n"
+    },
+    {
+      "name": "the lifecycle exclusion widens to every docs file",
+      "file": "lifecyclelint.go",
+      "old": "archive := filepath.Join(root, \"docs\", \"archive\") + string(filepath.Separator)",
+      "new": "archive := filepath.Join(root, \"docs\") + string(filepath.Separator)"
     }
   ]
 }

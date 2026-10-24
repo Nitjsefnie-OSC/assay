@@ -170,10 +170,21 @@ func noticeHead(line string) string {
 	return line
 }
 
+// noticeQuotedRe matches one quoted span of author text: a Go-%q double-quoted
+// string (escapes honoured) or a backtick span.
+var noticeQuotedRe = regexp.MustCompile("\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`")
+
+// noticeUnquoted is the line with every quoted span cut out: the emitter's own
+// words, wherever they sit relative to the quoted author text.
+func noticeUnquoted(line string) string {
+	return noticeQuotedRe.ReplaceAllString(line, " ")
+}
+
 // noticeRuleOf returns the inventory rule a notice line belongs to, or "". A
 // bracket tag counts only in the emitter-owned head (before the first quoted
-// span), and ordering-gate only as the line's own prefix, so a notice that quotes
-// author text naming another rule cannot be filed under it.
+// span), a fragment only outside every quoted span, and ordering-gate only as the
+// line's own prefix, so a notice that quotes author text naming a rule cannot be
+// filed under it.
 func noticeRuleOf(line string) string {
 	for _, m := range noticeTagRe.FindAllStringSubmatch(noticeHead(line), -1) {
 		if _, ok := noticeRuleFamily[m[1]]; ok {
@@ -187,7 +198,11 @@ func noticeRuleOf(line string) string {
 			}
 			continue
 		}
-		if strings.Contains(line, f.fragment) {
+		// Emitter-owned text only: the consumers and brief-file emitters quote the
+		// author's entry (%q), and a phrase inside that quote is author prose,
+		// not the emitter's statement. The emitter's own phrase usually FOLLOWS
+		// the quoted entry, so the quoted spans are cut out, not the tail.
+		if strings.Contains(noticeUnquoted(line), f.fragment) {
 			return f.rule
 		}
 	}
@@ -542,15 +557,15 @@ var (
 	pendingNoticeReport *noticeReport
 )
 
-// emitLintNotices is the lint-mode replacement for emitNotices: it reports
-// through the shared noticeReport. Every other mode prints notices unchanged.
+// emitLintNotices is the run's notice emitter in EVERY mode: it reports through
+// the shared noticeReport, so a pre-existing closed record's findings are
+// counted and summarised per rule wherever they are produced (the write, check
+// and record runs reach the same unfailable-row audit as --lint). Only --lint
+// has the opt-in detail (--all) and the machine form (--json); every other mode
+// gets the default bounded text rendering.
 func emitLintNotices(mode string, notices []string) {
-	if mode != "lint" {
-		emitNotices(notices)
-		return
-	}
 	rep := buildNoticeReport(notices, activeRecordIndex)
-	if lintJSONMode {
+	if mode == "lint" && lintJSONMode {
 		pendingNoticeReport = rep
 		return
 	}

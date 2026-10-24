@@ -85,8 +85,12 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// (notice_report.go): which findings are about a record already closed at the
 	// merge-base. Same closedAtBase predicate the closure gates use. Rebuilt per
 	// root; cleared first so a failed root never lends its index to the next.
+	// Built in EVERY mode: the write, check and record runs print the same
+	// notices (the unfailable-row audit runs in all of them), and a closed
+	// record's findings must be counted and bounded there too, not printed one
+	// line each.
 	activeRecordIndex = nil
-	if mode == "lint" {
+	{
 		grandfathered, baseOK := closedAtBase(root, streams)
 		activeRecordIndex = buildRecordIndex(streams, grandfathered, baseOK)
 	}
