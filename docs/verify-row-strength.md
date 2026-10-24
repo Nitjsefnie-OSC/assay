@@ -204,6 +204,22 @@ identity, so rewording a message, or checking the base out under another directo
 finding. A renamed brief is compared with the copy at its old path. The classifier is the only
 place that reads rendered text, and the test matrix drives every included emitter.
 
+A could-not-check is recognised by the emitter-owned shape of the line (the start of the message
+after its tag and path), never by the token appearing anywhere in the line. Row rules echo the
+row's own Command cell, so a new defective row whose command mentions `COULD-NOT-CHECK` is still a
+finding and is promoted.
+
+The identity is the rule, the Verify row number and the subject, with no count. Two consequences
+are accepted and stated here. First, a second instance of a subject-less rule on the same row, or
+of a brief-level rule with the same subject, adds nothing when the base already carries one, so the
+comparison is lenient by at most one instance. Second, the row number is the `#` cell: renumbering
+the rows of an edited brief makes carried debt read as new and reports it as a PROBLEM, which is
+stricter, not a bypass. An author who renumbers will see findings on rows they did not otherwise
+change. The dot-root side fix in `normalizeDiffProblem` also changes one outcome: with the default
+`--root .`, a base-side PROBLEM whose line contains a dot used to miss its match and fire at full
+strength, and is now demoted to NOTICE as the `--diff-base` contract documents; no
+diff-introduced PROBLEM gets weaker.
+
 **Actionable (family A and B of the public rule-family inventory in the statusgen README).**
 
 - Structural Verify-row rules: `ere-literal-pipe`, `grep-zero-count`, `pipeline-exit-sunk`,

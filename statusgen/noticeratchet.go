@@ -112,13 +112,25 @@ var ratchetUntagged = []struct {
 
 var (
 	// "<path>: Verify row <id> [<rule>] ..." (or "a Verify row" when unnumbered).
-	ratchetRowRe = regexp.MustCompile(`^(\S+\.md): (?:Verify row (\S+)|a Verify row) \[([A-Za-z0-9-]+)\] `)
+	// verifyportability.go renders an empty "#" cell as "Verify row  [" (two
+	// spaces), so the row id may be empty.
+	ratchetRowRe = regexp.MustCompile(`^(\S+\.md): (?:Verify row (\S*)|a Verify row) \[([A-Za-z0-9-]+)\] `)
 	// "[<rule>] <path>: ..." (id-dereference, risk-files-crossread).
 	ratchetLeadTagRe = regexp.MustCompile(`^\[([A-Za-z0-9-]+)\] (\S+\.md): (.*)$`)
 	// "<path>: [<rule>] ..." (table-touches-no-files).
 	ratchetPathTagRe = regexp.MustCompile(`^(\S+\.md): \[([A-Za-z0-9-]+)\] (.*)$`)
 	// "<path>: <message>" (the untagged emitters).
 	ratchetPlainRe = regexp.MustCompile(`^(\S+\.md): (.*)$`)
+
+	// ratchetUnknownLead matches the emitter-owned START of a could-not-check
+	// message of a member rule, after its tag and path have been consumed:
+	// table-touches-no-files ("COULD-NOT-CHECK — ..."), id-dereference
+	// ("identifier dereference COULD-NOT-CHECK: ...") and risk-files-crossread
+	// ("brief <id> COULD-NOT-CHECK the risk x files cross-read ..."). It is
+	// anchored at the start on purpose: the token is only an unknown when the
+	// emitter put it there. The same token inside a quoted command, identifier or
+	// declared path is brief-controlled text and must never hide a finding.
+	ratchetUnknownLead = regexp.MustCompile(`^(?:COULD-NOT-CHECK|identifier dereference COULD-NOT-CHECK|brief \S+ COULD-NOT-CHECK)\b`)
 
 	ratchetBacktickRe = regexp.MustCompile("`([^`]*)`")
 	ratchetDeclaredRe = regexp.MustCompile(`declares path ("(?:[^"\\]|\\.)*")`)
@@ -166,11 +178,14 @@ func isBriefPath(p string) bool {
 // finding on a brief file; every other line (a could-not-check, a heuristic
 // prompt, a summary, a non-member rule, a notice with no brief path) returns
 // false and stays a plain NOTICE.
+//
+// A could-not-check is recognised by the emitter-owned shape of the line
+// (ratchetUnknownLead), never by the token anywhere in the line: the row rules
+// echo the row's own Command cell, and a command that mentions the token is
+// still a real finding. No member row rule has a could-not-check form of its
+// own (verifyrows.go, strength.go and verifyportability.go emit none).
 func parseLintNotice(line, treeRoot string) (lintFinding, bool) {
 	s := strings.TrimSpace(relativizeNoticeLine(line, treeRoot))
-	if strings.Contains(s, "COULD-NOT-CHECK") {
-		return lintFinding{}, false
-	}
 	f := lintFinding{raw: s}
 	if m := ratchetRowRe.FindStringSubmatch(s); m != nil {
 		if !ratchetRowRules[m[3]] || !isBriefPath(m[1]) {
@@ -183,7 +198,7 @@ func parseLintNotice(line, treeRoot string) (lintFinding, bool) {
 		return f, true
 	}
 	if m := ratchetLeadTagRe.FindStringSubmatch(s); m != nil {
-		if !ratchetBriefRules[m[1]] || !isBriefPath(m[2]) {
+		if !ratchetBriefRules[m[1]] || !isBriefPath(m[2]) || ratchetUnknownLead.MatchString(m[3]) {
 			return lintFinding{}, false
 		}
 		f.rule, f.path = m[1], m[2]
@@ -198,7 +213,7 @@ func parseLintNotice(line, treeRoot string) (lintFinding, bool) {
 		return f, true
 	}
 	if m := ratchetPathTagRe.FindStringSubmatch(s); m != nil {
-		if !ratchetBriefRules[m[2]] || !isBriefPath(m[1]) {
+		if !ratchetBriefRules[m[2]] || !isBriefPath(m[1]) || ratchetUnknownLead.MatchString(m[3]) {
 			return lintFinding{}, false
 		}
 		f.path, f.rule = m[1], m[2]

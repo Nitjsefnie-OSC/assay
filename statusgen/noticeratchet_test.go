@@ -147,9 +147,9 @@ func TestNoticeRatchet(t *testing.T) {
 	t.Run("history_and_unknowns_visible", func(t *testing.T) {
 		visible := []string{
 			"[gotest-run-vacuous] 3 Verify row(s) in 2 closed brief(s) — historical, not edited",
-			"[id-dereference] " + ratchetHeadRoot + "/" + ratchetBriefA + ": COULD-NOT-CHECK named identifiers: no source tree",
-			"[risk-files-crossread] " + ratchetHeadRoot + "/" + ratchetBriefA + ": brief alpha/01 COULD-NOT-CHECK no files line",
-			ratchetHeadRoot + "/" + ratchetBriefA + ": [table-touches-no-files] COULD-NOT-CHECK declared files",
+			"[id-dereference] " + ratchetHeadRoot + "/" + ratchetBriefA + ": identifier dereference COULD-NOT-CHECK: read failed",
+			"[risk-files-crossread] " + ratchetHeadRoot + "/" + ratchetBriefA + ": brief alpha/01 COULD-NOT-CHECK the risk\u00d7files cross-read \u2014 no files line",
+			ratchetHeadRoot + "/" + ratchetBriefA + ": [table-touches-no-files] COULD-NOT-CHECK \u2014 the files line yields no path",
 			ratchetHeadRoot + "/" + ratchetBriefA + ": consumers: brief alpha/01 reads as changing a shared surface but declares no consumers: list",
 			rowNotice(ratchetHeadRoot, ratchetBriefA, "1", "consumer-delivery-range", "consumer command has no explicit --base"),
 			ratchetHeadRoot + "/" + ratchetBriefA + ": brief alpha/01 names no outcome: add one",
@@ -281,6 +281,77 @@ func TestNoticeRatchet(t *testing.T) {
 		b, _ := parseLintNotice(strings.Replace(lead[0], "TestGone", "TestOther", 1), ratchetHeadRoot)
 		if a.identity() == b.identity() {
 			t.Error("two identifiers on one brief collapsed into one identity")
+		}
+	})
+
+	// regression: F-notice-ratchet-cnc
+	t.Run("cnc_token_in_echoed_text_promoted", func(t *testing.T) {
+		const tok = "COULD-NOT-CHECK"
+		// Row rules echo the Command cell. A new defective row whose command
+		// mentions the token is still a finding: the token is brief-controlled
+		// text there, not an emitter-owned could-not-check.
+		cmds := []struct{ cell, expect string }{
+			{"`grep -E '" + tok + "\\|x' f`", "x"},
+			{"`true " + tok + "`", "x"},
+			{"see `" + tok + "` then `go test ./...`", "x"},
+			{"`grep -c " + tok + " f`", "0"},
+		}
+		promoted := 0
+		for _, c := range cmds {
+			for _, rf := range rowFindingsCtx(c.cell, c.expect, nil) {
+				if !ratchetRowRules[rf.rule] {
+					continue
+				}
+				line := rowNotice(ratchetHeadRoot, ratchetBriefA, "2", rf.rule, rf.msg)
+				if !strings.Contains(line, tok) {
+					continue // this finding does not echo the command
+				}
+				promoted++
+				f, ok := parseLintNotice(line, ratchetHeadRoot)
+				if !ok || f.rule != rf.rule || f.row != "2" {
+					t.Errorf("rule %s with the token in its echoed command was dropped: ok=%v %+v", rf.rule, ok, f)
+				}
+				res := runRatchet(t, ratchetCfg(nil, []string{line}, edited, nil))
+				if len(res.ratchetIntroduced) != 1 {
+					t.Errorf("rule %s with the token in its echoed command not promoted: %+v", rf.rule, res)
+				}
+			}
+		}
+		if promoted < 2 {
+			t.Fatalf("the fixture exercised only %d echoing findings; the probe is not reaching the emitters", promoted)
+		}
+		// Brief-level findings echo brief-controlled text too (a declared path).
+		risk := "[" + ruleRiskFilesCrossRead + "] " + ratchetHeadRoot + "/" + ratchetBriefA +
+			": brief alpha/01 answers all four risk questions \"no\" but declares path \".github/" + tok + ".yml\", which matches the trigger"
+		if f, ok := parseLintNotice(risk, ratchetHeadRoot); !ok || f.rule != ruleRiskFilesCrossRead {
+			t.Errorf("risk finding with the token in a declared path was dropped: ok=%v %+v", ok, f)
+		}
+		deref := "[id-dereference] " + ratchetHeadRoot + "/" + ratchetBriefA + ": named identifier `" + tok + "` resolves against no file"
+		if f, ok := parseLintNotice(deref, ratchetHeadRoot); !ok || f.rule != "id-dereference" {
+			t.Errorf("id-dereference finding with the token in the identifier was dropped: ok=%v %+v", ok, f)
+		}
+		// The emitter-owned could-not-check shapes stay unknown.
+		for _, l := range []string{
+			"[id-dereference] " + ratchetHeadRoot + "/" + ratchetBriefA + ": identifier dereference " + tok + ": read failed",
+			"[" + ruleRiskFilesCrossRead + "] " + ratchetHeadRoot + "/" + ratchetBriefA + ": brief alpha/01 " + tok + " the risk cross-read",
+			ratchetHeadRoot + "/" + ratchetBriefA + ": [" + ruleTableNoFiles + "] " + tok + " \u2014 no path",
+		} {
+			if _, ok := parseLintNotice(l, ratchetHeadRoot); ok {
+				t.Errorf("an emitter-owned could-not-check was classified as a finding: %s", l)
+			}
+		}
+	})
+
+	// regression: F-notice-ratchet-unnumbered
+	t.Run("unnumbered_portability_row_classified", func(t *testing.T) {
+		line := ratchetHeadRoot + "/" + ratchetBriefA + ": Verify row  [verify-row-portability] OS-specific command without explicit OS marker"
+		f, ok := parseLintNotice(line, ratchetHeadRoot)
+		if !ok || f.rule != "verify-row-portability" || f.row != "" || f.path != ratchetBriefA {
+			t.Fatalf("an empty row id must still classify: ok=%v %+v", ok, f)
+		}
+		res := runRatchet(t, ratchetCfg(nil, []string{line}, edited, nil))
+		if len(res.ratchetIntroduced) != 1 {
+			t.Fatalf("an unnumbered portability row on a changed brief must be promoted: %+v", res)
 		}
 	})
 
