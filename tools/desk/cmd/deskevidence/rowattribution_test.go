@@ -24,7 +24,11 @@ func TestEvidenceSubmissionAttribution(t *testing.T) {
 		"missing_runner":          {base + strings.ReplaceAll(attributedBlocked, "human:operator", ""), base, true},
 		"placeholder":             {base + strings.ReplaceAll(attributedBlocked, "human:operator", "Unknown-runner"), base, true},
 		"header_reinterpretation": {base + strings.ReplaceAll(attributedBlocked, "| Runner |", "| Unknown |"), base + attributedBlocked, true},
-		"legacy_when":             {base + strings.ReplaceAll(attributedBlocked, "Date", "When"), base, false},
+		"when_header":             {base + strings.ReplaceAll(attributedBlocked, "Date", "When"), base, true},
+		"cmd_outcome_header":      {base + "| # | Cmd | Outcome |\n|---|---|---|\n| 1 | check | blocked |\n", base, true},
+		"observed_prefix_header":  {base + "| # | Observed (exit + output) |\n|---|---|\n| 1 | blocked |\n", base, true},
+		"na_runner":               {base + strings.ReplaceAll(attributedBlocked, "human:operator", "n/a"), base, true},
+		"tbd_runner":              {base + strings.ReplaceAll(attributedBlocked, "human:operator", "TBD"), base, true},
 		"commented_header":        {base + strings.ReplaceAll(unattributed4114, "Command", "Com<!-- note -->mand"), base, true},
 		"actual_header":           {base + "| # | Check | Expected | Actual |\n|---|---|---|---|\n| 1 | check | pass | blocked |\n", base, true},
 		"comments":                {base + strings.ReplaceAll(unattributed4114, "| 9 |", "| <!--comment-->9 |"), base, true},
@@ -91,5 +95,14 @@ func TestEvidenceAttributionWriteGate(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestAttributionRefusalLine(t *testing.T) {
+	base := "# Brief\n\n## Evidence\n"
+	content := base + "<!-- a\nmulti-line\ncomment -->\n" + unattributed4114
+	err := checkAddedRowAttribution([]byte(content), []byte(base))
+	if err == nil || !strings.Contains(err.Error(), "at line 9 ") {
+		t.Fatalf("want refusal naming line 9, got %v", err)
 	}
 }

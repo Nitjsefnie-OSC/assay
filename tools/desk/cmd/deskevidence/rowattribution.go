@@ -14,13 +14,13 @@ import (
 // are not command observations. Never manufacture missing attribution from a heading,
 // commit author, landing actor or today's clock.
 func checkAddedRowAttribution(content, base []byte) error {
-	lines := strings.Split(evidenceCommentRe.ReplaceAllString(string(content), ""), "\n")
+	lines := strings.Split(blankClosedComments(string(content)), "\n")
 	start, end, ok := evidenceSpan(lines)
 	if !ok {
 		return nil
 	}
 	old := map[string]int{}
-	oldLines := strings.Split(evidenceCommentRe.ReplaceAllString(string(base), ""), "\n")
+	oldLines := strings.Split(blankClosedComments(string(base)), "\n")
 	if s, e, ok := evidenceSpan(oldLines); ok {
 		header := ""
 		for i := s; i < e; i++ {
@@ -69,12 +69,17 @@ func checkAddedRowAttribution(content, base []byte) error {
 			header = strings.TrimSpace(raw)
 			for j, c := range cells {
 				switch strings.ToLower(c) {
-				case "date", "when":
+				case "date":
 					dateIdx = j
 				case "runner":
 					runnerIdx = j
-				case "command", "exit", "output", "observed", "result", "observed result", "observed output", "check", "actual", "acceptance result":
+				case "command", "cmd", "exit", "output", "observed", "result", "outcome", "observed result", "observed output", "check", "actual", "acceptance result":
 					execution = true
+				default:
+					// "Observed (exit + output)" and similar spellings.
+					if strings.HasPrefix(strings.ToLower(c), "observed") {
+						execution = true
+					}
 				}
 			}
 			i++
@@ -91,11 +96,28 @@ func checkAddedRowAttribution(content, base []byte) error {
 		if valid {
 			_, err := time.Parse("2006-01-02", cells[dateIdx])
 			runner := strings.TrimSpace(strings.Trim(cells[runnerIdx], "`*_"))
-			valid = err == nil && runner != "" && runner != "—" && runner != "-" && !strings.EqualFold(runner, "unknown-runner") && !strings.Contains(runner, "<runner>")
+			valid = err == nil && runner != "" && runner != "—" && runner != "-" && !placeholderRunner(runner)
 		}
 		if !valid {
 			return deskkit.Refused(fmt.Sprintf("refused: added Evidence execution row at line %d needs separate Date (YYYY-MM-DD) and Runner cells, including blocked/unrun and supplemental observations; recover attribution from this run's records or rerun, never infer it from the landing actor — nothing was written", i+1))
 		}
 	}
 	return nil
+}
+
+// blankClosedComments removes closed HTML comments but keeps their line breaks, so a
+// line number reported from the result still matches the submitted file.
+func blankClosedComments(s string) string {
+	return evidenceCommentRe.ReplaceAllStringFunc(s, func(m string) string {
+		return strings.Repeat("\n", strings.Count(m, "\n"))
+	})
+}
+
+// placeholderRunner reports whether a Runner cell holds a stand-in rather than an identity.
+func placeholderRunner(runner string) bool {
+	switch strings.ToLower(runner) {
+	case "unknown-runner", "unknown", "n/a", "na", "tbd", "todo", "none", "?", "??":
+		return true
+	}
+	return strings.Contains(runner, "<runner>")
 }

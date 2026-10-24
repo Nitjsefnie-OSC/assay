@@ -103,9 +103,9 @@ One Evidence row per Verify item, attributed to the runner and dated:
 | <original row ID> | <exact command> | <expected> | <observed exit + output, or could-not-run + reason> | <YYYY-MM-DD> | <actual runner> |
 ```
 
-- `YYYY-MM-DD <runner>` — never a bare check mark. An unattributed row records that
-  somebody was satisfied, which is not evidence. Keep separate `Date` and `Runner` cells
-  for PASS, FAIL and BLOCKED submissions, including every unrun row and any supplemental
+- A `Date` cell (`YYYY-MM-DD`) and a `Runner` cell (the actual runner) — never a bare check
+  mark. An unattributed row records that somebody was satisfied, which is not evidence.
+  Keep the two cells separate, not one combined token, for PASS, FAIL and BLOCKED submissions, including every unrun row and any supplemental
   host observation (clearly labelled no acceptance credit). A dated heading or commit author
   does not attribute a row. For unrun rows these cells identify when and by whom the blocker
   was observed, not an execution or container witness. Recover missing attribution only from
