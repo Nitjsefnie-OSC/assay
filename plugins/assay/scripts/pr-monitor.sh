@@ -248,14 +248,22 @@ CLASSIFIED_JSON=""
 if [[ -n "${PR_MONITOR_REVIEW_OBSERVATION:-}" ]]; then
   CLASSIFIED=1
   classified_hold() {
-    # Replace only our selected output artifact with an invalid, private file.
-    # A prior healthy artifact must not survive a failed cycle as fresh evidence.
+    # Attempt atomic replacement with private invalid files. If output IO fails,
+    # explicitly reject any surviving prior artifact as evidence for this cycle.
     local invalid target
-    for target in "$PR_MONITOR_REVIEW_OBSERVATION" "${PR_MONITOR_REVIEW_OBSERVATION}.plan"; do
-      invalid=$(mktemp "${target}.XXXXXX") || exit 2
-      if ! mv "$invalid" "$target"; then rm -f "$invalid"; fi
-    done
+    # Report the hold before attempting IO: even an unwritable output directory
+    # must wake the monitor owner. Never truncate a possibly replaced symlink.
     printf 'MONITOR-DEGRADED: complete review cycle held (%s); use the supported legacy recipe next cycle or repair and retry; no PR dropped\n' "$1"
+    for target in "$PR_MONITOR_REVIEW_OBSERVATION" "${PR_MONITOR_REVIEW_OBSERVATION}.plan"; do
+      if invalid=$(mktemp "${target}.XXXXXX"); then
+        if ! mv "$invalid" "$target"; then
+          rm -f "$invalid"
+          printf 'MONITOR-DEGRADED: artifact invalidation failed (replacement unavailable); previous output may remain and must not be reused\n'
+        fi
+      else
+        printf 'MONITOR-DEGRADED: artifact invalidation failed (temporary file unavailable); previous output may remain and must not be reused\n'
+      fi
+    done
     exit 2
   }
   [[ "$MAX_REPOS" -eq 0 ]] || classified_hold "classified mode requires the full scope, no cursor cap"

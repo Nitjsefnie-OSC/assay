@@ -104,6 +104,16 @@ identity. Three desk-specific residues `deskboot` does not carry:
    A fresh actionable PR is a review trigger at any age; the `UNREVIEWED` alarm is a
    monitor-health incident, not an age threshold before dispatch.
 
+   **Guard lines bind both supported recipes.** Use the shipped `pr-monitor.sh`;
+   do NOT hand-write the poll. **Never a disowned shell loop** (`... & disown`):
+   arm it through the durable monitor so a failed watcher is observable.
+   Arm with `DESK_LOOP` exported. Each repo read uses its own per-repo role token
+   minted from that loop and scoped to one read — never the ambient `gh` login,
+   never an inherited `GH_TOKEN`. A failed mint is could-not-check, never
+   "no open PRs". **Never substitute `deskboard prs --quiet`** for the classified
+   liveness/review-trigger sweep: `prs` carries no review state and cannot see
+   NEEDS-REVIEW. These safeguards remain resident here when using the shared recipe.
+
 Then announce "Review desk up — N PRs on the board" ONCE, and work SILENTLY (§Output contract).
 
 ## Tick mode
@@ -318,6 +328,9 @@ The watcher observation is passed unchanged to preparation. Completion or priori
 rerun the offline planner on an applicable observation; due freshness, scope or source-policy
 changes require refresh or a visible hold. Exit 6 is could-not-check, never idle. Driver
 cutover remains human-gated; source recipe qualification does not switch an installed desk.
+Use per-invocation scratch files, never a fixed name in a shared scratch dir.
+In the legacy recipe, planner exit 6 is BLIND, never "all clear"; without `--prs`
+every outward verb is SUPPRESSED as could-not-check.
 
 - **NEEDS-REVIEW / RE-REVIEW** → fill a slot PER LANE at the right tier for that PR at its current
   head, on the first sweep that shows the row, at any age, and apply `authorization-needed` in the
@@ -328,7 +341,13 @@ cutover remains human-gated; source recipe qualification does not switch an inst
   lane-suffixed claim key (`#` is NOT in the item-key alphabet — a `<owner/repo>#<PR>` key is
   rejected at claim-acquire):
 
+  The following examples are for a **successful qualified cycle only**. Set
+  `OBSERVATION` to that cycle's emitted `REVIEW-OBSERVATION` path; never reuse an
+  earlier cycle's value after a hold or rollback. In the **legacy recipe**, unset
+  `OBSERVATION` and omit the entire `--observation FILE` pair from both commands.
+
   ```bash
+  OBSERVATION="<current successful cycle's REVIEW-OBSERVATION path>"
   deskdispatch <alias>--pr-<N> --kit review --tier strong|any --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"
   deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"   # risk-classed only, SAME turn
   ```

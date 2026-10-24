@@ -21,7 +21,7 @@
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SCRIPT="$HERE/pr-monitor.sh"
+SCRIPT="${PR_MONITOR_TEST_SCRIPT:-$HERE/pr-monitor.sh}"
 
 CASE_FILTER=""
 if [[ "${1:-}" == "--case" ]]; then CASE_FILTER="${2:-}"; fi
@@ -580,6 +580,33 @@ STUB
   resp "$w" o/r "$(arr "$(pr 1 aaa false OPEN CLEAN)")"
   run "$w" "$st" PR_MONITOR_REVIEW_OBSERVATION= -- o/r
   check "$([[ "$RC" -eq 0 ]] && echo 0 || echo 1)" "legacy rollback recovers full monitor population" "$OUT"
+fi
+
+if want classified-invalidation-failure; then
+  echo "classified-invalidation-failure — output IO failures still report a held, non-reusable cycle"
+  for fault in mktemp mv; do
+    w="$TMPROOT/invalidation-$fault"; st="$TMPROOT/invalidation-$fault-st"; make_gh "$w"
+    for tool in deskboard reviewloop; do
+      cat > "$w/$tool" <<'STUB'
+#!/bin/sh
+printf 'tool releaseTag=v1.0.58\n'
+STUB
+      chmod +x "$w/$tool"
+    done
+    cat > "$w/$fault" <<'STUB'
+#!/bin/sh
+exit 1
+STUB
+    chmod +x "$w/$fault"
+    artifact="$w/review.json"
+    printf 'prior-observation' > "$artifact"
+    printf 'prior-plan' > "$artifact.plan"
+    run "$w" "$st" "PR_MONITOR_REVIEW_OBSERVATION=$artifact" 'PR_MONITOR_REVIEW_POLICY={}' PR_MONITOR_REVIEW_CAPACITY=1 -- o/r
+    check "$([[ "$RC" -eq 2 ]] && echo 0 || echo 1)" "$fault failure exits held" "$OUT"
+    check "$(contains "$OUT" 'MONITOR-DEGRADED: complete review cycle held' && echo 0 || echo 1)" "$fault failure reports monitor degradation" "$OUT"
+    check "$(contains "$OUT" 'artifact invalidation failed' && contains "$OUT" 'must not be reused' && echo 0 || echo 1)" "$fault failure explicitly rejects surviving artifacts" "$OUT"
+    check "$([[ "$(cat "$artifact")" == prior-observation && "$(cat "$artifact.plan")" == prior-plan && ! -s "$w/calls.log" && ! -s "$w/mint.log" ]] && echo 0 || echo 1)" "$fault failure retains data safely and makes no legacy read" "$OUT"
+  done
 fi
 
 echo
