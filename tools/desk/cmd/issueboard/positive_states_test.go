@@ -146,7 +146,12 @@ func TestPositiveStateBatchNativeParity(t *testing.T) {
 						Query     string         `json:"query"`
 						Variables map[string]any `json:"variables"`
 					}
-					if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+					rawRequest, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Fatal(err)
+					}
+					witness[len(witness)-1] += " body=" + string(rawRequest)
+					if err := json.Unmarshal(rawRequest, &in); err != nil {
 						t.Fatal(err)
 					}
 					if strings.Contains(in.Query, "mutation") || strings.Contains(in.Query, "issue(number:1)") {
