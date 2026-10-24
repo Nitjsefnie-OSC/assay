@@ -15,14 +15,14 @@ import (
 // are not command observations. Never manufacture missing attribution from a heading,
 // commit author, landing actor or today's clock.
 func checkAddedRowAttribution(content, base []byte) error {
-	lines, origin := stripClosedComments(string(content))
-	start, end, ok := evidenceSpan(lines)
+	lines, origin, ok := evidenceSection(string(content))
 	if !ok {
 		return nil
 	}
+	start, end := 0, len(lines)
 	old := map[string]int{}
-	oldLines, _ := stripClosedComments(string(base))
-	if s, e, ok := evidenceSpan(oldLines); ok {
+	oldLines, _, oldOK := evidenceSection(string(base))
+	if s, e := 0, len(oldLines); oldOK {
 		header := ""
 		for i := s; i < e; i++ {
 			l := oldLines[i]
@@ -38,7 +38,7 @@ func checkAddedRowAttribution(content, base []byte) error {
 			old[header+"\x00"+l]++
 		}
 	}
-	dateIdx, runnerIdx := -1, -1
+	dateIdx, runnerIdx, headerCells := -1, -1, 0
 	execution := false
 	header := ""
 	fenced := false
@@ -67,6 +67,7 @@ func checkAddedRowAttribution(content, base []byte) error {
 		}
 		if i+1 < end && evidenceSeparatorRe.MatchString(strings.Trim(strings.TrimSpace(lines[i+1]), "|")) {
 			dateIdx, runnerIdx, execution = -1, -1, false
+			headerCells = len(cells)
 			header = strings.TrimSpace(raw)
 			for j, c := range cells {
 				// Date and Runner match exactly, as the lint does: a spelling the lint does not
@@ -91,6 +92,9 @@ func checkAddedRowAttribution(content, base []byte) error {
 		if !execution {
 			continue
 		}
+		if dateIdx >= 0 && runnerIdx == dateIdx+1 && len(cells) > headerCells {
+			return deskkit.Refused(fmt.Sprintf("refused: added Evidence execution row at line %d of the landed brief (a fragment is read merged into it) has %d cells under a header of %d — an unescaped | inside a cell (write \\| for a literal pipe) or an extra trailing cell shifts every column after it, so Date and Runner cannot be read where the header puts them — nothing was written", origin[i]+1, len(cells), headerCells))
+		}
 		// The lint reads Date as the cell immediately left of Runner (flipDateRunnerRows,
 		// evidenceVerifierInfo), so any other Date position passes here and fails the flip.
 		valid := dateIdx >= 0 && runnerIdx == dateIdx+1 && runnerIdx < len(cells)
@@ -105,10 +109,30 @@ func checkAddedRowAttribution(content, base []byte) error {
 	return nil
 }
 
-// stripClosedComments removes every closed HTML comment exactly as the lint does
+// evidenceSection returns the lines of the Evidence section with closed comments removed,
+// and for each the 0-based line of the submitted file on which it starts. Like the lint
+// (evidenceSectionSpan, then stripRowComments inside the section) it finds the section on
+// the RAW lines first and strips comments only inside it, so a comment that opens above the
+// heading or closes below it changes neither which section is read nor what it holds.
+func evidenceSection(src string) (lines []string, origin []int, ok bool) {
+	raw := strings.Split(src, "\n")
+	start, end, found := evidenceSpan(raw)
+	if !found {
+		return nil, nil, false
+	}
+	lines, origin = stripClosedComments(strings.Join(raw[start:end], "\n"))
+	for i := range origin {
+		origin[i] += start
+	}
+	return lines, origin, true
+}
+
+// stripClosedComments removes every closed HTML comment with the lint's expression
 // (evidenceCommentRe.ReplaceAllString, which JOINS the lines on either side of a comment
 // that crosses a line break) and returns the resulting lines with, for each, the 0-based
-// line of the submitted file on which it starts, so a refusal names a line the author can find.
+// line of the text it was taken from on which it starts, so a refusal names a line the
+// author can find. It does not claim parity with the lint beyond that: an unterminated
+// opener is left in place, and the axes checked are listed in the PR body.
 func stripClosedComments(s string) (lines []string, origin []int) {
 	var out strings.Builder
 	at, line := 0, 0
@@ -153,7 +177,8 @@ func executionHeader(cell string) bool {
 // word joiner) and the Hangul fillers, which render as nothing.
 func stripInvisible(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) {
+		// Mn and Me are combining marks (U+034F, U+FE0F, U+17B4): they render as nothing on their own.
+		if unicode.IsSpace(r) || unicode.In(r, unicode.Cf, unicode.Mn, unicode.Me) {
 			return -1
 		}
 		switch r {
