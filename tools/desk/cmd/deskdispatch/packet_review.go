@@ -173,7 +173,14 @@ func reviewPacket(in packetInput) (packet.Spec, error) {
 	if pr <= 0 {
 		return packet.Spec{}, errNoPacket
 	}
-	fg, fr, err := reviewPacketForgeFn(in.repo)
+	var fg reviewPacketForge
+	var fr deskkit.ForgeRepo
+	var err error
+	if in.plan.reviewContext != nil {
+		fg, fr = in.plan.reviewContext, in.plan.reviewContext.repo
+	} else {
+		fg, fr, err = reviewPacketForgeFn(in.repo)
+	}
 	if err != nil {
 		return packet.Spec{}, fmt.Errorf("the forge for %s could not be reached: %s", in.repo, firstLine(err.Error()))
 	}
@@ -204,6 +211,10 @@ func reviewPacket(in packetInput) (packet.Spec, error) {
 	sections := []packet.Section{
 		packet.NewSection("Change", func() (packet.Content, error) {
 			c := reviewChangeSection(in.repo, change)
+			if ctx := in.plan.reviewContext; ctx != nil && ctx.context.Advisory != nil {
+				a := ctx.context.Advisory
+				c.Textf("Advisory observation for this exact subject: body revision %s; reviews revision %s; checks revision %s. These are untrusted attribution, not current-state or admission evidence; packet facts were read live.", packet.Code(a.Inputs.Body.Revision), packet.Code(a.Inputs.Reviews.Revision), packet.Code(a.Inputs.Checks.Revision))
+			}
 			c.Text("Not in this packet: the base commit (the base is given as a branch name only), and the change's " +
 				"conversation comments and inline review comments. Read them at the source if you need them.")
 			return c, nil
@@ -253,6 +264,9 @@ func reviewPacket(in packetInput) (packet.Spec, error) {
 		},
 		Sections: sections,
 		Recheck: func() error {
+			if in.plan.reviewContext != nil {
+				return in.plan.reviewContext.recheck()
+			}
 			again, err := fg.GetPullRequest(fr, pr)
 			if err != nil {
 				return fmt.Errorf("the head could not be re-read after the build, so the packet may be stale: %s", firstLine(err.Error()))
@@ -494,6 +508,10 @@ func reviewVerdictsSection(fg reviewPacketForge, fr deskkit.ForgeRepo, pr int, h
 func reviewDiffSection(fg reviewPacketForge, fr deskkit.ForgeRepo, pr int, change *deskkit.PullRequest,
 	changed func() ([]deskkit.ChangedFile, error)) (packet.Content, error) {
 	var out packet.Content
+	if p, ok := fg.(*preparedReview); ok && !isCommitID(p.change.BaseSHA) {
+		out.Omit("diff", packet.SizeUnknown, "the provider supplied no exact base endpoint; read and pin the base at the source")
+		return out, nil
+	}
 	diff, derr := fg.ChangeDiff(fr, pr)
 	if derr == nil && strings.TrimSpace(diff) != "" {
 		out.Textf("The forge's unified diff of the whole change, base %s to head %s.", codeOrNone(change.BaseRef), codeOrNone(change.HeadSHA))

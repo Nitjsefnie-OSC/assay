@@ -1,0 +1,1 @@
+- Share one exact-source review preparation context between dispatch round and packet builders; accept an advisory observation handoff, reuse exact local objects, and preserve fresh mutable admission and publisher boundaries.

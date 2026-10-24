@@ -124,6 +124,7 @@ type dispatchOpts struct {
 	performanceWorkExplicit bool
 	measurement             *perfrec.Session
 	performance             perfrec.Context
+	observation             string
 	stampReceipt            string
 	stampOnly               bool
 	// attestWorker is --attest-worker: a fresh worker dispatch gets a pre-work attestation record
@@ -349,6 +350,14 @@ func dispatch(o dispatchOpts) error {
 	// round number are read for the assignment. A read that fails never holds: it yields a
 	// full pass with the round not determined (reviewroundread.go).
 	if reviewKit(o.kit) && o.pr > 0 {
+		ctx, cerr := newPreparedReview(o, repo)
+		if cerr != nil {
+			return cerr
+		}
+		plan.reviewContext = ctx
+		if ctx != nil {
+			defer ctx.cancel()
+		}
 		round, herr := prepareReviewRound(o, plan, repo)
 		if herr != nil {
 			return herr
@@ -549,6 +558,11 @@ func dispatch(o dispatchOpts) error {
 	var perr error
 	if o.kit != "verifier" {
 		plan.packetPath = buildPacketFn(o, plan, repo, home)
+		if plan.reviewContext != nil && !plan.reviewContext.checked {
+			if err := plan.reviewContext.recheck(); err != nil {
+				return held.settle(deskkit.Unverifiable("review preparation changed before dispatch", err))
+			}
+		}
 		plan.performancePath = writePerformanceHandoff(plan.childPerformance)
 		if prompt, perr = assemblePrompt(o, plan, home); perr != nil {
 			return held.settle(perr)
@@ -681,6 +695,7 @@ func (o dispatchOpts) notLaunched(plan dispatchPlan, repo, home string) {
 // re-derives a value the validation was performed against. Re-deriving is how a check and
 // the thing it checked drift apart.
 type dispatchPlan struct {
+	reviewContext                            *preparedReview
 	childPerformance                         perfrec.Context
 	verifierBriefRoot, verifierBriefRevision string
 	resume                                   *resumeSource
@@ -800,6 +815,9 @@ type dispatchPlan struct {
 // of bad inputs and asserts NOTHING was executed.
 func validateCallerPreconditions(o dispatchOpts) (dispatchPlan, error) {
 	var plan dispatchPlan
+	if o.observation != "" && (o.kit != "review" || o.pr <= 0) {
+		return plan, deskkit.Refused("--observation requires --kit review and --pr")
+	}
 	if o.kit == "verifier" {
 		role, _, err := deskkit.SessionTokenRole(toolName)
 		if err != nil {
