@@ -282,9 +282,11 @@ func cmdCheck(cell, cfgArg string) {
 	// windows appear in" is answerable before booting. An explicit CELL_COCKPIT that is not
 	// available is a MISS (it is what `up` would refuse on); `auto` can never MISS.
 	want, src := c.cockpitWant("")
-	res := c.resolveCockpit(want, src)
+	var res cockpitResolution
 	if c.Kind == "scrubbed" {
 		res = c.scrubbedCockpit("")
+	} else {
+		res = c.resolveCockpit(want, src)
 	}
 	if res.Err == "" {
 		if c.Kind == "house" {
@@ -311,7 +313,9 @@ func cmdCheck(cell, cfgArg string) {
 	}
 	// Orca reachability is stated whenever orca is installed, whichever cockpit won: its CLI is
 	// a thin client of the desktop app, and an unreachable app is why `auto` passed it over.
-	if onPath("orca") {
+	if c.Kind == "scrubbed" && onPath("orca") {
+		k.na("orca — not used by scrubbed cells (reachability not probed)")
+	} else if onPath("orca") {
 		if c.orcaReachable() {
 			fmt.Println("  ok    orca desktop app reachable (its CLI is a thin client)")
 		} else {

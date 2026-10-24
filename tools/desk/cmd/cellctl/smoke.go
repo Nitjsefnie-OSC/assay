@@ -72,7 +72,11 @@ func cmdSmoke(cell string, v *cli.Values, extra []string) {
 		c.printPlan(env, c.Repo, argv)
 		return
 	}
-	fmt.Printf("[smoke] resolved model=%s harness=%s (read-only, tool-free, one shot)\n", model, harness)
+	if provider != "" {
+		fmt.Printf("[smoke] resolved model=%s harness=%s base_url=%s (read-only, tool-free, one shot)\n", model, harness, prov.BaseURL)
+	} else {
+		fmt.Printf("[smoke] resolved model=%s harness=%s (read-only, tool-free, one shot)\n", model, harness)
+	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = c.Repo
 	cmd.Env = env.Pairs

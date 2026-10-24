@@ -44,12 +44,25 @@ The live entrypoint rechecks custody after `env -i`, then passes the token throu
 the harness process environment. Tokens are absent from tmux commands, argv,
 Herdr pane commands and saved receipts. `smoke` uses the same custody path and
 provider model; invoke it explicitly only when a real provider call is authorized.
+Before first contact it prints the resolved provider endpoint.
+
+The token is in the harness environment, so harness tool and MCP subprocesses can
+inherit it. The harness also has access to its cell-owned token file. This is the
+same capability boundary as the existing host-provider launch; this change does
+not isolate the credential from code running inside the cell. Credential-helper
+delivery would require a separate protocol and lifecycle design.
+
+Provider runtime entry preserves the outer launch's validated performance context,
+including its parent invocation. It uses the shared performance-context resolver
+and serializer; unknown `ASSAY_PERF_*` variables are not copied through.
 
 ## Herdr lifecycle
 
 `CELL_COCKPIT=herdr` is explicit opt-in. An absent setting or `auto` preserves the
 historical private tmux surface. `orca` is refused for scrubbed cells. Herdr and
 tmux must both be installed.
+Scrubbed `auto` resolves directly to private tmux. Neither launch nor readiness
+checks contact Herdr or probe the orca desktop service to make that choice.
 
 The private tmux session remains the sole process owner and retains the existing
 atomic cell lock. Herdr opens an attachment in a workspace owned by this cell,
@@ -79,3 +92,15 @@ a change to the historical shell oracle's compatibility matrix.
 
 Offline verification uses the built controller with stub harnesses, synthetic
 credentials and stub Herdr/tmux commands. No test calls a model, forge, or cluster.
+
+The guard tests have a reproducible mutation manifest. From `tools/desk`, run:
+
+```sh
+go run ./cmd/muhar -j 2 -spec cmd/cellctl/scrubbed-provider-mutations.json
+```
+
+The existing harness requires a green pristine baseline and a failing positive
+control before reporting mutants. It uses isolated source copies. The manifest
+plants host credential fallback, each custody refusal defect, missing runtime
+credential/performance handoff, token-in-argv, missing session ownership, unsafe
+cockpit selection/probing and hidden smoke-target defects.

@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 	"github.com/spf13/cobra"
 )
 
@@ -117,6 +119,9 @@ func scrubbedRunCmd() *cobra.Command {
 				return err
 			}
 			env := c.scrubbedComposeEnv(role, harness, session)
+			// This entrypoint belongs to the same launched agent, not a new tool
+			// invocation. Reuse the validated metadata from the outer env -i.
+			env.Pairs = deskkit.PerfContextEnv(env.Pairs, perfrec.ResolveContext(perfrec.ContextInput{}), false)
 			runForeground(harnessArgv(harness, role, model, session, wt), scrubbedProviderEnv(env.Pairs, p, model), wt)
 			return nil
 		}}

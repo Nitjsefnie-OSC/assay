@@ -23,9 +23,8 @@ func scrubbedDisplayEnv(env ComposedEnv, cockpit string) ComposedEnv {
 func (c *Cell) scrubbedCockpit(flag string) cockpitResolution {
 	want, src := c.cockpitWant(flag)
 	if want == "auto" {
-		res := c.resolveCockpit(want, src)
-		if res.Cockpit == "tmux" {
-			return res
+		if !onPath("tmux") {
+			return cockpitResolution{Err: "scrubbed auto requires tmux on PATH"}
 		}
 		return cockpitResolution{Cockpit: "tmux", Why: "scrubbed auto: private socket"}
 	}

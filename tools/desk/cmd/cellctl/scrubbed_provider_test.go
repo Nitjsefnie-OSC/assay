@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/medici-finance/assay/perfrec"
+	"github.com/medici-finance/assay/tools/desk/internal/deskkit"
 )
 
 func provisionScrubbedToken(t *testing.T, c *Cell) string {
@@ -26,6 +29,14 @@ func provisionScrubbedToken(t *testing.T, c *Cell) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func newScrubbedPolicyFixture(t *testing.T) *policyFixture {
+	t.Helper()
+	if _, err := os.Stat(examplePolicyPath); err != nil {
+		t.Fatalf("could-not-check: required provider fixture: %v", err)
+	}
+	return newPolicyFixture(t, "2.1.278")
 }
 
 func TestScrubbedProviderNeverFallsBackToShell(t *testing.T) {
@@ -85,13 +96,13 @@ func TestScrubbedProviderCustodyRefusals(t *testing.T) {
 				os.WriteFile(path, []byte(strings.Repeat("x", 16385)), 0600)
 			case "file-link":
 				os.Rename(path, path+".real")
-				if err := os.Symlink(path+".real", path); err != nil {
+				if err := os.Symlink(filepath.Base(path)+".real", path); err != nil {
 					t.Fatal(err)
 				}
 			case "directory-link":
 				d := filepath.Dir(path)
 				os.Rename(d, d+".real")
-				if err := os.Symlink(d+".real", d); err != nil {
+				if err := os.Symlink(filepath.Base(d)+".real", d); err != nil {
 					t.Fatal(err)
 				}
 			case "name":
@@ -107,7 +118,10 @@ func TestScrubbedProviderCustodyRefusals(t *testing.T) {
 }
 
 func TestScrubbedKimiBinarySmokeAndRuntime(t *testing.T) {
-	f := newPolicyFixture(t, "2.1.278")
+	f := newScrubbedPolicyFixture(t)
+	if err := os.WriteFile(filepath.Join(f.binDir, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	c := &Cell{Dir: f.cellDir, Home: filepath.Join(f.cellDir, "home")}
 	provisionScrubbedToken(t, c)
 	env := "CELL=example\nCELL_KIND=scrubbed\nCELL_HARNESS=claude\nCELL_PROVIDER=kimi\nCELL_REPO=" + f.repoDir + "\nCELL_REPO_SLUG=example-org/example-repo\nROLES=the-desk\n"
@@ -138,6 +152,9 @@ echo READY
 	if r.code != 0 || !strings.HasSuffix(r.stdout, "READY\n") {
 		t.Fatalf("smoke: %+v", r)
 	}
+	if !strings.Contains(r.stdout, "base_url=https://api.kimi.com/coding") {
+		t.Fatal("smoke did not name its network target before contact")
+	}
 	wt := filepath.Join(f.cellDir, "worktrees", "the-desk")
 	if err := os.MkdirAll(wt, 0700); err != nil {
 		t.Fatal(err)
@@ -145,6 +162,37 @@ echo READY
 	r = f.run(t, []string{"GH_TOKEN=host-canary"}, "--cells-root", f.cellsRoot, "scrubbed-run", "example", "the-desk", "claude", "k3[1m]", "s", wt, "kimi")
 	if r.code != 0 || !strings.Contains(r.stdout, "READY") {
 		t.Fatalf("runtime: %+v", r)
+	}
+	// Compare the actual provider child with the same validated metadata a direct
+	// scrubbed launch carries. No ambient prefix-wide copying is permitted.
+	value := func(s string) perfrec.Value { return perfrec.Value{Value: s, Present: true} }
+	context := perfrec.ResolveContext(perfrec.ContextInput{
+		Profile: value("workflow"), SessionID: value(strings.Repeat("a", 32)), AgentID: value(strings.Repeat("b", 32)),
+		ParentAgentID: value(strings.Repeat("c", 32)), ParentInvocationID: value(strings.Repeat("d", 32)), Role: value("cellctl"),
+		LookupEnv: func(k string) (string, bool) {
+			if k == "ASSAY_TELEMETRY" {
+				return "1", true
+			}
+			return "", false
+		},
+	})
+	direct := deskkit.PerfContextEnv([]string{"ASSAY_TELEMETRY=1"}, context, false)
+	checks := ""
+	for _, pair := range direct {
+		key, val, _ := strings.Cut(pair, "=")
+		checks += "test \"$" + key + "\" = " + cockpitQuote(val) + " || exit 26\n"
+	}
+	checks += "test -z \"$ASSAY_PERF_UNRECOGNIZED\" || exit 27\n"
+	perfScript := strings.Replace(script, "echo READY", checks+"echo READY", 1)
+	if err := os.WriteFile(filepath.Join(f.binDir, "claude"), []byte(perfScript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	r = f.run(t, append(direct, "ASSAY_PERF_UNRECOGNIZED=host-canary"), "scrubbed-run", "example", "the-desk", "claude", "k3[1m]", "s", wt, "kimi")
+	if r.code != 0 || !strings.Contains(r.stdout, "READY") {
+		t.Fatalf("provider perf context differs from direct launch: %+v", r)
+	}
+	if err := os.WriteFile(filepath.Join(f.binDir, "claude"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
 	}
 	r = f.run(t, []string{"DRY_RUN=1"}, "desk", "example", "the-desk")
 	if r.code != 0 || !strings.Contains(r.stdout, "scrubbed-run") || !strings.Contains(r.stdout, "token-file=") {
@@ -165,6 +213,11 @@ echo READY
 
 func TestScrubbedCockpitPreservesPrivateSession(t *testing.T) {
 	c := scrubbedFixture(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	if got := c.scrubbedCockpit(""); got.Cockpit != "tmux" || got.Err != "" {
 		t.Fatalf("auto: %+v", got)
 	}
@@ -177,16 +230,68 @@ func TestScrubbedCockpitPreservesPrivateSession(t *testing.T) {
 		t.Fatal("plan and runtime disagree about child worktree handling")
 	}
 	// A surface is explicit: installing Herdr never changes existing scrubbed cells.
-	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "herdr"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	if got := c.scrubbedCockpit(""); got.Cockpit != "tmux" || got.Err != "" {
+		t.Fatalf("auto changed after Herdr installation: %+v", got)
+	}
 	if got := c.scrubbedCockpit("herdr"); got.Cockpit != "herdr" || got.Err != "" {
 		t.Fatalf("Herdr: %+v", got)
 	}
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestScrubbedAutoDoesNotProbeOrca(t *testing.T) {
+	c := scrubbedFixture(t)
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "probed")
+	if err := os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "orca"), []byte("#!/bin/sh\necho probed > "+cockpitQuote(marker)+"\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":/usr/bin:/bin")
+	if got := c.scrubbedCockpit(""); got.Cockpit != "tmux" || got.Err != "" {
+		t.Fatalf("auto: %+v", got)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("scrubbed auto probed orca", err)
+	}
+}
+
+func TestScrubbedCheckDoesNotProbeHostCockpits(t *testing.T) {
+	f := newScrubbedPolicyFixture(t)
+	if err := os.WriteFile(filepath.Join(f.binDir, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "init", "--quiet", f.repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("fixture init: %v %s", err, out)
+	}
+	config := "CELL=example\nCELL_KIND=scrubbed\nCELL_HARNESS=claude\nCELL_REPO=" + f.repoDir + "\nCELL_REPO_SLUG=example-org/example-repo\nROLES=the-desk\n"
+	if err := os.WriteFile(filepath.Join(f.cellDir, "cell.env"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(f.cellDir, "cockpit-probed")
+	stub := []byte("#!/bin/sh\necho probed > " + cockpitQuote(marker) + "\nexit 0\n")
+	for _, name := range []string{"herdr", "orca"} {
+		if err := os.WriteFile(filepath.Join(f.binDir, name), stub, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := f.run(t, nil, "check", "example")
+	if !strings.Contains(r.stdout, "cockpit: tmux") {
+		t.Fatalf("check did not resolve scrubbed cockpit: %+v", r)
+	}
+	if strings.Contains(r.stderr, "probing orca") {
+		t.Fatal("check probed host cockpit")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("check contacted host cockpit", err)
 	}
 }
 
