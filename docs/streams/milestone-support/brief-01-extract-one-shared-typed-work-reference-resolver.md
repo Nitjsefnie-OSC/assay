@@ -201,11 +201,11 @@ RISK-VALUE: DERIVED — revision == 0 refused, uint64 bound @ statusgen/workref/
 RISK-VALUE: DERIVED — milestone requires revision != 0 @ statusgen/workref/workref.go:218 — milestone-v1: a milestone reference pins an exact positive contract version
 RISK-VALUE: DERIVED — prefixed slash alias with 3 segments refused @ statusgen/workref/workref.go:213 — the spec's draft slash forms are only stream/ID and the full cell:repo:stream/ID
 
-Gate. The brief is gate: human with risk sensitive-data yes, and its decision issue #4219 carries no recorded ruling. A model PASS does not sign this off; the item routes to the human gate (human:ian).
+Gate. The brief is gate: human with risk sensitive-data yes, Its start decision #4219 was ruled option 1 (approve the bounded design) by the ratifying human on 2026-10-23, before implementation. That ruling approves the design and signs off no verification run. A model PASS does not flip a gate: human item, so the verified transition stays with the human gate (human:ian).
 
 Disclosure (#4163). There were no discarded or failed attempts. One admitted bracket run produced the table above. The only other runs were the supplemental mutation probe and the hand plants. They ran on a copy outside the verifier home and receive no row credit.
 
-**VERIFY: PASS** — 4/4 rows pass exit=0 in one closed container-netns admission bracket at cb17e8f99a55 (bracket-digest verdict=match). Container-row credit is deferred to --bracket-digest --credit on the landed brief. The human gate is still owed: decision issue #4219 (gate: human, risk sensitive-data yes) has no recorded ruling.
+**VERIFY: PASS** — 4/4 rows pass exit=0 in one closed container-netns admission bracket at cb17e8f99a55 (bracket-digest verdict=match). Container-row credit is deferred to --bracket-digest --credit on the landed brief. The human gate is still owed: the brief is gate: human (risk sensitive-data yes), and its start decision #4219 approved the design but signs off no verification.
 
 ## Review
 
