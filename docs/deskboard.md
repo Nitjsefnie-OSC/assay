@@ -60,7 +60,9 @@ The source policy digest binds collector version, configuration, trust/reviewer
 identity, repo CI/visibility policy and observed gate scores. Digests do not expose
 configuration contents. An expected source/access revision change or expired cutoff
 requires refresh or hold. Changing selection priorities or capacity alone reuses
-the observation; it does not recollect it.
+the observation; it does not recollect it. `Oldest` is an absolute cutoff: the
+caller must advance it according to its approved freshness requirement. Advancing
+`Now` alone introduces no implicit TTL or new cutoff.
 
 Each `Priorities` entry has `Subject` (`Repository` and `Number`) and `Score`.
 Unmapped candidates are explicitly held in the example. `observed-score` is an

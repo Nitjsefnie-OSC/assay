@@ -25,9 +25,9 @@ Unsupported schema/evaluator or mismatched policy revisions are schema errors.
 The library reads no environment, files, clocks, subprocesses, credentials or provider
 clients. `statusgen/evaluation` remains the owner of eligibility/coverage semantics.
 This package is internal to `tools/desk`; a different module cannot import it.
-Public serving extraction belongs to forge-neutral/39. Collection and the eventual
-CLI handoff belong to desk-tools/40; dispatcher adoption belongs to desk-tools/41.
-There are no new CLI flags in this change.
+Public serving extraction belongs to forge-neutral/39. The library extraction
+introduced no CLI flags. Desk-tools/40 now supplies collection and the direct-reader
+CLI handoff below; live caller adoption belongs to desk-tools/43.
 
 ## Scope, identity and population
 

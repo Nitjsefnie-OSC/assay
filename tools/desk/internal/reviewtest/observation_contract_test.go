@@ -334,7 +334,7 @@ func contractMutation(t *testing.T, relative, old, replacement, run, diagnostic 
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off", "GOFLAGS=-overlay="+path, "ASSAY_REVIEW_CONTRACT_MUTANT=1")
 	out, e := goquiet.Cmd(cmd).CombinedOutput()
-	if e == nil || !strings.Contains(string(out), diagnostic) || !strings.Contains(string(out), "--- FAIL: TestReview") {
+	if e == nil || !strings.Contains(string(out), diagnostic) || !strings.Contains(string(out), "--- FAIL: "+strings.Split(strings.TrimPrefix(run, "^"), "$")[0]) {
 		t.Fatalf("mutation did not fail designated assertion: %v\n%s", e, out)
 	}
 	t.Logf("killed production mutation: %s (%s)", relative, diagnostic)

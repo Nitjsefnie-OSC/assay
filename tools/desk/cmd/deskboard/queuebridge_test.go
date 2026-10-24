@@ -35,8 +35,21 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 			if q.Case == "denied" {
 				return 403, `{"message":"Forbidden"}`
 			}
-			var nodes []any
-			for i := 1; i <= q.Size; i++ {
+			if q.Case == "untrusted" {
+				var request struct{ Query string }
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Fatal(err)
+				}
+				if request.Query == deskkit.PRTrustQuery {
+					return 200, `{"data":{"repository":{"pullRequest":{"lastEditedAt":null,"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`
+				}
+			}
+			nodes := []any{}
+			size := q.Size
+			if q.Case == "empty" {
+				size = 0
+			}
+			for i := 1; i <= size; i++ {
 				head := strings.Repeat("a", 40)
 				if q.Case == "missing-head" {
 					head = ""
@@ -60,7 +73,11 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 				if q.Case == "partial" {
 					reviews["pageInfo"] = map[string]any{"hasNextPage": true}
 				}
-				nodes = append(nodes, map[string]any{"number": i, "title": fmt.Sprintf("change %d", i), "body": "", "state": "OPEN", "isDraft": true, "createdAt": "2026-10-01T00:00:00Z", "updatedAt": "2026-10-22T00:00:00Z", "author": map[string]any{"login": "shared-agent", "__typename": "User"}, "mergeStateStatus": "CLEAN", "headRefOid": head, "headRefName": "feat/x", "baseRefName": "main", "labels": map[string]any{"nodes": []any{}}, "reviews": reviews, "commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"oid": head, "committedDate": "2026-10-01T00:00:00Z", "statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "build", "databaseId": i, "status": "COMPLETED", "conclusion": "SUCCESS"}}}}}}}}})
+				author := "shared-agent"
+				if q.Case == "untrusted" && i == 1 {
+					author = "untrusted-contributor"
+				}
+				nodes = append(nodes, map[string]any{"number": i, "title": fmt.Sprintf("change %d", i), "body": "", "state": "OPEN", "isDraft": true, "createdAt": "2026-10-01T00:00:00Z", "updatedAt": "2026-10-22T00:00:00Z", "author": map[string]any{"login": author, "__typename": "User"}, "mergeStateStatus": "CLEAN", "headRefOid": head, "headRefName": "feat/x", "baseRefName": "main", "labels": map[string]any{"nodes": []any{}}, "reviews": reviews, "commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"oid": head, "committedDate": "2026-10-01T00:00:00Z", "statusCheckRollup": map[string]any{"contexts": map[string]any{"nodes": []any{map[string]any{"__typename": "CheckRun", "name": "build", "databaseId": i, "status": "COMPLETED", "conclusion": "SUCCESS"}}}}}}}}})
 			}
 			b, _ := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": nodes}}}})
 			return 200, string(b)
@@ -69,6 +86,9 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 			return 200, `[{"filename":"example.go","status":"modified"}]`
 		}
 		if q.Case != "partial" && r.Method == "GET" && strings.Contains(r.URL.Path, "/pulls/") {
+			if q.Case == "moved-head" {
+				return 200, `{"number":1,"state":"open","changed_files":1,"head":{"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}`
+			}
 			return 200, `{"number":1,"state":"open","changed_files":1,"head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`
 		}
 		return 500, `{"message":"unexpected or unavailable enrichment"}`

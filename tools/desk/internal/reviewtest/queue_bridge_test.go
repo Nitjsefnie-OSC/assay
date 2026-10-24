@@ -77,7 +77,7 @@ func TestQueuePlanBridge(t *testing.T) {
 				t.Fatal("security approval leaked into correctness", row)
 			}
 		case 2:
-			if correctness || !security {
+			if correctness || !security || observed.Inputs.Changes[1].Lanes[0].State != "blocked" {
 				t.Fatal("security approval cleared correctness block", row)
 			}
 		case 3:
@@ -118,7 +118,7 @@ func TestQueuePartialAndDepth(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		size int
-	}{{"denied", 2}, {"partial", 2}, {"missing-head", 2}, {"normal", 100}} {
+	}{{"denied", 2}, {"partial", 2}, {"missing-head", 2}, {"normal", 100}, {"untrusted", 2}, {"moved-head", 2}} {
 		t.Run(fmt.Sprint(tc), func(t *testing.T) {
 			r := collectQueue(t, tc.name, tc.size)
 			if r.Exit != 6 || len(r.Snapshot) != 0 {
@@ -136,10 +136,16 @@ func TestQueuePartialAndDepth(t *testing.T) {
 		t.Fatal("display/capacity trimmed population", p, res)
 	}
 	bad := req
-	bad.Now = time.Now().Add(time.Hour).Format(time.RFC3339Nano)
+	observed, _ := rf.DecodeObservation(r.Snapshot)
+	bad.Now = observed.Inputs.Collection.End.Add(time.Hour).Format(time.RFC3339Nano)
+	_, advanced := planQueue(t, bad)
+	if advanced.Exit != 0 {
+		t.Fatal("advancing now changed the explicit absolute cutoff", advanced)
+	}
+	bad = req
 	var selection map[string]any
 	_ = json.Unmarshal([]byte(req.Selection), &selection)
-	selection["Oldest"] = time.Now().Add(time.Minute)
+	selection["Oldest"] = observed.Inputs.Collection.End
 	b, _ := json.Marshal(selection)
 	bad.Selection = string(b)
 	_, res = planQueue(t, bad)
@@ -235,8 +241,48 @@ func TestReviewPlanNoFetch(t *testing.T) {
 	if r.Exit != 5 {
 		t.Fatal("mixed snapshot and legacy reread accepted", r)
 	}
+
+	for _, value := range []string{"", " ", "\t"} {
+		bad := req
+		bad.Case = "snapshot"
+		bad.Now = value
+		_, r := planQueue(t, bad)
+		if r.Exit != 5 {
+			t.Fatal("invalid-now accepted", value, r)
+		}
+	}
+	omitted := req
+	omitted.Case = "snapshot-no-now"
+	_, r = planQueue(t, omitted)
+	if r.Exit != 5 {
+		t.Fatal("invalid-now accepted: absent", r)
+	}
+	empty := collectQueue(t, "empty", 1)
+	if empty.Exit != 0 {
+		t.Fatal(empty.Output)
+	}
+	gapReq := queueRequest(t, empty.Snapshot, 1)
+	var gapInvocation map[string]any
+	_ = json.Unmarshal([]byte(gapReq.Selection), &gapInvocation)
+	gapObservation, _ := rf.DecodeObservation(empty.Snapshot)
+	gapInvocation["Policy"] = rf.SelectionPolicy{Owner: "fixture-policy-owner", Revision: "gap-v1", Evaluator: rf.SelectionEvaluator, Unmapped: rf.HoldUnmapped, Priorities: []rf.PriorityEntry{{Subject: rf.PrioritySubject{Repository: gapObservation.Inputs.Requested[0], Number: 99}, Score: 10}}}
+	gapJSON, _ := json.Marshal(gapInvocation)
+	gapReq.Selection = string(gapJSON)
+	_, gapResult := planQueue(t, gapReq)
+	if gapResult.Exit != 6 {
+		t.Fatal("unobserved priority looked idle", gapResult)
+	}
+	var gapPlan rf.SelectionPlan
+	if err := json.Unmarshal([]byte(gapResult.Output), &gapPlan); err != nil || gapPlan.Idle.State != rf.IdleCouldNotCheck || len(gapPlan.NotObserved) != 1 {
+		t.Fatal("gap lost could-not-check verdict", gapPlan, err)
+	}
 	if os.Getenv("ASSAY_REVIEW_CONTRACT_MUTANT") != "1" {
 		t.Run("mutation-controls", func(t *testing.T) {
+			contractMutation(t, "cmd/deskboard/reviewobservation.go", `part.truncated || len(part.external) != 0`, `part.truncated`, "^TestQueuePartialAndDepth$", "incomplete collector emitted complete artifact")
+			contractMutation(t, "cmd/deskboard/board.go", `pr.HeadSHA != expectedHead[0]`, `false && pr.HeadSHA != expectedHead[0]`, "^TestQueuePartialAndDepth$", "incomplete collector emitted complete artifact")
+			contractMutation(t, "cmd/reviewloop/snapshot.go", `if p.Idle.State == rf.IdleCouldNotCheck {`, `if false && p.Idle.State == rf.IdleCouldNotCheck {`, "^TestReviewPlanNoFetch$", "unobserved priority looked idle")
+			contractMutation(t, "cmd/reviewloop/plan.go", ` || strings.TrimSpace(*nowStr) == ""`, ``, "^TestReviewPlanNoFetch$", "invalid-now accepted")
+			contractMutation(t, "cmd/deskboard/reviewobservation.go", `state = "blocked"`, `state = "missing"`, "^TestQueuePlanBridge$", "security approval cleared correctness block")
 			contractMutation(t, "cmd/reviewloop/snapshot.go", `return deskkit.Unverifiable("reviewloop plan: snapshot cannot support selection; refresh or hold", err)`, `p.Idle.State = rf.IdleYes; return json.NewEncoder(stdout).Encode(p)`, "^TestReviewPlanNoFetch$", "invalidation became idle")
 			contractMutation(t, "cmd/reviewloop/snapshot.go", `b, err := readInput(path)`, `if _,err := readInput("actions.json"); err!=nil {return deskkit.Unverifiable("hidden legacy reread",err)}; b, err := readInput(path)`, "^TestReviewPlanNoFetch$", "offline selection failed on valid observation")
 		})

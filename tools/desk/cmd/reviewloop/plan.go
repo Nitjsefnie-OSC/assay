@@ -49,7 +49,7 @@ func cmdPlan(args []string, stdout io.Writer) error {
 	}
 
 	if *snapshotPath != "" {
-		if *actionsPath != "" || *prsPath != "" || *recordsPath != "" || *nowStr == "" {
+		if *actionsPath != "" || *prsPath != "" || *recordsPath != "" || strings.TrimSpace(*nowStr) == "" {
 			return deskkit.Refused("reviewloop plan: --snapshot requires explicit --now and excludes legacy inputs")
 		}
 		return planSnapshot(*snapshotPath, *selection, now, stdout)

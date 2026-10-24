@@ -74,7 +74,10 @@ func snapshotProbe(t *testing.T, q reviewtest.Request) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	args := []string{"--snapshot", file, "--selection", q.Selection, "--now", q.Now}
+	args := []string{"--snapshot", file, "--selection", q.Selection}
+	if q.Case != "snapshot-no-now" {
+		args = append(args, "--now", q.Now)
+	}
 	if q.Case == "snapshot-conflict" {
 		args = append(args, "--actions", filepath.Join(q.Root, "does-not-exist"))
 	}
