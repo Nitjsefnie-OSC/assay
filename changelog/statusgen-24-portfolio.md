@@ -1,0 +1,2 @@
+### Added
+- `statusgen/portfolio`: the draft portfolio-measurement-v1 contract (`spec/portfolio-measurement-v1.md`, `schemas/portfolio-measurement-v1.json`) — a versioned allocation policy with independent agent and human targets and an explicit weight table, and a read-only capacity ledger that dedupes reports, counts retries separately, keeps unknown time, weight and cost visible as coverage, leaves zero-total shares undefined and reports target divergence without changing the target or dispatching anything.
