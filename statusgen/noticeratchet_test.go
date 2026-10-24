@@ -355,6 +355,22 @@ func TestNoticeRatchet(t *testing.T) {
 		}
 	})
 
+	t.Run("whitespace_row_id_classified", func(t *testing.T) {
+		// The row id is the author's raw # cell. Spaces or brackets in it must
+		// not take a new defect out of the comparison.
+		for _, row := range []string{"1 a", "[1]", "1 [x]"} {
+			line := rowNotice(ratchetHeadRoot, ratchetBriefA, row, ruleTriviallyGreen, "is trivially green: `true` exits 0")
+			f, ok := parseLintNotice(line, ratchetHeadRoot)
+			if !ok || f.rule != ruleTriviallyGreen || f.row != row || f.path != ratchetBriefA {
+				t.Fatalf("# cell %q must classify with its whole id: ok=%v %+v", row, ok, f)
+			}
+			res := runRatchet(t, ratchetCfg(nil, []string{line}, edited, nil))
+			if len(res.ratchetIntroduced) != 1 {
+				t.Fatalf("# cell %q: a new defect on a changed brief must be promoted: %+v", row, res)
+			}
+		}
+	})
+
 	t.Run("real_emitters", func(t *testing.T) {
 		root := consumersFixture(t, []string{
 			"web/a.go",

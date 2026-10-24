@@ -112,9 +112,11 @@ var ratchetUntagged = []struct {
 
 var (
 	// "<path>: Verify row <id> [<rule>] ..." (or "a Verify row" when unnumbered).
-	// verifyportability.go renders an empty "#" cell as "Verify row  [" (two
-	// spaces), so the row id may be empty.
-	ratchetRowRe = regexp.MustCompile(`^(\S+\.md): (?:Verify row (\S*)|a Verify row) \[([A-Za-z0-9-]+)\] `)
+	// The id is the author's raw "#" cell, so it may be empty (verifyportability.go
+	// renders an empty cell as "Verify row  [") or hold spaces and brackets:
+	// matchRowLine takes the first bracket tag after it that names a row rule.
+	ratchetRowLeadRe = regexp.MustCompile(`^(\S+\.md): (Verify row |a Verify row)`)
+	ratchetRowTagRe  = regexp.MustCompile(` \[([A-Za-z0-9-]+)\]`) // a following space is checked by matchRowLine
 	// "[<rule>] <path>: ..." (id-dereference, risk-files-crossread).
 	ratchetLeadTagRe = regexp.MustCompile(`^\[([A-Za-z0-9-]+)\] (\S+\.md): (.*)$`)
 	// "<path>: [<rule>] ..." (table-touches-no-files).
@@ -187,16 +189,40 @@ func isBriefPath(p string) bool {
 // echo the row's own Command cell, and a command that mentions the token is
 // still a real finding. No member row rule has a could-not-check form of its
 // own (verifyrows.go, strength.go and verifyportability.go emit none).
+// matchRowLine splits a Verify-row line. tagged reports that the line is a
+// row line carrying at least one bracket tag; rule is then the first tag that
+// names an included row rule ("" when none does), row is the text before it
+// (the raw "#" cell, empty for "a Verify row") and rest the message after it.
+func matchRowLine(s string) (path, row, rule, rest string, tagged bool) {
+	m := ratchetRowLeadRe.FindStringSubmatch(s)
+	if m == nil {
+		return "", "", "", "", false
+	}
+	tail := s[len(m[0]):]
+	for _, ix := range ratchetRowTagRe.FindAllStringSubmatchIndex(tail, -1) {
+		if ix[1] >= len(tail) || tail[ix[1]] != ' ' {
+			continue
+		}
+		tagged = true
+		id := tail[:ix[0]]
+		if !ratchetRowRules[tail[ix[2]:ix[3]]] || (m[2] == "a Verify row" && id != "") {
+			continue
+		}
+		return m[1], id, tail[ix[2]:ix[3]], tail[ix[1]+1:], true
+	}
+	return m[1], "", "", "", tagged
+}
+
 func parseLintNotice(line, treeRoot string) (lintFinding, bool) {
 	s := strings.TrimSpace(relativizeNoticeLine(line, treeRoot))
 	f := lintFinding{raw: s}
-	if m := ratchetRowRe.FindStringSubmatch(s); m != nil {
-		if !ratchetRowRules[m[3]] || !isBriefPath(m[1]) {
+	if path, row, rule, rest, tagged := matchRowLine(s); tagged {
+		if rule == "" || !isBriefPath(path) {
 			return lintFinding{}, false
 		}
-		f.path, f.row, f.rule = m[1], m[2], m[3]
+		f.path, f.row, f.rule = path, row, rule
 		if f.row == "" { // an unnumbered row: the first code span is its identity
-			f.subject = firstBacktick(s[len(m[0]):])
+			f.subject = firstBacktick(rest)
 		}
 		return f, true
 	}
