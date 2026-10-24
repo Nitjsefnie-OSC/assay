@@ -582,7 +582,9 @@ func TestPathHeldAtReadsTheTree(t *testing.T) {
 	if !pathHeldAt(root, older, "flag.txt") {
 		t.Errorf("flag.txt is in the older commit's tree")
 	}
-	if pathHeldAt(root, older, "docs/streams/ff/brief-01-ff.md") {
+	// ffRepo now deliberately holds brief-01; this negative still needs a path
+	// that no commit holds, with the same production probe and assertion.
+	if pathHeldAt(root, older, "docs/streams/ff/brief-99-never-held.md") {
 		t.Errorf("a file no commit holds must not read as held")
 	}
 }
