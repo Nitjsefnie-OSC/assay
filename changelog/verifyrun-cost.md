@@ -1,6 +1,6 @@
 # verifyrun: cancel ordinary descendants at the row deadline
 
-A timed-out Verify row now uses statusgen's existing Unix process-group cancellation
+- A timed-out Verify row now uses statusgen's existing Unix process-group cancellation
 helper. Killing only its shell left ordinary descendants running with the output pipe open,
 so verifyrun could wait past the unchanged row deadline and the child could keep working
 before the next row. Timeout witnesses remain could-not-run. Exact row IDs, commands,
