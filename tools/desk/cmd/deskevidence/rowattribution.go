@@ -92,8 +92,8 @@ func checkAddedRowAttribution(content, base []byte) error {
 		if !execution {
 			continue
 		}
-		if dateIdx >= 0 && runnerIdx == dateIdx+1 && len(cells) > headerCells {
-			return deskkit.Refused(fmt.Sprintf("refused: added Evidence execution row at line %d of the landed brief (a fragment is read merged into it) has %d cells under a header of %d — an unescaped | inside a cell (write \\| for a literal pipe) or an extra trailing cell shifts every column after it, so Date and Runner cannot be read where the header puts them — nothing was written", origin[i]+1, len(cells), headerCells))
+		if dateIdx >= 0 && runnerIdx == dateIdx+1 && len(cells) != headerCells {
+			return deskkit.Refused(fmt.Sprintf("refused: added Evidence execution row at line %d of the landed brief (a fragment is read merged into it) has %d cells under a header of %d — a different count (an unescaped | inside a cell, so write \\| for a literal pipe, or an extra or a missing cell) shifts the columns, so Date and Runner cannot be read where the header puts them — nothing was written", origin[i]+1, len(cells), headerCells))
 		}
 		// The lint reads Date as the cell immediately left of Runner (flipDateRunnerRows,
 		// evidenceVerifierInfo), so any other Date position passes here and fails the flip.

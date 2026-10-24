@@ -52,6 +52,7 @@ func TestEvidenceSubmissionAttribution(t *testing.T) {
 		"escaped_pipe_cell":         {base + strings.ReplaceAll(attributedBlocked, "| 9 | statusgen --lint |", "| 9 | statusgen \\| --lint |"), base, false},
 		"comment_over_heading":      {"# Brief\n\n## Context\n\nctx\n<!-- x\n## Evidence\n-->\n| # | Command | Observed |\n|---|---|---|\n| 1 | statusgen --lint | exit 0 |\n", "# Brief\n\n## Context\n\nctx\n<!-- x\n## Evidence\n-->\n", true},
 		"comment_over_heading_real": {"# Brief\n\n## Context\n\nctx\n<!-- x\n## Evidence\n-->\n| # | Command | Observed |\n|---|---|---|\n| 1 | statusgen --lint | exit 0 |\n\n## Evidence\n", "# Brief\n\n## Context\n\nctx\n<!-- x\n## Evidence\n-->\n\n## Evidence\n", true},
+		"short_row_trailing_column": {base + "| # | Command | Date | Runner | Base |\n|---|---|---|---|---|\n| 1 | cmd | 2026-10-23 | alice |\n", base, true},
 		"quoted":                    {base + "```\n" + unattributed4114 + "```\n", base, false},
 		"derivation":                {base + "| Rank | Value | Derivation |\n|---|---|---|\n| 1 | 5 | derived |\n", base, false},
 	} {
@@ -148,5 +149,16 @@ func TestAttributionPipeCauseNamed(t *testing.T) {
 	err := checkAddedRowAttribution([]byte(content), []byte(base))
 	if err == nil || !strings.Contains(err.Error(), "unescaped |") || !strings.Contains(err.Error(), "6 cells under a header of 5") {
 		t.Fatalf("want refusal naming the unescaped pipe and the cell counts, got %v", err)
+	}
+}
+
+// The base is read the lint's way too: the section ends at the raw next heading, so a table the
+// lint never read as Evidence (a comment opened in Evidence runs over ## Notes) is not historical.
+func TestAttributionBaseSectionLocatedOnRawLines(t *testing.T) {
+	table := "| # | Command | Observed |\n|---|---|---|\n| 1 | statusgen --lint | exit 0 |\n"
+	base := "# Brief\n\n## Evidence\n<!-- x\n## Notes\n-->\n" + table
+	content := "# Brief\n\n## Evidence\n\n" + table
+	if err := checkAddedRowAttribution([]byte(content), []byte(base)); err == nil {
+		t.Fatal("want refusal: the base's table sits outside its Evidence section, so the row is not historical")
 	}
 }
