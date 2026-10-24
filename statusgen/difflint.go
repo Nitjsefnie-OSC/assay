@@ -222,12 +222,19 @@ func emitDiffLintResult(res diffLintResult) int {
 	return len(res.introduced)
 }
 
-// normalizeDiffProblem keys a PROBLEM/NOTICE line tree-independently. The one
-// implementation is normalizeNoticeLine (notice_report.go), shared with the
-// lint notice report so the differential and the report can never disagree
-// about when two lines are the same finding.
+// normalizeDiffProblem strips the PROBLEM:/NOTICE: prefix and the tree's own
+// absolute root from a line so the same logical problem keys identically
+// whether it came from the head root or the temp base worktree.
 func normalizeDiffProblem(line, treeRoot string) string {
-	return normalizeNoticeLine(line, treeRoot)
+	s := stripProblemPrefix(line)
+	if abs, err := filepath.Abs(treeRoot); err == nil && abs != "" {
+		s = strings.ReplaceAll(s, abs, "")
+	}
+	s = strings.ReplaceAll(s, treeRoot, "")
+	// A stripped absolute root leaves a leading separator ("/repo/docs/..." ->
+	// "/docs/..."); trim it so the key is a clean tree-relative path. Both trees
+	// are normalised the same way, so this only affects legibility, not matching.
+	return strings.TrimPrefix(strings.TrimSpace(s), "/")
 }
 
 func stripProblemPrefix(line string) string {
@@ -311,7 +318,12 @@ func productionDiffLintRunner(treeRoot string, budget []string, changed, scope s
 	}
 	args := []string{"--root", treeRoot, "--lint"}
 	if lintDetailAll {
-		args = append(args, "--all") // the caller asked for every historical line
+		// Forwarded only when the caller passed --all: the inner head lint's
+		// notices are what this run prints, so without --all they are the bounded
+		// historical report (its could-not-check lines are NOTICE-prefixed and
+		// kept below). The base-vs-head comparison itself is over PROBLEM lines,
+		// which --all never changes.
+		args = append(args, "--all")
 	}
 	for _, b := range budget {
 		args = append(args, "--budget", b)

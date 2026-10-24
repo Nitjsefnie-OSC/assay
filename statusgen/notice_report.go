@@ -21,9 +21,10 @@ import (
 // the ONE owner of how a notice line is classified and reported:
 //
 //   - which rule a line belongs to (noticeRuleInventory + noticeFragmentRules —
-//     the only classification table; difflint.go and lintaudit.go reuse the
-//     normalisation here rather than carrying their own),
-//   - which record it is about and that record's standing (recordIndex),
+//     the only classification table),
+//   - which record it is about and that record's standing (recordIndex). The
+//     record is the notice's SUBJECT — the path in the emitter's own leading
+//     slot — never a path that merely appears later in text the emitter quotes,
 //   - actionable vs historical, and the counts for each,
 //   - the three renderings of one report: default text, `--all` detail text and
 //     `--lint --json`. All three are views of ONE noticeReport value, so their
@@ -32,7 +33,8 @@ import (
 // What it never does: remove a finding, change a PROBLEM or an exit code, or turn
 // a could-not-check into a clean. A finding is HISTORICAL only when its rule is in
 // the inventory AND it is about a brief file whose README row was already
-// verified/done at the merge-base. An active, unknown-status, newly closed or
+// verified/done at the merge-base AND its rule is not held actionable
+// (noticeHeldActionable). An active, unknown-status, newly closed or
 // non-brief subject stays ACTIONABLE — the stricter checks for closures this
 // branch makes are untouched. A count may rise when a new detector discovers old
 // debt; that is history becoming visible, not a newly closed defective brief.
@@ -45,9 +47,11 @@ type noticeRuleDef struct {
 
 // noticeRuleInventory is the closed set of rule identities this report
 // accounts for. Spellings are the emitters' own constants (or, for the older
-// checks, the literal tag they print); the drift guard
-// TestHistoricalNoticeReport drives each real emitter and fails if one stops
-// being recognised.
+// checks, the literal tag they print). Two guards watch it:
+// TestHistoricalNoticeReport drives the real emitters named in notice28Rules end
+// to end (not every rule below), and TestNoticeInventoryMatchesEmitters checks
+// each phrase-matched rule against its own emitting file. A rule outside both is
+// recognised by its bracket tag or constant only.
 var noticeRuleInventory = []noticeRuleDef{
 	{ruleERELiteralPipe, "A"}, {ruleGrepZeroCount, "A"}, {ruleExitSwallowed, "A"},
 	{ruleRE2LiteralPipe, "A"}, {ruleMetavar, "A"}, {ruleGoRunExit, "A"},
@@ -92,23 +96,40 @@ const (
 	noticeRuleUnclassified          = "(unclassified)"
 	noticeReportSchema              = "statusgen.lint-notice-report/v1"
 	noticeSummaryTag                = "[historical-notices]"
+	noticeCouldNotCheckTag          = "[notice-report-could-not-check]"
 )
 
 // noticeFragmentRules classify the emitters whose line has no bracketed tag by a
-// phrase of the message itself. Order matters only for overlapping phrases.
-var noticeFragmentRules = []struct{ rule, fragment string }{
-	{ruleOrderingGate, "ordering-gate: "},
-	{ruleWhyAbsent, " has no why:"},
-	{ruleWhySubstance, " fails the substance floor"},
-	{ruleExecTierWhyAbsent, "has exec-tier: strong but no exec-tier-why"},
-	{ruleSecurityReviewAbsent, "records no security-review"},
-	{ruleConsumersProse, "consumers: is a prose paragraph"},
-	{ruleConsumersMissingList, "enumerates no consumers:"},
-	{ruleConsumersNoVerifyRow, "carries consumers: but no Verify row"},
-	{ruleConsumersUnrouted, "names no routing"},
-	{ruleConsumersFollowupNoTarget, "routes to a follow-up but names no"},
-	{ruleConsumersFollowupOneWay, "the coverage claim is one-way"},
-	{ruleConsumersOutOfScopeNoReason, "is routed out-of-scope with no substantive reason"},
+// phrase of the message itself. emitter is the one production file that spells the
+// phrase; TestNoticeInventoryMatchesEmitters reads that file only, so the
+// registry text in enforcementstatus.go can never keep a stale phrase green.
+// Order matters only for overlapping phrases.
+var noticeFragmentRules = []struct{ rule, fragment, emitter string }{
+	{ruleOrderingGate, "ordering-gate: ", "orderinggate.go"},
+	{ruleWhyAbsent, " has no why:", "brieffile.go"},
+	{ruleWhySubstance, " fails the substance floor", "brieffile.go"},
+	{ruleExecTierWhyAbsent, "has exec-tier: strong but no exec-tier-why", "brieffile.go"},
+	{ruleSecurityReviewAbsent, "records no security-review", "brieffile.go"},
+	{ruleConsumersProse, "consumers: is a prose paragraph", "consumers.go"},
+	{ruleConsumersMissingList, "enumerates no consumers:", "consumers.go"},
+	{ruleConsumersNoVerifyRow, "carries consumers: but no Verify row", "consumers.go"},
+	{ruleConsumersUnrouted, "names no routing", "consumers.go"},
+	{ruleConsumersFollowupNoTarget, "routes to a follow-up but names no", "consumers.go"},
+	{ruleConsumersFollowupOneWay, "the coverage claim is one-way", "consumers.go"},
+	{ruleConsumersOutOfScopeNoReason, "is routed out-of-scope with no substantive reason", "consumers.go"},
+}
+
+// noticeHeldActionable lists inventory rules that are COUNTED per rule but never
+// demoted to historical, with the reason. security-review-absent is held because
+// the recorded grandfather boundary (docs/streams/statusgen/README.md, Family B
+// row for ordering and legacy review metadata) covers only closures corroborated
+// as dated before 2026-08-15, and that date test is unbuilt (statusgen/31, task
+// 4): "closed at the merge-base" alone also covers closures made after the rule
+// took effect, which are a live gap and not frozen history. Remove the entry
+// only together with a corroborated-date test whose unknown dates stay
+// could-not-check.
+var noticeHeldActionable = map[string]string{
+	ruleSecurityReviewAbsent: "no corroborated closure-date boundary yet (statusgen/31)",
 }
 
 var (
@@ -119,18 +140,53 @@ var (
 		}
 		return m
 	}()
-	noticeTagRe       = regexp.MustCompile(`\[([A-Za-z0-9-]+)\]`)
-	noticeBriefPathRe = regexp.MustCompile(`([A-Za-z0-9._-]+)/(brief-[0-9]+[A-Za-z0-9._-]*\.md)`)
+	noticeTagRe = regexp.MustCompile(`\[([A-Za-z0-9-]+)\]`)
+	// noticeSubjectRe reads the emitter's leading slot: an optional
+	// "ordering-gate: " or "[tag] " prefix, then the subject file path, an
+	// optional ":<line>", then ":" or a space. Everything after it is message
+	// text, which may quote author prose (a brief path, a tag, a phrase) that
+	// says nothing about what the notice is about.
+	noticeSubjectRe   = regexp.MustCompile(`^(?:ordering-gate: )?(?:\[[A-Za-z0-9-]+\] )?(\S+?\.md)(?::\d+)?(?::|\s|$)`)
+	noticeBriefPathRe = regexp.MustCompile(`^(?:.*/)?([A-Za-z0-9._-]+)/(brief-[0-9]+[A-Za-z0-9._-]*\.md)$`)
 )
 
-// noticeRuleOf returns the inventory rule a notice line belongs to, or "".
+// noticeSubject returns the file path a notice line is ABOUT: the path in the
+// emitter's leading slot. ok is false when the line does not open with a file
+// path (an aggregate, a stream-level or tree-level notice).
+func noticeSubject(line string) (subject string, ok bool) {
+	m := noticeSubjectRe.FindStringSubmatchIndex(line)
+	if m == nil {
+		return "", false
+	}
+	return line[m[2]:m[3]], true
+}
+
+// noticeHead is the emitter-owned opening of a line: everything before the first
+// backtick or double quote, where an emitter starts quoting author text.
+func noticeHead(line string) string {
+	if i := strings.IndexAny(line, "`\""); i >= 0 {
+		return line[:i]
+	}
+	return line
+}
+
+// noticeRuleOf returns the inventory rule a notice line belongs to, or "". A
+// bracket tag counts only in the emitter-owned head (before the first quoted
+// span), and ordering-gate only as the line's own prefix, so a notice that quotes
+// author text naming another rule cannot be filed under it.
 func noticeRuleOf(line string) string {
-	for _, m := range noticeTagRe.FindAllStringSubmatch(line, -1) {
+	for _, m := range noticeTagRe.FindAllStringSubmatch(noticeHead(line), -1) {
 		if _, ok := noticeRuleFamily[m[1]]; ok {
 			return m[1]
 		}
 	}
 	for _, f := range noticeFragmentRules {
+		if f.rule == ruleOrderingGate {
+			if strings.HasPrefix(line, f.fragment) {
+				return f.rule
+			}
+			continue
+		}
 		if strings.Contains(line, f.fragment) {
 			return f.rule
 		}
@@ -145,9 +201,16 @@ func noticeIsCouldNotCheck(line string) bool {
 	return strings.Contains(line, "COULD-NOT-CHECK") || strings.Contains(line, "could-not-check")
 }
 
-// recordKey is the stream-qualified file name a notice line's path reduces to.
+// noticeRecordKey is the stream-qualified brief file a notice is ABOUT: its
+// subject path, when that is a brief file. A notice whose subject is a README,
+// CLAUDE.md or no file at all is not about a record, whatever brief paths its
+// quoted text contains.
 func noticeRecordKey(line string) (key string, isBrief bool) {
-	if m := noticeBriefPathRe.FindStringSubmatch(line); m != nil {
+	subject, ok := noticeSubject(line)
+	if !ok {
+		return "", false
+	}
+	if m := noticeBriefPathRe.FindStringSubmatch(filepath.ToSlash(subject)); m != nil {
 		return m[1] + "/" + m[2], true
 	}
 	return "", false
@@ -239,7 +302,8 @@ func classifyNotice(line string, idx *recordIndex) (f noticeFinding, historical 
 			f.Status = noticeStatusActive
 		}
 	}
-	historical = included && (f.Status == noticeStatusDonePreExisting || f.Status == noticeStatusVerifiedPreExisting)
+	_, held := noticeHeldActionable[f.Rule]
+	historical = included && !held && (f.Status == noticeStatusDonePreExisting || f.Status == noticeStatusVerifiedPreExisting)
 	return f, historical
 }
 
@@ -445,7 +509,11 @@ func renderNoticeText(w io.Writer, rep *noticeReport, detail bool) {
 		if strings.HasPrefix(c.Scope, "rule:") {
 			continue // already visible in the per-rule summary line
 		}
-		fmt.Fprintf(w, "statusgen: notice report could-not-check (%s): %s\n", c.Scope, c.Reason)
+		// NOTICE-prefixed and tagged so the consumers that keep only
+		// PROBLEM:/NOTICE: lines (difflint, the lint audit, evidence readers) carry
+		// it, under one stable rule key, instead of dropping it. It is a state of
+		// the report, not a finding, and is not counted in the totals.
+		fmt.Fprintf(w, "NOTICE: %s %s: %s\n", noticeCouldNotCheckTag, c.Scope, c.Reason)
 	}
 }
 
@@ -506,16 +574,4 @@ func emitLintJSONVerdict(n int) {
 		rep.Verdict = "FAIL"
 	}
 	renderNoticeJSON(os.Stdout, rep)
-}
-
-// normalizeNoticeLine strips the PROBLEM:/NOTICE: prefix and the tree's own
-// absolute root so the same logical finding keys identically whichever tree it
-// came from. difflint.go's base-vs-head comparison uses this one function.
-func normalizeNoticeLine(line, treeRoot string) string {
-	s := stripProblemPrefix(line)
-	if abs, err := filepath.Abs(treeRoot); err == nil && abs != "" {
-		s = strings.ReplaceAll(s, abs, "")
-	}
-	s = strings.ReplaceAll(s, treeRoot, "")
-	return strings.TrimPrefix(strings.TrimSpace(s), "/")
 }

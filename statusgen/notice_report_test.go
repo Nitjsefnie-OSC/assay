@@ -251,8 +251,12 @@ func TestHistoricalNoticeReport(t *testing.T) {
 		var restored int
 		for _, l := range strings.Split(all, "\n") {
 			if strings.HasPrefix(l, "NOTICE: ") && (strings.Contains(l, "brief-02-predone.md") || strings.Contains(l, "brief-03-preverified.md")) {
-				if noticeRuleOf(strings.TrimPrefix(l, "NOTICE: ")) != "" {
-					restored++
+				// A held rule prints individually by default too, so it is not part
+				// of the historical totals this comparison restores.
+				if r := noticeRuleOf(strings.TrimPrefix(l, "NOTICE: ")); r != "" {
+					if _, held := noticeHeldActionable[r]; !held {
+						restored++
+					}
 				}
 			}
 			if strings.Contains(l, "[historical-notices]") {
@@ -319,9 +323,13 @@ func TestHistoricalNoticeReport(t *testing.T) {
 				t.Errorf("by_status lacks the %q standing: %+v", st, rep.ByStatus)
 			}
 		}
-		// An included rule on a pre-existing closed record is never actionable;
-		// a notice outside the inventory stays actionable wherever it lands.
+		// An included, non-held rule on a pre-existing closed record is never
+		// actionable; a notice outside the inventory stays actionable wherever it
+		// lands.
 		for _, f := range rep.Actionable {
+			if _, held := noticeHeldActionable[f.Rule]; held {
+				continue // counted per rule, deliberately never demoted (TestHeldRuleStaysActionable)
+			}
 			if (f.Status == "done-pre-existing" || f.Status == "verified-pre-existing") && f.Rule != noticeRuleUnclassified {
 				t.Errorf("included rule %q on a pre-existing closed record must be historical: %.160s", f.Rule, f.Line)
 			}
@@ -375,51 +383,270 @@ func TestHistoricalNoticeBaseUnresolved(t *testing.T) {
 	}
 }
 
-// TestNoticeInventoryMatchesEmitters is the drift guard: every phrase-matched
-// rule must still be spelled by its production emitter, and every tag-matched
-// rule must be recognised from its own bracket tag. A renamed emitter message
-// would otherwise silently fall into the (unclassified) bucket.
+// TestNoticeInventoryMatchesEmitters is the drift guard. Every phrase-matched
+// rule must still be spelled by ITS OWN emitting file (read alone, so the registry
+// descriptions in enforcementstatus.go that repeat a phrase cannot keep a stale
+// fragment green), every tag-matched rule must be recognised from its bracket tag,
+// and no emitter may spell an inventory tag as a literal beside the shared
+// constant (a literal would survive a constant rename and drift silently).
+//
+// regression: F-notice-inventory-drift — the guard used to substring-match every
+// production file, so two fragments were also satisfied by registry text.
 func TestNoticeInventoryMatchesEmitters(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("cannot list production sources: %v", err)
-	}
-	var src strings.Builder
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") || f == "notice_report.go" {
-			continue
+	// codeOnly drops whole-line // comments: a comment may name a tag in prose.
+	codeOnly := func(src string) string {
+		var keep []string
+		for _, l := range strings.Split(src, "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(l), "//") {
+				keep = append(keep, l)
+			}
 		}
+		return strings.Join(keep, "\n")
+	}
+	read := func(f string) string {
 		b, err := os.ReadFile(f)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("cannot read emitter file %s: %v", f, err)
 		}
-		src.Write(b)
+		return string(b)
 	}
+	fragment := map[string]bool{}
 	for _, fr := range noticeFragmentRules {
-		if !strings.Contains(src.String(), fr.fragment) {
-			t.Errorf("rule %q: no production emitter spells %q any more — update noticeFragmentRules with the emitter", fr.rule, fr.fragment)
+		fragment[fr.rule] = true
+		if !strings.Contains(read(fr.emitter), fr.fragment) {
+			t.Errorf("rule %q: %s no longer spells %q — update noticeFragmentRules with the emitter", fr.rule, fr.emitter, fr.fragment)
 		}
 		if _, ok := noticeRuleFamily[fr.rule]; !ok {
 			t.Errorf("fragment rule %q is not in noticeRuleInventory", fr.rule)
 		}
 	}
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("cannot list production sources: %v", err)
+	}
 	for _, r := range noticeRuleInventory {
+		if fragment[r.ID] {
+			continue
+		}
+		// Tag-matched: the line "[tag] x" must classify to this rule...
 		if got := noticeRuleOf("[" + r.ID + "] x"); got != r.ID {
-			// Phrase-matched rules have no bracket form; they are covered above.
-			isFragment := false
-			for _, fr := range noticeFragmentRules {
-				if fr.rule == r.ID {
-					isFragment = true
-				}
+			t.Errorf("inventory rule %q is neither tag- nor phrase-recognised", r.ID)
+		}
+		// ...and no emitter may print the tag as a literal string.
+		for _, f := range files {
+			if strings.HasSuffix(f, "_test.go") || f == "notice_report.go" || f == "enforcementstatus.go" {
+				continue
 			}
-			if !isFragment {
-				t.Errorf("inventory rule %q is neither tag- nor phrase-recognised", r.ID)
+			if strings.Contains(codeOnly(read(f)), "["+r.ID+"]") {
+				t.Errorf("%s spells the tag [%s] as a literal; build it from the rule constant so a rename cannot drift", f, r.ID)
 			}
 		}
 	}
-	// The ID-dereference constant is the one tag linkcheck.go emits.
-	if ruleIDDereference != "id-dereference" {
-		t.Errorf("ruleIDDereference drifted: %q", ruleIDDereference)
+	// Each emitted tag constant must agree with the spelling the inventory holds.
+	for _, c := range []struct{ got, want string }{
+		{ruleIDDereference, "id-dereference"},
+		{ruleRiskFilesCrossRead, "risk-files-crossread"},
+		{ruleVerifyRowPortability, "verify-row-portability"},
+		{ruleSecurityReviewAbsent, "security-review-absent"},
+	} {
+		if c.got != c.want {
+			t.Errorf("rule constant drifted: %q, want %q", c.got, c.want)
+		}
+		if _, ok := noticeRuleFamily[c.want]; !ok {
+			t.Errorf("%q is not in noticeRuleInventory", c.want)
+		}
+	}
+}
+
+// TestNoticeSubjectIsLeadingSlot — a notice is ABOUT the path in the emitter's
+// leading slot, never a path or tag quoted later in author text.
+//
+// regression: F-notice-subject-first-match — the matcher took the first
+// brief-NN path anywhere in the line, so a README ordering-gate notice that
+// quoted a verified brief's path inherited that brief's closed standing and was
+// demoted to historical.
+func TestNoticeSubjectIsLeadingSlot(t *testing.T) {
+	tmp := t.TempDir()
+	mk := func(stream, name string) string {
+		dir := filepath.Join(tmp, "docs", "streams", stream)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	alpha := mk("alpha", "brief-07-a.md")
+	demo := mk("demo", "README.md")
+	streams := []*Stream{
+		{Name: "alpha", Dir: alpha, Briefs: []Brief{{Num: "07", Status: "verified"}}},
+		{Name: "demo", Dir: demo},
+	}
+	idx := buildRecordIndex(streams, map[string]bool{"alpha/07": true}, true)
+
+	// The reviewer's repro: demo/README.md line 3 links ../alpha/brief-07-a.md and
+	// alpha/07 is verified in the base.
+	readmeGate := `ordering-gate: docs/streams/demo/README.md:3 prose "gate: see [alpha/07](../alpha/brief-07-a.md) before dispatch" relates 07 and 08 but no typed edge (depends:/unblocks:) encodes it — encode the prerequisite on the owning brief (#1250)`
+	briefGate := `ordering-gate: docs/streams/alpha/brief-07-a.md:9 prose "x" relates 07 and 08 but no typed edge (depends:/unblocks:) encodes it (#1250)`
+	rep := buildNoticeReport([]string{readmeGate, briefGate}, idx)
+	if rep.Totals.Actionable != 1 || rep.Totals.Historical != 1 {
+		t.Fatalf("want the README notice ACTIONABLE and the verified brief's own notice historical, got %+v", rep.Totals)
+	}
+	if len(rep.Actionable) != 1 || !strings.Contains(rep.Actionable[0].Line, "demo/README.md") {
+		t.Errorf("the README notice must stay actionable: %+v", rep.Actionable)
+	}
+	if len(rep.Historical) != 1 || !strings.Contains(rep.Historical[0].Line, "alpha/brief-07-a.md:9") {
+		t.Errorf("only the verified brief's own notice may be historical: %+v", rep.Historical)
+	}
+
+	// Subject-anchored classification of the other leading-slot shapes.
+	cases := []struct {
+		line, wantKey, wantRule string
+	}{
+		{"docs/streams/alpha/brief-07-a.md: Verify row 2 [verify-row-portability] bad", "alpha/brief-07-a.md", ruleVerifyRowPortability},
+		{"[id-dereference] docs/streams/alpha/brief-07-a.md: x", "alpha/brief-07-a.md", ruleIDDereference},
+		{"docs/streams/alpha/brief-07-a.md: [table-touches-no-files] x", "alpha/brief-07-a.md", ruleTableNoFiles},
+		{"/abs/docs/streams/alpha/brief-07-a.md: Verify row 3 [verify-row-portability] bad", "alpha/brief-07-a.md", ruleVerifyRowPortability},
+		// Subject is CLAUDE.md; the quoted brief path and the quoted [tag] are text.
+		{"docs/streams/demo/CLAUDE.md: Verify row 1 [verify-row-portability] see `docs/streams/alpha/brief-07-a.md`", "", ruleVerifyRowPortability},
+		{"docs/streams/demo/README.md: names no routing in \"[id-dereference] alpha/brief-07-a.md\"", "", ruleConsumersUnrouted},
+		// A quoted ordering-gate marker inside another line's text is not the rule.
+		{"docs/streams/demo/README.md: some prose \"ordering-gate: x\"", "", ""},
+	}
+	for _, c := range cases {
+		key, _ := noticeRecordKey(c.line)
+		if key != c.wantKey {
+			t.Errorf("record key of %.90q = %q, want %q", c.line, key, c.wantKey)
+		}
+		if got := noticeRuleOf(c.line); got != c.wantRule {
+			t.Errorf("rule of %.90q = %q, want %q", c.line, got, c.wantRule)
+		}
+	}
+}
+
+// TestHeldRuleStaysActionable — security-review-absent is counted per rule but is
+// never demoted: "closed at the merge-base" does not prove the closure predates the
+// rule, and the corroborated-date boundary is unbuilt (statusgen/31).
+//
+// regression: F-sec-review-absent-demoted — the rule was demoted for any record
+// closed at the merge-base; on the real tree three of those closures were dated
+// after 2026-08-15 and are live gaps, not frozen history.
+func TestHeldRuleStaysActionable(t *testing.T) {
+	root := noticeFixtureRoot(t)
+	withBase(t, true, "demo/02", "demo/03")
+	resetNoticeReportState(t)
+	lintJSONMode = true
+	_, out, _ := lintFixture(t, root)
+	var rep noticeReport
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	// brief-02 is a human-gated, risk-classed record closed at the base whose
+	// Reviewed cell carries no security-review: the real emitter raises the notice.
+	var gotAct, gotHist int
+	for _, f := range rep.Actionable {
+		if f.Rule == ruleSecurityReviewAbsent && strings.Contains(f.Line, "brief-02-predone.md") && f.Status == "done-pre-existing" {
+			gotAct++
+		}
+	}
+	for _, f := range rep.Historical {
+		if f.Rule == ruleSecurityReviewAbsent {
+			gotHist++
+		}
+	}
+	if gotAct != 1 || gotHist != 0 {
+		t.Errorf("security-review-absent on a done record closed at the base: actionable=%d historical=%d, want 1 and 0", gotAct, gotHist)
+	}
+	if _, ok := noticeHeldActionable[ruleSecurityReviewAbsent]; !ok {
+		t.Errorf("security-review-absent must be in noticeHeldActionable until the corroborated closure-date boundary exists")
+	}
+	for id := range noticeHeldActionable {
+		if _, ok := noticeRuleFamily[id]; !ok {
+			t.Errorf("held rule %q is not in noticeRuleInventory", id)
+		}
+	}
+}
+
+// TestCouldNotCheckLinesCarryNoticePrefix — the report's could-not-check lines
+// are NOTICE-prefixed, so consumers that keep only PROBLEM:/NOTICE: lines
+// (difflint, the lint audit, evidence readers) carry them instead of dropping
+// them. They are not findings and stay out of the totals.
+//
+// regression: F-cnc-line-dropped — the lines had no prefix and the --diff-base
+// runner dropped them.
+func TestCouldNotCheckLinesCarryNoticePrefix(t *testing.T) {
+	root := noticeFixtureRoot(t)
+	withBase(t, false)
+	resetNoticeReportState(t)
+	_, _, stderr := lintFixture(t, root)
+	var cnc, totals int
+	for _, l := range strings.Split(stderr, "\n") {
+		if strings.Contains(l, noticeCouldNotCheckTag) {
+			cnc++
+			if !strings.HasPrefix(l, "NOTICE: ") {
+				t.Errorf("could-not-check line lacks the NOTICE: prefix: %.160s", l)
+			}
+		}
+		if strings.HasPrefix(l, "statusgen: notices: ") {
+			totals++
+		}
+	}
+	if cnc == 0 {
+		t.Fatalf("an unresolved base must print a closure-baseline could-not-check line:\n%s", stderr)
+	}
+	if totals != 1 {
+		t.Errorf("want one plain totals line, got %d", totals)
+	}
+	// What the --diff-base runner keeps survives the filter.
+	var kept int
+	for _, l := range strings.Split(stderr, "\n") {
+		if (strings.HasPrefix(l, "PROBLEM:") || strings.HasPrefix(l, "NOTICE:")) && strings.Contains(l, "closure-baseline") {
+			kept++
+		}
+	}
+	if kept == 0 {
+		t.Errorf("the closure-baseline could-not-check is dropped by the PROBLEM:/NOTICE: filter")
+	}
+}
+
+// TestProseLedCommandClosedBriefDemoted — a prose-led-command row on a brief
+// closed at the base keeps its per-row line from the emitter and is demoted by
+// the SHARED classifier (no private aggregate), while the same row on an open
+// brief stays actionable.
+func TestProseLedCommandClosedBriefDemoted(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "streams", "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	brief := "---\nbrief: demo/01\ntitle: Demo\nwave: 0\ndepends: []\nunblocks: []\neffort: S\ngate: model\n" +
+		"risk: {regulatory: no, customer: no, irreversible: no, sensitive-data: no}\nissues: []\nschema: brief-v1\n" +
+		"authored: 2026-09-27 by fixture\nsources: [\"fixture\"]\n---\n\n# Demo\n\n## Verify\n" +
+		verifyTable("| 1 | In `PublicRepoGate` change it, then `go test ./x` | exit 0 |") +
+		"\n## Evidence\n\n## Review\nGate: model.\n"
+	if err := os.WriteFile(filepath.Join(dir, "brief-01-demo.md"), []byte(brief), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		status           string
+		wantAct, wantHis int
+	}{{"done", 0, 1}, {"verified", 0, 1}, {"todo", 1, 0}} {
+		st := &Stream{Name: "demo", Root: root, Dir: dir, Briefs: []Brief{{Num: "01", Status: c.status}}}
+		idx := buildRecordIndex([]*Stream{st}, map[string]bool{"demo/01": true}, true)
+		var prose []string
+		for _, n := range unfailableRowNotices([]*Stream{st}) {
+			if strings.Contains(n, "["+proseLedRule+"]") {
+				prose = append(prose, n)
+			}
+		}
+		if len(prose) != 1 {
+			t.Fatalf("status %s: want one per-row [%s] notice, got %v", c.status, proseLedRule, prose)
+		}
+		rep := buildNoticeReport(prose, idx)
+		if rep.Totals.Actionable != c.wantAct || rep.Totals.Historical != c.wantHis {
+			t.Errorf("status %s closed at the base: actionable=%d historical=%d, want %d/%d", c.status, rep.Totals.Actionable, rep.Totals.Historical, c.wantAct, c.wantHis)
+		}
 	}
 }
 
