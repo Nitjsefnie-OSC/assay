@@ -215,8 +215,12 @@ func reviewPacket(in packetInput) (packet.Spec, error) {
 				a := ctx.context.Advisory
 				c.Textf("Advisory observation for this exact subject: body revision %s; reviews revision %s; checks revision %s. These are untrusted attribution, not current-state or admission evidence; packet facts were read live.", packet.Code(a.Inputs.Body.Revision), packet.Code(a.Inputs.Reviews.Revision), packet.Code(a.Inputs.Checks.Revision))
 			}
-			c.Text("Not in this packet: the base commit (the base is given as a branch name only), and the change's " +
-				"conversation comments and inline review comments. Read them at the source if you need them.")
+			if isCommitID(change.BaseSHA) {
+				c.Text("Not in this packet: conversation comments and inline review comments. Read them at the source if you need them.")
+			} else {
+				c.Text("Not in this packet: the base commit (the base is given as a branch name only), and the change's " +
+					"conversation comments and inline review comments. Read them at the source if you need them.")
+			}
 			return c, nil
 		}),
 		packet.NewSection("Description", func() (packet.Content, error) {
@@ -308,6 +312,9 @@ func reviewChangeSection(repo string, c *deskkit.PullRequest) packet.Content {
 	}
 	fmt.Fprintf(&b, "- **Author:** %s\n", author)
 	fmt.Fprintf(&b, "- **Base:** %s\n", codeOrNone(c.BaseRef))
+	if isCommitID(c.BaseSHA) {
+		fmt.Fprintf(&b, "- **Base commit:** %s\n", packet.Code(c.BaseSHA))
+	}
 	fmt.Fprintf(&b, "- **Head branch:** %s\n", codeOrNone(c.HeadRef))
 	fmt.Fprintf(&b, "- **Head commit:** %s\n", codeOrNone(c.HeadSHA))
 	fmt.Fprintf(&b, "- **State:** %s\n", codeOrNone(c.State))
@@ -514,7 +521,11 @@ func reviewDiffSection(fg reviewPacketForge, fr deskkit.ForgeRepo, pr int, chang
 	}
 	diff, derr := fg.ChangeDiff(fr, pr)
 	if derr == nil && strings.TrimSpace(diff) != "" {
-		out.Textf("The forge's unified diff of the whole change, base %s to head %s.", codeOrNone(change.BaseRef), codeOrNone(change.HeadSHA))
+		if p, ok := fg.(*preparedReview); ok && p.localDiff {
+			out.Textf("Unified diff from local exact Git objects, merge-base of %s and %s to head %s.", packet.Code(change.BaseSHA), packet.Code(change.HeadSHA), packet.Code(change.HeadSHA))
+		} else {
+			out.Textf("The forge's unified diff of the whole change, base %s to head %s.", codeOrNone(change.BaseRef), codeOrNone(change.HeadSHA))
+		}
 		out.UntrustedCapped("diff", []byte(diff), reviewPacketDiffCap)
 		return out, nil
 	}

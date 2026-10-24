@@ -37,6 +37,7 @@ type preparedReview struct {
 	comparisons map[rf.SourceKey]*deskkit.RefComparison
 	commits     map[rf.SourceKey]*deskkit.RepoCommit
 	required    map[string][]string
+	localDiff   bool
 	checked     bool
 }
 
@@ -205,6 +206,7 @@ func (p *preparedReview) ReadFile(r deskkit.ForgeRepo, in deskkit.ReadFileInput)
 func (p *preparedReview) ChangeDiff(r deskkit.ForgeRepo, n int) (string, error) {
 	if p.local != nil && isCommitID(p.change.BaseSHA) {
 		if raw, e := p.local.DiffSymmetric(p.change.BaseSHA, p.change.HeadSHA, 3); e == nil {
+			p.localDiff = true
 			return raw, nil
 		}
 	}

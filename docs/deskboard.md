@@ -137,7 +137,7 @@ HEAD; missing objects fall back to exact-head provider reads. Local regular blob
 are size-checked before reading and limited to the packet's per-item byte ceiling;
 symlinks are never followed. When both base and head objects exist, gitcore builds
 the three-dot diff from the exact endpoints. A provider without an exact base
-endpoint gets an explicit diff omission, not a claimed frozen diff. Packet file,
+endpoint gets full-pass scope and an explicit diff omission, not a claimed frozen diff. Packet file,
 history, time and output caps and untrusted-content escaping remain in force.
 A 60-second preparation context reaches both provider transports, including blocked
 requests and response bodies. Omitted/unused requests still count as requests.

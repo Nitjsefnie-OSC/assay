@@ -145,6 +145,10 @@ func prepareReviewRound(o dispatchOpts, plan dispatchPlan, repo string) (reviewR
 		prev := verdicts[len(verdicts)-1]
 		rr.prev = &prev
 	}
+	if plan.reviewContext != nil && !isCommitID(pr.BaseSHA) {
+		rr.scope = decideReviewScope(scopeFacts{unknown: "the provider supplied no exact base endpoint"})
+		return rr, nil
+	}
 	rr.scope = decideReviewScope(readScopeFacts(fg, fr, o.pr, pr, rr.prev))
 	return rr, nil
 }

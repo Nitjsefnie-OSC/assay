@@ -40,6 +40,7 @@ func TestReviewPrepareFlow(t *testing.T) {
 func TestReviewPrepareInvalidation(t *testing.T) {
 	prepareAcceptance(t, "TestReviewPrepareAdaptersInvalidation")
 	prepareAcceptance(t, "TestReviewPrepareObservation")
+	prepareAcceptance(t, "TestReviewPrepareMissingBase")
 	prepareAcceptance(t, "TestForgePreparationCancellation", "./internal/deskkit")
 	if os.Getenv("ASSAY_REVIEW_CONTRACT_MUTANT") != "1" {
 		t.Run("mutation", func(t *testing.T) {

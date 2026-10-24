@@ -74,6 +74,9 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 				return 403, `{"message":"denied"}`
 			}
 			head, base, body := f.head, f.base, "description"
+			if f.moved == "missing-base" {
+				base = ""
+			}
 			if f.prReads > 1 {
 				switch f.moved {
 				case "head":
@@ -404,5 +407,23 @@ func TestReviewPrepareKeys(t *testing.T) {
 	}
 	if calls("/compare/") != before+3 {
 		t.Fatal("comparison reused another base endpoint")
+	}
+}
+
+func TestReviewPrepareMissingBase(t *testing.T) {
+	f := prepareTestFixture(t)
+	f.moved = "missing-base"
+	p, spec := prepareFlow(t, f)
+	o := dispatchOpts{kit: "review", pr: 77, root: f.root}
+	round, e := prepareReviewRound(o, dispatchPlan{claimKey: rrKeyC, reviewContext: p}, rrRepo)
+	if e != nil || !round.scope.full {
+		t.Fatal("unknown exact base claimed delta coverage", e)
+	}
+	built, e := packet.Build(spec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(built.Omitted) == 0 || !strings.Contains(string(built.Text), "exact base endpoint") {
+		t.Fatal("unknown base did not omit unfrozen diff")
 	}
 }
