@@ -152,6 +152,11 @@ func ffRepo(t *testing.T) (root, older, base, branch, head, stray string) {
 	t.Helper()
 	root = t.TempDir()
 	gitRun(t, root, "init", "-q")
+	// The ancestry fixture must actually hold the same brief at every commit.
+	// Its real path also resolves temporary-directory symlinks on macOS.
+	briefDir := filepath.Join(root, "docs", "streams", "ff")
+	mustMkdirAll(t, briefDir)
+	writeTemp(t, briefDir, "brief-01-ff.md", ffBrief(""))
 	writeTemp(t, root, "other.txt", "x\n")
 	writeTemp(t, root, "flag.txt", "old\n")
 	gitRun(t, root, "add", "-A")
@@ -210,6 +215,7 @@ func TestFailFirstBaseAncestry(t *testing.T) {
 // TestFailFirstBaseFlagRefusesNonAncestor — the runner refuses at the source
 // what the gate would refuse later: --base HEAD records a red that proves
 // nothing about the change.
+// regression: #4360
 func TestFailFirstBaseFlagRefusesNonAncestor(t *testing.T) {
 	root, older, base, branch, head, _ := ffRepo(t)
 	withBriefHeld(t, base, older)
