@@ -3,6 +3,7 @@ package portfolio
 import (
 	"encoding/json"
 	"sort"
+	"time"
 )
 
 // Quantity is one measure's known subtotal and its coverage. A record whose value is unknown
@@ -95,16 +96,27 @@ func Measure(s Snapshot) (Ledger, error) {
 		return l.Buckets[bucket]
 	}
 	record := func(bucket string, agent bool, measure string, v *int64) {
-		for _, t := range []Tally{tally(bucket), l.Total} {
-			m := t.Human
+		tallies := []Tally{tally(bucket), l.Total}
+		pick := func(t Tally) map[string]Quantity {
 			if agent {
-				m = t.Agent
+				return t.Agent
 			}
+			return t.Human
+		}
+		// A value that would take any subtotal it joins outside the int64 range is unknown in
+		// all of them, so Total stays the sum of the buckets and Unattributed.
+		for _, t := range tallies {
+			if _, ok := addInt64(pick(t)[measure].Known, deref(v)); !ok {
+				v = nil
+			}
+		}
+		for _, t := range tallies {
+			m := pick(t)
 			q := m[measure]
 			if v == nil {
 				q.UnknownRecords++
 			} else {
-				q.Known += *v
+				q.Known, _ = addInt64(q.Known, *v)
 				q.KnownRecords++
 			}
 			m[measure] = q
@@ -148,33 +160,49 @@ func measureSegments(s Snapshot, l *Ledger, weights map[string]int64, bucketOf f
 	})
 	for _, inv := range invs {
 		groups := reports[inv]
-		selected, reason := selectSegments(groups, reconciled, inv, l)
+		key := inv.Caller + "/" + inv.ID
+		selected, rejected, reason := selectSegments(groups, reconciled, inv)
 		if reason == "" {
 			reason = overlap(selected)
+		}
+		if reason != "" && wholly(groups, l.Window) {
+			// Every report lies outside the window: whichever one is right, none counts here.
+			l.Excluded = append(l.Excluded, Entry{"invocation", key, "every conflicting report lies outside the policy window"})
+			continue
 		}
 		if reason != "" {
 			// A conflict is not resolved by counting one side or both: the invocation stays
 			// visible as unknown in every agent measure until it is reconciled.
-			l.Conflicts = append(l.Conflicts, Entry{"invocation", inv.Caller + "/" + inv.ID, reason})
+			l.Conflicts = append(l.Conflicts, Entry{"invocation", key, reason})
 			bucket := agreedBucket(groups, bucketOf)
 			for _, m := range append(append([]string(nil), agentMeasures...), ElapsedProxy) {
 				record(bucket, true, m, nil)
 			}
 			continue
 		}
+		l.Excluded = append(l.Excluded, rejected...)
 		for _, g := range selected {
 			bucket := bucketOf(g.Subject)
-			active := activeSeconds(g, l)
-			if active == outside {
+			active, at := activeSeconds(g, l.Window)
+			switch at {
+			case outside:
 				l.Excluded = append(l.Excluded, Entry{"segment", segKey(g), "active interval outside the policy window"})
+				continue
+			case straddles:
+				// The window cannot apportion the segment, so none of its agent measures is
+				// attributed to the window.
+				for _, m := range append(append([]string(nil), agentMeasures...), ElapsedProxy) {
+					record(bucket, true, m, nil)
+				}
 				continue
 			}
 			var secs, weighted *int64
-			if active >= 0 {
+			if at == inside {
 				secs = &active
 				if milli, ok := weights[g.ActualModel]; ok && g.ActualModel != "" {
-					w := active * milli
-					weighted = &w
+					if w, ok := mulInt64(active, milli); ok {
+						weighted = &w
+					}
 				}
 			}
 			record(bucket, true, ActiveSeconds, secs)
@@ -185,10 +213,25 @@ func measureSegments(s Snapshot, l *Ledger, weights map[string]int64, bucketOf f
 	}
 }
 
-// selectSegments returns the one report per segment that counts, or a conflict reason.
-// Without a reconciliation every segment must have exactly one distinct report; with one,
-// exactly the accepted (id, revision) reports count and the rest are listed as excluded.
-func selectSegments(groups map[string][]Segment, reconciled map[Invocation]Reconciliation, inv Invocation, l *Ledger) ([]Segment, string) {
+// wholly reports whether every report of an invocation carries an active interval lying
+// entirely outside the window. A report without an interval could lie anywhere.
+func wholly(groups map[string][]Segment, window Interval) bool {
+	for _, gs := range groups {
+		for _, g := range gs {
+			if _, at := activeSeconds(g, window); at != outside {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// selectSegments returns the one report per segment that counts and the reports a
+// reconciliation rejected, or a conflict reason. Without a reconciliation every segment must
+// have exactly one distinct report; with one, exactly the accepted (id, revision) reports
+// count and the rest are rejected. The caller lists the rejected reports only when the
+// invocation is not a conflict, so no report is listed twice.
+func selectSegments(groups map[string][]Segment, reconciled map[Invocation]Reconciliation, inv Invocation) ([]Segment, []Entry, string) {
 	ids := make([]string, 0, len(groups))
 	for id := range groups {
 		ids = append(ids, id)
@@ -199,17 +242,19 @@ func selectSegments(groups map[string][]Segment, reconciled map[Invocation]Recon
 		var out []Segment
 		for _, id := range ids {
 			if len(groups[id]) != 1 {
-				return nil, "conflicting reports of segment " + id + " need explicit reconciliation"
+				return nil, nil, "conflicting reports of segment " + id + " need explicit reconciliation"
 			}
 			out = append(out, groups[id][0])
 		}
-		return out, ""
+		return out, nil, ""
 	}
 	accept := map[string]string{}
 	for _, ref := range r.Accept {
 		accept[ref.ID] = ref.Revision
 	}
 	var out []Segment
+	var rejected []Entry
+	found := map[SegmentRef]bool{}
 	for _, id := range ids {
 		var match []Segment
 		for _, g := range groups[id] {
@@ -217,63 +262,76 @@ func selectSegments(groups map[string][]Segment, reconciled map[Invocation]Recon
 				match = append(match, g)
 				continue
 			}
-			l.Excluded = append(l.Excluded, Entry{"segment", segKey(g), "not accepted by reconciliation"})
+			rejected = append(rejected, Entry{"segment", segKey(g), "not accepted by reconciliation"})
 		}
 		if len(match) > 1 {
-			return nil, "reconciliation accepts more than one distinct report of segment " + id
+			return nil, nil, "reconciliation accepts more than one distinct report of segment " + id
+		}
+		for _, g := range match {
+			found[SegmentRef{g.ID, g.Revision}] = true
 		}
 		out = append(out, match...)
 	}
 	for _, ref := range r.Accept {
-		found := false
-		for _, g := range out {
-			found = found || (g.ID == ref.ID && g.Revision == ref.Revision)
-		}
-		if !found {
-			return nil, "reconciliation accepts an unreported segment " + ref.ID + "@" + ref.Revision
+		if !found[ref] {
+			return nil, nil, "reconciliation accepts an unreported segment " + ref.ID + "@" + ref.Revision
 		}
 	}
-	return out, ""
+	return out, rejected, ""
 }
 
-// overlap refuses two counted segments of one invocation whose active intervals overlap.
+// overlap refuses two counted segments of one invocation whose active intervals overlap. It
+// sorts the intervals by start once and sweeps them, so its work grows as n log n.
 func overlap(segments []Segment) string {
-	for i := range segments {
-		for j := i + 1; j < len(segments); j++ {
-			a, b := segments[i].Active, segments[j].Active
-			if a == nil || b == nil {
-				continue
-			}
-			as, ae, _ := bounds(*a)
-			bs, be, _ := bounds(*b)
-			if as.Before(be) && bs.Before(ae) {
-				return "segments " + segments[i].ID + " and " + segments[j].ID + " overlap; overlapping intervals need explicit reconciliation"
-			}
+	type span struct {
+		start, end time.Time
+		id         string
+	}
+	spans := make([]span, 0, len(segments))
+	for _, g := range segments {
+		if g.Active == nil {
+			continue
+		}
+		s, e, _ := bounds(*g.Active)
+		spans = append(spans, span{s, e, g.ID})
+	}
+	sort.SliceStable(spans, func(i, j int) bool { return spans[i].start.Before(spans[j].start) })
+	var reach span // the swept interval that ends last
+	for k, sp := range spans {
+		if k > 0 && sp.start.Before(reach.end) {
+			return "segments " + reach.id + " and " + sp.id + " overlap; overlapping intervals need explicit reconciliation"
+		}
+		if k == 0 || sp.end.After(reach.end) {
+			reach = sp
 		}
 	}
 	return ""
 }
 
+// Where a segment's active interval lies against the policy window.
 const (
-	unknownActive = int64(-1)
-	outside       = int64(-2)
+	inside     = iota // wholly inside: its active seconds are known
+	unmeasured        // no interval was measured: not placed against the window
+	straddles         // crosses a window boundary: the window cannot apportion it
+	outside           // disjoint from the window: excluded
 )
 
-// activeSeconds is the measured active time inside the policy window: unknown when no
-// interval was measured or the interval straddles the window, outside when disjoint from it.
-func activeSeconds(g Segment, l *Ledger) int64 {
+// activeSeconds places a segment's active interval against the window and, when it lies
+// inside, returns its exact length in seconds.
+func activeSeconds(g Segment, window Interval) (int64, int) {
 	if g.Active == nil {
-		return unknownActive
+		return 0, unmeasured
 	}
-	ws, we, _ := bounds(l.Window)
+	ws, we, _ := bounds(window)
 	s, e, _ := bounds(*g.Active)
 	switch {
 	case !s.Before(we) || !e.After(ws):
-		return outside
+		return 0, outside
 	case s.Before(ws) || e.After(we):
-		return unknownActive
+		return 0, straddles
 	}
-	return int64(e.Sub(s).Seconds())
+	secs, _ := subInt64(e.Unix(), s.Unix())
+	return secs, inside
 }
 
 func measureDecisions(s Snapshot, l *Ledger, bucketOf func(*Subject) string, record recordFunc) {
@@ -295,6 +353,10 @@ func measureDecisions(s Snapshot, l *Ledger, bucketOf func(*Subject) string, rec
 	sort.Strings(order)
 	for _, id := range order {
 		ds := reports[id]
+		if len(ds) > 1 && decisionsOutside(ds, l.Window) {
+			l.Excluded = append(l.Excluded, Entry{"decision", id, "every conflicting report's declared window lies outside the policy window"})
+			continue
+		}
 		if len(ds) > 1 {
 			l.Conflicts = append(l.Conflicts, Entry{"decision", id, "conflicting reports of one decision identity"})
 			bucket := bucketOf(ds[0].Primary)
@@ -330,6 +392,26 @@ func measureDecisions(s Snapshot, l *Ledger, bucketOf func(*Subject) string, rec
 		}
 		record(bucketOf(d.Primary), false, humanMeasure(d.Unit), v)
 	}
+}
+
+// decisionsOutside reports whether every report's declared window lies entirely outside the
+// policy window.
+func decisionsOutside(ds []Decision, window Interval) bool {
+	ws, we, _ := bounds(window)
+	for _, d := range ds {
+		start, end, _ := bounds(d.Window)
+		if start.Before(we) && end.After(ws) {
+			return false
+		}
+	}
+	return true
+}
+
+func deref(v *int64) int64 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func humanMeasure(unit string) string {

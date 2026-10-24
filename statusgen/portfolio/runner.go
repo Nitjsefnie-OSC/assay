@@ -3,11 +3,13 @@ package portfolio
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/medici-finance/assay/deskcore/domain"
 )
 
 // RunnerVersion is the loop-admin runner contract this translation reads. The runner
-// contract is owned by loopadmin (schemas/loop-admin-runner-v1.json); this file reads only
-// the members it needs and never restates or widens that contract.
+// contract is owned by loopadmin (schemas/loop-admin-runner-v1.json); this file decodes its
+// documents strictly, interprets only the members it needs and never widens that contract.
 const RunnerVersion = "loop-admin-runner/v1"
 
 // Attribution is what a runner report does not carry and an attribution source must supply:
@@ -27,31 +29,82 @@ type Attribution struct {
 // none for that invocation.
 type AttributionSource func(Invocation) (Attribution, bool)
 
+// The runner records below carry every member the runner contract defines, so the strict
+// decode refuses an unknown, case-variant, duplicate or absent required member exactly as the
+// contract does. A member this translation does not read stays opaque (json.RawMessage) and
+// is never interpreted here. TestPortfolioRunnerStrict holds these records to the schema.
+
 type runnerRequest struct {
-	Version string `json:"version"`
-	Caller  string `json:"caller"`
-	ID      string `json:"id"`
-	Profile struct {
-		ID    string `json:"id"`
-		Model string `json:"model"`
-	} `json:"profile"`
-	Authority struct {
-		Generation int64 `json:"generation"`
-	} `json:"authority"`
+	Version   string          `json:"version"`
+	Caller    string          `json:"caller"`
+	ID        string          `json:"id"`
+	Mode      json.RawMessage `json:"mode"`
+	Desk      json.RawMessage `json:"desk"`
+	Work      json.RawMessage `json:"work"`
+	Packet    json.RawMessage `json:"packet"`
+	Profile   runnerProfile   `json:"profile"`
+	Workspace json.RawMessage `json:"workspace"`
+	Authority runnerAuthority `json:"authority"`
+	Budget    json.RawMessage `json:"budget"`
+	Resume    json.RawMessage `json:"resume"`
+	Require   json.RawMessage `json:"require"`
+	Ext       json.RawMessage `json:"ext"`
 }
 
-type runnerObservation struct {
-	State       string `json:"state"`
-	ActualModel string `json:"actual_model"`
-	Usage       struct {
-		CostMicros *int64 `json:"cost_micros"`
-	} `json:"usage"`
-	Result *struct {
-		Caller     string `json:"caller"`
-		ID         string `json:"id"`
-		Generation int64  `json:"generation"`
-	} `json:"result"`
+func (runnerRequest) RequiredKeys() []string {
+	return []string{"version", "caller", "id", "mode", "packet", "profile", "workspace", "authority", "budget"}
 }
+
+type runnerProfile struct {
+	ID    string          `json:"id"`
+	Model string          `json:"model"`
+	Skill json.RawMessage `json:"skill"`
+	Tools json.RawMessage `json:"tools"`
+}
+
+func (runnerProfile) RequiredKeys() []string { return []string{"id", "model", "tools"} }
+
+type runnerAuthority struct {
+	Key         json.RawMessage `json:"key"`
+	Generation  uint64          `json:"generation"`
+	ValidatedBy json.RawMessage `json:"validated_by"`
+}
+
+func (runnerAuthority) RequiredKeys() []string { return []string{"key", "generation", "validated_by"} }
+
+type runnerObservation struct {
+	State       string        `json:"state"`
+	ActualModel string        `json:"actual_model"`
+	Usage       runnerUsage   `json:"usage"`
+	Result      *runnerResult `json:"result"`
+}
+
+func (runnerObservation) RequiredKeys() []string { return []string{"state", "usage"} }
+
+type runnerUsage struct {
+	InputTokens  json.RawMessage `json:"input_tokens"`
+	OutputTokens json.RawMessage `json:"output_tokens"`
+	CostMicros   *int64          `json:"cost_micros"`
+}
+
+type runnerResult struct {
+	Caller       string          `json:"caller"`
+	ID           string          `json:"id"`
+	Generation   uint64          `json:"generation"`
+	Outcome      json.RawMessage `json:"outcome"`
+	Summary      json.RawMessage `json:"summary"`
+	Artifacts    json.RawMessage `json:"artifacts"`
+	ToolRequests json.RawMessage `json:"tool_requests"`
+}
+
+func (runnerResult) RequiredKeys() []string { return []string{"caller", "id", "generation", "outcome"} }
+
+// Refusals name what failed, never what the report said: a runner report is caller content.
+var (
+	errRunnerRequest     = fmt.Errorf("portfolio: runner request does not match the runner contract")
+	errRunnerVersion     = fmt.Errorf("portfolio: runner request is not %s", RunnerVersion)
+	errRunnerObservation = fmt.Errorf("portfolio: runner observation does not match the runner contract")
+)
 
 // FromRunner translates one runner request and its terminal observation, both as the bytes
 // the runner contract defines, into a ledger segment. The attribution source is required:
@@ -65,16 +118,23 @@ func FromRunner(request, observation []byte, attribute AttributionSource) (Segme
 	if attribute == nil {
 		return Segment{}, fmt.Errorf("portfolio: runner translation needs an attribution source")
 	}
-	var req runnerRequest
-	if err := json.Unmarshal(request, &req); err != nil {
-		return Segment{}, fmt.Errorf("portfolio: runner request: %w", err)
+	// Another version is refused by name before its payload is evaluated.
+	var header struct {
+		Version string `json:"version"`
 	}
-	if req.Version != RunnerVersion {
-		return Segment{}, fmt.Errorf("portfolio: runner request version %q (supported: %s)", req.Version, RunnerVersion)
+	if err := json.Unmarshal(request, &header); err != nil {
+		return Segment{}, errRunnerRequest
+	}
+	if header.Version != RunnerVersion {
+		return Segment{}, errRunnerVersion
+	}
+	var req runnerRequest
+	if err := domain.DecodeStrict(request, &req); err != nil || req.Version != RunnerVersion {
+		return Segment{}, errRunnerRequest
 	}
 	var obs runnerObservation
-	if err := json.Unmarshal(observation, &obs); err != nil {
-		return Segment{}, fmt.Errorf("portfolio: runner observation: %w", err)
+	if err := domain.DecodeStrict(observation, &obs); err != nil {
+		return Segment{}, errRunnerObservation
 	}
 	if !member(obs.State, []string{"finished", "failed", "stopped"}) || obs.Result == nil {
 		return Segment{}, fmt.Errorf("portfolio: runner observation is not a terminal report with a result")

@@ -165,11 +165,12 @@ func validatePolicy(p Policy) error {
 		if !share(b.AgentTarget.BasisPoints) || !share(b.HumanTarget.BasisPoints) {
 			return bad("policy.buckets."+b.ID, "target basis-points")
 		}
-		agentSum += b.AgentTarget.BasisPoints
-		humanSum += b.HumanTarget.BasisPoints
-	}
-	if agentSum > 10000 || humanSum > 10000 {
-		return bad("policy.buckets", "targets (one party's shares exceed 10000 basis points)")
+		var okAgent, okHuman bool
+		agentSum, okAgent = addInt64(agentSum, b.AgentTarget.BasisPoints)
+		humanSum, okHuman = addInt64(humanSum, b.HumanTarget.BasisPoints)
+		if !okAgent || !okHuman || agentSum > 10000 || humanSum > 10000 {
+			return bad("policy.buckets", "targets (one party's shares exceed 10000 basis points)")
+		}
 	}
 	limits := map[[2]string]bool{}
 	for _, l := range p.Limits {

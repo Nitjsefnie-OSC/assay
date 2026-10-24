@@ -97,6 +97,11 @@ The ledger tallies each measure per bucket, for records with no bucket (`unattri
 which stays visible) and for the whole scope (`total`). Each tally is a `Quantity`: the
 known subtotal, the count of known records and the count of unknown records. An unknown
 value adds an unknown record and nothing to the subtotal; it affects only its own measure.
+Subtotals, weighted products and interval lengths are exact signed 64-bit integers: a value
+whose sum or product would leave that range is unknown in every tally it would join (its
+bucket or `unattributed`, and `total`), never wrapped, so `total` stays the sum of the
+buckets and `unattributed`. Active seconds are the exact difference of the interval's ends
+for every interval the time format admits.
 
 1. **Identity.** A report identical to one already seen is a duplicate: it is listed and
    counted once. Reports of distinct invocations — including a retry — count separately.
@@ -105,10 +110,19 @@ value adds an unknown record and nothing to the subtotal; it affects only its ow
    reconciliation for that invocation accepts exactly one report per segment and the
    accepted segments do not overlap. An unreconciled conflicting invocation MUST NOT be
    counted on either side: it adds one unknown record to every agent measure of its bucket
-   (or of `unattributed` when its reports disagree on the subject) and is listed. Reports a
-   reconciliation does not accept are listed as excluded.
-3. **Window.** A segment or decision entirely outside the policy window is listed as
-   excluded. One straddling the window is unknown in its measure.
+   (or of `unattributed` when its reports disagree on the subject) and is listed once, as a
+   conflict. When the invocation is not in conflict, the reports its reconciliation does not
+   accept are listed as excluded.
+3. **Window.** A segment whose measured active interval lies entirely outside the policy
+   window is listed as excluded. One whose interval straddles a window boundary cannot be
+   apportioned by the window: it adds an unknown record to every agent measure, cost and the
+   elapsed proxy included. A segment with no measured interval is not placed against the
+   window: its cost and elapsed proxy count as reported and its active time is unknown. A
+   conflicting invocation whose every report has an interval entirely outside the window is
+   listed as excluded, not as a conflict. A decision whose declared window lies entirely
+   outside the policy window is listed as excluded; one straddling it is unknown in its
+   measure; a conflicting decision id whose every report's window lies entirely outside is
+   listed as excluded, not as a conflict.
 4. **Weights.** Weighted active time is known only when active time is known and the
    actual model is listed in the weight table.
 5. **Decisions.** Two different reports of one decision id are a listed conflict and add an
@@ -135,4 +149,6 @@ the segment identity and revision, profile revision, source, subject and, when m
 the active interval. The runner contract carries no active interval; a translation without
 one leaves active time unknown. The result MUST echo the request's caller, id and authority
 generation. A negative runner cost is unknown. This translation reads the runner contract;
-it does not restate or widen it.
+it does not restate or widen it. Both documents are decoded strictly against that contract:
+an unknown, case-variant, duplicate or absent required member is refused, and a refusal
+names what failed, never the document's content.
