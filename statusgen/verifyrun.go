@@ -890,6 +890,14 @@ func runVerifyCommandWith(root, command string, timeout time.Duration, wrapper [
 	argv := append(append([]string{}, wrapper...), shellArgv...)
 	argv = append(argv, unescapePipes(command))
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// Keep the unchanged row deadline effective for ordinary descendants too:
+	// killing only the shell leaves children holding CombinedOutput pipes, so
+	// a timed-out check can keep running while verifyrun waits for their EOF.
+	// Reuse the same platform policy as the bounded Git reader. Unix kills the
+	// owned process group; Windows retains its documented direct-child limit.
+	// Do not add a short WaitDelay: it also starts after a successful shell
+	// exit and could truncate valid background output before this row deadline.
+	killWholeProcessGroup(cmd)
 	cmd.Dir = root
 	cmd.Env = plan.rowEnv()
 	// On Windows a `cmd` row's command line must be built RAW, not from
