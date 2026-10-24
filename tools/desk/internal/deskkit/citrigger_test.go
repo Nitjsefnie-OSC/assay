@@ -272,6 +272,13 @@ func ciCrossModuleRegistry() []ciEntry {
 
 	registry := []ciEntry{
 		{
+			test: "statusgen/regressionfloor_test.go", module: "statusgen",
+			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
+			reads:      []string{"docs/contracts.md", "loopadmin/runner/conformance/conformance_test.go", "tools/desk/cmd/deskclaim-ref/deskclaimref_test.go"},
+			runInvokes: []string{"cd statusgen && go test ./... && go vet ./..."},
+			why:        "the repository regression floor resolves contract rows and retained sibling-module test bodies; unconditional PR/main statusgen tests cover documentation-only and sibling-only edits",
+		},
+		{
 			test: "statusgen/boardcohort_test.go", module: "statusgen",
 			workflow: ".github/workflows/ci.yml", prJob: floorJob, pushJob: floorJob,
 			reads:      []string{"docs/streams", "statusgen/testdata/witness-admission"},

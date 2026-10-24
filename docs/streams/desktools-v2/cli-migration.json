@@ -168,6 +168,11 @@
     },
     {
       "class": "test",
+      "pattern": "statusgen/domain/mutate_test.py",
+      "reason": "offline regression for issue #4116; tests the domain mutation snapshot dependency closure and rejects setup failures as behavioral kills; invoked by the statusgen test suite, never an operator CLI"
+    },
+    {
+      "class": "test",
       "pattern": "tools/desk/internal/cellcache/mutate.py",
       "reason": "cellcache developer mutation runner for issue #2228; temporarily mutates source in an isolated checkout and runs bounded Go tests, not an installed operator CLI"
     },
@@ -2618,6 +2623,23 @@
       "complexity": "simple",
       "basis": "406 lines at 056d7b634c12",
       "owner": "desktools-v2/55",
+      "state": "pending"
+    },
+    {
+      "executable": "deskusage",
+      "path": "tools/desk/cmd/deskusage",
+      "kind": "go",
+      "module": "tools/desk",
+      "release": "desk-tools release archive (release.yml cmd/* loop) and Makefile DESK_CMDS",
+      "consumers": [
+        "tools/desk/README.md",
+        "plugins/assay/skills/worker-desk/SKILL.md",
+        "docs/streams/desk-supervision/brief-34-worker-usage-counts.md"
+      ],
+      "parser": "Cobra through tools/desk/internal/cli; generic owner fixture qualification pending",
+      "complexity": "simple",
+      "basis": "2 verbs (record, summary), 11 command flags; record semantics belong to desk-supervision/34, shared CLI qualification to this owner",
+      "owner": "desktools-v2/56",
       "state": "pending"
     }
   ]
