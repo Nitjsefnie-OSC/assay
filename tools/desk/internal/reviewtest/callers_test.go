@@ -11,6 +11,7 @@ import (
 	"time"
 
 	rf "github.com/medici-finance/assay/tools/desk/internal/reviewflow"
+	q "github.com/medici-finance/assay/tools/desk/internal/reviewtest"
 )
 
 // The script is the shipped prose/watcher recipe; reviewloop is the discrete
@@ -108,6 +109,19 @@ exec "$REAL_PLANNER" "$@"
 	}
 	if !found || !reflect.DeepEqual(actual.Candidates, expected.Candidates) || actual.Candidates[0].Row.Identity.Number != 3 || actual.Candidates[0].Disposition != rf.SelectionSelected || !reflect.DeepEqual(actual.Depths, expected.Depths) {
 		t.Fatal("prose/discrete priority parity lost", output, expected)
+	}
+	// Feed the actual watcher artifact to the production preparation ceremony.
+	handed, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, _ := probe(t, build(t), "deskdispatch", q.Request{Case: "caller-prepare", Snapshot: handed, Size: 3}, t.TempDir())
+	if prepared.Exit != 0 || prepared.Facts["head"] != actual.Candidates[0].Row.Identity.Head || prepared.Facts["prReads"] != "2" || !strings.Contains(prepared.Output, "Packet:") {
+		t.Fatal("watcher preparation handoff failed", prepared)
+	}
+	moved, _ := probe(t, build(t), "deskdispatch", q.Request{Case: "caller-prepare-moved", Snapshot: handed, Size: 3}, t.TempDir())
+	if moved.Exit != 6 || moved.Facts["stamps"] != "0" || moved.Facts["queueLabels"] != "0" {
+		t.Fatal("moved watcher head escaped final admission", moved)
 	}
 	// A failed whole-cycle collection cannot publish a stale valid observation or
 	// advance the event baseline. No same-cycle legacy fallback is permitted.
