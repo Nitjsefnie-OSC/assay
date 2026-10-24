@@ -24,7 +24,7 @@ func TestAdoptRunClauses(t *testing.T) {
 			writeFile(t, filepath.Join(home, "scratch.txt"), "x\n")
 		}, "uncommitted or untracked"},
 		{"unpushed commit", func(t *testing.T, _, home string) {
-			mustGit(t, home, "-c", "user.name=T", "-c", "user.email=t@e.st", "commit", "--allow-empty", "-m", "local")
+			mustGit(t, home, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-m", "local")
 		}, "not the pinned head"},
 		{"locked", func(t *testing.T, work, home string) {
 			mustGit(t, work, "worktree", "lock", "--reason", "live", home)
