@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,6 +21,7 @@ type resolvedReview struct {
 	reviews     []review
 	facts       rf.ClassificationFacts
 	correctness string
+	security    string
 	complete    bool
 	score       int
 }
@@ -51,7 +54,20 @@ func resolveObservation(p prBase, rs reviewState, reviews []review, ciRequired b
 	case cr.ever:
 		state = "stale"
 	}
-	return resolvedReview{change: p, reviews: reviews, facts: f, correctness: state, complete: complete, score: score}
+	security := "missing"
+	for _, r := range reviews {
+		if isReviewerBot(r.User.Login) && classifySecurityBody(r.Body) != secNone {
+			if sameHead(r.CommitID, p.HeadRefOid) {
+				security = "blocked"
+				break
+			}
+			security = "stale"
+		}
+	}
+	if f.Reviews.SecurityPass {
+		security = "approved"
+	}
+	return resolvedReview{change: p, reviews: reviews, facts: f, correctness: state, security: security, complete: complete, score: score}
 }
 
 func observationRevision(v any) string {
@@ -128,10 +144,7 @@ func cmdReviewQueue() (*Report, error) {
 				id.Base, id.BaseUsed = v.facts.Reviews.LastSHA, true
 			}
 			applies := rf.Applicability{Head: id.Head, Base: id.Base, Body: inputs.Body.Revision, Reviews: inputs.Reviews.Revision, Checks: inputs.Checks.Revision}
-			security := "missing"
-			if v.facts.Reviews.SecurityPass {
-				security = "approved"
-			}
+			security := v.security
 			in.Changes = append(in.Changes, rf.ObservedChange{Identity: id, Inputs: inputs, AppliesTo: applies, Facts: v.facts, Score: v.score, Lanes: []rf.LaneConclusion{{Name: "correctness", State: v.correctness, AppliesTo: applies}, {Name: "security", State: security, AppliesTo: applies}}})
 		}
 	}
@@ -142,4 +155,23 @@ func cmdReviewQueue() (*Report, error) {
 	}
 	summary := fmt.Sprintf("review-queue: %d PR(s), %d repo(s); generation %s; cutoff %s; policy %s", observation.Result.Depths.Total, len(in.Admitted), in.Collection.Start.Format(time.RFC3339Nano), in.Collection.End.Format(time.RFC3339Nano), policy)
 	return &Report{value: observation, detail: summary, render: func(w io.Writer) { fmt.Fprintln(w, summary) }}, nil
+}
+
+// Sensitive artifacts replace the destination atomically without following its
+// final symlink. CreateTemp supplies 0600 even under a permissive operator umask.
+func writeReviewObservation(path string, value any) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".review-observation-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	encodeErr := json.NewEncoder(f).Encode(value)
+	closeErr := f.Close()
+	if encodeErr != nil {
+		return encodeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(f.Name(), path)
 }

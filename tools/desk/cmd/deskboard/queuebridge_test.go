@@ -53,6 +53,8 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 						reviews["nodes"] = []any{review(2, "CHANGES_REQUESTED", "Verdict: request-changes"), review(3, "APPROVED", "Security-Review: pass")}
 					case 3:
 						reviews["nodes"] = []any{review(4, "APPROVED", "Verdict: approve")}
+					case 4:
+						reviews["nodes"] = []any{review(5, "CHANGES_REQUESTED", "Security-Review: fail")}
 					}
 				}
 				if q.Case == "partial" {

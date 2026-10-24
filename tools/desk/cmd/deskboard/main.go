@@ -343,6 +343,16 @@ func runBoard(sub string, rest, args []string, o boardOptions, stdout, stderr io
 		}
 		wantTable = !jsonOut
 	}
+	if sub == "review-queue" && outPath != "" {
+		if err := writeReviewObservation(outPath, rep.value); err != nil {
+			logRun(sub, deskkit.ResultUnverifiable, "--out: "+err.Error())
+			fmt.Fprintln(stderr, "deskboard review-queue: cannot save artifact:", err)
+			return deskkit.ExitUnverifiable
+		}
+		fmt.Fprintln(stdout, rep.detail)
+		logRun(sub, deskkit.ResultOK, rep.detail)
+		return deskkit.ExitOK
+	}
 	// --out redirects the PRIMARY output (table or JSON) to a caller-minted scratch
 	// file instead of stdout — a portable substitute for a shell `>` redirect
 	// (desk-shell.md §Scratch files) that does not depend on the invoking shell.
@@ -371,9 +381,6 @@ func runBoard(sub string, rest, args []string, o boardOptions, stdout, stderr io
 		}
 	}
 
-	if sub == "review-queue" && outPath != "" {
-		fmt.Fprintln(stdout, rep.detail)
-	}
 	logRun(sub, deskkit.ResultOK, rep.detail)
 	return deskkit.ExitOK
 }

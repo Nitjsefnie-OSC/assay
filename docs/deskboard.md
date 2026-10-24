@@ -6,6 +6,14 @@ summary; the file retains every row and its resolved facts. Without `--out`, std
 is the complete JSON artifact. `--table`, `--delta` and `--quiet` are refused for
 this verb so a summary cannot be mistaken for the planning artifact.
 
+Artifacts are written atomically with mode 0600, checked close errors, and no following
+of a final destination symlink. File custody is the integrity boundary: these unsigned
+observations and their provenance digests do not authenticate a provider or policy
+approval. Anyone able to replace a snapshot can fabricate internally consistent facts.
+Live adoption must re-read authoritative source state before every effect; a saved
+plan can never authorize a ready write. Store artifacts in caller-controlled private
+directories and do not accept them from untrusted authors.
+
 The collector uses the existing typed `ReviewQueueSnapshot`, bounded repo/PR pools,
 conditional reads and per-change fact reuse. Gate scores are read once per cycle.
 Heads and reviews share the queue read; the adapter captures canonical resolved
@@ -17,7 +25,9 @@ forge transaction or a ready grant.
 A denied/truncated population, quarantined PR, degraded classification or missing
 required fact fails with exit 6 before a complete artifact is emitted. The existing
 schema cannot represent quarantined rows, so this bridge holds the whole planning
-cycle rather than quietly removing them. The current qualified collector supports
+cycle rather than quietly removing them. Public-repo adoption must account for an
+external actor opening a quarantined PR and thereby holding this whole-cycle bridge;
+the compatibility path remains available until that existing adoption gate is met. The current qualified collector supports
 GitHub; GitLab collection refuses until its complete host-qualified facts are
 available. The legacy boards retain their existing degraded-row behavior.
 

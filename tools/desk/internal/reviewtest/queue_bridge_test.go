@@ -3,6 +3,7 @@ package reviewtest_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -60,7 +61,7 @@ func TestQueuePlanBridge(t *testing.T) {
 			t.Fatalf("candidate oracle %d: %+v", i, c)
 		}
 	}
-	lanes := collectQueue(t, "lanes", 3)
+	lanes := collectQueue(t, "lanes", 4)
 	if lanes.Exit != 0 {
 		t.Fatal(lanes.Output)
 	}
@@ -82,6 +83,10 @@ func TestQueuePlanBridge(t *testing.T) {
 		case 3:
 			if !correctness || security {
 				t.Fatal("correctness approval leaked into security", row)
+			}
+		case 4:
+			if correctness || security || observed.Inputs.Changes[3].Lanes[1].State != "blocked" {
+				t.Fatal("security fail was lost", row)
 			}
 		}
 	}
@@ -185,7 +190,7 @@ func TestReviewPlanNoFetch(t *testing.T) {
 	req := queueRequest(t, collected.Snapshot, 1)
 	p, r := planQueue(t, req)
 	if r.Exit != 0 || p.Candidates[0].Disposition != rf.SelectionSelected {
-		t.Fatal(p, r)
+		t.Fatal("offline selection failed on valid observation", p, r)
 	}
 	// Slot completion changes advisory capacity locally, without recollection.
 	wider := queueRequest(t, collected.Snapshot, 2)
@@ -230,4 +235,11 @@ func TestReviewPlanNoFetch(t *testing.T) {
 	if r.Exit != 5 {
 		t.Fatal("mixed snapshot and legacy reread accepted", r)
 	}
+	if os.Getenv("ASSAY_REVIEW_CONTRACT_MUTANT") != "1" {
+		t.Run("mutation-controls", func(t *testing.T) {
+			contractMutation(t, "cmd/reviewloop/snapshot.go", `return deskkit.Unverifiable("reviewloop plan: snapshot cannot support selection; refresh or hold", err)`, `p.Idle.State = rf.IdleYes; return json.NewEncoder(stdout).Encode(p)`, "^TestReviewPlanNoFetch$", "invalidation became idle")
+			contractMutation(t, "cmd/reviewloop/snapshot.go", `b, err := readInput(path)`, `if _,err := readInput("actions.json"); err!=nil {return deskkit.Unverifiable("hidden legacy reread",err)}; b, err := readInput(path)`, "^TestReviewPlanNoFetch$", "offline selection failed on valid observation")
+		})
+	}
+
 }
