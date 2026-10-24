@@ -930,16 +930,22 @@ How each row is counted:
     `fatal: gitfile does not point to a valid repository: /work/.git` (23 lines). Tests that resolve the
     forge from the origin remote exit 6 with `cannot resolve which forge serves medici-finance/assay`
     (55 lines). These cover most of deskdispatch's 24 failing tests and deskkit's credential-chain tests.
+    Tracked on #4327 (linked-worktree gitdir not mounted in the container) and #4322 (tests resolve the
+    forge and roster from the ambient remote and roster).
   - The harness passed a verifier commit identity through GIT_CONFIG_* variables. Those variables override
     the commit identities that deskkit's publish-range tests and deskdispatch's worktree-identity test set
-    up for themselves.
-  - deskkit and deskwt hit `panic: test timed out after 5m0s` under emulation on the loaded host.
+    up for themselves. Tracked on #4338.
+  - deskkit and deskwt hit `panic: test timed out after 5m0s` under emulation on the loaded host. Tracked on
+    #4323.
   None of the failing tests is one of this brief's tests: rows 2-10, which name this brief's tests, all pass on the
-  witness. Earlier host runs of row 12 with a longer budget were green (2026-10-21 block above).
+  witness. Earlier host runs of row 12 with a longer budget were green (2026-10-21 block above), and main CI at
+  385cb29e5682 has `build-test-shard (desk-1|desk-2|desk-3|rest)` all success (run 40111602660).
+  Added by the verify desk after review: the issue links in this bullet, the CI corroboration, and the
+  blocker list in the verdict line below.
 
 Tally: 14 of 16 rows pass (1-10, 13-16), 0 fail, 2 could-not-check (11, 12).
 
-**VERIFY: BLOCKED** — 14/16 rows pass on the execution witnesses, 0 fail, 2 could-not-check. Row 11 is a check-definition defect (#1306). Row 12 is an instrument limit: inside the container the home's linked-worktree `.git` cannot be resolved, the harness's GIT_CONFIG_* identity overrides test fixtures, and the 300s budget expires under emulation; none of its failing tests is this brief's. Status stays implemented.
+**VERIFY: BLOCKED** — 14/16 rows pass on the execution witnesses, 0 fail, 2 could-not-check. Row 11 is a check-definition defect (#1306). Row 12 is an instrument limit: inside the container the home's linked-worktree `.git` cannot be resolved, the harness's GIT_CONFIG_* identity overrides test fixtures, and the 300s budget expires under emulation; none of its failing tests is this brief's (blockers: #4327, #4322, #4338, #4323). Status stays implemented.
 
 - RISK-VALUE: DERIVED — RefusedWithCause Code = ExitRefused @ tools/desk/internal/deskkit/exitcodes.go:186, with ExitRefused = 5 @ exitcodes.go:51 — a refusal that gains a cause keeps the code of Refused (exitcodes.go:172), because the brief's ground rule says no exit code changes, and ExitUnverifiable = 6 (exitcodes.go:55) would read a fail-closed refusal as retryable. Row 6 and row 16's soften-to-6 mutation (CAUGHT), both witnessed passing above, pin it.
 - RISK-VALUE: DERIVED — reGitHubToken = `(ghp_|github_pat_|ghs_|gho_|ghu_|ghr_)[A-Za-z0-9_]+` @ tools/desk/internal/deskkit/bodycheck.go:16, used by Scrub — the prefix set matches GitHub's documented token prefixes. Its definition is unchanged at this source, as are reAWSKeyID @ bodycheck.go:17 and reJWT @ bodycheck.go:22.
