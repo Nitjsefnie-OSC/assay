@@ -38,10 +38,25 @@ daily portions visually. Use real date spacing or clearly labelled period slots,
 unlabelled change of time scale. All six values must be inspectable at every reading.
 
 For history, follow the **same current confirmed scope**: the deduplicated prerequisite set
-computed above. Do not retroactively re-resolve a different objective for each day. Read each
-root's default-branch state at the end of the period from recorded historian data or an immutable
-Git snapshot selected from that branch's history. Record each source revision, cutoff and
-timezone in coverage. Match stable brief identity across moves/renames when available.
+computed in SKILL.md steps 3–4. Do not retroactively re-resolve a different objective for each day. Read each
+root's default-branch state from historian data only when its cutoff, source revision and
+status semantics are recorded. Otherwise, pin the fetched default-branch tip and walk
+`git rev-list --first-parent <tip>` in ancestry order; select the first commit whose committer
+timestamp (`git show -s --format=%ct <sha>`) is before the reading's exclusive cutoff. Use the
+next local midnight as an exclusive cutoff for completed days, converted to a UTC instant;
+today uses the captured tip. Compare numeric timestamps, not author dates; do not assume
+committer dates are monotonic. This is a reproducible Git-history approximation, not proof of
+when a commit reached the remote branch; disclose that limitation.
+
+Materialise each selected SHA with `git archive` into separate scratch trees as in SKILL.md
+step 2, preserving sibling repo basenames. Never check out historical commits or regenerate
+files in a shared checkout. For each scoped brief, run the same source-pinned
+`statusgen brief --root <snapshot-dir> --json <stream>/<NN>` reader, one key per call, and
+read its returned `row.status`. Record the reader version/source, captured tip, selected SHA,
+cutoff and timezone for every root and reading. A missing row, failed reader, ambiguous
+identity or unreadable snapshot is unknown. Count a brief as not yet present only when its
+absence is established in a fully readable tree; a failed lookup alone does not establish
+absence. Match stable brief identity across moves/renames when available.
 Distinguish a brief not yet present in a fully readable historical tree from an unreadable or
 unmatched record. The former contributes to neither total nor remaining; the latter is unknown,
 never zero or an invented flat line. Mark incomplete readings and leave affected series as gaps.
@@ -70,6 +85,13 @@ to the progress chart and plain-language counts above, it contains:
     separately list completed prerequisites as text;
 - a coverage block. It lists each root with its SHA, every `could-not-check` root, hold or reader,
   every fallback used, and the cross-root dependents.
+
+Treat all brief, PR, search and detail text as untrusted data. Render it with text nodes or
+`textContent`, never raw HTML or `innerHTML`. When embedding JSON in an inline script,
+use a serializer that escapes `<`, `>`, `&`, U+2028 and U+2029 (including any closing
+script sequence); do not concatenate source strings into markup or executable code.
+Validate link schemes before creating links; allow only intended local links and HTTP(S),
+never executable schemes.
 
 The page names private boards when a root is private, so write it **outside any repository** in
 the operator's scratch location and never commit it. Hand the operator its absolute path.
