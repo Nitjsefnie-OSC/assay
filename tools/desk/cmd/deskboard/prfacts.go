@@ -57,11 +57,12 @@ type prFactsFile struct {
 // prFactStore holds the previous sweep's facts for one repo and collects this sweep's.
 // A nil store is valid and reuses nothing (every caller outside the actions sweep).
 type prFactStore struct {
-	mu    sync.Mutex
-	repo  string
-	path  string
-	prior map[int]prFacts
-	next  map[int]prFacts
+	qualified bool
+	mu        sync.Mutex
+	repo      string
+	path      string
+	prior     map[int]prFacts
+	next      map[int]prFacts
 }
 
 func prFactsPath(repo string) string {
@@ -145,7 +146,11 @@ func (s *prFactStore) changedFiles(repo string, p prBase) (map[string]bool, bool
 		}
 		s.mu.Unlock()
 	}
-	files, complete, err := fetchChangedFiles(repo, p.Number)
+	var expected []string
+	if s != nil && s.qualified {
+		expected = []string{p.HeadRefOid}
+	}
+	files, complete, err := fetchChangedFiles(repo, p.Number, expected...)
 	if s == nil || err != nil || !complete {
 		return files, complete, err
 	}

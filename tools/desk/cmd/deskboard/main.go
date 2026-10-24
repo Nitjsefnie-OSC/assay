@@ -43,7 +43,7 @@ import (
 // release, where the namespaced ReleaseTag stamp supplies the version instead.
 var version string
 
-var perfVerbs = []string{"prs", "actions", "queue", "health", "awaiting", "nextup", "scope", "dispatch", "throughput", "policydrift", "stalled", "reviews", "diff", "files"}
+var perfVerbs = []string{"prs", "actions", "review-queue", "queue", "health", "awaiting", "nextup", "scope", "dispatch", "throughput", "policydrift", "stalled", "reviews", "diff", "files"}
 
 func main() {
 	args := os.Args[1:]
@@ -142,6 +142,9 @@ func executeRecorded(args []string, stdout, stderr io.Writer, pre func(io.Writer
 					fmt.Fprintln(stderr, "deskboard: --out is not supported together with --delta/--quiet")
 					return boardExit(deskkit.ExitRefused)
 				}
+				if sub == "review-queue" && o.table {
+					return deskkit.Refused("deskboard review-queue requires JSON output; --table cannot produce the complete artifact")
+				}
 				if sub == "stalled" && o.table && o.json {
 					fmt.Fprintln(stderr, "deskboard: stalled: --table and --json are contradictory; pass one")
 					return boardExit(deskkit.ExitRefused)
@@ -185,6 +188,7 @@ func executeRecorded(args []string, stdout, stderr io.Writer, pre func(io.Writer
 			name, short string
 			aliases     []string
 		}{
+			{"review-queue", "complete frozen review observation (offline planning bridge)", nil},
 			{"prs", "open PRs across watched repos", nil}, {"actions", "per-PR ACTION classification", nil},
 			{"queue", "open verify-gate issues", nil}, {"throughput", "queue depth versus pool slots", nil},
 			{"health", "default-branch health per watched repo", nil},
@@ -367,6 +371,9 @@ func runBoard(sub string, rest, args []string, o boardOptions, stdout, stderr io
 		}
 	}
 
+	if sub == "review-queue" && outPath != "" {
+		fmt.Fprintln(stdout, rep.detail)
+	}
 	logRun(sub, deskkit.ResultOK, rep.detail)
 	return deskkit.ExitOK
 }
@@ -390,7 +397,7 @@ func runBoard(sub string, rest, args []string, o boardOptions, stdout, stderr io
 // precedent already (TestStalled_RepoListFailureFailsClosed: "'no stalled drafts in
 // that repo' would be a claim nothing verified") and simply predates this map.
 var boardWideVerbs = map[string]bool{
-	"prs": true, "actions": true, "queue": true, "health": true, "policydrift": true,
+	"review-queue": true, "prs": true, "actions": true, "queue": true, "health": true, "policydrift": true,
 	"stalled": true,
 }
 
@@ -413,6 +420,8 @@ func dispatch(sub string, rest []string, hdr Header, mergeNowThreshold, unreview
 		}
 	}
 	switch sub {
+	case "review-queue":
+		return cmdReviewQueue()
 	case "prs":
 		return cmdPRs(hdr)
 	case "actions":
