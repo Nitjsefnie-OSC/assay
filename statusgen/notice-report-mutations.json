@@ -62,7 +62,7 @@
       "new": "\tif mode != \"lint\" {\n\t\temitNotices(notices)\n\t\treturn\n\t}\n\trep := buildNoticeReport(notices, activeRecordIndex)\n\tif mode == \"lint\" && lintJSONMode {\n"
     },
     {
-      "name": "fragment rules match the whole line, quoted author text included",
+      "name": "fragment rules match the whole line, quoted author text included (a Reviewed cell quoting another rule's phrase steers the held security-review-absent notice to a demotable rule)",
       "file": "notice_report.go",
       "old": "strings.Contains(noticeUnquoted(line), f.fragment)",
       "new": "strings.Contains(line, f.fragment)"

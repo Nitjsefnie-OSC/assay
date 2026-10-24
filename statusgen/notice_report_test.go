@@ -806,3 +806,64 @@ func TestFragmentRulesIgnoreQuotedAuthorText(t *testing.T) {
 		})
 	}
 }
+
+// TestHeldRuleNotSteeredByQuotedReviewedCell drives the held rule end to end
+// through the real emitter with a Reviewed cell (ordinary tree content a PR can
+// write) that quotes ANOTHER rule's phrase. The security-review-absent notice
+// quotes that cell with %q, so the quoted phrase must not move the notice to a
+// rule that is not held, where a record closed at the merge-base would demote it.
+//
+// regression: F-held-steered-by-quote — fragments matched the whole line in list
+// order, so a Reviewed cell containing " has no why:" filed the notice under
+// why-absent and the held trust notice read as frozen history.
+func TestHeldRuleNotSteeredByQuotedReviewedCell(t *testing.T) {
+	cells := map[string]string{
+		"another rule's phrase":          "2026-09-23 human:fixture; this brief has no why: n/a",
+		"phrase behind an escaped quote": `2026-09-23 human:fixture "x" has no why: y`,
+		"phrase in a backtick span":      "2026-09-23 human:fixture `fails the substance floor`",
+	}
+	for name, cell := range cells {
+		t.Run(name, func(t *testing.T) {
+			root := noticeFixtureRoot(t)
+			readme := filepath.Join(root, "docs", "streams", "demo", "README.md")
+			b, err := os.ReadFile(readme)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(b), "PreDone](./brief-02-predone.md) | 0 | S | done | 2026-09-23 human:fixture | 2026-09-23 human:fixture |") {
+				t.Fatalf("fixture README row 02 changed shape: %s", b)
+			}
+			edited := strings.Replace(string(b),
+				"PreDone](./brief-02-predone.md) | 0 | S | done | 2026-09-23 human:fixture | 2026-09-23 human:fixture |",
+				"PreDone](./brief-02-predone.md) | 0 | S | done | 2026-09-23 human:fixture | "+cell+" |", 1)
+			if err := os.WriteFile(readme, []byte(edited), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			withBase(t, true, "demo/02", "demo/03")
+			resetNoticeReportState(t)
+			lintJSONMode = true
+			_, out, _ := lintFixture(t, root)
+			var rep noticeReport
+			if err := json.Unmarshal([]byte(out), &rep); err != nil {
+				t.Fatalf("not JSON: %v\n%s", err, out)
+			}
+			var held int
+			for _, f := range rep.Actionable {
+				if strings.Contains(f.Line, "records no security-review") && strings.Contains(f.Line, "brief-02-predone.md") {
+					if f.Rule != ruleSecurityReviewAbsent {
+						t.Errorf("held notice filed under %q: %.240s", f.Rule, f.Line)
+					}
+					held++
+				}
+			}
+			for _, f := range rep.Historical {
+				if strings.Contains(f.Line, "records no security-review") {
+					t.Errorf("the held security-review notice was demoted to historical under %q: %.240s", f.Rule, f.Line)
+				}
+			}
+			if held != 1 {
+				t.Errorf("want exactly one actionable security-review-absent notice for brief-02, got %d", held)
+			}
+		})
+	}
+}
