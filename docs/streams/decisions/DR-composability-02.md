@@ -19,6 +19,7 @@ accepted:
   - "main-guard's reverse treats every git exit 5 from `git config --unset core.hooksPath` as \"already absent\". When the setting holds several values, git also exits 5 and changes nothing. The executor then reports success, deletes .githooks/pre-commit, and leaves every value set. Git uses the last of several values, so hooks then point at the deleted hook whenever the .githooks value is the last one."
   - "Every outside step is printed as a human checklist line, whatever its manifest text or ledger state. Removing forge labels, Actions variables, the reviewer App installation and the forge binding stays human work."
   - "`deskdisable` reads the ledger but never edits it, and its dependent check counts every manifest under `--root` as present, because no notion of an ACTIVE component exists yet. It refuses more often than the brief's \"ACTIVE component\" wording asked."
+  - "A further limit on the fixed-path claim is recorded in internal review notes; maintainer follow-up required. It is listed here so that an approval of this record covers it explicitly, as it covers the entries above."
 ---
 
 **This record transcribes a recorded human ruling and states the delivered design. It is
@@ -182,8 +183,8 @@ under `--root`, so in a tree that carries the manifests as source, every file at
 non-Assay content. Only committed content can be recovered from git. Uncommitted register
 entries and a local `core.hooksPath` value cannot. A further limit on the fixed-path claim is
 recorded in internal review notes; maintainer follow-up required. Whether this is acceptable is
-the driver's decision on approving this record. It is listed under `accepted` so that an
-approval covers it explicitly.
+the driver's decision on approving this record. Each limit, that one included, is listed under
+`accepted` so that an approval covers it explicitly.
 
 **(2) Which Verify row proves the lower layer catches a mis-classified step with the upper layer
 wrong?** **No row.** The brief's Review offers "row 4 with a deliberately mis-labelled fixture
@@ -211,7 +212,9 @@ correct the level before the record's approval is linked.
 ## Open / not decided
 
 - **The design approval.** It is the driver's, and it is pending on this record's own decision
-  issue. It counts only as the driver's own unedited comment there naming
+  issue. The first ask there was answered B, "revise first" (https://github.com/medici-finance/assay/issues/4285#issuecomment-6384825452), which asked for
+  the limit recorded in internal review notes to join the `accepted` list; this revision adds it,
+  and the approval is asked again on the same issue. It counts only as the driver's own unedited comment there naming
   `DR-composability-02`, linked from this record's `ruling:` key. A pull-request approval, a
   desk relay or a reviewer verdict does not stand in for it. The #1023 and #1139 comments do not
   either.
