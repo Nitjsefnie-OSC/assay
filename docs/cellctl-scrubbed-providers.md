@@ -100,7 +100,7 @@ go run ./cmd/muhar -j 2 -spec cmd/cellctl/scrubbed-provider-mutations.json
 ```
 
 The existing harness requires a green pristine baseline and a failing positive
-control before reporting mutants. It uses isolated source copies. The manifest
+control before reporting mutants. It uses isolated module copies and self-contained fixtures. The manifest
 plants host credential fallback, each custody refusal defect, missing runtime
 credential/performance handoff, token-in-argv, missing session ownership, unsafe
 cockpit selection/probing and hidden smoke-target defects.

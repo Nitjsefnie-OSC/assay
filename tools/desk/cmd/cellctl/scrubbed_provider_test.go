@@ -33,10 +33,23 @@ func provisionScrubbedToken(t *testing.T, c *Cell) string {
 
 func newScrubbedPolicyFixture(t *testing.T) *policyFixture {
 	t.Helper()
-	if _, err := os.Stat(examplePolicyPath); err != nil {
-		t.Fatalf("could-not-check: required provider fixture: %v", err)
+	// This fixture must survive a module-only mutation snapshot. It needs no
+	// model-policy example from a sibling directory, and must never skip.
+	root := t.TempDir()
+	f := &policyFixture{cellsRoot: filepath.Join(root, "cells"), cfgDir: filepath.Join(root, "claude-config"), binDir: filepath.Join(root, "bin"), repoDir: filepath.Join(root, "repo")}
+	f.cellDir = filepath.Join(f.cellsRoot, "example")
+	for _, dir := range []string{f.cellDir, f.cfgDir, f.binDir, filepath.Join(f.cellDir, "home", ".config", "assay")} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return newPolicyFixture(t, "2.1.278")
+	if err := os.WriteFile(filepath.Join(f.cellDir, "home", ".config", "assay", "roster.env"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.binDir, "claude"), []byte("#!/bin/sh\necho '2.1.278 (stub)'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	return f
 }
 
 func TestScrubbedProviderNeverFallsBackToShell(t *testing.T) {
