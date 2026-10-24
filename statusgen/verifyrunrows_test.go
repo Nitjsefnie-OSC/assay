@@ -102,8 +102,12 @@ func evidenceOf(t *testing.T, path string) string {
 // TestVerifyrunRowsUnrestrictedGolden: without --rows the run writes the table
 // it wrote before --rows existed: a golden built from the witness format, byte
 // for byte. It uses no --rows step, so it runs unchanged on the tree before the
-// flag existed.
-func TestVerifyrunRowsUnrestrictedGolden(t *testing.T) {
+// flag existed. TestVerifyrunRowsSelectsOnlyNamed runs the same check.
+func TestVerifyrunRowsUnrestrictedGolden(t *testing.T) { checkUnrestrictedGolden(t) }
+
+// checkUnrestrictedGolden runs the unrestricted golden on its own fresh fixture.
+func checkUnrestrictedGolden(t *testing.T) {
+	t.Helper()
 	pinClock(t)
 	f := newRowsFixture(t, "")
 	before := getFile(t, f.brief)
@@ -126,10 +130,12 @@ func TestVerifyrunRowsUnrestrictedGolden(t *testing.T) {
 // regression: #4247
 // TestVerifyrunRowsSelectsOnlyNamed: `--rows 2,4` runs and records rows 2 and 4
 // only, under the standard header so they key by their # IDs; --check then
-// credits only those rows; stdout names the others not selected;
-// --in-container carries the selector to the inner run. The unrestricted
-// golden is TestVerifyrunRowsUnrestrictedGolden.
+// credits only those rows; stdout names the others not selected; a run without
+// --rows writes the table it wrote before the flag existed (the golden, on its
+// own fixture, first: it is also TestVerifyrunRowsUnrestrictedGolden);
+// --in-container carries the selector to the inner run.
 func TestVerifyrunRowsSelectsOnlyNamed(t *testing.T) {
+	checkUnrestrictedGolden(t)
 	pinClock(t)
 	f := newRowsFixture(t, "")
 	res, out := captureVerifyrunOut(t, f.args("--rows", "2,4"))
