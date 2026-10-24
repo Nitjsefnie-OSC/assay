@@ -197,7 +197,7 @@ No implementation defect found. Rows 1/3/4/7 owe the hermetic Linux witness (all
 VERIFY: BLOCKED
 ### Verification — 2026-09-30 (assay-verifier-app[bot] @ b0088804294b (claude-opus-5-5) (on-behalf-of human:ian)) — 2026-09-30 claude-opus-5-5-verifier
 
-Non-implementer verification on merged main b0088804294b8b68ad8d06f341e6f0fd9dd2637d, gate: model, all four risk answers no. First table: the `statusgen verifyrun --dry-run` execution witness, landed verbatim; it ran on Linux (golang:1.25-bookworm pinned by digest, `--network none`, `unshare --net` available), statusgen built in-container from a clone pinned to this SHA. Second table: the hand run.
+Non-implementer verification on merged main b0088804294b8b68ad8d06f341e6f0fd9dd2637d, gate: model, all four risk answers no. First table: the `statusgen verifyrun --dry-run` execution witness, landed verbatim except for its header separator line, which was restored on 2026-10-24 (see the Correction entries below); it ran on Linux (golang:1.25-bookworm pinned by digest, `--network none`, `unshare --net` available), statusgen built in-container from a clone pinned to this SHA. Second table: the hand run.
 
 | # | Command | Result | Output | Date | Runner |
 |---|---------|--------|--------|------|--------|
@@ -244,7 +244,7 @@ Notes:
 VERIFY: BLOCKED
 ### Correction: 2026-09-30, assay-verifier-app[bot] @ b0088804294b (claude-opus-5-5) (on-behalf-of human:ian). VERIFY: BLOCKED
 
-- The first execution-witness table in the re-run above was transcribed without its header separator line, so a Markdown parser reads the header as a data row and shifts every witness row down by one. The same table is restated below, verbatim and unchanged except for the separator line. The verdict is unchanged.
+- The first execution-witness table in the re-run above was transcribed without its header separator line, so a Markdown parser reads the header as a data row and shifts every witness row down by one. The same table is restated below, verbatim and unchanged except for the separator line. The verdict is unchanged. On 2026-10-24 the separator line was also restored in the original table above (see the 2026-10-24 Correction entry), so the restatement below now duplicates it; it is kept as the record of this correction.
 
 **Execution witness** (restated):
 | # | Command | Result | Output | Date | Runner |
@@ -699,6 +699,17 @@ RISK-VALUE: DERIVED — patternsExitClean = 0, patternsExitFailed = 1, patternsE
 RISK-VALUE: reversible knob, ranked last, no derivation owed — budget.attempts = 2 @ spec/workflow-patterns/implementation-v1.yaml:31.
 
 **VERIFY: PASS** — 9 of 9 rows witnessed passing on merged main 385cb29e5682, 0 fail, 0 could-not-run; the check:ci rows 1, 3, 4 and 7 ran in a closed container-netns admission bracket. The risk-input design question stays routed at #1933.
+
+### Correction — 2026-10-24, assay-verifier-app[bot] (verify desk) (on-behalf-of human:ian)
+
+Four shape-only edits to earlier entries, made so the flip's held-row scan can key them. The driver ruled the edits allowed (https://github.com/medici-finance/assay/pull/4344#issuecomment-6389131147), with the tool fix to follow. No recorded result, count, digest or verdict changed. Each original span and its replacement:
+
+1. 2026-09-30 entry, first execution-witness table. Original: the header row `| # | Command | Result | Output | Date | Runner |` was followed directly by row 1, with no separator line. Replacement: the separator line `|---|---------|--------|--------|------|--------|` was inserted after the header. The entry's preamble and its 2026-09-30 Correction entry now say so.
+2. 2026-10-02 entry, execution witness line. Original: `statusgen verifyrun --brief <this brief> --dry-run`. Replacement: `statusgen verifyrun --brief docs/streams/graph-execution/brief-02-pattern-schema-and-node-contract.md --dry-run`. The original entry recorded only the placeholder, so the replacement names the brief the placeholder stood for; it is not a record of the argument spelling that run used.
+3. 2026-10-22 entry, Tools line. Original: `go build -o <scratch>/bin/statusgen .`. Replacement: `go build -o "$SCRATCH/bin/statusgen" .` with `SCRATCH` that directory.
+4. 2026-10-24 entry, the last RISK-VALUE line before the verdict. Original: "Task 4's stated exit contract (0 clean, 1 on any PROBLEM, 2 could-not-check)." Replacement: "Task 4's stated exit contract (0 clean, 1 on any PROBLEM, 2 when it cannot check)." This line is outside the admission bracket's span; the bracket's witness digest is unchanged.
+
+The 2026-10-24 verdict above stands as recorded.
 
 ## Review
 Gate: model (from frontmatter). Reviewer records verdict + date in the stream README table.
