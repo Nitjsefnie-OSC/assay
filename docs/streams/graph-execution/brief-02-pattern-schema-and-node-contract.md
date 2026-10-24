@@ -200,6 +200,7 @@ VERIFY: BLOCKED
 Non-implementer verification on merged main b0088804294b8b68ad8d06f341e6f0fd9dd2637d, gate: model, all four risk answers no. First table: the `statusgen verifyrun --dry-run` execution witness, landed verbatim; it ran on Linux (golang:1.25-bookworm pinned by digest, `--network none`, `unshare --net` available), statusgen built in-container from a clone pinned to this SHA. Second table: the hand run.
 
 | # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
 | 1 | `cd statusgen && go test -run TestPatterns ./...` | pass exit=0 | sha256:8a2302a2bbe5 | 2026-09-30 | assay-verifier-app[bot] @ b0088804294b (on-behalf-of human:ian) (forge-identity) |
 | 2 | `statusgen patterns --lint --root .; echo rc=$?` | pass exit=0 | sha256:e86054a2ccc7 | 2026-09-30 | assay-verifier-app[bot] @ b0088804294b (on-behalf-of human:ian) (forge-identity) |
 | 3 | `cd statusgen && go test -run TestPatternsEffectExceedsRoleIsProblem ./...` | pass exit=0 | sha256:900b07966263 | 2026-09-30 | assay-verifier-app[bot] @ b0088804294b (on-behalf-of human:ian) (forge-identity) |
@@ -274,7 +275,7 @@ Runner is not the implementer. Detached worktree pinned to the merged head above
 | 8 | `statusgen --root . --lint; echo rc=$?` | rc=0 | exit 0, LINT: PASS / rc=0; 0 PROBLEM lines; NOTICE gotest-run-vacuous still names this brief's rows 1, 3, 4, 7 | 2026-10-02 assay-verifier-app[bot] (on-behalf-of human:ian) |
 | 10 | `statusgen --consumers --brief graph-execution/02 --root .; echo rc=$?` | rc=0 on the authoring branch; exit 2 (could-not-check) on a fully merged main is acceptable and must be recorded as such, never as pass | COULD-NOT-CHECK as written: statusgen printed COULD-NOT-CHECK: assay:assay:graph-execution:02 is not in the diff against cf31c32418ba, rc=2 (the shell itself exits 0 because of the trailing echo). Sanctioned recipe (squash merge 5b384e52c checked out, --base 060980aa0f1a): exit 0, summary: 3 corroborated, 0 disproved, 1 unchecked; the unchecked entry is the out-of-scope desk-skill claim | 2026-10-02 assay-verifier-app[bot] (on-behalf-of human:ian) |
 
-Execution witness (`statusgen verifyrun --brief <this brief> --dry-run`, statusgen v1.0.31, darwin host, nothing written): exit 2; 4 of 9 rows witnessed pass, 4 could-not-run, 1 fail.
+Execution witness (`statusgen verifyrun --brief docs/streams/graph-execution/brief-02-pattern-schema-and-node-contract.md --dry-run`, statusgen v1.0.31, darwin host, nothing written): exit 2; 4 of 9 rows witnessed pass, 4 could-not-run, 1 fail.
 
 - Row 1, 3, 4, 7 (check:ci): could-not-run, exit=-, sha256:e3b0c44298fc. Reason printed: check:ci hermetic execution requires a network-off sandbox, unavailable on this host (unshare --net is a Linux facility, this host is darwin).
 - Row 2: pass exit=0, sha256:e86054a2ccc7 (identical to the 2026-09-30 hash).
@@ -546,7 +547,7 @@ Admission: deskdispatch --check-verifier exit 0 before any row ran, and again af
 
 Delivered code since the prior pass: git diff --stat 1f0b54e745d8..HEAD over the brief's delivered paths (the two pattern files, the schema document and JSON schema, spec README, the patterns source and tests, its fixtures, the topology derivation, topology.yaml, the main entry point, lifecycle doc and changelog fragment) lists one file: statusgen/main.go, 9 insertions and 1 deletion. That change adds the unrelated `context` subcommand and its name in the unknown-subcommand list. The patterns code, fixtures, schema and pattern files are unchanged.
 
-Tools: statusgen (with its verifyrun subcommand) built from this commit's own statusgen package into a scratch directory outside the home (`go build -o <scratch>/bin/statusgen .`, go 1.27.2 darwin/arm64), first on PATH for every row. Row 5 ran with a scratch venv python3 (Python 3.15.0, PyYAML 6.0.3, jsonschema 4.26.0) first on PATH. Host: darwin, git 2.56.0. KUBECONFIG=/dev/null; no live endpoint contacted.
+Tools: statusgen (with its verifyrun subcommand) built from this commit's own statusgen package into a scratch directory outside the home (`go build -o "$SCRATCH/bin/statusgen" .` with `SCRATCH` that directory, go 1.27.2 darwin/arm64), first on PATH for every row. Row 5 ran with a scratch venv python3 (Python 3.15.0, PyYAML 6.0.3, jsonschema 4.26.0) first on PATH. Host: darwin, git 2.56.0. KUBECONFIG=/dev/null; no live endpoint contacted.
 
 Witness: `statusgen verifyrun --brief docs/streams/graph-execution/brief-02-pattern-schema-and-node-contract.md` in write mode at the home root, exit 2. The table below is that run's own output, copied unchanged, Runner cells included. `statusgen verifyrun --check` on the written table: exit 2, "5 pass, 0 fail, 4 could-not-run/missing (of 9 Verify rows); 0 author-added with no acceptance credit".
 
