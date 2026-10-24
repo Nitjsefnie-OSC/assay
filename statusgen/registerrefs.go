@@ -256,8 +256,8 @@ func stripFences(content string) string {
 // backfillRegisterRefs scans every brief-*.md under docs/streams/*/ and
 // rewrites bare register-ID tokens (F-NN / I-NN) to markdown links pointing at
 // the per-entry file. It is idempotent — already-linked refs are left
-// untouched. Code-fenced blocks, inline code spans, and Verify table rows are
-// skipped. Returns the total number of replacements made.
+// untouched. Code-fenced blocks (``` and ~~~), inline code spans, Verify table
+// rows and the whole `## Evidence` section are skipped. Returns the total number of replacements made.
 func backfillRegisterRefs(root string) (int, error) {
 	rep, err := backfillRegisterRefsReport(root)
 	return rep.Linked + rep.Repaired, err
@@ -326,7 +326,7 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 
 	lines := strings.Split(content, "\n")
 	var out []string
-	inFence := false
+	fenceMark := "" // the open fence's marker ("```" or "~~~"), "" outside a fence
 	inVerifyTable := false
 	inEvidence := false
 	count, repaired := 0, 0
@@ -336,17 +336,21 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 
 	for li, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if !inFence && strings.HasPrefix(trimmed, "## ") {
+		if fenceMark == "" && strings.HasPrefix(trimmed, "## ") {
 			inEvidence = strings.EqualFold(strings.TrimSpace(strings.TrimPrefix(trimmed, "## ")), "Evidence")
 		}
 
-		// Code-fence toggle.
-		if strings.HasPrefix(trimmed, "```") {
-			inFence = !inFence
+		// Code-fence toggle: a ``` fence is closed only by ```, a ~~~ fence only by ~~~.
+		if mark := fenceMarkerOf(trimmed); mark != "" && (fenceMark == "" || mark == fenceMark) {
+			if fenceMark == "" {
+				fenceMark = mark
+			} else {
+				fenceMark = ""
+			}
 			out = append(out, line)
 			continue
 		}
-		if inFence {
+		if fenceMark != "" {
 			out = append(out, line)
 			continue
 		}
@@ -378,6 +382,13 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 			}
 		}
 
+		// Recorded Evidence is history: neither arm rewrites it (a bare id there stays
+		// as the verifier wrote it).
+		if inEvidence {
+			out = append(out, line)
+			continue
+		}
+
 		// Replace bare refs on this line.
 		newLine, n := replaceBareRefs(line, fMap, iMap, path)
 		count += n
@@ -391,6 +402,18 @@ func backfillOneFileReport(path, root string, fMap, iMap map[string]string, fCan
 		}
 	}
 	return count, repaired, unresolved, nil
+}
+
+// fenceMarkerOf returns "```" or "~~~" when the (trimmed) line opens or closes a
+// fenced code block, "" otherwise.
+func fenceMarkerOf(trimmed string) string {
+	switch {
+	case strings.HasPrefix(trimmed, "```"):
+		return "```"
+	case strings.HasPrefix(trimmed, "~~~"):
+		return "~~~"
+	}
+	return ""
 }
 
 // repairViewLinks rewrites, on one line, every typed register link whose target is a

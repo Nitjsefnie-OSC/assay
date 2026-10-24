@@ -732,9 +732,13 @@ func runSiblingMergeIfOptedIn(streams []*Stream, root string) (notices []string,
 // holdPhantomRowsFromGit is runSiblingMergeIfOptedIn's counterpart for the in-tree
 // board-honesty holds: the dispatch emitters (--next-up, --roadmap) call it before
 // nextUp() so they hold the same rows STATUS.md does. A tree with no .git, or an
-// unreadable history, holds nothing — could-not-check is never "delivered".
+// unreadable history, holds no merged-delivery row — could-not-check is never
+// "delivered" — but still holds a re-homed pointer row, whose evidence is the tree
+// itself, exactly as run() does (errNoGitForMerge): the queue and the board must not
+// disagree about the same tree.
 func holdPhantomRowsFromGit(streams []*Stream, root string) {
 	if hasNoGitDir(root) {
+		applyPhantomHolds(streams, nil, errNoGitForMerge)
 		return
 	}
 	merged, err := mergedPRsFromGit(root)

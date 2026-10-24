@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -277,6 +278,158 @@ func TestNoticeLoopClosure(t *testing.T) {
 		_, notices := registerRefProblems(root, []string{amb})
 		if len(notices) != 2 {
 			t.Errorf("the lint must keep reporting both links; got %v", notices)
+		}
+	})
+
+	// regression: the merge-trailer read must not depend on the branch NAME.
+	t.Run("a house-shape merge reads its branch commits", func(t *testing.T) {
+		root := t.TempDir()
+		gitInit(t, root, "t", "t@example.invalid")
+		commit := func(msg string) { runGit(t, root, "commit", "--allow-empty", "-m", msg) }
+		commit("init")
+		runGit(t, root, "branch", "-M", "main")
+
+		// PR 5: the house branch shape names no brief; the trailer is on its commit.
+		runGit(t, root, "checkout", "-b", "feat/assay--gtm--01")
+		commit("feat: part one\n\nBrief: gtm:01")
+		runGit(t, root, "checkout", "main")
+		runGit(t, root, "merge", "--no-ff", "-m", "Merge pull request #5 from o/feat/assay--gtm--01", "feat/assay--gtm--01")
+
+		// PR 7 merged main into its branch first: main's own commit (PR 6, brief 02)
+		// must NOT be absorbed into PR 7's branch commits.
+		runGit(t, root, "checkout", "-b", "feat/assay--gtm--03")
+		commit("feat: part three\n\nBrief: gtm:03")
+		runGit(t, root, "checkout", "main")
+		commit("feat: gtm/02 (#6)\n\nBrief: gtm:02")
+		runGit(t, root, "checkout", "feat/assay--gtm--03")
+		runGit(t, root, "merge", "-m", "Merge branch main into feat", "main")
+		runGit(t, root, "checkout", "main")
+		runGit(t, root, "merge", "--no-ff", "-m", "Merge pull request #7 from o/feat/assay--gtm--03", "feat/assay--gtm--03")
+
+		prs, err := mergedPRsFromGit(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[int][]string{}
+		for _, p := range prs {
+			got[p.Number] = p.Delivers
+		}
+		for num, want := range map[int]string{5: "gtm/01", 6: "gtm/02", 7: "gtm/03"} {
+			if len(got[num]) != 1 || got[num][0] != want {
+				t.Errorf("PR %d must deliver exactly [%s]; got %v (all: %v)", num, want, got[num], got)
+			}
+		}
+
+		// The pure half: the same shape through the log text, no git.
+		log := "m5\x1fMerge pull request #5 from o/feat/assay--gtm--01\x1f\n\x1e"
+		all := "m5\x1fp1 b1\x1fMerge pull request #5\n\x1e" + "b1\x1fp1\x1ffeat\n\nBrief: gtm:01\n\x1e" + "p1\x1f\x1finit\n\x1e"
+		prs2 := parseMergedLog(log, branchBodiesFromLog(all, []string{"m5", "p1"}))
+		if len(prs2) != 1 || len(prs2[0].Delivers) != 1 || prs2[0].Delivers[0] != "gtm/01" {
+			t.Errorf("a trailer-less merge of a house-shape branch must read its branch commits; got %+v", prs2)
+		}
+		// NEGATIVE CONTROL: with no branch reader the same merge is not a delivery.
+		if prs3 := parseMergedLog(log, nil); len(prs3) != 0 {
+			t.Errorf("without a branch reader the merge names no brief; got %+v", prs3)
+		}
+		// A trailer shown inside a ~~~ fence is documentation, not delivery.
+		if d, _ := mergeTrailerKeys("~~~\nBrief: gtm:09\n~~~\n"); len(d) != 0 {
+			t.Errorf("a ~~~-fenced trailer must not read as delivery; got %v", d)
+		}
+	})
+
+	// regression: the dispatch queue must hold what STATUS.md holds.
+	t.Run("the dispatch queue holds a phantom row", func(t *testing.T) {
+		queue := func(root string) string {
+			out := captureStdout(t, func() {
+				if code := runNextUp(root); code != 0 {
+					t.Fatalf("runNextUp exit %d", code)
+				}
+			})
+			var view dispatchView
+			if err := json.Unmarshal([]byte(out), &view); err != nil {
+				t.Fatalf("--next-up did not emit JSON: %v\n%q", err, out)
+			}
+			var ids []string
+			for _, r := range view.Rows {
+				ids = append(ids, r.Brief)
+			}
+			sort.Strings(ids)
+			return strings.Join(ids, " ")
+		}
+		addPointerRow := func(root string) {
+			readme := filepath.Join(root, "docs", "streams", "example-stream", "README.md")
+			raw, err := os.ReadFile(readme)
+			if err != nil {
+				t.Fatal(err)
+			}
+			row := "| 03 | Old row [homed→acme/widgets] | 0 | S | todo | — | — |\n"
+			if err := os.WriteFile(readme, append(raw, []byte(row)...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// A tree with no .git: the re-homed pointer row needs no history, so the
+		// queue holds it exactly as run() does; the ordinary row stays dispatchable.
+		root := siblingBriefTree(t, "")
+		if got := queue(root); got != "example-stream/02" {
+			t.Fatalf("control: before the pointer row the queue is [example-stream/02]; got %q", got)
+		}
+		addPointerRow(root)
+		if got := queue(root); got != "example-stream/02" {
+			t.Errorf("the re-homed pointer row (03) must be absent from --next-up on a no-.git tree; got %q", got)
+		}
+
+		// A tree with history: a merged `Brief:`-trailer PR on a house-shape branch
+		// holds its row out of the queue.
+		root2 := siblingBriefTree(t, "")
+		gitInit(t, root2, "t", "t@example.invalid")
+		runGit(t, root2, "add", "-A")
+		runGit(t, root2, "commit", "-m", "init")
+		runGit(t, root2, "branch", "-M", "main")
+		if got := queue(root2); got != "example-stream/02" {
+			t.Fatalf("control: an undelivered row is dispatchable; got %q", got)
+		}
+		runGit(t, root2, "checkout", "-b", "feat/assay--example-stream--02")
+		runGit(t, root2, "commit", "--allow-empty", "-m", "feat: deliver\n\nBrief: example-stream:02")
+		runGit(t, root2, "checkout", "main")
+		runGit(t, root2, "merge", "--no-ff", "-m", "Merge pull request #9 from o/feat/assay--example-stream--02", "feat/assay--example-stream--02")
+		if got := queue(root2); got != "" {
+			t.Errorf("a row delivered by a merged Brief: PR must be absent from --next-up; got %q", got)
+		}
+	})
+
+	// regression: --register-links never rewrites fenced text or recorded Evidence.
+	t.Run("register links leave tilde fences and Evidence alone", func(t *testing.T) {
+		root := t.TempDir()
+		fDir := filepath.Join(root, "docs", "streams", "findings")
+		gDir := filepath.Join(root, "docs", "streams", "gtm")
+		for _, d := range []string{fDir, gDir} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writeTemp(t, fDir, "2026-07-09-one.md", "---\nid: F-15\ndate: \"2026-07-09\"\ntitle: T\naffects: []\nresolved: false\n---\nBody.\n")
+		frozen := "# Frozen\n\n## Notes\n~~~\nsee [F-15](../FINDINGS.md) and F-15\n~~~\n\n## Evidence\nRecorded: F-15 reproduced; see [F-15](../FINDINGS.md).\n"
+		writeTemp(t, gDir, "brief-01-frozen.md", frozen)
+		// POSITIVE CONTROL: the same bare id in plain prose IS linked, so a green run
+		// below is the skip, not a bare arm that never fires.
+		prose := writeTemp(t, gDir, "brief-02-prose.md", "# Prose\n\n## Notes\nCaused by F-15.\n")
+		before := nlcHash(t, filepath.Join(gDir, "brief-01-frozen.md"))
+
+		t.Chdir(root) // the bare arm resolves entry paths against a repo-relative root
+		rep, err := backfillRegisterRefsReport(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if nlcHash(t, filepath.Join(gDir, "brief-01-frozen.md")) != before {
+			raw, _ := os.ReadFile(filepath.Join(gDir, "brief-01-frozen.md"))
+			t.Errorf("a ~~~ fence and recorded Evidence must be byte-identical after the pass:\n%s", raw)
+		}
+		if raw, _ := os.ReadFile(prose); !strings.Contains(string(raw), "[F-15](") {
+			t.Errorf("positive control: a bare id in prose must link; got %s (report %+v)", raw, rep)
+		}
+		if rep.Linked != 1 || rep.Repaired != 0 {
+			t.Errorf("only the prose id is linked and nothing is repaired; got %+v", rep)
 		}
 	})
 }

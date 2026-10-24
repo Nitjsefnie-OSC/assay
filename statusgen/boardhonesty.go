@@ -305,8 +305,9 @@ func strongPhantom(class, id string, delivering map[string]mergedPR, partial boo
 // applyPhantomHolds runs the board-honesty classifier and stamps Brief.PhantomHeld
 // on every TODO row it caught on strong evidence, so eligibleBase excludes it in
 // every path that builds Next-up. One classifier, no separate allowlist. A failed
-// merge read (mergedErr != nil) holds nothing: absent forge/history state is
-// could-not-check, never "delivered".
+// merge read (mergedErr != nil) holds no merged-delivery row: absent forge/history
+// state is could-not-check, never "delivered". A re-homed pointer row is still held,
+// because its evidence is the row and its missing brief file, not the history.
 func applyPhantomHolds(streams []*Stream, merged []mergedPR, mergedErr error) {
 	finds, _ := phantomFindings(streams, merged, mergedErr)
 	for _, f := range finds {

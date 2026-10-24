@@ -347,7 +347,8 @@ func run(root, mode string, budget []string, changed []string, scope string) int
 	// (a merged `Brief:`-trailer PR, a re-homed pointer row) is held out of Next-up
 	// via Brief.PhantomHeld before nextUp() below. Full `streams`, like the
 	// sibling-merge mutation, so an out-of-scope stream's row is held on the board
-	// that renders it. A failed merge read holds nothing.
+	// that renders it. A failed merge read holds no merged-delivery row (re-homed
+	// pointer rows, which need no git, are still held).
 	applyPhantomHolds(streams, mergedPRs, mergedErr)
 	// Sibling-merge-unreconciled (siblingmerge.go): the
 	// SEVENTH board-honesty phantom class, wired right after class 1 like the

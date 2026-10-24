@@ -84,7 +84,7 @@ func (p mergedPR) deliveryOf(id string) mergeDelivery {
 func mergeTrailerKeys(body string) (delivers, authors []string) {
 	inFence := false
 	for _, raw := range strings.Split(body, "\n") {
-		if rePRLinkFence.MatchString(raw) {
+		if rePRLinkFence.MatchString(raw) || reMergeTildeFence.MatchString(raw) {
 			inFence = !inFence
 			continue
 		}
@@ -104,6 +104,10 @@ func mergeTrailerKeys(body string) (delivers, authors []string) {
 	}
 	return delivers, authors
 }
+
+// reMergeTildeFence is the `~~~` fence opener/closer rePRLinkFence (backticks only)
+// does not cover: a trailer shown inside a tilde fence is documentation, not delivery.
+var reMergeTildeFence = regexp.MustCompile("^[ \t]*~~~")
 
 // mergeSubjectRe matches GitHub's merge-commit subject and captures PR number + branch.
 var mergeSubjectRe = regexp.MustCompile(`^Merge pull request #(\d+) from [^/\s]+/(\S+)`)
@@ -166,21 +170,89 @@ func mergedPRsFromGit(root string) ([]mergedPR, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseMergedLog(string(out), func(sha string) string {
-		// A merge commit's body is only the PR title; the trailers live on the
-		// branch's own commits. Read them only for a merge that names a brief.
-		b, err := exec.Command("git", "-C", root, "log", "-n", "40", "--format=%B%x1e", sha+"^1.."+sha+"^2").Output()
-		if err != nil {
-			return "" // unreadable: stays unconfirmed, never a guessed delivery
+	return parseMergedLog(string(out), branchBodiesFromGit(root, string(out))), nil
+}
+
+// branchBodiesFromGit returns the branch-commit reader parseMergedLog consults for a
+// `Merge pull request` commit whose own body carries no trailer (a merge commit's body
+// is only the PR title; the trailers live on the branch's own commits). It costs ONE
+// extra `git log` for the whole window, not one per merge: every commit in the window
+// is read once and each merge's branch (second parent back to the first-parent line) is
+// resolved in memory. An unreadable history returns nil, so a merge stays unconfirmed
+// — never a guessed delivery.
+func branchBodiesFromGit(root, firstParentLog string) func(sha string) string {
+	var window []string // first-parent shas, newest first
+	for _, rec := range strings.Split(firstParentLog, "\x1e") {
+		if parts := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x1f", 2); len(parts) == 2 && strings.TrimSpace(parts[0]) != "" {
+			window = append(window, strings.TrimSpace(parts[0]))
 		}
-		return string(b)
-	}), nil
+	}
+	if len(window) == 0 {
+		return nil
+	}
+	oldest := window[len(window)-1]
+	all, err := exec.Command("git", "-C", root, "log", "--format=%H%x1f%P%x1f%B%x1e",
+		"HEAD", "--not", oldest+"^@").Output()
+	if err != nil {
+		return nil
+	}
+	return branchBodiesFromLog(string(all), window)
+}
+
+// branchBodiesFromLog is the pure half of branchBodiesFromGit. allLog is
+// `git log --format=%H%x1f%P%x1f%B%x1e` over the window; firstParent lists the
+// first-parent shas newest first. Walking merges oldest first and claiming every
+// branch commit it visits keeps a branch that merged main into itself from
+// absorbing main's commits: those are either on the first-parent line or already
+// claimed by the older merge that brought them in.
+func branchBodiesFromLog(allLog string, firstParent []string) func(sha string) string {
+	type commit struct {
+		parents []string
+		body    string
+	}
+	commits := map[string]commit{}
+	for _, rec := range strings.Split(allLog, "\x1e") {
+		parts := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x1f", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		commits[strings.TrimSpace(parts[0])] = commit{parents: strings.Fields(parts[1]), body: parts[2]}
+	}
+	onLine := map[string]bool{}
+	for _, sha := range firstParent {
+		onLine[sha] = true
+	}
+	claimed := map[string]bool{}
+	bodies := map[string]string{}
+	for i := len(firstParent) - 1; i >= 0; i-- {
+		m, ok := commits[firstParent[i]]
+		if !ok || len(m.parents) < 2 {
+			continue
+		}
+		var b strings.Builder
+		stack := []string{m.parents[1]}
+		for len(stack) > 0 {
+			sha := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			c, ok := commits[sha]
+			if !ok || onLine[sha] || claimed[sha] {
+				continue
+			}
+			claimed[sha] = true
+			b.WriteString(c.body)
+			b.WriteString("\n")
+			for j := len(c.parents) - 1; j >= 0; j-- {
+				stack = append(stack, c.parents[j])
+			}
+		}
+		bodies[firstParent[i]] = b.String()
+	}
+	return func(sha string) string { return bodies[sha] }
 }
 
 // parseMergedLog turns `git log --first-parent --format=%H%x1f%s%x1f%b%x1e` output
 // into merged PRs. branchBody, when non-nil, supplies the branch commits' bodies
-// for a `Merge pull request` commit that names a brief but whose own body carries
-// no trailer. Pure given branchBody — the git reads live in the caller.
+// for a `Merge pull request` commit whose own body carries no trailer. Pure given branchBody — the git reads live in the caller.
 func parseMergedLog(log string, branchBody func(sha string) string) []mergedPR {
 	var prs []mergedPR
 	for _, rec := range strings.Split(log, "\x1e") {
@@ -209,7 +281,10 @@ func parseMergedLog(log string, branchBody func(sha string) string) []mergedPR {
 		}
 		refs := briefRefsIn(subject, branch)
 		delivers, authors := mergeTrailerKeys(body)
-		if isMerge && branchBody != nil && len(refs) > 0 && len(delivers) == 0 && len(authors) == 0 {
+		// A trailer-less merge commit reads its trailers from the branch commits whatever
+		// the branch is called: the house shape (`feat/<repo>--<stream>--NN`) names no
+		// brief, so gating on a ref already found would never read the dominant shape.
+		if isMerge && branchBody != nil && len(delivers) == 0 && len(authors) == 0 {
 			delivers, authors = mergeTrailerKeys(branchBody(sha))
 		}
 		seen := map[string]bool{}
