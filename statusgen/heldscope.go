@@ -1066,10 +1066,17 @@ var (
 	// heldWitnessTrailerRes are the lines statusgen verifyrun and its
 	// container bracket write directly under a witness table, with no blank
 	// line between (containerWitnessLines, the admission receipt's
-	// attestation, the bracket close): every field a digest, a hex id, a
-	// repo, a path or a timestamp, never caller prose. A "|", "<" or ">"
-	// cannot appear in any of them, so such a line is never a row GFM splits
-	// into cells nor markup.
+	// attestation, the bracket close), each matched field by field and
+	// anchored at both ends. Most fields are a digest, a hex id or a
+	// timestamp; the repo, brief= and model= fields carry names the run was
+	// given (a repository, a brief path, a model id), so they may spell any
+	// word their character class admits, a hold word such as HELD included.
+	// That widens nothing: such a line is passed over only for alignment
+	// (heldWitnessTrailerEnd), so an earlier entry's line is dropped only when
+	// that entry is superseded whole, exactly as a prose line there already
+	// is, and a trailer line in the latest entry is still read for holds like
+	// any other line. A "|", "<" or ">" cannot appear in any of them, so such
+	// a line is never a row GFM splits into cells nor markup.
 	heldWitnessTrailerRes = []*regexp.Regexp{
 		regexp.MustCompile(`^Tree-Digest: sha256:[0-9a-f]{64}$`),
 		regexp.MustCompile(`^Container-Image: sha256:[0-9a-f]{64}$`),
@@ -1081,9 +1088,9 @@ var (
 // heldWitnessTrailerEnd returns the first line at or after j, the line after
 // the table that opens at header, that is not a verifyrun trailer line
 // (heldWitnessTrailerRes), or j when the table is not a verifyrun witness
-// table (heldWitnessHeaders) or line j is no trailer (#4294). GFM reads such
-// a line as one more row of the table above, but every one of its fields is
-// a digest or an id the tool wrote, so it cannot be a row the scan fails to
+// table (heldWitnessHeaders, matched byte for byte) or line j is no trailer
+// (#4294). GFM reads such a line as one more row of the table above, but its
+// shape is fixed field by field, so it is not a results row the scan fails to
 // key: whole supersession may read past it, as long as the run of trailer
 // lines then ends at a blank line or the entry's end. Any other line there
 // still counts against the entry (heldScanScope).
@@ -1375,8 +1382,10 @@ var (
 		regexp.MustCompile(`^(?:in[ \t]+)?\d+(?:\.\d+)?[ \t]*(?:minutes?|mins?|ms|m|seconds?|secs?|s)`),
 		// The sandbox token statusgen verifyrun writes after `exit=` (#2350):
 		// it names WHICH network-off sandbox ran the row, one of the two
-		// compile-time modes (verifysandbox.go), never caller text.
-		regexp.MustCompile(`^sandbox=(?:unshare|container-netns)`),
+		// compile-time modes (verifysandbox.go), never caller text. The mode
+		// is a whole word: it ends the cell or a space, comma or semicolon
+		// follows it, so "sandbox=unshare-ok" is not the unshare mode.
+		regexp.MustCompile(`^sandbox=(?:unshare|container-netns)(?:[ \t,;]|$)`),
 		heldOutcomeRe,
 	}
 	// heldDigestRe is the Output cell statusgen verifyrun writes for every

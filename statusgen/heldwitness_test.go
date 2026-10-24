@@ -10,9 +10,10 @@ import (
 // (#4294). A witness table's Output cell is a digest and its Result cell may
 // carry a sandbox token; a write-mode run puts its attestation (and, for a
 // container run, its tree, image and bracket lines) directly under the table.
-// None of those is caller prose, so a later witness that re-ran every row
-// clean supersedes an earlier hold the way a hand-written results table
-// already does (#1894, #3841) — and nothing else about the scope changes.
+// Each is a shape the tool writes, matched whole, so a later witness that
+// re-ran every row clean supersedes an earlier hold the way a hand-written
+// results table already does (#1894, #3841) — and nothing else about the
+// scope changes.
 
 const (
 	witHex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -175,4 +176,43 @@ func witnessRow3() string {
 	w := witness{ID: "3", Command: "tool check 3", State: statePass, Exit: 0, OutHash: "0123456789ab",
 		Date: "2026-10-22", Runner: "fixture-verifier[bot]", Tree: "0123456789ab", HostOnBehalfOf: true}
 	return w.row() + "\n"
+}
+
+// TestHeldScopeWitnessAnchors pins each anchor the witness reading rests on,
+// one fixture per anchor: every trailer line is matched to its end, the
+// witness header is matched exactly, a digest is neutral only in an Output
+// column, and the sandbox token is one whole closed-set word. Each case is a
+// hold that must keep refusing; the matching heldscope-mutations.json entry
+// loosens the one anchor and is caught here.
+// regression: #4294
+func TestHeldScopeWitnessAnchors(t *testing.T) {
+	cnr := witRow3(stateCouldNotRun, -1, witCNR)
+	held := func(table string) string { return witEntry("Run 1", table, witBullet, "VERIFY: BLOCKED") }
+	under := func(trailer string) string { return held(witTable(4, sandboxUnshare, cnr, trailer)) }
+	block := strings.Split(witContainer, "\n") // Tree-Digest, Container-Image, attestation, bracket
+	note := " (row 3 HELD)"
+	header := func(from, to string) string {
+		return held(strings.Replace(witTable(4, sandboxUnshare, cnr, witAttest), from, to, 1))
+	}
+	sandbox := func(tok string) string {
+		return witOldRow + witEntry("Run 2", witTable(4, tok, witPass, witAttest), "", "**VERIFY: PASS**")
+	}
+	runHeldLayerCases(t, []heldScanCase{
+		// Each trailer line is anchored at its end, not only the attestation.
+		{"Tree-Digest with a note appended", under(block[0]+note) + witLatest(witPass), true},
+		{"Container-Image with a note", under(block[1]+note) + witLatest(witPass), true},
+		{"Admission-Bracket with a note", under(block[3]+note) + witLatest(witPass), true},
+		// The witness header is matched as the tool writes it, byte for byte.
+		{"header with a trailing space", header("| Runner |\n", "| Runner | \n") + witLatest(witPass), true},
+		{"header with a leading space", header("| # |", " | # |") + witLatest(witPass), true},
+		// A digest is neutral only under an Output header, not any result column.
+		{"digest in an Observed column", witOldRow + witEntry("Run 2", "| # | Command | Result | Observed |\n|---|---|---|---|\n"+
+			"| 3 | `tool check 3` | pass exit=0 | sha256:0123456789ab |\n", "", "**VERIFY: PASS**"), true},
+		// The sandbox token is a whole word: a closed-set prefix is not enough.
+		{"sandbox=unshare-ok", sandbox(sandboxUnshare + "-ok"), true},
+		{"sandbox=container-netns-ok", sandbox(sandboxContainerNetns + "-ok"), true},
+		// A trailer line in the latest entry is read for holds like any line.
+		{"hold word in a latest trailer", witOldRow + witEntry("Run 2", witTable(4, sandboxContainerNetns, witPass,
+			strings.Replace(witContainer, "model=fixture-model", "model=HELD", 1)), "", "**VERIFY: PASS**"), true},
+	})
 }
