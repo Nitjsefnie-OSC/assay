@@ -1314,7 +1314,7 @@ func renderImplementedGateBody(root string, bf *BriefFile, irreversible bool) st
 
 	// Every section below is lifted from the brief and unbounded; each is a
 	// cuttable unit for capIssueBody, which keeps the header above and the
-	// checklist below whole (#4091).
+	// generated prompts and checklist below whole (#4091).
 	sections := verifySections(body, bf.Evidence)
 
 	// UNRUN/deferred rows — surfaced prominently.
@@ -1325,10 +1325,14 @@ func renderImplementedGateBody(root string, bf *BriefFile, irreversible bool) st
 
 	// Trade-offs section
 	tradeoffs := strings.TrimSpace(extractSectionByPrefix(body, "Trade-offs"))
+	// The prompts statusgen itself generates (nothing lifted from the brief)
+	// are warnings the human must see, so they go in the tail, which a cut
+	// never touches; only the lifted Trade-offs text is a cuttable section.
+	var generated strings.Builder
 	if tradeoffs != "" {
 		sections = append(sections, "### Trade-offs\n\n"+tradeoffs+"\n\n")
 	} else {
-		sections = append(sections, "### Trade-offs\n\n"+
+		generated.WriteString("### Trade-offs\n\n" +
 			"> **TRADE-OFFS: not provided** — the brief has no `## Trade-offs` section. A gate:human card should carry a \"Why we want it / What it limits\" analysis.\n\n")
 	}
 
@@ -1344,10 +1348,11 @@ func renderImplementedGateBody(root string, bf *BriefFile, irreversible bool) st
 		} else {
 			prior += "> **PRIOR-STATE: unassessed** — the `## Trade-offs` section does not address whether this fix leaves prior corrupted state. Every money-path gate card must answer this question (yes+what / no+why).\n\n"
 		}
-		sections = append(sections, prior)
+		generated.WriteString(prior)
 	}
 
 	b.Reset()
+	b.WriteString(generated.String())
 	b.WriteString("### Before you close\n\n")
 	b.WriteString("- [ ] Model verify pass is acceptable (Evidence reviewed above)\n")
 	if unrunRowsText(bf.Evidence) != "" {

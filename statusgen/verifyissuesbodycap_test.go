@@ -159,3 +159,63 @@ func TestVerifyIssueBodyCapped(t *testing.T) {
 		})
 	}
 }
+
+// TestGeneratedPromptsKept: the TRADE-OFFS and PRIOR-STATE prompts that
+// statusgen itself writes (nothing lifted from the brief) are warnings the
+// human must see. They sit outside the cuttable region, so even a card whose
+// header leaves almost no room still carries them whole.
+//
+// regression: #4091
+func TestGeneratedPromptsKept(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS("testdata/verifygatecap")); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(root, "docs", "streams", "vgc", "brief-02-implemented-oversize.md")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(raw)
+	// No Trade-offs section, so both prompts are generated; and a gate-why
+	// that fills nearly the whole card.
+	i, j := strings.Index(src, "## Trade-offs"), strings.Index(src, "## Evidence")
+	if i < 0 || j < i {
+		t.Fatal("fixture shape changed: Trade-offs must precede Evidence")
+	}
+	src = src[:i] + src[j:]
+	src = strings.Replace(src, "sources:", "gate-why: "+strings.Repeat("reason ", 8200)+"\nsources:", 1)
+	var rows strings.Builder
+	for k := 1; k <= 600; k++ {
+		fmt.Fprintf(&rows, "| %d | `go test ./pkg/m%d/...` | 0 | ok | 2026-10-21 | example-verifier |\n", k, k)
+	}
+	src = strings.Replace(src, "<!-- oversize: evidence -->", strings.TrimSuffix(rows.String(), "\n"), 1)
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	streams, _, err := loadStreams(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body string
+	for _, iss := range verifyIssues(root, streams, map[string]bool{}) {
+		if iss.Brief == "vgc/02" {
+			body = iss.Body
+		}
+	}
+	if body == "" {
+		t.Fatal("vgc/02 not emitted")
+	}
+	if n := vgcUnits(body); n >= vgcForgeLimit {
+		t.Fatalf("body is %d characters, not under the forge's %d limit", n, vgcForgeLimit)
+	}
+	for _, keep := range []string{"**TRADE-OFFS: not provided**", "### Prior-state remediation", "**PRIOR-STATE: unassessed**",
+		"- [ ] Prior-state remediation assessed"} {
+		if !strings.Contains(body, keep) {
+			t.Errorf("body lost %q", keep)
+		}
+	}
+	if !strings.HasPrefix(body, "<!-- verify-gate: vgc/02 -->\n") {
+		t.Error("body must open with the marker")
+	}
+}

@@ -45,7 +45,9 @@ func forgeRuneLen(r rune) int {
 // capIssueBody joins head, sections and tail into one issue body no longer
 // than issueBodyCap (as forgeBodyLen counts). The head (the idempotency marker
 // and the card header, which dedupe and the reader depend on) and the tail
-// (the closing checklist) are never cut. When the whole does not fit, the
+// (the closing checklist) are never cut, with one exception: when they alone
+// overrun the cap, the body itself is cut and only its first line, the marker,
+// is kept whole. When the whole does not fit, the
 // largest sections are cut first and to the same length (a small section such
 // as Trade-offs stays whole while a huge Evidence table is cut), each at a line
 // boundary where one exists; any code fence or HTML comment the cut leaves
@@ -99,28 +101,37 @@ func capIssueBody(head string, sections []string, tail string, link func() strin
 	if total := forgeBodyLen(whole); forgeBodyLen(out) > issueBodyCap {
 		// Backstop: with every section cut to nothing the head, the tail and
 		// the notices alone overrun the cap (an enormous title or rationale).
-		// Cut the body itself, tail included; the marker is its first line,
-		// far inside the cap, so it survives.
-		// The loop only re-runs when a closer is longer than cutCloseReserve,
-		// shrinking the kept part by the overrun each time.
-		limit := issueBodyCap - forgeBodyLen(cutNotice("this issue body", full, issueBodyCap, total)) - cutCloseReserve
+		// Cut the body itself, tail included. The marker line is a floor the
+		// cut never goes above: dedupe reads it, and a card without it is filed
+		// again on every run. Above the floor a closer longer than
+		// cutCloseReserve shrinks the kept part by the overrun each time round.
+		floor := forgeBodyLen(out[:strings.IndexByte(out, '\n')+1])
+		notice := cutNotice("this issue body", full, issueBodyCap, total)
+		limit := max(issueBodyCap-forgeBodyLen(notice)-cutCloseReserve, floor)
 		for {
 			kept := cutAtLine(out, limit)
 			res := kept + closeOpenConstructs(kept) + cutNotice("this issue body", full, forgeBodyLen(kept), total)
 			over := forgeBodyLen(res) - issueBodyCap
-			if over <= 0 || limit <= 0 {
+			if over <= 0 {
 				out = res
 				break
 			}
-			limit -= over
+			if limit <= floor {
+				// Only the marker line is left; a closer for it would be
+				// the overrun, so drop it.
+				out = kept + cutNotice("this issue body", full, forgeBodyLen(kept), total)
+				break
+			}
+			limit = max(limit-over, floor)
 		}
 	}
 	return out
 }
 
 // cutCloseReserve covers what closeOpenConstructs usually appends: a fence
-// run of up to a few dozen characters, "\n-->" and a couple of "\n</details>".
-// A longer closer is caught by the level loop in capIssueBody, not by this.
+// run of up to a few dozen characters, "\n-->" and a couple of end tags.
+// A longer closer is caught by the level loop and the backstop loop in
+// capIssueBody, not by this.
 const cutCloseReserve = 64
 
 // cutNotice renders the statement placed where content was cut.
@@ -167,17 +178,28 @@ func cutAtLine(s string, limit int) string {
 	return s
 }
 
-// detailsOpenRe and detailsCloseRe find <details> block tags outside fences.
+// blockTags are the HTML block tags a cut can leave open. details folds the
+// rest of the card into a collapsed block; pre, script, style and textarea
+// start a CommonMark type-1 raw HTML block, which runs to its end tag or to the
+// end of the document. Listed innermost first, the order their closers follow.
+var blockTags = []string{"pre", "script", "style", "textarea", "details"}
+
 var (
-	detailsOpenRe  = regexp.MustCompile(`(?i)<details\b`)
-	detailsCloseRe = regexp.MustCompile(`(?i)</details\s*>`)
+	blockOpenRe  = regexp.MustCompile(`(?i)<(pre|script|style|textarea|details)(?:[\s/>]|$)`)
+	blockCloseRe = regexp.MustCompile(`(?i)</(pre|script|style|textarea|details)\s*>`)
 )
+
+// maxTagClosers bounds the end tags closeOpenConstructs appends. A tag costs
+// about 8 characters in the kept text and its closer 10 to 12, so an unbounded
+// closer could outgrow what it closes; past this many the rest stay open.
+const maxTagClosers = 16
 
 // closeOpenConstructs returns what must follow kept so the notice after it
 // renders as a notice: a closing fence when kept ends inside a fenced code
-// block, a comment closer when it ends inside an HTML comment, and one
-// </details> per <details> left open (any of these would swallow the notice
-// and the closing checklist after it, or fold them into a collapsed block).
+// block, a comment closer when it ends inside an HTML comment, and an end tag
+// for each details, pre, script, style or textarea block left open, at most
+// maxTagClosers of them (any of these would swallow the notice and the closing
+// checklist after it, or fold them into a collapsed or raw block).
 //
 // The comment closer is "\n-->", never " -->": the verify-gate marker pattern
 // (verifyMarkerRe) needs a space before its closing dashes, so a cut that falls
@@ -187,13 +209,18 @@ var (
 func closeOpenConstructs(kept string) string {
 	var close string
 	open := ""
-	details := 0
+	balance := map[string]int{}
 	for _, line := range strings.Split(kept, "\n") {
 		c, run, rest, ok := fenceRun(line)
 		switch {
 		case !ok:
 			if open == "" {
-				details += len(detailsOpenRe.FindAllStringIndex(line, -1)) - len(detailsCloseRe.FindAllStringIndex(line, -1))
+				for _, m := range blockOpenRe.FindAllStringSubmatch(line, -1) {
+					balance[strings.ToLower(m[1])]++
+				}
+				for _, m := range blockCloseRe.FindAllStringSubmatch(line, -1) {
+					balance[strings.ToLower(m[1])]--
+				}
 			}
 		case open == "" && fenceLineValid(line):
 			open = strings.Repeat(string(c), run)
@@ -207,8 +234,12 @@ func closeOpenConstructs(kept string) string {
 	if strings.LastIndex(kept, "<!--") > strings.LastIndex(kept, "-->") {
 		close += "\n-->"
 	}
-	for ; details > 0; details-- {
-		close += "\n</details>"
+	left := maxTagClosers
+	for _, tag := range blockTags {
+		for ; balance[tag] > 0 && left > 0; balance[tag]-- {
+			close += "\n</" + tag + ">"
+			left--
+		}
 	}
 	return close
 }

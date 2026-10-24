@@ -227,6 +227,13 @@ func TestCloseOpenDetails(t *testing.T) {
 		{"balanced", "<details>\nrow\n</details>\n", ""},
 		{"in fence", "```html\n<details>\n", "\n```\n"},
 		{"fence then details", "```\nx\n```\n<details>\n| 1 |\n", "\n</details>"},
+		{"pre", "<pre>\nrow\n", "\n</pre>"},
+		{"script", "<script>\nx()\n", "\n</script>"},
+		{"style", "<STYLE type=x>\nb{}\n", "\n</style>"},
+		{"textarea", "<textarea>\nrow\n", "\n</textarea>"},
+		{"pre in details", "<details>\n<pre>\nrow\n", "\n</pre>\n</details>"},
+		{"balanced pre", "<pre>row</pre>\n", ""},
+		{"not a tag", "a <pre-existing> and <prefix> and <styled>\n", ""},
 	} {
 		if got := closeOpenConstructs(tc.kept); got != tc.want {
 			t.Errorf("%s: closeOpenConstructs(%q) = %q, want %q", tc.name, tc.kept, got, tc.want)
@@ -241,5 +248,51 @@ func TestCloseOpenDetails(t *testing.T) {
 	}
 	if o, c := strings.Count(got[:at], "<details"), strings.Count(got[:at], "</details>"); o != c {
 		t.Errorf("%d <details> opened and %d closed before the notice", o, c)
+	}
+}
+
+// TestCloseBounded: a flood of open tags gets a bounded closer, so the closer
+// can never outgrow the text it closes.
+//
+// regression: #4091
+func TestCloseBounded(t *testing.T) {
+	kept := strings.Repeat("<details>", 6000) + "\n"
+	got := closeOpenConstructs(kept)
+	if n := strings.Count(got, "</details>"); n != maxTagClosers {
+		t.Errorf("closers = %d, want the bound %d", n, maxTagClosers)
+	}
+}
+
+// TestCapBodyBackstopKeepsMarker: when the head alone overruns the cap and
+// holds a flood of open tags, the backstop must not cut above the marker line
+// or let its closer outgrow the kept text; the body used to come out as the
+// cut notice alone, with no marker, so dedupe re-filed the card on every run.
+//
+// regression: #4091
+func TestCapBodyBackstopKeepsMarker(t *testing.T) {
+	marker := "<!-- verify-gate: x/01 -->"
+	head := marker + "\n\n## Human sign-off required (irreversible) — x/01\n\n**T**\n\n" +
+		"> **Why you're being asked to sign off:** " + strings.Repeat("<details>", 6000) + "\n\n" +
+		"> **Why this work exists:** " + strings.Repeat("x", 7000) + "\n\n"
+	tail := "### Before you close\n\n- [ ] I accept this brief as done\n"
+	for name, h := range map[string]string{
+		"tags":             head,
+		"tags and a fence": strings.Replace(head, "**T**", "**T**\n\n"+strings.Repeat("`", 3000)+"x", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := capIssueBody(h, []string{"### Verify\n\nrow\n\n"}, tail, ibLinkFn)
+			if n := forgeBodyLen(got); n > issueBodyCap {
+				t.Fatalf("capped body is %d, over the cap %d", n, issueBodyCap)
+			}
+			if !strings.HasPrefix(got, marker+"\n") || strings.Count(got, marker) != 1 {
+				t.Errorf("the marker must be the first line, once; body starts %q", got[:min(len(got), 120)])
+			}
+			if !strings.Contains(got, issueBodyCutMark+" this issue body was cut") {
+				t.Error("the backstop cut must be stated")
+			}
+			if len(got) < 1000 {
+				t.Errorf("body is only %d bytes: the cut went above the header", len(got))
+			}
+		})
 	}
 }
