@@ -7827,7 +7827,7 @@ compatibility and the separately gated live-adoption boundary.
 
 ### Qualified review caller handoff
 
-The source-qualified desk-tools/43 adapters reuse the existing `review-queue`,
+The source-qualified review caller adapters reuse the existing `review-queue`,
 `reviewloop plan --snapshot ... --selection ... --now ...`, and
 `deskdispatch --kit review --observation FILE` interfaces. The optional
 `deskboard throughput --review-observation FILE` reports review depth from that same
