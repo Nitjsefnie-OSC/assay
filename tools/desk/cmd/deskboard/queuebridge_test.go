@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	rf "github.com/medici-finance/assay/tools/desk/internal/reviewflow"
 	"net/http"
@@ -137,14 +138,6 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 		depth, _, err := frozenReviewDepth(out, time.Now().UTC())
 		facts["depth"] = fmt.Sprint(depth)
 		facts["depthError"] = fmt.Sprint(err)
-		// Each mutation must be refused by its OWN applicability check, so a
-		// decode or integrity refusal cannot stand in for all four.
-		refusedBy := map[string]string{
-			"stale":  "stale: collection began before the caller cutoff",
-			"scope":  "review access scope changed; refresh observation",
-			"policy": "unsupported evaluator or policy revision",
-			"schema": "unsupported review observation schema",
-		}
 		for _, bad := range []string{"stale", "scope", "policy", "schema"} {
 			var o rf.Observation
 			_ = json.Unmarshal(b, &o)
@@ -168,8 +161,19 @@ ASSAY_REPO_FORGES=example-org/tracker=github
 			if e == nil {
 				t.Fatal("invalid frozen review depth accepted", bad)
 			}
-			if !strings.Contains(e.Error(), refusedBy[bad]) {
-				t.Fatalf("frozen review depth refused %s by the wrong check: %v", bad, e)
+			want := map[string]string{"stale": "collection began before the caller cutoff", "scope": "review access scope changed", "policy": "unsupported evaluator or policy revision", "schema": "unsupported review observation schema"}[bad]
+			if !strings.Contains(e.Error(), want) {
+				t.Fatalf("wrong frozen depth refusal for %s: want %q, got %v", bad, want, e)
+			}
+			if bad != "scope" {
+				kind := rf.SchemaError
+				if bad == "stale" {
+					kind = rf.StaleError
+				}
+				var input *rf.InputError
+				if !errors.As(e, &input) || input.Kind != kind {
+					t.Fatalf("wrong frozen depth error class for %s: %v", bad, e)
+				}
 			}
 		}
 		_ = os.WriteFile(out, b, 0600)

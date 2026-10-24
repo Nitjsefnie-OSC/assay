@@ -102,11 +102,16 @@ identity. Three desk-specific residues `deskboot` does not carry:
    the new recipe succeed, or run both collection/effect paths in the same cycle.
    A fresh actionable PR is a review trigger at any age; the `UNREVIEWED` alarm is a
    monitor-health incident, not an age threshold before dispatch.
-   The qualified recipe retires none of the guard lines below. Its watcher is the same
-   shipped script, armed the same way — never hand-written, never a disowned loop; its
-   one collection authenticates as a minted App token for the window's `$DESK_LOOP` role
-   (the script unsets any inherited `GH_TOKEN` first), never the ambient `gh` login; and
-   `deskboard prs --quiet` is never a substitute for its liveness wake either.
+
+   **Guard lines bind both supported recipes.** Use the shipped `pr-monitor.sh`;
+   do NOT hand-write the poll. **Never a disowned shell loop** (`... & disown`):
+   arm it through the durable monitor so a failed watcher is observable.
+   Arm with `DESK_LOOP` exported. Each repo read uses its own per-repo role token
+   minted from that loop and scoped to one read — never the ambient `gh` login,
+   never an inherited `GH_TOKEN`. A failed mint is could-not-check, never
+   "no open PRs". **Never substitute `deskboard prs --quiet`** for the classified
+   liveness/review-trigger sweep: `prs` carries no review state and cannot see
+   NEEDS-REVIEW. These safeguards remain resident here when using the shared recipe.
 
    **Supported legacy recipe — these lines bind it unchanged.**
    **Arm BOTH watchers via `capability:durable-monitor` — each a durable, re-arming watcher that survives across turns** (check
@@ -359,6 +364,9 @@ The watcher observation is passed unchanged to preparation. Completion or priori
 rerun the offline planner on an applicable observation; due freshness, scope or source-policy
 changes require refresh or a visible hold. Exit 6 is could-not-check, never idle. Driver
 cutover remains human-gated; source recipe qualification does not switch an installed desk.
+Use per-invocation scratch files, never a fixed name in a shared scratch dir.
+In the legacy recipe, planner exit 6 is BLIND, never "all clear"; without `--prs`
+every outward verb is SUPPRESSED as could-not-check.
 
 **Supported legacy recipe — unchanged.** Write each sweep to a per-invocation scratch file and pass its path — never a fixed name in a
 shared scratch dir (desk-shell.md §Scratch files):
@@ -394,10 +402,17 @@ as the planner and acts on its rows.
   deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N>   # risk-classed only, SAME turn
   ```
 
-  Under the qualified recipe only, append `--observation <path>` to each line, where the path is
-  the one THIS cycle's monitor printed on its `REVIEW-OBSERVATION:` line. The supported legacy
-  recipe omits the flag. Never pass a path from an earlier cycle — after a hold or a rollback to
-  the legacy recipe, an older artifact is not this cycle's observation.
+  Those two lines are the supported legacy recipe's form.
+  The following examples are for a **successful qualified cycle only**. Set
+  `OBSERVATION` to that cycle's emitted `REVIEW-OBSERVATION` path; never reuse an
+  earlier cycle's value after a hold or rollback. In the **legacy recipe**, unset
+  `OBSERVATION` and omit the entire `--observation FILE` pair from both commands.
+
+  ```bash
+  OBSERVATION="<current successful cycle's REVIEW-OBSERVATION path>"
+  deskdispatch <alias>--pr-<N> --kit review --tier strong|any --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"
+  deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"   # risk-classed only, SAME turn
+  ```
 
   `<alias>` is the repo's short label/basename. It takes the durable claim, cuts the reviewer a
   worktree in the PR's OWN repo, stamps the dispatcher's model attestation, and emits the prompt —
