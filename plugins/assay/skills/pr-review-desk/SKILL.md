@@ -60,7 +60,7 @@ identity. Three desk-specific residues `deskboot` does not carry:
    is COULD-NOT-CHECK, not an empty world. Cross-repo deliverables land as draft PRs in the
    report/product repos; pair-review each with its in-repo status-flip PR.
 
-2. **Run the board — `deskboard actions`** (a read-only instrument over `gh`; JSON by default,
+2. **Read the complete classified queue using the qualified recipe below (or the supported legacy `deskboard actions` recipe)** (a read-only instrument over `gh`; JSON by default,
    `--table` for a human read). One ACTION per open PR across the repo set, MERGE-NOW leading,
    computed from current head vs the head of the desk's latest review, the CI rollup, the
    `mergeStateStatus` four-state and the reviewer bot's review STATE at head — the desk's flip
@@ -89,38 +89,19 @@ identity. Three desk-specific residues `deskboot` does not carry:
      ONLY "review notes recorded internally; maintainer follow-up required". Non-sensitive findings
      post publicly as normal.
 
-3. **Arm BOTH watchers via `capability:durable-monitor` — each a durable, re-arming watcher that survives across turns** (check
-   what is already armed first; never arm a second of either). The **event monitor** is the
-   shipped `plugins/assay/scripts/pr-monitor.sh` — do NOT hand-write the poll. It reads each
-   repo's open PRs once (`gh pr list --state open --limit <N> --json
-   number,headRefOid,isDraft,state,mergeStateStatus`, the explicit `--limit` mandatory — bare
-   `gh pr list` silently caps at 30, and a page returning `--limit` rows is truncated and
-   degraded, not diffed), keeps a per-repo baseline so the first sight of a repo SEEDS silently
-   (pre-seeded, never a flood), and emits one `PR-EVENT: <slug>#<num> <kind> <old> -> <new>` line
-   per change (`kind ∈ opened | pushed | draft-flip | state | merge-state | closed`) — so a fresh
-   PR, a push, or a draft flip surfaces within one cadence tick. Each repo is read under its own
-   per-repo role token, minted inside the poll from the window's `$DESK_LOOP` (`desktoken <role>
-   --repo <slug>`) and scoped to that one read — never the ambient `gh` login, never an inherited
-   `GH_TOKEN`. A mint that fails (or a `$DESK_LOOP` that is unset) prints `MONITOR-DEGRADED: <slug>
-   token mint FAILED (...)`, the repo keeps its previous baseline, and the cycle exits 2: that is
-   could-not-check, never "no open PRs" — so arm the monitor with `DESK_LOOP` exported. It PACES its reads: it sleeps
-   `ASSAY_MONITOR_PACE_SECONDS` (default 2) between repos and, at
-   `ASSAY_MONITOR_MAX_REPOS_PER_CYCLE` (default 0 = all), caps a cycle and carries a cursor to the
-   next run, so the watcher cannot become the tight-loop poll that once tripped the forge's
-   secondary rate limit and blocked the same session's flip tool; a tripped limit ends the cycle
-   without further reads. **Never a disowned shell loop** (`... & disown`): it dies silently and
-   nothing says so (§HARD GATE) — arm the script through the durable monitor. The **cadenced liveness sweep** is a second,
-   independent watcher running the CLASSIFIED board — `deskboard actions --delta --quiet`, ~5 min —
-   emitting *regardless of whether the event monitor fired*; the event monitor is best-effort,
-   never the sole wake signal. **Never substitute `deskboard prs --quiet`**: the `prs` payload
-   carries no review state and its "actionable" counts only ci-red/conflicting, so a loop swept on
-   `prs` is structurally blind to NEEDS-REVIEW — that substitution is how this desk's review
-   latency once became the 2h UNREVIEWED alarm instead of one cadence tick.
-   **The cadenced sweep is also the REVIEW TRIGGER.** Its `actionable: N NEEDS-REVIEW, N
-   RE-REVIEW` line is the dispatch signal: a fresh PR is actionable **at any age** — fill a slot on
-   the first sweep that shows it, never wait for it to "age in". The `UNREVIEWED` banner (default
-   30m) is a NEGLECT alarm, never the trigger: it firing means the trigger path missed a PR —
-   dispatch immediately AND treat the miss as a monitor-health incident.
+3. **Arm the watchers once through `capability:durable-monitor`**, after checking
+   existing handles. Use the [qualified review observation recipe](../../references/desk-common.md#review-observation-handoff)
+   when the producer/plugin matrix supports it. Its classified watcher owns the one
+   queue collection, emits `REVIEW-PLAN` plus `REVIEW-OBSERVATION`, and supplies the
+   independent due liveness wake even when no `PR-EVENT` changed. The event baseline,
+   stop checks, missed completion recovery and monitor-health obligations remain.
+   Do not run another routine foreground queue/actions/prs scan on a compatible cutoff.
+   Keep one owner for each watch; follow [supervision and context](../../references/desk-common.md#supervision-and-context).
+   On an incompatible pin or a complete-cycle hold, retain the supported legacy recipe
+   described in that reference. Never silently omit a quarantined or degraded PR to make
+   the new recipe succeed, or run both collection/effect paths in the same cycle.
+   A fresh actionable PR is a review trigger at any age; the `UNREVIEWED` alarm is a
+   monitor-health incident, not an age threshold before dispatch.
 
 Then announce "Review desk up — N PRs on the board" ONCE, and work SILENTLY (§Output contract).
 
@@ -153,9 +134,9 @@ not own.
 ## HARD GATE — no idle claim without a fresh board sweep
 
 **An idle claim is a claim about the QUEUE, and the only evidence about the queue is a fresh
-`deskboard actions` sweep.** Before this desk EVER says "nothing in flight", "idle", "caught up",
+classified sweep (`review-queue` in the qualified recipe, `actions` in the supported legacy recipe).** Before this desk EVER says "nothing in flight", "idle", "caught up",
 "queue empty" or "current", it is a HARD PRECONDITION that it has *just* swept and that the sweep
-reports **zero NEEDS-REVIEW and zero RE-REVIEW** (both numbers on the `actionable:` line). No fresh
+reports **zero NEEDS-REVIEW and zero RE-REVIEW** (the validated shared plan Idle counts, or both numbers on the legacy `actionable:` line). No fresh
 sweep → no idle claim. Full stop.
 
 **"My dispatched reviewers finished" is NOT evidence the queue is empty.** A reviewer completing
@@ -294,8 +275,8 @@ failure this section prevents**, and there is no state in this loop called "the 
   the correctness verdict.
 - **Preparation handoff:** supported `deskdispatch --kit review --observation FILE`
   consumes advisory exact-subject attribution and shares round/packet preparation.
-  The existing caller migration owns live adoption; do not add a collection sweep or
-  bypass claims/model admission to populate the flag. Read the packet once, refetch
+  Reuse the qualified watcher artifact; do not add a collection sweep or bypass
+  claims/model admission to populate the flag. Legacy mode omits the flag. Read the packet once, refetch
   omitted material only, and preserve the review prompt's independent head/check reads.
 - **Fill to N** at the risk-keyed tier; a risk-classed PR's separate `/security-review` agent
   occupies its own slot. **Refill on completion fills ALL free slots, not one:** the instant a
@@ -314,34 +295,28 @@ failure this section prevents**, and there is no state in this loop called "the 
   `:public` allowed-repos entry) are never parallelised around.
 - **Never stop-and-wait.** When actionable = 0, do not exit — the watchers keep the loop alive. "I
   dispatched everything I saw" is not a stop condition and is not an idle claim (§HARD GATE).
-- **Priority within a refill:** RE-REVIEW before NEEDS-REVIEW at the same score (the worker is
-  waiting on the desk), otherwise board order (gate-score, oldest first). Priority decides which
-  rows take the free slots when rows outnumber slots; it never serialises rows that could all take a
-  free slot now.
+- **Priority within a refill:** use the shared plan’s ordered selected proposals. The
+  supported legacy recipe retains its prior board ordering. Priority never serialises
+  reviews that can occupy independent free slots now.
 
 ## The loop
 
 One cycle = sweep → plan → act.
 
-Write each sweep to a per-invocation scratch file and pass its path — never a fixed name in a
-shared scratch dir (desk-shell.md §Scratch files):
+Use the [shared review observation handoff](../../references/desk-common.md#review-observation-handoff).
+The current approved selection policy, current time, complete requested scope and
+available proposal capacity are explicit inputs. Both this prose desk and the discrete
+`reviewloop` bridge consume the same `PlanCandidates` result. Execute only `selected`
+proposals in their returned policy order; do not sort by operation key, re-rank locally,
+or infer work from priorities absent from the candidate population. A selected proposal
+is advisory: lane admission, live claims, model checks and consequential readbacks still
+run at execution. Proposal capacity is not a lane-slot grant; retain the existing
+per-lane slot accounting below, including both independent lanes where required.
 
-```bash
-ACTIONS=<a per-invocation scratch file — desk-shell.md §Scratch files>
-PRS=<a per-invocation scratch file — desk-shell.md §Scratch files>
-deskboard actions --out "$ACTIONS"    # JSON is the default shape
-deskboard prs     --out "$PRS"        # supplies the head SHAs `actions` omits
-reviewloop plan --actions "$ACTIONS" --prs "$PRS"
-```
-
-`reviewloop plan` classifies every board row against an action table required by test to be
-exhaustive over `deskboard`'s own constants, coalesces verbs on (repo, pr, head, verb) from the
-board alone (claims and write idempotency are checked at execution), and states the idle verdict
-three-state. It spawns nothing and writes nothing outward — the desk executes the verbs. Exit 6
-(board unreadable, an ACTION the table does not know, an idle question the board cannot answer) is
-BLIND, never "all clear"; without `--prs` every outward verb is SUPPRESSED as could-not-check.
-Cutover of the standing window onto reviewloop as the *driver* is `gate: human`; the desk runs it
-as the planner and acts on its rows.
+The watcher observation is passed unchanged to preparation. Completion or priority changes
+rerun the offline planner on an applicable observation; due freshness, scope or source-policy
+changes require refresh or a visible hold. Exit 6 is could-not-check, never idle. Driver
+cutover remains human-gated; source recipe qualification does not switch an installed desk.
 
 - **NEEDS-REVIEW / RE-REVIEW** → fill a slot PER LANE at the right tier for that PR at its current
   head, on the first sweep that shows the row, at any age, and apply `authorization-needed` in the
@@ -353,8 +328,8 @@ as the planner and acts on its rows.
   rejected at claim-acquire):
 
   ```bash
-  deskdispatch <alias>--pr-<N> --kit review --tier strong|any --model <actual-model> --repo <owner/repo> --pr <N>
-  deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N>   # risk-classed only, SAME turn
+  deskdispatch <alias>--pr-<N> --kit review --tier strong|any --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"
+  deskdispatch <alias>--pr-<N>--security --kit review --tier strong --model <actual-model> --repo <owner/repo> --pr <N> --observation "$OBSERVATION"   # risk-classed only, SAME turn
   ```
 
   `<alias>` is the repo's short label/basename. It takes the durable claim, cuts the reviewer a
