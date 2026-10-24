@@ -13,9 +13,10 @@ alternatives:
   - "Judge stranded dependents by version range, as `deskmanifest lint` does for activation — not delivered: `dependentsOf` ignores ranges and counts every manifest present under `--root` as a dependent, so the check errs toward refusing."
 accepted:
   - "Real reverses exist for three components only: assay/streams-scaffold, assay/main-guard and assay/registers-scaffold. `deskdisable` refuses every other component that has an inside step (exit 5, nothing changed), so for most of the tree there is no \"turn it off\" yet."
-  - "The three executors remove fixed paths with no proof that Assay created them: the scaffold README under docs/streams, the FINDINGS, INTAKE and RETRO register files, the .githooks/pre-commit hook, and the repository's core.hooksPath setting. A file the adopter already had at one of those exact paths before install is deleted, and a core.hooksPath the adopter had set is unset. Verify row 2's fixture places adopter content only at other paths."
+  - "The three executors remove fixed paths with no check of content or origin: the scaffold README under docs/streams, the FINDINGS, INTAKE and RETRO register files, the .githooks/pre-commit hook, and the core.hooksPath setting. Everything at those paths is deleted, whoever wrote it and whenever. That includes all register history: the registers are append-only logs that adopters keep writing after install (spec/registers-v1.md §3.1), and no manifest requires `assay.registers`, so `deskdisable assay/registers-scaffold --yes` erases that history as its normal, unrefused result. Only content committed to git can be recovered. The setting is unset with `git -C <root> config`, which acts on whichever repository encloses `--root`, while the hook removed is the one under `--root`. Verify row 2's fixture places adopter content only at other paths."
+  - "`deskdisable` never checks that a component was installed. It acts whenever a component.yaml declaring the target id exists anywhere under `--root`; when two declare the same id, the one with the last sorted path wins. In a tree that vendors or carries the manifests as source, everything at the executors' paths is non-Assay content, and disable deletes it all the same."
   - "Nothing outside tests writes the ledger. `AppendLedger` has no production caller; `deskinstall` only prints the ledger path, because its own effects are inside the boundary. An outside step's checklist line therefore reads \"(no ledger entries found for this step)\" on a real install until a later brief (composability/03) writes ledger lines at creation."
-  - "main-guard's reverse treats every git exit 5 from `git config --unset core.hooksPath` as \"already absent\". When the setting holds several values, git also exits 5 and changes nothing. The executor then reports success, deletes .githooks/pre-commit, and leaves core.hooksPath pointing at the deleted hook."
+  - "main-guard's reverse treats every git exit 5 from `git config --unset core.hooksPath` as \"already absent\". When the setting holds several values, git also exits 5 and changes nothing. The executor then reports success, deletes .githooks/pre-commit, and leaves every value set. Git uses the last of several values, so hooks then point at the deleted hook whenever the .githooks value is the last one."
   - "Every outside step is printed as a human checklist line, whatever its manifest text or ledger state. Removing forge labels, Actions variables, the reviewer App installation and the forge binding stays human work."
   - "`deskdisable` reads the ledger but never edits it, and its dependent check counts every manifest under `--root` as present, because no notion of an ACTIVE component exists yet. It refuses more often than the brief's \"ACTIVE component\" wording asked."
 ---
@@ -122,8 +123,11 @@ performance-instrumentation wrapper around `main` (#3051) and a test-only git-ma
      the key is absent, which is the intended case, but also when `core.hooksPath` holds several
      values: a plain `git config --unset` refuses those with a "has multiple values" warning
      and changes nothing (checked with git on 2026-10-24). In that case the executor reports
-     success, deletes the hook, and leaves every value set. That is the half-reversed state the
-     unset-first ordering was meant to prevent: the setting points at a hook that is gone.
+     success, deletes the hook, and leaves every value set. Git uses the last of several values,
+     so when the `.githooks` value is the last one, the result is the half-reversed state the
+     unset-first ordering was meant to prevent: the setting points at a hook that is gone. The
+     unset runs as `git -C <root> config`, so it acts on whichever repository encloses `--root`;
+     the hook it removes is the one under `--root`.
 
    Each executor is idempotent on an already-reversed tree.
 
@@ -141,8 +145,8 @@ this record approves:
 - The brief's facts say "The reviewer-App and main-guard components are human-installed
   today; their manifests' reverses are human checklists, not code, and `deskdisable` prints
   them". main-guard's reverse is compiled code instead (`mainGuardInverse`). It unsets
-  `core.hooksPath` and deletes the pre-commit hook, and nothing is printed for a human. The
-  reviewer-App step is printed as the brief says.
+  `core.hooksPath` and deletes the pre-commit hook. The run prints a `reversed:` line for the
+  step, but no human checklist item. The reviewer-App step is printed as the brief says.
 - The brief's ground rule says a step whose reverse "cannot be written without deleting
   something Assay did not create" gets `compensation: list-for-human`, "never a best-effort
   delete". The three executors delete fixed paths without checking that Assay created them
@@ -168,11 +172,18 @@ closed `insideExecutors` allowlist. A step mis-labelled `inside` that is not one
 registered keys is refused before any write. **The single control is the allowlist's three
 entries themselves, and their fixed target paths.** Nothing behind them checks that the file
 being removed or the setting being unset was created by Assay: there is no pre-install snapshot,
-no content hash and no ledger line for inside effects. An adopter who already had a scaffold
-README, one of the three register files, a `.githooks/pre-commit` or a `core.hooksPath` before
-install loses it on disable. Tracked files can be recovered from git. A local
-`core.hooksPath` value cannot. Whether that is acceptable is the driver's decision on approving
-this record. It is listed under `accepted` so that an approval covers it explicitly.
+no content hash and no ledger line for inside effects. Disable deletes all content at those
+paths, not just files an adopter had before install. That includes the scaffold README, a
+`.githooks/pre-commit`, a `core.hooksPath` value, and the whole history of the three register
+files, which adopters keep appending to after install. No manifest requires `assay.registers`,
+so disabling assay/registers-scaffold erases that history as its normal result. Nothing checks
+that an install happened, either. The tool acts whenever a manifest declaring the id exists
+under `--root`, so in a tree that carries the manifests as source, every file at those paths is
+non-Assay content. Only committed content can be recovered from git. Uncommitted register
+entries and a local `core.hooksPath` value cannot. A further limit on the fixed-path claim is
+recorded in internal review notes; maintainer follow-up required. Whether this is acceptable is
+the driver's decision on approving this record. It is listed under `accepted` so that an
+approval covers it explicitly.
 
 **(2) Which Verify row proves the lower layer catches a mis-classified step with the upper layer
 wrong?** **No row.** The brief's Review offers "row 4 with a deliberately mis-labelled fixture
@@ -191,8 +202,10 @@ key, nor an adopter file at an executor's own path.
 it from the brief: `risk.irreversible: yes`, and a `gate-why` that says a wrong compensation
 "removes a control … from a live repo" and is "Irreversible in the forge case". This record
 also fixes the ledger and compensation model that later briefs build unattended removal on.
-The delivered build itself takes no forge-side action, and its tree-side damage is mostly
-recoverable from git. On that reading the driver may judge `major` instead. The driver can
+The delivered build itself takes no forge-side action, and its tree-side damage is
+recoverable from git only for committed content. Uncommitted register history and a local
+`core.hooksPath` value are not recoverable. Because no forge-side action is taken, the driver
+may judge `major` instead. The driver can
 correct the level before the record's approval is linked.
 
 ## Open / not decided
