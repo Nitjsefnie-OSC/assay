@@ -7820,4 +7820,4 @@ artifact and prints a compact generation/cutoff summary. `reviewloop plan
 --snapshot FILE --selection JSON --now RFC3339` joins it with explicit approved
 priorities/capacity using shared `PlanCandidates`, with zero network calls. See
 [the operator contract](../../docs/deskboard.md) for inputs, failure behavior,
-compatibility and the desk-tools/43 live-adoption boundary.
+compatibility and the separately gated live-adoption boundary.
