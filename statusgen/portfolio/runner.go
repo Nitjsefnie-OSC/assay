@@ -101,9 +101,10 @@ func (runnerResult) RequiredKeys() []string { return []string{"caller", "id", "g
 
 // Refusals name what failed, never what the report said: a runner report is caller content.
 var (
-	errRunnerRequest     = fmt.Errorf("portfolio: runner request does not match the runner contract")
-	errRunnerVersion     = fmt.Errorf("portfolio: runner request is not %s", RunnerVersion)
-	errRunnerObservation = fmt.Errorf("portfolio: runner observation does not match the runner contract")
+	errRunnerRequest      = fmt.Errorf("portfolio: runner request does not match the runner contract")
+	errRunnerVersion      = fmt.Errorf("portfolio: runner request is not %s", RunnerVersion)
+	errRunnerObservation  = fmt.Errorf("portfolio: runner observation does not match the runner contract")
+	errRunnerUnattributed = fmt.Errorf("portfolio: the attribution source has no attribution for the runner invocation")
 )
 
 // FromRunner translates one runner request and its terminal observation, both as the bytes
@@ -145,7 +146,7 @@ func FromRunner(request, observation []byte, attribute AttributionSource) (Segme
 	inv := Invocation{Caller: req.Caller, ID: req.ID}
 	a, ok := attribute(inv)
 	if !ok {
-		return Segment{}, fmt.Errorf("portfolio: no attribution for invocation %s/%s", inv.Caller, inv.ID)
+		return Segment{}, errRunnerUnattributed
 	}
 	cost := obs.Usage.CostMicros
 	if cost != nil && *cost < 0 {

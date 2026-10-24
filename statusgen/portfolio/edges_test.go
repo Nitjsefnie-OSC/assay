@@ -68,6 +68,58 @@ func TestPortfolioOverflowUnknown(t *testing.T) {
 	want(t, "long interval weighted", agent(l, "reliability", WeightedActive), Quantity{exact * 1000, 1, 0})
 }
 
+// regression: F-portfolio-overflow
+func TestPortfolioOverflowTotal(t *testing.T) {
+	const half = int64(1) << 62
+	// Two tallies that each fit, 2^62 apiece, whose sum in the total does not: the value that
+	// would wrap the total is unknown in its own tally and the total, so the total stays the
+	// sum of its parts. Each case is the bucket-or-unattributed tally against the total.
+	undefined := func(what string, l Ledger, isAgent bool, m string, buckets ...string) {
+		t.Helper()
+		for _, b := range buckets {
+			if sh := l.ShareOf(b, isAgent, m); sh.Defined || sh.Numerator < 0 || sh.Denominator < 0 {
+				t.Fatalf("%s: an overflowed total produced a %s share: %+v", what, b, sh)
+			}
+		}
+	}
+
+	// Two buckets: reliability (counted first) and features.
+	s := base(t)
+	s.Segments[0].Cost = i64(half)
+	s.Segments[1].Cost = i64(half)
+	l := measure(t, s)
+	want(t, "cross-bucket reliability cost", agent(l, "reliability", CostMicros), Quantity{half, 1, 0})
+	want(t, "cross-bucket features cost", agent(l, "features", CostMicros), Quantity{0, 0, 1})
+	want(t, "cross-bucket total cost", l.Total.Agent[CostMicros], Quantity{half, 1, 1})
+	undefined("cross-bucket", l, true, CostMicros, "reliability", "features")
+	if lim := Compare(s.Policy, l).Limits[0]; lim.State != "unknown" {
+		t.Fatalf("cross-bucket: an overflowed total reported %s against the features limit: %+v", lim.State, lim)
+	}
+
+	// Unattributed work (counted first) and a bucket.
+	u := base(t)
+	u.Segments[0].Subject = nil
+	u.Segments[0].Cost = i64(half)
+	u.Segments[1].Cost = i64(half)
+	l = measure(t, u)
+	want(t, "unattributed cost", agent(l, "", CostMicros), Quantity{half, 1, 0})
+	want(t, "beside-unattributed features cost", agent(l, "features", CostMicros), Quantity{0, 0, 1})
+	want(t, "beside-unattributed total cost", l.Total.Agent[CostMicros], Quantity{half, 1, 1})
+	undefined("beside-unattributed", l, true, CostMicros, "features")
+
+	// Human minutes in two buckets: features (dec-3, counted first) and reliability.
+	h := base(t)
+	h.Decisions[2].Quantity = i64(half)
+	rel := h.Decisions[2]
+	rel.ID, rel.Primary = "dec-5", h.Decisions[0].Primary
+	h.Decisions = append(h.Decisions, rel)
+	l = measure(t, h)
+	want(t, "cross-bucket features minutes", human(l, "features", DecisionMinutes), Quantity{half, 1, 0})
+	want(t, "cross-bucket reliability minutes", human(l, "reliability", DecisionMinutes), Quantity{0, 0, 1})
+	want(t, "cross-bucket total minutes", l.Total.Human[DecisionMinutes], Quantity{half, 1, 1})
+	undefined("cross-bucket minutes", l, false, DecisionMinutes, "features", "reliability")
+}
+
 // regression: F-portfolio-window
 func TestPortfolioWindowEdges(t *testing.T) {
 	// A measured interval straddling the window: the window cannot apportion the segment, so
@@ -234,6 +286,19 @@ func TestPortfolioRunnerStrict(t *testing.T) {
 	}
 	for name, doc := range observations {
 		check("observation", name, req, []byte(doc), doc)
+	}
+	// An unattributed invocation is refused without naming it: its caller and id are what the
+	// report said, not what failed.
+	var named struct {
+		Caller string `json:"caller"`
+		ID     string `json:"id"`
+	}
+	if err := json.Unmarshal(req, &named); err != nil || named.Caller == "" || named.ID == "" {
+		t.Fatalf("request fixture names no invocation: %+v %v", named, err)
+	}
+	_, err := FromRunner(req, obs, func(Invocation) (Attribution, bool) { return Attribution{}, false })
+	if err == nil || strings.Contains(err.Error(), named.Caller) || strings.Contains(err.Error(), named.ID) {
+		t.Fatalf("unattributed invocation: refusal %v carries report content", err)
 	}
 	runnerShape(t)
 }

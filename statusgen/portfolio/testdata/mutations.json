@@ -96,6 +96,14 @@
     "test": "TestPortfolioOverflowUnknown"
   },
   {
+    "name": "skip-total-overflow-check",
+    "path": "portfolio/ledger.go",
+    "before": "\t\tfor _, t := range tallies {\n\t\t\tif _, ok := addInt64(",
+    "after": "\t\tfor _, t := range tallies[:1] {\n\t\t\tif _, ok := addInt64(",
+    "package": "./portfolio",
+    "test": "TestPortfolioOverflowTotal"
+  },
+  {
     "name": "raw-sum",
     "path": "portfolio/ledger.go",
     "before": "q.Known, _ = addInt64(q.Known, *v)",
@@ -172,6 +180,14 @@
     "path": "portfolio/runner.go",
     "before": "return Segment{}, errRunnerVersion",
     "after": "return Segment{}, fmt.Errorf(\"portfolio: runner request version %q\", header.Version)",
+    "package": "./portfolio",
+    "test": "TestPortfolioRunnerStrict"
+  },
+  {
+    "name": "echo-unattributed-invocation",
+    "path": "portfolio/runner.go",
+    "before": "return Segment{}, errRunnerUnattributed",
+    "after": "return Segment{}, fmt.Errorf(\"portfolio: no attribution for invocation %s/%s\", inv.Caller, inv.ID)",
     "package": "./portfolio",
     "test": "TestPortfolioRunnerStrict"
   }
