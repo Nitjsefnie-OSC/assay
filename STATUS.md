@@ -34,7 +34,7 @@ _Repo: `medici-finance/assay` — this board covers the streams in this repo onl
 | [performance-collection](docs/streams/performance-collection/README.md) | P2 | active | 0/9 | 2026-10-21 |  |
 | [quality](docs/streams/quality/README.md) | P2 | active | 16/19 | 2026-10-20 |  |
 | [statusgen](docs/streams/statusgen/README.md) | P2 | active | 11/39 | 2026-10-22 |  |
-| [verification-handoff](docs/streams/verification-handoff/README.md) | P2 | active | 0/6 | 2026-10-23 |  |
+| [verification-handoff](docs/streams/verification-handoff/README.md) | P2 | active | 0/6 | 2026-10-24 |  |
 | [windows-port](docs/streams/windows-port/README.md) | P2 | active | 9/18 | 2026-10-23 |  |
 
 ### Stuck auto-flips (31)
@@ -98,7 +98,7 @@ _Shelved streams: excluded from Next-up and every dispatch view, briefs kept. Re
 
 > **COULD NOT CHECK — main-red arm could not check — no `--main-health` input was supplied, so whether main is red is unknown here (statusgen does not read live CI). A main-red fix cannot be lifted into the critical tier on this run; this is not a reading that main is green.**
 
-_Next-up: 20 of 59 eligible — 39 held back (22 by per-stream caps, 17 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
+_Next-up: 20 of 58 eligible — 38 held back (22 by per-stream caps, 16 by the span-of-control cap 20). Overflow is itself an alarm (EEMUA-191): clear WIP before pulling more._
 
 _Held by per-stream caps: 22 brief(s) across 2 stream(s) — top: desktools-v2. By stream: desktools-v2 (20), desk-tools (2). A stream at its dispatch cap (perStreamCap 4, a declared max-concurrent, or in-flight claims) offers nothing more until a claiming branch or PR clears — this backlog is capped here, not drained._
 
@@ -117,19 +117,19 @@ _Held by per-stream caps: 22 brief(s) across 2 stream(s) — top: desktools-v2. 
 | composability | 02 — Install ledger, paired inverses, and the `disable` verb | 1 | 2510 |
 | iso-9001 | 08 — Versioned source obligations and project applicability [exec:strong] | 0 | 2510 |
 | statusgen | 27 — Reject newly introduced actionable lint notices on changed briefs [exec:strong] | 1 | 2510 |
-| desktools-v2 | 30 — Port the GitLab fleet provisioner to a Go command [exec:strong] | 3 | 2000 + 1500 (drive:desktools-v2) |
 | forge-neutral | 18 — statusgen off gh — one desk-tools read verb on the seam, offline lint by default, one git walk [exec:strong] | 5 | 3000 |
 | graph-execution | 11 — Optional pinned Laya provider with explicit CPU and GPU profiles [exec:strong] | 1 | 2500 |
 | measured-status | 05 — attribution.go: a same-identity author/verifier pair in a multi-identity repo becomes a hard PROBLEM, not a NOTICE — the independence gate the check exists to establish [exec:strong] | 1 | 2200 |
 | measured-status | 06 — model-floor: derive dispatch authority from the dispatch stamp, and give a first-class re-stamp path — stop refusing verdicts by guessing at a label actor's login [exec:strong] | 1 | 2200 |
 | derived-board | 07 — per-repo rollout — upgrade-assay to v1.0.0, reconcile step in each regen workflow, historical backfill as a drift-report PR; private re-stage of spec + skills | 4 | 2010 |
 | derived-board | 10 — Complete candidate coverage for partial-delivery reconciliation [exec:strong] | 0 | 2010 |
+| statusgen | 32 — Connect board drift notices to the existing reconciliation owners [exec:strong] | 1 | 2010 |
 
 ## Drive: `build-less-brittle`
 
 **State:** `WAITING-ON-REVIEW` — progress is gated only on review / sign-off; no operator action is needed.
 
-_last regen: d92df1b1 2026-10-24T01:28:59Z_
+_last regen: c7c1df49 2026-10-24T02:08:00Z_
 
 **Progress:** 11/13 brief items done.
 
@@ -150,13 +150,14 @@ _none_
 
 **State:** `ROLLING` — the fleet has dispatchable or in-flight work; no operator action is needed.
 
-_last regen: d92df1b1 2026-10-24T01:28:59Z_
+_last regen: c7c1df49 2026-10-24T02:08:00Z_
 
 **Progress:** 34/91 brief items done.
 
 **In-flight:**
 
 - desktools-v2/18
+- desktools-v2/74
 
 **Blocked on review:**
 
@@ -205,7 +206,6 @@ _last regen: d92df1b1 2026-10-24T01:28:59Z_
 - desktools-v2/70
 - desktools-v2/72
 - desktools-v2/73
-- desktools-v2/74
 
 
 
