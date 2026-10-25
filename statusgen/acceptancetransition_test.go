@@ -350,6 +350,11 @@ func TestTransitionRelativeBrief(t *testing.T) {
 		// brief is the --brief value spelled against the row's working
 		// directory; empty keeps the fixture's absolute path.
 		brief string
+		// rootJoin builds the row's --brief as the fixture repository's
+		// root, a slash, and the brief spelling, by plain string
+		// concatenation: the raw absolute form of the same spelling, with
+		// .. preserved where filepath.Join would clean it away.
+		rootJoin bool
 		// sub runs the row from a fresh subdirectory of the fixture
 		// repository instead of its root.
 		sub bool
@@ -432,9 +437,10 @@ func TestTransitionRelativeBrief(t *testing.T) {
 			want:     "protected table: acceptance transition: cannot resolve brief path",
 		},
 		{
-			// The same escape spelled absolutely: with the working-directory
-			// resolution in place both spellings canonicalize identically, so
-			// the refusal must not depend on how the command named the brief.
+			// The same escape spelled absolutely: a relative spelling is the
+			// working directory plus the raw spelling, uncleaned, so both
+			// spellings resolve through the same symlinks and the refusal
+			// must not depend on how the command named the brief.
 			name:   "symlink-escape-abs",
 			record: true,
 			prepare: func(t *testing.T, f transitionFixture) {
@@ -446,6 +452,32 @@ func TestTransitionRelativeBrief(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
+			wantCode: verifyrunExitCouldNot,
+			want:     "protected table: acceptance transition: cannot resolve brief path",
+		},
+		{
+			// A relative brief that escapes through a symlinked directory
+			// component followed by ..: the spelling resolves to the
+			// byte-identical copy outside the repository, while lexical
+			// path cleaning hides the escape and admits the in-repository
+			// brief. The refusal must consult the raw spelling; the row is
+			// pinned by its exact message.
+			name:     "symlink-dotdot-escape",
+			brief:    "docs/streams/vf/esc/../brief-01-flip.md",
+			record:   true,
+			prepare:  symlinkDotdotEscape,
+			wantCode: verifyrunExitCouldNot,
+			want:     "protected table: acceptance transition: cannot resolve brief path",
+		},
+		{
+			// The same escape spelled absolutely: the raw form is the
+			// working directory plus the relative spelling, uncleaned, so
+			// the refusal cannot depend on how the command named the brief.
+			name:     "symlink-dotdot-escape-abs",
+			brief:    "docs/streams/vf/esc/../brief-01-flip.md",
+			rootJoin: true,
+			record:   true,
+			prepare:  symlinkDotdotEscape,
 			wantCode: verifyrunExitCouldNot,
 			want:     "protected table: acceptance transition: cannot resolve brief path",
 		},
@@ -466,6 +498,9 @@ func TestTransitionRelativeBrief(t *testing.T) {
 			}
 			t.Chdir(dir)
 			brief := tt.brief
+			if tt.rootJoin {
+				brief = f.root + "/" + tt.brief
+			}
 			if brief == "" {
 				brief = f.path
 			}
@@ -510,4 +545,40 @@ func briefBesideRoot(t *testing.T, f transitionFixture) string {
 	}
 	t.Cleanup(func() { os.Remove(outside) })
 	return outside
+}
+
+// symlinkDotdotEscape stages the symlink-dotdot-escape rows' filesystem: a
+// byte-identical copy of the approving brief outside the repository, and an
+// esc symlink in the brief's own directory pointing at a directory outside
+// the root, so esc/../<basename> resolves physically to the outside copy.
+// The symlink is excluded in the fixture repository's .git/info/exclude, so
+// the untracked link cannot trip the later clean-source guard: the escape
+// must reach the transition's brief-path check, not be refused for dirt
+// first.
+func symlinkDotdotEscape(t *testing.T, f transitionFixture) {
+	t.Helper()
+	out := t.TempDir()
+	deep := filepath.Join(out, "deep")
+	if err := os.Mkdir(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, filepath.Base(vfBriefRel)), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	escAbs := filepath.Join(filepath.Dir(f.path), "esc")
+	escRel := filepath.Join(filepath.Dir(vfBriefRel), "esc")
+	if err := os.Symlink(deep, escAbs); err != nil {
+		t.Fatal(err)
+	}
+	exclude, err := os.ReadFile(filepath.Join(f.root, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.root, ".git", "info", "exclude"), append(exclude, escRel+"\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
