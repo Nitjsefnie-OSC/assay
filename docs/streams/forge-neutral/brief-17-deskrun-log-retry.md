@@ -241,9 +241,9 @@ implementer: `TestDeskrunLogSucceedsWorkerAndReviewer` (planned), `TestDeskrunRe
      "verified" status in the stream README requires this section filled
      by someone who did NOT implement. -->
 
-### Verifier evidence — 2026-10-21 (b9263b40b), non-implementer, evidence-only (gate: human, sensitive-data: yes)
+### Verifier evidence — 2026-10-21 (b9263b40b), non-implementer, evidence-only (gate: human, sensitive-data: yes) — superseded by the 2026-10-25 run below
 
-**VERIFY: BLOCKED** — row 1 could-not-check in the mandated network-off image (five packages this delivery did not touch fail on the image's own git and platform); rows 2-10 meet their Expect. Status cells untouched; this brief stays held for the human gate.
+Recorded verdict of this earlier run, in plain words: blocked. Row 1 was could-not-check in the network-off image, where five packages the delivery did not touch failed on the image's own git and platform. Restated after review: rows 2-7 and 10 met their Expect. Rows 8 and 9 passed only on substituted commands, which are authoring defects (#1915 covers row 9). Row 4 issues one GitLab retry per failed job, an interpretation for the human gate. This run carried no verifyrun execution witness. Status cells untouched.
 
 Verification-Attestation: medici-finance/assay#3998 run=ee145a74db28e14dc859ae282204eca7d51e1f73afebf6a5ae9bcced499f1a2c source=b9263b40b67aeb976099e337af74484acfa20451 brief=docs/streams/forge-neutral/brief-17-deskrun-log-retry.md model=claude-opus-5-5 tier=strong
 
@@ -285,11 +285,6 @@ DERIVE:
 - RISK-VALUE V5 = failed jobs only: this is the GitLab equivalent of V4's narrowing. The partial and no-failed-job goldens pin it (row 6). Row 4's per-job request count follows from it.
 - RISK-VALUE V6/V7: log is a read verb on its own deskrun-read audit bucket, separate from the write budget and breaker. The read-set-drop mutant is CAUGHT (muhar, row 10).
 - RISK-VALUE V8/V9: named only. These are reversible operational bounds on log size and paging, ranked last, and neither one changes who can read or write.
-
-Issue drafts (not filed by this run; the desk decides):
-
-1. Title: "forge-neutral/17 row 9: the literal consumers command cannot corroborate on merged main". Label: question. Body: on merged main, the row's command without a delivery pin reports every claim unchanged since the merge-base (0 corroborated). The delivery-pinned form (the delivering merge, with its first parent as base) corroborates 3 of 3 diff-settleable claims. Should post-merge consumers rows be authored with the delivery pin, or should statusgen pin it automatically once the Verification-Table marker exists?
-2. Title: "verify image go1.27-py cannot run the full tools/desk suite (git 2.47, linux-arm64)". Label: help wanted. Body: a network-off full-suite run in the image fails in deskmerge, deskwt, gitmaintenance (no native git hook list), desksourceguard (linux-arm64 is not a published platform) and the cell gh-token shim fixture. The same packages pass on a host with git 2.56. Every check:ci full-suite row run in this image reads could-not-check until the image's git is 2.54 or later and the platform-default test has an arm64 answer.
 
 ## Review
 Gate: **human** (from frontmatter — `sensitive-data: yes`). Reviewer records verdict + date in
