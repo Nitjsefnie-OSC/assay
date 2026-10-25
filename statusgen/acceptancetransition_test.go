@@ -431,6 +431,24 @@ func TestTransitionRelativeBrief(t *testing.T) {
 			wantCode: verifyrunExitCouldNot,
 			want:     "protected table: acceptance transition: cannot resolve brief path",
 		},
+		{
+			// The same escape spelled absolutely: with the working-directory
+			// resolution in place both spellings canonicalize identically, so
+			// the refusal must not depend on how the command named the brief.
+			name:   "symlink-escape-abs",
+			record: true,
+			prepare: func(t *testing.T, f transitionFixture) {
+				outside := briefBesideRoot(t, f)
+				if err := os.Remove(f.path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, f.path); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantCode: verifyrunExitCouldNot,
+			want:     "protected table: acceptance transition: cannot resolve brief path",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
