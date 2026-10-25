@@ -40,14 +40,30 @@ func (e runInterrupted) Error() string {
 // returns the context they cancel. A run sets it as its plan's stop context
 // before any row starts and releases it when the run returns, so outside a
 // run the signals keep their default effect.
+//
+// A signal that was IGNORED when statusgen started (nohup, a script's
+// background job) is left ignored: signal.Notify would re-enable it and turn a
+// run its caller deliberately shielded into an interrupted one. Only the first
+// caught signal is handled; the watch then stops, so a second one takes its
+// default effect, even while an escaped descendant still holds the row's pipe.
 func watchRunInterrupt() (ctx context.Context, release func()) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, runInterruptSignals...)
+	var watched []os.Signal
+	for _, s := range runInterruptSignals {
+		if !signal.Ignored(s) {
+			watched = append(watched, s)
+		}
+	}
+	// Notify with no signals would relay EVERY signal, so skip it outright.
+	if len(watched) > 0 {
+		signal.Notify(ch, watched...)
+	}
 	done := make(chan struct{})
 	go func() {
 		select {
 		case s := <-ch:
+			signal.Stop(ch)
 			cancel(runInterrupted{sig: s})
 		case <-done:
 		}

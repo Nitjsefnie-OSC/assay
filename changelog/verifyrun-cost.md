@@ -13,6 +13,10 @@ statusgen's group no longer reaches the row directly. statusgen therefore catche
 SIGINT, SIGTERM and SIGHUP for the length of a run and cancels the running row with
 the same group kill. The interrupted row is recorded could-not-run, never a verdict; no
 later row starts; nothing is written to the brief or a witness file; and the run exits 2.
+A signal that was ignored when statusgen started (under `nohup`, or as a script's
+background job) stays ignored, so such a run still finishes normally. Only the first
+signal is caught: a second one takes its default effect and ends statusgen at once,
+even while an escaped descendant still holds the row's output pipe.
 A row that runs `kill 0` now signals only its own group, not statusgen.
 
 Normal background output is still read completely within the original deadline. No short
