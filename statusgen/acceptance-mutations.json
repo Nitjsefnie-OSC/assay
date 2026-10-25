@@ -66,6 +66,12 @@
       "file": "acceptancetransition.go",
       "old": "if !filepath.IsAbs(path) {",
       "new": "if false && filepath.IsAbs(path) {"
+    },
+    {
+      "name": "lexical working-directory resolution",
+      "file": "acceptancetransition.go",
+      "old": "path = wd + string(filepath.Separator) + path",
+      "new": "path = filepath.Join(wd, path)"
     }
   ]
 }

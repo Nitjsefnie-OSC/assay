@@ -22,14 +22,14 @@ func transitionFlags(fs *flag.FlagSet) func() {
 
 func acceptanceTransition(path, verify, full, run, delivery, base, original, baseline, delivered string, audit bool, read func(string) (string, error)) (string, map[string]string, string) {
 	fail := func(s string) (string, map[string]string, string) { return "", nil, "acceptance transition: " + s }
-	// EvalSymlinks leaves a relative path relative, and Rel against the absolute
-	// toplevel then refuses every relative --brief spelling: resolve it first.
+	// A relative spelling becomes exactly its absolute twin, working directory
+	// plus the raw spelling uncleaned, so EvalSymlinks resolves it like the OS open.
 	if !filepath.IsAbs(path) {
-		abs, e := filepath.Abs(path)
+		wd, e := os.Getwd()
 		if e != nil {
 			return fail("cannot resolve brief path")
 		}
-		path = abs
+		path = wd + string(filepath.Separator) + path
 	}
 	markers := protectedMarkersNamed(normalizedProtectedEvidence(run), "Acceptance-Transition:")
 	if len(markers) != 1 || !markers[0].literal {
