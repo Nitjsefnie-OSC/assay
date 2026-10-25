@@ -281,6 +281,75 @@ jobs:
           echo "$report"
           grep -qE 'Totals: [0-9]+ caught, 0 NOT CAUGHT, 0 could-not-mutate' <<<"$report"
 
+  statusgen-test:
+    name: statusgen suite + acceptance mutation spec
+    # Upstream CI runs the statusgen leg on a self-hosted runner unavailable
+    # to the fork, so this job runs on GitHub-hosted instead.
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Checkout candidate ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tested_target_ref=${{ inputs.target_ref }}"
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
+
+      - name: Guard — does the candidate touch statusgen/?
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
+            git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
+          fi
+          changed="$(git diff --name-only "$BASE"...HEAD)"
+          printf '%s\n' "$changed"
+          if ! printf '%s\n' "$changed" | grep -q '^statusgen/'; then
+            echo "SKIP: candidate does not touch statusgen/"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+
+      - name: Test and vet statusgen
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          go version
+          bash statusgen/prepare-test-deps.test.sh
+          cd statusgen && go test ./... && go vet ./...
+
+      - name: Run the statusgen acceptance mutation spec
+        if: steps.guard.outputs.run == 'true'
+        working-directory: statusgen
+        run: |
+          set -euo pipefail
+          go build -C ../tools/desk -o "$RUNNER_TEMP/muhar" ./cmd/muhar
+          report="$("$RUNNER_TEMP/muhar" -j 0 -spec acceptance-mutations.json)"
+          echo "$report"
+          grep -qE 'Totals: [0-9]+ caught, 0 NOT CAUGHT, 0 could-not-mutate' <<<"$report"
+
   changelog-fragment-mirror:
     name: changelog fragment (fork mirror of changelog-check)
     runs-on: ubuntu-latest
