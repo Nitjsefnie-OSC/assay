@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,6 +28,39 @@ func TestVerifyrunSignalChild(t *testing.T) {
 	code := runVerifyrun(args, os.Stdout, os.Stderr)
 	fmt.Printf("child-exit=%d\n", code)
 	os.Exit(0)
+}
+
+// TestVerifyrunSignalRowNoVerdict: a row killed by the run's interrupt is
+// could-not-run naming the signal — never the fail its killed shell's exit
+// would otherwise read as, and never a pass.
+// regression: #4360
+func TestVerifyrunSignalRowNoVerdict(t *testing.T) {
+	plan := resolveShellPlan()
+	if !plan.ok {
+		t.Skip("no runnable bash: " + plan.reason)
+	}
+	stop, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	plan.stop = stop
+	time.AfterFunc(100*time.Millisecond, func() { cancel(runInterrupted{sig: syscall.SIGTERM}) })
+	began := time.Now()
+	got := runVerifyCommandWith(t.TempDir(), `printf 'started\n'; sleep 5`, 30*time.Second, nil, plan, rowShellSh)
+	if elapsed := time.Since(began); elapsed > 2*time.Second {
+		t.Errorf("the interrupt did not stop the row: returned after %s", elapsed)
+	}
+	state, note := parseExpect("exit 0").verdict(got)
+	if state != stateCouldNotRun || got.exit != -1 || !strings.Contains(note, "interrupted by SIGTERM") || string(got.output) != "started\n" {
+		t.Errorf("interrupted row: state=%s note=%q result=%+v output=%q", state, note, got, got.output)
+	}
+	// A row after the interrupt never starts.
+	root := t.TempDir()
+	ws := runWitnessesWith(plan, root, []verifyRow{{ID: "2", Command: "touch ran", Expect: "exit 0", Shell: rowShellSh}}, "r", "s", "t", "d", time.Second, false)
+	if len(ws) != 1 || ws[0].State != stateCouldNotRun || !strings.Contains(ws[0].Note, "it was not run") {
+		t.Errorf("row after the interrupt: %+v", ws)
+	}
+	if _, err := os.Stat(filepath.Join(root, "ran")); !os.IsNotExist(err) {
+		t.Errorf("a row started after the interrupt; stat=%v", err)
+	}
 }
 
 // TestVerifyrunSignalCancelsRow: every row runs in its own process group, so a

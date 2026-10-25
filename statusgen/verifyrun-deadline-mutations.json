@@ -1,5 +1,5 @@
 {
-  "test": "go test . -run '^TestVerifyrunDeadline' -count=1 -timeout 45s",
+  "test": "go test . -run '^TestVerifyrun(Deadline|Signal)' -count=1 -timeout 150s",
   "control": {
     "name": "CONTROL — a deadline kill is recorded as a row failure instead of could-not-run",
     "file": "verifyrun.go",
@@ -22,8 +22,38 @@
     {
       "name": "the caller's original row deadline is replaced by a larger budget",
       "file": "verifyrun.go",
-      "old": "\tctx, cancel := context.WithTimeout(context.Background(), timeout)\n",
-      "new": "\tctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)\n"
+      "old": "\tctx, cancel := context.WithTimeout(plan.rowParent(), timeout)\n",
+      "new": "\tctx, cancel := context.WithTimeout(plan.rowParent(), 2*time.Minute)\n"
+    },
+    {
+      "name": "the group kill is left to exec's Cancel, which skips a reaped shell",
+      "file": "verifyrun.go",
+      "old": "\t\tstopGroupKill := context.AfterFunc(ctx, func() { _ = cmd.Cancel() })\n",
+      "new": "\t\tstopGroupKill := func() bool { return false }\n"
+    },
+    {
+      "name": "a stop signal no longer cancels the run's rows",
+      "file": "verifyrun.go",
+      "old": "\tplan.stop = stop\n",
+      "new": "\t_ = stop\n"
+    },
+    {
+      "name": "a row killed by the interrupt falls through to a verdict",
+      "file": "verifyrun.go",
+      "old": "\tif why := plan.interruption(); why != \"\" {\n\t\treturn runResult{",
+      "new": "\tif why := plan.interruption(); false && why != \"\" {\n\t\treturn runResult{"
+    },
+    {
+      "name": "a later row still starts after the interrupt",
+      "file": "verifyrun.go",
+      "old": "\t\tcase plan.interruption() != \"\":\n",
+      "new": "\t\tcase false:\n"
+    },
+    {
+      "name": "an interrupted run goes on to write its witness",
+      "file": "verifyrun.go",
+      "old": "\tif why := plan.interruption(); why != \"\" {\n\t\tfmt.Fprintf(stderr,",
+      "new": "\tif why := plan.interruption(); false && why != \"\" {\n\t\tfmt.Fprintf(stderr,"
     }
   ]
 }
