@@ -345,8 +345,57 @@ RISK-VALUE: DERIVED — tier default = "any" @ tools/desk/cmd/deskdispatch/cli.g
 RISK-VALUE: DERIVED — MkdirAll mode = 0700, refusal mask = 0077 @ tools/desk/cmd/deskdispatch/performance_handoff.go:28 and :32 (file 0o600 @ tools/desk/internal/packet/packet.go:747) — the perf-v3 contract requires private launcher state with 0700 directories and 0600 files (docs/performance-attribution-spec.md:114-115); the mask refuses any group or other bit, which is exactly that requirement.
 RISK-VALUE: DERIVED — expiry = today + 7 days, cutoff = today - 6 days @ tools/desk/cmd/deskdispatch/performance_handoff.go:49 and :56 — the same contract caps retention at seven UTC days (docs/performance-attribution-spec.md:115); a sidecar kept from the start of day minus 6 lives under seven UTC days, and its stated expiry is at most seven days after it was written.
 
-**VERIFY: PASS** — all 10 Verify rows pass with 0 fail at 471fa0febe6d, network-off as uid 65534. Row 10 (check:ci) ran in the go1.27-py image. Row 8 ran in the gh-free go1.27 image, because the go1.27-py image ships gh, which breaks one fixture's no-gh precondition.
+Verdict of the 2026-10-21 pass, kept as dated history: PASS — all 10 Verify rows pass with 0 fail at 471fa0febe6d, network-off as uid 65534. Row 10 (check:ci) ran in the go1.27-py image. Row 8 ran in the gh-free go1.27 image, because the go1.27-py image ships gh, which breaks one fixture's no-gh precondition. The re-verification below supersedes it.
 Verification-Attestation: medici-finance/assay#3985 run=4a73c7016557fd11f6e672024a6b345e364ea8d6de11a3b7961a54e78fdd48a2 source=471fa0febe6d4370b973cf2380a0513f6a1d7efd brief=docs/streams/desktools-v2/brief-21-migrate-deskdispatch-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+
+### Re-verification — 2026-10-25 (merged main e4d2346d8b51)
+
+Source e4d2346d8b51fbc893551107bc2b48df4d3f2c63. Rows 1-9 are witnessed on the host by `statusgen verifyrun --rows`; row 10 (check:ci) is witnessed in a network-off container inside an admission bracket. Both tables follow.
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 1 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLIHelpOffline$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIHelpOffline " "$f")" -eq 1` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 2 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLIConfigFlow$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLIConfigFlow " "$f")" -eq 1` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 3 | `f=$(mktemp) && cd tools/desk && go test -count=1 -v ./cmd/deskdispatch -run '^TestCLILegacyForms$' > "$f" 2>&1; test "$(grep -c -F -e "--- PASS: TestCLILegacyForms " "$f")" -eq 1` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 4 | `cd tools/desk && go run ./cmd/muhar -j 1 -spec internal/clicontract/testdata/mutations/desktools-v2-21.json` | could-not-run exit=- — timed out after 10m0s — no verdict was produced | sha256:57cafdc968ab | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 5 | `cd tools/desk && go test -count=1 ./cmd/deskdispatch/...` | pass exit=0 | sha256:3a3048649324 | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 6 | `cd tools/desk && GOOS=windows go vet ./cmd/deskdispatch` | pass exit=0 | sha256:e3b0c44298fc | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 7 | `f=$(mktemp) && cd tools/desk && CLI_OWNER=desktools-v2/21 go test -count=1 -v ./internal/clicontract -run '^TestCLIOwnerMigrated$' > "$f" 2>&1 && grep -F -e "--- PASS: TestCLIOwnerMigrated " "$f"` | pass exit=0 | sha256:1dd3616f0465 | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 8 | `bash tools/desk/internal/regression/check-floor.sh` | pass exit=0 | sha256:5f5bea3739f8 | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+| 9 | `statusgen --root . --consumers` | pass exit=0 | sha256:5ff365cc4d30 | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#4386 run=7c8625276d195b6be30fdd6ccefda1ecf78e99b50d32258f4c1c80813a404333 source=e4d2346d8b51fbc893551107bc2b48df4d3f2c63 brief=docs/streams/desktools-v2/brief-21-migrate-deskdispatch-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 4 | `cd tools/desk && go run ./cmd/muhar -j 1 -spec internal/clicontract/testdata/mutations/desktools-v2-21.json` | pass exit=0 | sha256:cf49973f9431 | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+Verification-Attestation: medici-finance/assay#4386 run=7c8625276d195b6be30fdd6ccefda1ecf78e99b50d32258f4c1c80813a404333 source=e4d2346d8b51fbc893551107bc2b48df4d3f2c63 brief=docs/streams/desktools-v2/brief-21-migrate-deskdispatch-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+
+| # | Command | Result | Output | Date | Runner |
+|---|---------|--------|--------|------|--------|
+| 10 | `(cd tools/desk && out=$(mktemp) && trap 'rm -f "$out"' 0 && GOWORK=off go test -count=1 -v -run '^TestCLIHelpDoesNotDiscoverManifests$' ./cmd/deskdispatch/ > "$out" && grep -F -- '--- PASS: TestCLIHelpDoesNotDiscoverManifests ' "$out")` | pass exit=0 sandbox=container-netns | sha256:bd8cc0d2292c | 2026-10-25 | assay-verifier-app[bot] @ e4d2346d8b51+dirty (on-behalf-of human:ian) (forge-identity) |
+Tree-Digest: sha256:0bc3c269f7d9ffebb82708f4c5019a458705fdc04f7fc798d3cb547056a79da9
+Container-Image: sha256:840101ee78c4f508da9d7e035a553fa0c1e5e4f73bf3dd4859091d55dd7687f4
+Verification-Attestation: medici-finance/assay#4386 run=7c8625276d195b6be30fdd6ccefda1ecf78e99b50d32258f4c1c80813a404333 source=e4d2346d8b51fbc893551107bc2b48df4d3f2c63 brief=docs/streams/desktools-v2/brief-21-migrate-deskdispatch-to-cobra-and-viper.md model=claude-opus-5-5 tier=strong
+Admission-Bracket: run=7c8625276d195b6be30fdd6ccefda1ecf78e99b50d32258f4c1c80813a404333 source=e4d2346d8b51fbc893551107bc2b48df4d3f2c63 tree=sha256:0bc3c269f7d9ffebb82708f4c5019a458705fdc04f7fc798d3cb547056a79da9 witness=sha256:f502ab5f85ae2f35b7d1b2756019aa36b05f8d11e593854a3a2a767b816121dc opened=2026-10-25T14:45:31Z closed=2026-10-25T14:50:01Z before=receipt after=check-verifier
+
+The first host witness above ran rows 1-9 at source e4d2346d8b51 while the host was heavily loaded by other test runs. Row 4, the mutation suite, hit verifyrun's default 10-minute per-row limit and was recorded as could-not-run. Row 4 was then re-run alone with `statusgen verifyrun --rows 4 --timeout 50m`, which changes only the time limit and leaves the row command as written. That second table is row 4's live witness: pass, exit 0. Row 10 is witnessed in the bracketed table directly above, in a local docker container. The container ran with `--network none`, the engine's default seccomp profile, GOPROXY=off and GOTOOLCHAIN=local, from image sha256:840101ee78c4 (go1.27.2 linux/amd64). The home was bind-mounted read-only. The bracket closed with tree digest match and `--bracket-digest` verdict=match. Since the prior pass (source 471fa0febe6d), the deskdispatch package gained recorded-ruling, review-context and review-round reading, plus the outcome-record path checks and their tests. Every row reruns against that code. The admission check returned 0 before the host witness, after the evidence edit, and at both bracket ends.
+
+No row failed, so no failure classification applies.
+
+Risk-bearing values: frontmatter risk metadata is present with all four fields "no", and the gate is model. Enumerated over the change since the prior pass (471fa0febe6d..e4d2346d8b51) on the deskdispatch package, the mutation spec and the shared CLI package. The deskdispatch rows of the CLI registry are unchanged.
+- ExitUsage = 2 @ tools/desk/internal/cli/cli.go:20. Unchanged; syntax errors exit 2 and domain refusals keep 5.
+- tier default = "any" and kit default = "worker" @ tools/desk/cmd/deskdispatch/cli.go:73. Unchanged from the pre-migration defaults.
+- Outcome-record directory created and re-moded 0o700 @ tools/desk/cmd/deskdispatch/outcomepath.go:135 and :141. Refused when group or other can write it (mask 0o022) @ outcomepath.go:164. Directory name "outcomes" @ outcomepath.go:25. New.
+- Review packet diff input cap = 4 MiB @ tools/desk/cmd/deskdispatch/packet_review.go:50, and review-context read limit = 16 MiB @ reviewcontext.go:138 and :142. New size caps.
+- Recorded-ruling summary truncation = 160 characters @ tools/desk/cmd/deskdispatch/recordedruling.go:77, decisions directory "docs/streams/decisions" @ recordedruling.go:60, and status binary name "statusgen" @ recordedruling.go:265. New.
+- Review preparation version tag = "review-prepare-v2" @ tools/desk/cmd/deskdispatch/reviewcontext.go:49. New.
+Each can be reversed with an edit and a redeploy.
+
+RISK-VALUE: DERIVED — ExitUsage = 2 @ tools/desk/internal/cli/cli.go:20 — the shared CLI contract fixes exit 2 for unknown input before any handler runs (docs/streams/desktools-v2/cli-contract.md:23); domain refusals keep 5 and unavailable reads keep 6, so callers keyed on custody outcomes see no change.
+RISK-VALUE: DERIVED — outcome-record directory mode 0o700 with a refusal on mask 0o022 @ tools/desk/cmd/deskdispatch/outcomepath.go:135 and :164 — the outcome record is verifier custody input, so an owner-only directory matches the private-state convention, and the group/other-write refusal stops another local user from planting a record there.
+RISK-VALUE: DERIVED — tier default = "any" @ tools/desk/cmd/deskdispatch/cli.go:73 — identical to the pre-migration default; the brief requires the same worktree, branch and claim per invocation, and this default is part of that.
+
+**VERIFY: PASS** — all 10 Verify rows pass at merged main e4d2346d8b51. Rows 1-3 and 5-9 pass in the host witness. Row 4 passes on its re-run with a longer time limit. Row 10 passes in the bracketed network-off container witness (bracket verdict match). 0 fail, 0 could-not-run after the re-run.
 
 ## Review
 Gate: model. Check legacy-form coverage against the consumers and that the old parser is gone.
