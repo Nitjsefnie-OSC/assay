@@ -54,6 +54,31 @@ func TestVerifyrunDeadlineOwnsDescendants(t *testing.T) {
 	}
 }
 
+// TestVerifyrunDeadlineShellExit: the shell exits at once and leaves an
+// ordinary child in its group holding the output pipe. The deadline must still
+// kill that child; a kill wired only to the un-reaped shell never fires here.
+// regression: #4360
+func TestVerifyrunDeadlineShellExit(t *testing.T) {
+	root := t.TempDir()
+	command := `printf 'started\n'; (sleep 2; printf 'late\n' > descendant-ran) &`
+	began := time.Now()
+	got := runVerifyCommand(root, command, 150*time.Millisecond)
+	elapsed := time.Since(began)
+	t.Logf("executor returned after %s; deadline=150ms", elapsed)
+	if elapsed > time.Second {
+		t.Errorf("row deadline overran after the shell exited: executor returned after %s", elapsed)
+	}
+	if !got.couldNotRun || got.exit != -1 || string(got.output) != "started\n" || !strings.Contains(got.reason, "timed out after 150ms") {
+		t.Errorf("deadline result changed: %+v output=%q", got, got.output)
+	}
+	if remaining := 2200*time.Millisecond - time.Since(began); remaining > 0 {
+		time.Sleep(remaining)
+	}
+	if _, err := os.Stat(filepath.Join(root, "descendant-ran")); !os.IsNotExist(err) {
+		t.Errorf("descendant outlived the deadline and did its delayed work; stat=%v", err)
+	}
+}
+
 // Successful shells may leave a child producing output before the ORIGINAL row
 // deadline. A fixed short WaitDelay would cut that valid output off after shell
 // exit; cancellation must not turn this complete run into could-not-run.
