@@ -276,6 +276,8 @@ RISK-VALUE: DERIVED — manifestRevision = "activation-discovery/1" @ tools/desk
 
 **VERIFY: BLOCKED** — 0 of 5 rows have admitted acceptance evidence. Rows 1-4 (check:ci) are could-not-run because the container admission step refused (linked-worktree tree digest empty), and no host unshare sandbox exists. Row 5 as written is could-not-check (exit 2, delivery not derivable). No acceptance obligation was observed to fail. Next actor: a verifier run whose home is not a linked worktree (or whose git directory resolves inside the container), on a network-off runner, re-runs rows 1-4 under fresh admission; row 5 needs its reviewed check-definition repair (#1927).
 
+Routing note, 2026-10-25 (appended after review; the verdict line above is unchanged). This branch restores the first run's `Verification-Table:` marker above. Once it merges, row 5 has a table to read: in a simulated merge with current main, row 5 as written exits 0 with 9 corroborated, 0 disproved and 2 unchecked. So row 5's next action is an as-written re-run on merged main. The check-definition repair (#1927) named in the third run's next-actor sentence does not gate row 5. Two corrections to the third run's prose: (1) the delivery diff also changed `tools/desk/internal/deskkit/rosterfixture_test.go` (+2/-1), alongside `activationstartup_test.go`; (2) the same empty-tree digest (sha256:e3b0c442…) also appears when the container bind mount does not expose the home. The next container run should confirm the home's files are visible inside the container before it opens the bracket.
+
 ## Review
 
 Gate: model; all risk answers are no. Reject false-zero, stale-hit, silently changed legacy semantics or unmeasured savings claims.
