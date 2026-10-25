@@ -1025,7 +1025,7 @@ How the rows were run. Both tables below are the tools' own output, with nothing
 
 The two selections are disjoint and together cover all 21 rows. The container is the release-pinned verify-runner v1.0.59 image (digest in the Container-Image line). It ran linux/amd64 under emulation on an arm64 darwin host, with `--network none --read-only --cap-drop ALL` and the home mounted read-only. Host load average (1-minute) was 32 at the bracket open, 11 at the container end, and 21 to 5 during the host lane.
 
-Row 11 (55 mutations) ran to completion on the host in about 2h22m, uninterrupted, and exited 0: baseline green, positive control caught, every mutation caught. That includes the two entries repaired under #2672 and #4177.
+Row 11 (55 mutations, including the two entries repaired under #2672 and #4177) ran to completion on the host in about 2h22m, uninterrupted, and exited 0. That exit code is the only retained witness. The harness output, including its Totals line, was not kept, and the harness exits 0 even when a mutation is NOT CAUGHT or could-not-mutate (#4359). So this run does not show that every mutation was caught. After this run, #4361 changed row 11's command to require the literal `Totals: 55 caught, 0 NOT CAUGHT, 0 could-not-mutate.` line. This run predates that check and is not evidence under it; a re-run under the new command is owed.
 
 Container lane (closed bracket):
 
@@ -1096,7 +1096,7 @@ RISK-VALUE: DERIVED (reversible, ranks last) — defaultSingletonTTL = 10 * time
 
 The brief is gate: model with all four risk answers no. Its status is left where it is.
 
-**VERIFY: BLOCKED** — 18/21 rows pass on merged main 385cb29e, 0 fail on the deliverable, and row 11's 55-mutation run completed with every mutation caught. Rows 17, 19 and 20 are instrument limits. Row 17: the container lane leaks the runner identity through `GIT_CONFIG_*`, the git directory is unmounted, and the package hit the 600s timeout under emulation (blocker: #4179). Rows 19 and 20: the darwin host has no `unshare --net`, and the container has no git history.
+**VERIFY: BLOCKED** — 18/21 rows pass on merged main 385cb29e, 0 fail on the deliverable. Row 11's 55-mutation run exited 0, but its Totals line was not retained, so it does not show every mutation caught, and it predates the stricter row 11 command from #4361. Rows 17, 19 and 20 are instrument limits. Row 17: the container lane leaks the runner identity through `GIT_CONFIG_*`, the git directory is unmounted, and the package hit the 600s timeout under emulation (blocker: #4179). Rows 19 and 20: the darwin host has no `unshare --net`, and the container has no git history.
 
 ## Review
 
