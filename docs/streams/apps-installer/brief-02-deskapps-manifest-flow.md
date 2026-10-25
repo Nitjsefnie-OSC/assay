@@ -839,6 +839,7 @@ RISK-VALUE: DERIVED — branchProtectionRead = "administration:read" @ tools/des
 Holds independently read as OPEN on 2026-10-25: medici-finance/assay#2810 (row 12, class medici-finance/assay#1915), medici-finance/assay#2811 (the three live measurements), medici-finance/assay#1800 (the darwin witness environment) and medici-finance/assay#4327 (the container bracket on a linked-worktree home). No deliverable defect was observed.
 
 **VERIFY: BLOCKED** — at merged main e4d2346d8b51fbc893551107bc2b48df4d3f2c63 the statusgen verifyrun witness records all 17 rows could-not-run on darwin (medici-finance/assay#1800) after the container bracket refused (medici-finance/assay#4327); row 12 as authored exits 2 against Expect exit 0 (check definition, medici-finance/assay#2810, class medici-finance/assay#1915); the declared live measurements remain open (medici-finance/assay#2811); the other 16 rows meet Expect by hand, with no acceptance credit.
+
 ### Container re-verification — 2026-10-25 (source dd8bdafc4)
 
 A fresh, independent claude-opus-5-5 verifier (tier strong) ran this pass. deskdispatch --check-verifier admitted it (rc 0, attestation medici-finance/assay#4402) before any row ran and again before landing. The source is merged main dd8bdafc4decb6054cd00a2af6980d74d0d109e8. This pass supplies the network-off container witness that the pass above could not produce.
