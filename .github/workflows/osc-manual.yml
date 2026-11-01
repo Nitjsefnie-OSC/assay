@@ -346,6 +346,15 @@ jobs:
           bash statusgen/prepare-test-deps.test.sh
           cd statusgen && go test ./... && go vet ./...
 
+      - name: Warm standalone statusgen test dependencies
+        if: steps.guard.outputs.run == 'true'
+        working-directory: statusgen
+        run: GOWORK=off go test -c -o /dev/null .
+
+      - name: Role-bound claim transport regressions
+        if: steps.guard.outputs.run == 'true'
+        run: bash statusgen/test-role-claims.sh
+
       - name: Run the statusgen acceptance mutation spec
         if: steps.guard.outputs.run == 'true'
         working-directory: statusgen
