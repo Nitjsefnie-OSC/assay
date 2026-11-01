@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
 
 jobs:
   build-and-suite:
@@ -74,7 +74,7 @@ jobs:
         if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
 
       - name: Build the desk module
         if: steps.guard.outputs.run == 'true'
@@ -141,7 +141,7 @@ jobs:
         if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
 
       - name: Run the deskwt prune mutation spec (this shard)
         if: steps.guard.outputs.run == 'true'
@@ -178,20 +178,21 @@ jobs:
           fi
           printf 'checked-out SHA: %s\n' "$checked_out_sha"
 
-      - name: Guard — does the candidate touch tools/desk/cmd/desktoken/?
+      - name: Guard — does the candidate touch desktoken or credential?
         id: guard
         shell: bash
+        env:
+          BASE: ${{ inputs.base_sha }}
         run: |
           set -euo pipefail
-          BASE="${{ inputs.base_sha }}"
           if [ -z "$BASE" ]; then
             BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
             git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
           fi
           changed="$(git diff --name-only "$BASE"...HEAD)"
           printf '%s\n' "$changed"
-          if ! printf '%s\n' "$changed" | grep -q '^tools/desk/cmd/desktoken/'; then
-            echo "SKIP: candidate does not touch tools/desk/cmd/desktoken/"
+          if ! printf '%s\n' "$changed" | grep -qE '^tools/desk/(cmd/desktoken|internal/credential)/'; then
+            echo "SKIP: candidate does not touch tools/desk/cmd/desktoken/ or tools/desk/internal/credential/"
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -201,7 +202,7 @@ jobs:
         if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
 
       - name: Build the desk module
         if: steps.guard.outputs.run == 'true'
@@ -214,7 +215,7 @@ jobs:
         timeout-minutes: 12
         run: |
           set -euo pipefail
-          go test ./cmd/desktoken/... -count=1 -timeout 600s
+          go test ./cmd/desktoken/... ./internal/credential/... -count=1 -timeout 600s
 
   desktoken-mutation-shards:
     name: muhar desktoken ${{ matrix.shard }} of 4
@@ -247,20 +248,21 @@ jobs:
           fi
           printf 'checked-out SHA: %s\n' "$checked_out_sha"
 
-      - name: Guard — does the candidate touch tools/desk/cmd/desktoken/?
+      - name: Guard — does the candidate touch desktoken or credential?
         id: guard
         shell: bash
+        env:
+          BASE: ${{ inputs.base_sha }}
         run: |
           set -euo pipefail
-          BASE="${{ inputs.base_sha }}"
           if [ -z "$BASE" ]; then
             BASE="$(git ls-remote https://github.com/medici-finance/assay.git refs/heads/main | cut -f1)"
             git fetch --quiet https://github.com/medici-finance/assay.git "$BASE"
           fi
           changed="$(git diff --name-only "$BASE"...HEAD)"
           printf '%s\n' "$changed"
-          if ! printf '%s\n' "$changed" | grep -q '^tools/desk/cmd/desktoken/'; then
-            echo "SKIP: candidate does not touch tools/desk/cmd/desktoken/"
+          if ! printf '%s\n' "$changed" | grep -qE '^tools/desk/(cmd/desktoken|internal/credential)/'; then
+            echo "SKIP: candidate does not touch tools/desk/cmd/desktoken/ or tools/desk/internal/credential/"
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -270,7 +272,7 @@ jobs:
         if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
 
       - name: Run the desktoken mutation spec (this shard)
         if: steps.guard.outputs.run == 'true'
@@ -330,7 +332,11 @@ jobs:
         if: steps.guard.outputs.run == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
+
+      - name: Fetch the statusgen skew baseline (checksum-verified)
+        if: steps.guard.outputs.run == 'true'
+        run: bash statusgen/fetch-baseline.sh statusgen-linux-amd64 "${RUNNER_TEMP}/sg-baseline"
 
       - name: Test and vet statusgen
         if: steps.guard.outputs.run == 'true'
